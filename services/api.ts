@@ -1,7 +1,7 @@
 import { Song, TopList, SystemHealth, StatsSummary, PlatformStats, QpsStats, RequestTypeStats, TrendStats } from '../types';
 
-const API_BASE = 'https://api.tunefree.fun/api';
-const STATS_BASE = 'https://api.tunefree.fun/stats';
+const API_BASE = 'https://music-dl.sayqz.com/api';
+const STATS_BASE = 'https://music-dl.sayqz.com/stats';
 
 // Helper to handle API response structure
 const fetchApi = async (params: Record<string, string>) => {
