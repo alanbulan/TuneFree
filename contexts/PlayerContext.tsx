@@ -26,25 +26,53 @@ interface PlayerContextType {
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 
+// Helper to get local storage safely
+const getLocal = <T,>(key: string, def: T): T => {
+    try {
+        const item = localStorage.getItem(key);
+        return item ? JSON.parse(item) : def;
+    } catch {
+        return def;
+    }
+};
+
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentSong, setCurrentSong] = useState<Song | null>(null);
+  // Initialize state from LocalStorage where appropriate
+  const [currentSong, setCurrentSong] = useState<Song | null>(() => getLocal('tunefree_current_song', null));
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
-  const [queue, setQueue] = useState<Song[]>([]);
-  const [playMode, setPlayMode] = useState<PlayMode>('sequence');
+  const [queue, setQueue] = useState<Song[]>(() => getLocal('tunefree_queue', []));
+  const [playMode, setPlayMode] = useState<PlayMode>(() => getLocal('tunefree_play_mode', 'sequence'));
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Persistence Effects
+  useEffect(() => {
+      localStorage.setItem('tunefree_queue', JSON.stringify(queue));
+  }, [queue]);
+
+  useEffect(() => {
+      localStorage.setItem('tunefree_current_song', JSON.stringify(currentSong));
+  }, [currentSong]);
+
+  useEffect(() => {
+      localStorage.setItem('tunefree_play_mode', JSON.stringify(playMode));
+  }, [playMode]);
 
   useEffect(() => {
     const audio = new Audio();
     audio.crossOrigin = "anonymous"; // Required for real audio visualization
     audioRef.current = audio;
     audio.preload = "auto"; 
+    
+    // If we have a restored song with a URL, we can hint the audio element
+    // However, URLs might expire, so we might not want to set src immediately 
+    // unless we are sure. For now, we leave it empty until user interacts.
     
     // Initialize Web Audio API
     try {
@@ -128,9 +156,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const playSong = async (song: Song) => {
     if (!audioRef.current) return;
 
+    // Check if we are trying to play the same song
     if (currentSong?.id === song.id) {
-        togglePlay();
-        return;
+        // If audio source is already set and valid, just toggle play
+        // We check if currentSrc is present (length > 0)
+        if (audioRef.current.currentSrc || (audioRef.current.src && audioRef.current.src !== window.location.href)) {
+             togglePlay();
+             return;
+        }
+        // If src is missing (e.g. after page reload), we need to fall through to reload logic
     }
 
     setIsLoading(true);
@@ -185,6 +219,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const togglePlay = () => {
     if (!audioRef.current || !currentSong) return;
+    
+    // Safety check for restored state without src
+    if (!audioRef.current.src || audioRef.current.src === window.location.href) {
+        playSong(currentSong);
+        return;
+    }
     
     if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
         audioCtxRef.current.resume();

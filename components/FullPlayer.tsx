@@ -42,7 +42,7 @@ const formatTime = (seconds: number) => {
 };
 
 const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
-  const { currentSong, isPlaying, togglePlay, playNext, playPrev, currentTime, duration, seek, playMode, togglePlayMode } = usePlayer();
+  const { currentSong, isPlaying, togglePlay, playNext, playPrev, currentTime, duration, seek, playMode, togglePlayMode, queue } = usePlayer();
   const { isFavorite, toggleFavorite } = useLibrary();
   const [lyrics, setLyrics] = useState<ParsedLyric[]>([]);
   const [activeLyricIndex, setActiveLyricIndex] = useState(0);
@@ -78,12 +78,15 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
     }
   }, [currentTime, lyrics, activeLyricIndex]);
 
-  if (!isOpen || !currentSong) return null;
+  if (!isOpen) return null;
+  
+  // Empty State Handling inside FullPlayer
+  const hasSong = !!currentSong;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white overflow-hidden transition-all duration-300">
       {/* Ambient Background */}
-      {currentSong.pic && (
+      {hasSong && currentSong.pic && (
         <div 
             className="absolute inset-0 z-0 opacity-40 scale-150 blur-3xl transition-opacity duration-1000"
             style={{ 
@@ -107,17 +110,16 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
       </div>
 
       {/* --- Main Content Area (Layout Locked) --- */}
-      {/* We use relative positioning to swap Cover and Lyrics without layout shift */}
       <div className="relative z-10 flex-1 w-full overflow-hidden flex flex-col">
           
           <div className="relative flex-1 w-full">
             {/* 1. Cover View */}
             <div 
                 className={`absolute inset-0 flex flex-col items-center justify-center transition-all duration-500 ease-in-out px-8 ${showLyrics ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'}`}
-                onClick={() => setShowLyrics(true)}
+                onClick={() => hasSong && setShowLyrics(true)}
             >
                 <div className="w-full aspect-square max-h-[350px] bg-gray-100 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.15)] rounded-[2rem] overflow-hidden transition-transform duration-700">
-                    {currentSong.pic ? (
+                    {hasSong && currentSong.pic ? (
                         <img 
                             src={currentSong.pic} 
                             alt="Album" 
@@ -139,7 +141,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
                 <div className="w-full h-full max-h-[450px] overflow-hidden mask-gradient relative">
                     <div 
                         className="transition-transform duration-500 ease-out flex flex-col items-center w-full px-8"
-                        style={{ transform: `translateY(${200 - (activeLyricIndex * 44)}px)` }} // 44px approx line height
+                        style={{ transform: `translateY(${200 - (activeLyricIndex * 44)}px)` }} 
                     >
                         {lyrics.length > 0 ? lyrics.map((line, i) => (
                             <p 
@@ -155,8 +157,14 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
                             </p>
                         )) : (
                             <div className="flex flex-col items-center justify-center h-full pt-40">
-                                <div className="w-6 h-6 border-2 border-gray-300 border-t-transparent rounded-full animate-spin mb-2"></div>
-                                <p className="text-gray-400 text-sm">加载歌词中...</p>
+                                {hasSong ? (
+                                    <>
+                                        <div className="w-6 h-6 border-2 border-gray-300 border-t-transparent rounded-full animate-spin mb-2"></div>
+                                        <p className="text-gray-400 text-sm">加载歌词中...</p>
+                                    </>
+                                ) : (
+                                    <p className="text-gray-400 text-sm">暂无播放</p>
+                                )}
                             </div>
                         )}
                     </div>
@@ -164,28 +172,34 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          {/* Song Info (Fixed position below swapping area) */}
+          {/* Song Info */}
           <div className="px-8 mt-4 mb-2 min-h-[80px] flex items-center justify-between">
              <div className="flex-1 min-w-0 pr-4">
-                <h2 className="text-2xl font-bold truncate text-black leading-tight">{currentSong.name}</h2>
+                <h2 className="text-2xl font-bold truncate text-black leading-tight">
+                    {hasSong ? currentSong.name : "未播放"}
+                </h2>
                 <div className="flex items-center space-x-2 mt-1">
-                    <span className="text-[10px] font-bold text-white bg-gray-400 px-1.5 py-0.5 rounded uppercase">{currentSong.source}</span>
-                    <p className="text-lg text-ios-red/90 font-medium truncate cursor-pointer hover:underline">{currentSong.artist}</p>
+                    {hasSong && <span className="text-[10px] font-bold text-white bg-gray-400 px-1.5 py-0.5 rounded uppercase">{currentSong.source}</span>}
+                    <p className="text-lg text-ios-red/90 font-medium truncate cursor-pointer hover:underline">
+                        {hasSong ? currentSong.artist : "选择歌曲播放"}
+                    </p>
                 </div>
              </div>
              
              <div className="flex items-center space-x-3">
                  <button 
-                    onClick={(e) => { e.stopPropagation(); setShowDownload(true); }}
-                    className="p-2 rounded-full active:scale-90 transition-transform text-gray-500 hover:text-black"
+                    onClick={(e) => { e.stopPropagation(); if (hasSong) setShowDownload(true); }}
+                    className={`p-2 rounded-full active:scale-90 transition-transform ${hasSong ? 'text-gray-500 hover:text-black' : 'text-gray-300'}`}
+                    disabled={!hasSong}
                  >
                     <DownloadIcon size={24} />
                  </button>
                  <button 
-                    onClick={(e) => { e.stopPropagation(); toggleFavorite(currentSong); }}
-                    className="p-2 rounded-full active:scale-90 transition-transform"
+                    onClick={(e) => { e.stopPropagation(); if (hasSong) toggleFavorite(currentSong); }}
+                    className={`p-2 rounded-full active:scale-90 transition-transform ${!hasSong ? 'opacity-50' : ''}`}
+                    disabled={!hasSong}
                  >
-                    {isFavorite(Number(currentSong.id)) ? 
+                    {hasSong && isFavorite(Number(currentSong.id)) ? 
                         <HeartFillIcon className="text-ios-red" size={26} /> : 
                         <HeartIcon className="text-gray-400" size={26} />
                     }
@@ -210,7 +224,8 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
                 max={duration || 100} 
                 value={currentTime} 
                 onChange={(e) => seek(parseFloat(e.target.value))}
-                className="w-full h-1 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-black hover:h-1.5 transition-all"
+                disabled={!hasSong}
+                className="w-full h-1 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-black hover:h-1.5 transition-all disabled:opacity-50"
             />
             <div className="flex justify-between text-xs text-gray-500 mt-2 font-medium font-mono tabular-nums">
                 <span>{formatTime(currentTime)}</span>
@@ -231,16 +246,17 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
             </button>
 
             <div className="flex items-center gap-8">
-                <button onClick={playPrev} className="text-black hover:opacity-70 transition active:scale-90">
+                <button onClick={playPrev} disabled={!hasSong} className="text-black hover:opacity-70 transition active:scale-90 disabled:opacity-30">
                     <PrevIcon size={40} className="fill-current" />
                 </button>
                 <button 
                     onClick={togglePlay} 
-                    className="w-20 h-20 bg-black text-white rounded-full flex items-center justify-center shadow-2xl hover:scale-105 active:scale-95 transition-all"
+                    disabled={!hasSong}
+                    className="w-20 h-20 bg-black text-white rounded-full flex items-center justify-center shadow-2xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
                 >
                     {isPlaying ? <PauseIcon size={32} className="fill-current" /> : <PlayIcon size={32} className="fill-current ml-1" />}
                 </button>
-                <button onClick={() => playNext(true)} className="text-black hover:opacity-70 transition active:scale-90">
+                <button onClick={() => playNext(true)} disabled={queue.length === 0} className="text-black hover:opacity-70 transition active:scale-90 disabled:opacity-30">
                     <NextIcon size={40} className="fill-current" />
                 </button>
             </div>
@@ -256,7 +272,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
 
       {/* Popups */}
       <QueuePopup isOpen={showQueue} onClose={() => setShowQueue(false)} />
-      <DownloadPopup isOpen={showDownload} onClose={() => setShowDownload(false)} song={currentSong} />
+      {hasSong && <DownloadPopup isOpen={showDownload} onClose={() => setShowDownload(false)} song={currentSong} />}
     </div>
   );
 };

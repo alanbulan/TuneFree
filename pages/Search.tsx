@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { searchAggregate, searchSongs } from '../services/api';
 import { Song } from '../types';
 import { usePlayer } from '../contexts/PlayerContext';
-import { SearchIcon, MusicIcon, SettingsIcon } from '../components/Icons';
+import { SearchIcon, MusicIcon, TrashIcon } from '../components/Icons';
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -23,8 +23,38 @@ const Search: React.FC = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   
+  // History State
+  const [history, setHistory] = useState<string[]>(() => {
+      try {
+          const stored = localStorage.getItem('tunefree_search_history');
+          return stored ? JSON.parse(stored) : [];
+      } catch {
+          return [];
+      }
+  });
+  
   const debouncedQuery = useDebounce(query, 800);
   const { playSong, currentSong, isPlaying } = usePlayer();
+
+  // Save history to local storage
+  useEffect(() => {
+      localStorage.setItem('tunefree_search_history', JSON.stringify(history));
+  }, [history]);
+
+  const addToHistory = (term: string) => {
+      if (!term.trim()) return;
+      setHistory(prev => {
+          // Remove duplicate if exists, add new to top, limit to 15
+          const newHist = [term, ...prev.filter(h => h !== term)].slice(0, 15);
+          return newHist;
+      });
+  };
+
+  const clearHistory = () => {
+      if (confirm('确定要清空搜索历史吗？')) {
+          setHistory([]);
+      }
+  };
 
   // Reset results when query or mode changes
   useEffect(() => {
@@ -41,10 +71,8 @@ const Search: React.FC = () => {
           try {
               let data: Song[] = [];
               if (searchMode === 'aggregate') {
-                  // Endpoint #6 with page
                   data = await searchAggregate(debouncedQuery, page);
               } else {
-                  // Endpoint #5 with page
                   data = await searchSongs(debouncedQuery, selectedSource, page);
               }
               
@@ -71,6 +99,21 @@ const Search: React.FC = () => {
       }
   };
 
+  // Wrap playSong to record history
+  const handlePlaySong = (song: Song) => {
+      addToHistory(query);
+      playSong(song);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+          e.preventDefault();
+          addToHistory(query);
+          // Force blur to hide keyboard on mobile
+          (e.target as HTMLInputElement).blur();
+      }
+  };
+
   return (
     <div className="min-h-full p-5 pt-safe bg-ios-bg">
       <div className="sticky top-0 bg-ios-bg/95 backdrop-blur-md z-20 pb-2 transition-all">
@@ -85,6 +128,7 @@ const Search: React.FC = () => {
             className="w-full bg-white text-ios-text pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-ios-red/20 transition-all placeholder-gray-400 text-[15px]"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
           />
         </div>
 
@@ -129,13 +173,37 @@ const Search: React.FC = () => {
       </div>
 
       <div className="space-y-2 mt-4 pb-20">
+        
+        {/* Search History (Show only when query is empty) */}
+        {!query && history.length > 0 && (
+            <div className="mb-6">
+                <div className="flex items-center justify-between mb-3 px-1">
+                    <h3 className="font-bold text-gray-900 text-sm">搜索历史</h3>
+                    <button onClick={clearHistory} className="text-gray-400 hover:text-red-500 p-1">
+                        <TrashIcon size={16} />
+                    </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    {history.map((term, idx) => (
+                        <button
+                            key={idx}
+                            onClick={() => setQuery(term)}
+                            className="px-3 py-1.5 bg-white text-gray-600 text-xs rounded-lg border border-gray-100 active:bg-gray-100 transition truncate max-w-[150px]"
+                        >
+                            {term}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        )}
+
         {results.length > 0 && results.map((song, idx) => {
             const isCurrent = currentSong?.id === song.id;
             return (
                 <div 
                     key={`${song.source}-${song.id}-${idx}`} 
                     className={`flex items-center space-x-3 p-3 rounded-xl transition cursor-pointer ${isCurrent ? 'bg-white shadow-sm ring-1 ring-ios-red/20' : 'hover:bg-white/50 active:bg-white'}`}
-                    onClick={() => playSong(song)}
+                    onClick={() => handlePlaySong(song)}
                 >
                     <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
                         {song.pic ? (
@@ -187,7 +255,7 @@ const Search: React.FC = () => {
              </div>
         )}
         
-        {query === '' && (
+        {query === '' && history.length === 0 && (
             <div className="flex flex-col items-center justify-center pt-16 text-gray-400 space-y-4 opacity-60">
                 <MusicIcon size={48} className="opacity-30" />
                 <p className="text-sm">支持网易云、QQ、酷我</p>
