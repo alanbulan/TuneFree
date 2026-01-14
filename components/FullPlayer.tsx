@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useLibrary } from '../contexts/LibraryContext';
-import { getLyrics } from '../services/api';
+import { getLyrics, downloadMusic } from '../services/api';
 import { ParsedLyric } from '../types';
-import { ChevronDownIcon, MoreIcon, PlayIcon, PauseIcon, NextIcon, PrevIcon, HeartIcon, HeartFillIcon, MusicIcon } from './Icons';
+import { ChevronDownIcon, MoreIcon, PlayIcon, PauseIcon, NextIcon, PrevIcon, HeartIcon, HeartFillIcon, MusicIcon, DownloadIcon } from './Icons';
 
 interface FullPlayerProps {
   isOpen: boolean;
@@ -134,15 +134,25 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
                     <p className="text-lg text-ios-red/90 font-medium truncate">{currentSong.artist}</p>
                 </div>
              </div>
-             <button 
-                onClick={(e) => { e.stopPropagation(); toggleFavorite(currentSong); }}
-                className="p-2 rounded-full active:scale-90 transition-transform"
-             >
-                {isFavorite(Number(currentSong.id)) ? 
-                    <HeartFillIcon className="text-ios-red" size={28} /> : 
-                    <HeartIcon className="text-gray-400" size={28} />
-                }
-             </button>
+             
+             <div className="flex items-center space-x-3">
+                 <button 
+                    onClick={(e) => { e.stopPropagation(); downloadMusic(currentSong); }}
+                    className="p-2 rounded-full active:scale-90 transition-transform text-gray-500 hover:text-black"
+                    title="下载歌曲"
+                 >
+                    <DownloadIcon size={26} />
+                 </button>
+                 <button 
+                    onClick={(e) => { e.stopPropagation(); toggleFavorite(currentSong); }}
+                    className="p-2 rounded-full active:scale-90 transition-transform"
+                 >
+                    {isFavorite(Number(currentSong.id)) ? 
+                        <HeartFillIcon className="text-ios-red" size={28} /> : 
+                        <HeartIcon className="text-gray-400" size={28} />
+                    }
+                 </button>
+             </div>
         </div>
       </div>
 

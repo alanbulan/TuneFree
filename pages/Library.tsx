@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useLibrary } from '../contexts/LibraryContext';
-import { getOnlinePlaylist, getStatsSummary, getSystemHealth, getTrends } from '../services/api';
-import { Song, Playlist, StatsSummary, TrendStats } from '../types';
-import { PlayIcon, HeartFillIcon, FolderIcon, PlusIcon, TrashIcon, SettingsIcon, DownloadIcon, UploadIcon, MusicIcon } from '../components/Icons';
-import { Activity } from 'lucide-react';
+import { getOnlinePlaylist } from '../services/api';
+import { Song, Playlist } from '../types';
+import { HeartFillIcon, FolderIcon, PlusIcon, TrashIcon, SettingsIcon, DownloadIcon, UploadIcon, MusicIcon } from '../components/Icons';
+import StatusDashboard from '../components/StatusDashboard';
 
 type Tab = 'favorites' | 'playlists' | 'manage' | 'status';
 
@@ -20,17 +21,6 @@ const Library: React.FC = () => {
   const [isImporting, setIsImporting] = useState(false);
 
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
-  const [stats, setStats] = useState<StatsSummary | null>(null);
-  const [trends, setTrends] = useState<TrendStats | null>(null);
-  const [health, setHealth] = useState<string>('checking');
-
-  useEffect(() => {
-    if (activeTab === 'status') {
-        getSystemHealth().then(h => setHealth(h?.status || 'unknown'));
-        getStatsSummary().then(s => setStats(s));
-        getTrends('week').then(t => setTrends(t));
-    }
-  }, [activeTab]);
 
   const handleCreatePlaylist = () => {
     if (newPlaylistName.trim()) {
@@ -112,7 +102,7 @@ const Library: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex bg-gray-200/50 p-1 rounded-xl mb-6 overflow-x-auto">
+      <div className="flex bg-gray-200/50 p-1 rounded-xl mb-6 overflow-x-auto no-scrollbar">
         <button 
             className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap px-2 ${activeTab === 'favorites' ? 'bg-white shadow-sm text-ios-text' : 'text-gray-500'}`}
             onClick={() => { setActiveTab('favorites'); setSelectedPlaylist(null); }}
@@ -135,7 +125,7 @@ const Library: React.FC = () => {
             className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap px-2 ${activeTab === 'status' ? 'bg-white shadow-sm text-ios-text' : 'text-gray-500'}`}
             onClick={() => { setActiveTab('status'); setSelectedPlaylist(null); }}
         >
-            服务状态
+            监控
         </button>
       </div>
 
@@ -271,70 +261,7 @@ const Library: React.FC = () => {
       )}
 
       {activeTab === 'status' && (
-          <div className="space-y-4 pb-24">
-              <div className={`p-5 rounded-2xl shadow-sm text-white ${health === 'healthy' ? 'bg-green-500' : 'bg-orange-500'}`}>
-                  <div className="flex items-center justify-between">
-                      <h3 className="font-bold text-lg">系统状态</h3>
-                      <Activity />
-                  </div>
-                  <p className="mt-2 opacity-90 capitalize">{health}</p>
-              </div>
-
-              {stats && (
-                  <>
-                    <div className="bg-white p-5 rounded-2xl shadow-sm">
-                        <h3 className="font-bold text-gray-800 mb-4">今日概览</h3>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-gray-50 p-4 rounded-xl">
-                                <p className="text-xs text-gray-400">总调用量</p>
-                                <p className="text-xl font-bold text-ios-blue">{stats.today?.total_calls.toLocaleString()}</p>
-                            </div>
-                            <div className="bg-gray-50 p-4 rounded-xl">
-                                <p className="text-xs text-gray-400">成功率</p>
-                                <p className="text-xl font-bold text-ios-blue">{stats.today?.success_rate}%</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-white p-5 rounded-2xl shadow-sm">
-                        <h3 className="font-bold text-gray-800 mb-4">API 调用趋势 (本周)</h3>
-                        <div className="h-40 flex items-end justify-between gap-1 mt-6">
-                            {trends?.trends.slice(-7).map((t, i) => {
-                                const height = Math.max(10, (t.total_calls / (Math.max(...trends.trends.map(x=>x.total_calls)) || 1)) * 100);
-                                return (
-                                    <div key={i} className="flex-1 flex flex-col items-center group relative">
-                                        {/* Tooltip */}
-                                        <div className="absolute bottom-full mb-2 bg-black text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap z-10">
-                                            {t.date}: {t.total_calls} ({t.success_rate}%)
-                                        </div>
-                                        <div 
-                                            className="w-full bg-ios-blue/20 rounded-t-md hover:bg-ios-blue transition-colors relative"
-                                            style={{ height: `${height}%` }}
-                                        ></div>
-                                        <span className="text-[10px] text-gray-400 mt-2 transform -rotate-45 origin-left">{t.date.slice(5)}</span>
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    </div>
-
-                    <div className="bg-white p-5 rounded-2xl shadow-sm">
-                        <h3 className="font-bold text-gray-800 mb-4">今日热门平台</h3>
-                        <div className="space-y-3">
-                            {stats.top_platforms_today?.map((p, i) => (
-                                <div key={p.group_key} className="flex items-center justify-between border-b border-gray-50 pb-2 last:border-0">
-                                    <span className="text-sm font-medium text-gray-600 uppercase flex items-center">
-                                        <span className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-[10px] mr-2 text-gray-400">{i+1}</span>
-                                        {p.group_key}
-                                    </span>
-                                    <span className="text-sm font-bold text-ios-text">{p.total_calls.toLocaleString()}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                  </>
-              )}
-          </div>
+          <StatusDashboard />
       )}
 
       {/* Create Playlist Modal */}

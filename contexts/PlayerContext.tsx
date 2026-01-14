@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import { Song } from '../types';
 import { getSongUrl, getSongInfo } from '../services/api';
@@ -33,6 +34,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   useEffect(() => {
     audioRef.current = new Audio();
+    audioRef.current.preload = "auto"; // Ensure browser buffers ahead
     
     const audio = audioRef.current;
 
@@ -59,18 +61,32 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         console.error("Audio error", e);
         setIsLoading(false);
         setIsPlaying(false);
+        // Optional: Auto-skip on error after delay
+        // setTimeout(() => playNext(), 3000);
+    };
+
+    const handleWaiting = () => {
+        setIsLoading(true);
+    };
+
+    const handleCanPlay = () => {
+        setIsLoading(false);
     };
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('error', handleError);
+    audio.addEventListener('waiting', handleWaiting);
+    audio.addEventListener('canplay', handleCanPlay);
 
     return () => {
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('error', handleError);
+      audio.removeEventListener('waiting', handleWaiting);
+      audio.removeEventListener('canplay', handleCanPlay);
       audio.pause();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,13 +118,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         
         // 2. Get Info (Cover Art) if missing
         if (!song.pic) {
-            const info = await getSongInfo(song.id, song.source);
-            if (info && info.pic) {
-                fullSong.pic = info.pic;
-                setCurrentSong(fullSong); // Update UI with new pic
-                // Update queue with new info
-                setQueue(prev => prev.map(s => s.id === song.id ? { ...s, pic: info.pic } : s));
-            }
+            getSongInfo(song.id, song.source).then(info => {
+                 if (info && info.pic) {
+                    setCurrentSong(prev => prev && prev.id === song.id ? { ...prev, pic: info.pic } : prev);
+                    setQueue(prev => prev.map(s => s.id === song.id ? { ...s, pic: info.pic } : s));
+                 }
+            });
         }
 
         if (url) {
@@ -116,6 +131,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             audioRef.current.src = url;
             audioRef.current.load();
             setIsPlaying(true);
+            // Attempt play
+            const playPromise = audioRef.current.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.error("Play failed", error);
+                    setIsPlaying(false);
+                });
+            }
         } else {
             setIsLoading(false);
             console.error("Could not obtain song URL");
@@ -152,6 +175,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Prevent immediate loop on error
     if (queue.length > 1 || !isPlaying) {
         playSong(queue[nextIndex]);
+    } else if (queue.length > 1) {
+         playSong(queue[nextIndex]);
     }
   }, [currentSong, queue]);
 

@@ -1,4 +1,5 @@
-import { Song, TopList, SystemHealth, StatsSummary, PlatformStats, QpsStats, RequestTypeStats, TrendStats } from '../types';
+
+import { Song, TopList, SystemHealth, StatsSummary, PlatformStats, QpsStats, RequestTypeStats, TrendStats, OverallStats } from '../types';
 
 const API_BASE = 'https://music-dl.sayqz.com/api';
 const STATS_BASE = 'https://music-dl.sayqz.com/stats';
@@ -29,6 +30,7 @@ const fetchApi = async (params: Record<string, string>) => {
 
 const fetchStats = async (endpoint: string, params: Record<string, string> = {}) => {
   const searchParams = new URLSearchParams(params);
+  // Handle root endpoint case specially if endpoint is empty string
   const url = `${STATS_BASE}${endpoint}?${searchParams.toString()}`;
   try {
       const response = await fetch(url, { referrerPolicy: 'no-referrer' });
@@ -79,10 +81,10 @@ export const getLyrics = async (id: string | number, source: string): Promise<st
   }
 };
 
-// 5. Search (Basic) - kept for fallback or specific source search
-export const searchSongs = async (keyword: string, source: string): Promise<Song[]> => {
+// 5. Search (Basic) - Added page param
+export const searchSongs = async (keyword: string, source: string, page: number = 1): Promise<Song[]> => {
   try {
-    const data = await fetchApi({ source, type: 'search', keyword });
+    const data = await fetchApi({ source, type: 'search', keyword, page: String(page) });
     if (data.code === 200 && data.data && data.data.results) {
       return data.data.results.map((item: any) => ({
         id: item.id,
@@ -99,10 +101,10 @@ export const searchSongs = async (keyword: string, source: string): Promise<Song
   }
 };
 
-// 6. Aggregate Search (All Platforms)
-export const searchAggregate = async (keyword: string): Promise<Song[]> => {
+// 6. Aggregate Search (All Platforms) - Added page param
+export const searchAggregate = async (keyword: string, page: number = 1): Promise<Song[]> => {
   try {
-      const data = await fetchApi({ type: 'aggregateSearch', keyword });
+      const data = await fetchApi({ type: 'aggregateSearch', keyword, page: String(page) });
       if (data.code === 200 && data.data && data.data.results) {
           return data.data.results.map((item: any) => ({
             id: item.id,
@@ -205,13 +207,30 @@ export const getSystemHealth = async (): Promise<SystemHealth | null> => {
     }
 };
 
-// 12. Stats Summary
+// Latency Checker (New)
+export const checkLatency = async (): Promise<number> => {
+    const start = performance.now();
+    try {
+        await fetch(`${API_BASE.replace('/api', '')}/health`, { method: 'HEAD', referrerPolicy: 'no-referrer' });
+        const end = performance.now();
+        return Math.round(end - start);
+    } catch (e) {
+        return -1;
+    }
+};
+
+// 12. Get Stats (Overall)
+export const getOverallStats = async (period: string = 'today'): Promise<OverallStats | null> => {
+    // This calls the root /stats endpoint which corresponds to #12
+    const res = await fetchStats('', { period });
+    return res?.data || null;
+};
+
+// 13. Stats Summary
 export const getStatsSummary = async (): Promise<StatsSummary | null> => {
     const res = await fetchStats('/summary');
     return res?.data || null;
 };
-
-// 13. (Redundant with 12 but explicitly defined in docs) - using Summary interface
 
 // 14. Platform Stats
 export const getPlatformStats = async (period: string = 'today'): Promise<PlatformStats | null> => {
@@ -235,4 +254,16 @@ export const getTrends = async (period: string = 'week'): Promise<TrendStats | n
 export const getRequestTypeStats = async (period: string = 'today'): Promise<RequestTypeStats | null> => {
     const res = await fetchStats('/types', { period });
     return res?.data || null;
+};
+
+// --- Helpers ---
+export const downloadMusic = (song: Song) => {
+    if (!song.url) return;
+    const link = document.createElement('a');
+    link.href = song.url;
+    link.target = '_blank';
+    link.download = `${song.artist} - ${song.name}.mp3`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 };

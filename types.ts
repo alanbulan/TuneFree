@@ -1,3 +1,4 @@
+
 export interface Song {
   id: string | number;
   name: string;
@@ -6,7 +7,7 @@ export interface Song {
   pic?: string; // Cover image URL
   url?: string; // Audio URL
   lrc?: string; // Lyric URL or text
-  source: 'netease' | 'kuwo' | 'qq' | 'migu' | string; // Source platform
+  source: 'netease' | 'kuwo' | 'qq' | string; // Source platform
   duration?: number; // Optional, API doesn't always return this in lists
 }
 
@@ -38,6 +39,40 @@ export interface TopList {
 
 export interface SystemHealth {
   status: string;
+  msg?: string;
+  data?: any;
+}
+
+export interface SystemStatus {
+    version?: string;
+    uptime?: number;
+    memory?: {
+        rss: number;
+        heapTotal: number;
+        heapUsed: number;
+    };
+    load?: number[];
+    [key: string]: any;
+}
+
+// Endpoint #12 Data Structure
+export interface OverallStats {
+  period: string;
+  overall: {
+    total_calls: number;
+    success_calls: number;
+    success_rate: number;
+    avg_duration: number; // Unique data point
+  };
+  breakdown: Array<{
+    group_key: string;
+    total_calls: number;
+    success_rate: number;
+  }>;
+  qps: {
+    avg_qps: number;
+    peak_qps: number;
+  };
 }
 
 export interface StatsSummary {
