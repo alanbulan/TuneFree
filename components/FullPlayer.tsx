@@ -22,16 +22,47 @@ interface FullPlayerProps {
 const parseLrc = (lrc: string): ParsedLyric[] => {
   if (!lrc) return [];
   const lines = lrc.split('\n');
-  const result: ParsedLyric[] = [];
+  const raw: { time: number; text: string }[] = [];
   const timeExp = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
+  
+  // 1. Parse all lines first
   for (const line of lines) {
     const match = timeExp.exec(line);
     if (match) {
-      const time = parseInt(match[1]) * 60 + parseInt(match[2]) + parseInt(match[3]) / 1000;
+      const min = parseInt(match[1]);
+      const sec = parseInt(match[2]);
+      const msStr = match[3];
+      // Handle timestamp precision: 2 digits = 1/100s, 3 digits = 1/1000s
+      const msVal = parseInt(msStr);
+      const ms = msStr.length === 2 ? msVal * 10 : msVal;
+      
+      const time = min * 60 + sec + ms / 1000;
       const text = line.replace(timeExp, '').trim();
-      if (text) result.push({ time, text });
+      
+      if (text) {
+          raw.push({ time, text });
+      }
     }
   }
+
+  // 2. Sort by time to ensure order
+  raw.sort((a, b) => a.time - b.time);
+
+  // 3. Merge duplicate timestamps (assume second line is translation)
+  const result: ParsedLyric[] = [];
+  for (const item of raw) {
+      const last = result[result.length - 1];
+      // Check if time is within 0.2s difference (tolerating slight offsets)
+      if (last && Math.abs(last.time - item.time) < 0.2) {
+          if (!last.translation) {
+              last.translation = item.text;
+          }
+          // If translation exists, ignore extra lines or append? Ignoring for now to keep UI clean.
+      } else {
+          result.push({ time: item.time, text: item.text });
+      }
+  }
+
   return result;
 };
 
@@ -175,20 +206,27 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
                     }}
                 >
                     {lyrics.length > 0 ? lyrics.map((line, i) => (
-                        <p 
+                        <div 
                             key={i} 
-                            className={`py-3 text-lg font-bold transition-all duration-300 cursor-pointer ${
+                            className={`py-4 transition-all duration-500 cursor-pointer flex flex-col items-center ${
                                 i === activeLyricIndex 
-                                ? 'text-gray-900 scale-110 opacity-100' 
-                                : 'text-gray-500/60 scale-100 opacity-40 hover:opacity-70'
+                                ? 'opacity-100 scale-105' 
+                                : 'opacity-40 scale-100 hover:opacity-70'
                             }`}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 seek(line.time);
                             }}
                         >
-                            {line.text}
-                        </p>
+                            <p className={`text-xl font-bold leading-relaxed ${i === activeLyricIndex ? 'text-gray-900' : 'text-gray-500/80'}`}>
+                                {line.text}
+                            </p>
+                            {line.translation && (
+                                <p className={`text-base font-medium mt-1 leading-normal ${i === activeLyricIndex ? 'text-gray-700' : 'text-gray-500/60'}`}>
+                                    {line.translation}
+                                </p>
+                            )}
+                        </div>
                     )) : (
                          <div className="flex flex-col items-center justify-center h-full absolute inset-0">
                             {hasSong ? (

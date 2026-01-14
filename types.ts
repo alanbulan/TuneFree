@@ -21,6 +21,7 @@ export interface LyricData {
 export interface ParsedLyric {
   time: number;
   text: string;
+  translation?: string;
 }
 
 export interface Playlist {
