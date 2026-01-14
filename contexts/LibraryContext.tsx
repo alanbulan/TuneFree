@@ -7,6 +7,7 @@ interface LibraryContextType {
   toggleFavorite: (song: Song) => void;
   isFavorite: (songId: number) => boolean;
   createPlaylist: (name: string) => void;
+  importPlaylist: (name: string, songs: Song[]) => void;
   deletePlaylist: (id: string) => void;
   addToPlaylist: (playlistId: string, song: Song) => void;
   removeFromPlaylist: (playlistId: string, songId: number) => void;
@@ -57,6 +58,16 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       name,
       createTime: Date.now(),
       songs: []
+    };
+    setPlaylists(prev => [newPlaylist, ...prev]);
+  };
+
+  const importPlaylist = (name: string, songs: Song[]) => {
+    const newPlaylist: Playlist = {
+      id: Date.now().toString(),
+      name,
+      createTime: Date.now(),
+      songs
     };
     setPlaylists(prev => [newPlaylist, ...prev]);
   };
@@ -119,6 +130,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       toggleFavorite,
       isFavorite,
       createPlaylist,
+      importPlaylist,
       deletePlaylist,
       addToPlaylist,
       removeFromPlaylist,

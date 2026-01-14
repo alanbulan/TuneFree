@@ -34,7 +34,7 @@ export interface TopList {
   picUrl?: string; // Optional if we want to show icons
 }
 
-// --- New Types for Stats API ---
+// --- Stats API Types ---
 
 export interface SystemHealth {
   status: string;
@@ -53,6 +53,16 @@ export interface StatsSummary {
 
 export interface PlatformStats {
   platforms: Record<string, { total_calls: number; success_rate: number }>;
+}
+
+export interface TrendPoint {
+  date: string;
+  total_calls: number;
+  success_rate: number;
+}
+
+export interface TrendStats {
+  trends: TrendPoint[];
 }
 
 export interface QpsStats {

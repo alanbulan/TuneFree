@@ -1,4 +1,4 @@
-import { Song, TopList, SystemHealth, StatsSummary, PlatformStats, QpsStats, RequestTypeStats } from '../types';
+import { Song, TopList, SystemHealth, StatsSummary, PlatformStats, QpsStats, RequestTypeStats, TrendStats } from '../types';
 
 const API_BASE = 'https://api.tunefree.fun/api';
 const STATS_BASE = 'https://api.tunefree.fun/stats';
@@ -187,7 +187,7 @@ export const getTopListDetail = async (id: string | number, source: string): Pro
 // 10. System Status
 export const getSystemStatus = async () => {
     try {
-        const response = await fetch(`https://api.tunefree.fun/status`, { referrerPolicy: 'no-referrer' });
+        const response = await fetch(`${API_BASE.replace('/api', '')}/status`, { referrerPolicy: 'no-referrer' });
         return await response.json();
     } catch(e) {
         return null;
@@ -197,7 +197,7 @@ export const getSystemStatus = async () => {
 // 11. System Health
 export const getSystemHealth = async (): Promise<SystemHealth | null> => {
     try {
-        const response = await fetch(`https://api.tunefree.fun/health`, { referrerPolicy: 'no-referrer' });
+        const response = await fetch(`${API_BASE.replace('/api', '')}/health`, { referrerPolicy: 'no-referrer' });
         const data = await response.json();
         return data.data;
     } catch (e) {
@@ -205,22 +205,33 @@ export const getSystemHealth = async (): Promise<SystemHealth | null> => {
     }
 };
 
-// 12-17. Statistics APIs
+// 12. Stats Summary
 export const getStatsSummary = async (): Promise<StatsSummary | null> => {
     const res = await fetchStats('/summary');
     return res?.data || null;
 };
 
+// 13. (Redundant with 12 but explicitly defined in docs) - using Summary interface
+
+// 14. Platform Stats
 export const getPlatformStats = async (period: string = 'today'): Promise<PlatformStats | null> => {
     const res = await fetchStats('/platforms', { period });
     return res?.data || null;
 };
 
+// 15. QPS Stats
 export const getQpsStats = async (period: string = 'today'): Promise<QpsStats | null> => {
     const res = await fetchStats('/qps', { period });
     return res?.data || null;
 };
 
+// 16. Trends
+export const getTrends = async (period: string = 'week'): Promise<TrendStats | null> => {
+    const res = await fetchStats('/trends', { period });
+    return res?.data || null;
+};
+
+// 17. Request Types
 export const getRequestTypeStats = async (period: string = 'today'): Promise<RequestTypeStats | null> => {
     const res = await fetchStats('/types', { period });
     return res?.data || null;

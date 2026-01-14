@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useLibrary } from '../contexts/LibraryContext';
-import { getOnlinePlaylist, getStatsSummary, getSystemHealth } from '../services/api';
-import { Song, Playlist, StatsSummary } from '../types';
+import { getOnlinePlaylist, getStatsSummary, getSystemHealth, getTrends } from '../services/api';
+import { Song, Playlist, StatsSummary, TrendStats } from '../types';
 import { PlayIcon, HeartFillIcon, FolderIcon, PlusIcon, TrashIcon, SettingsIcon, DownloadIcon, UploadIcon, MusicIcon } from '../components/Icons';
 import { Activity } from 'lucide-react';
 
@@ -10,7 +10,7 @@ type Tab = 'favorites' | 'playlists' | 'manage' | 'status';
 
 const Library: React.FC = () => {
   const { queue, playSong } = usePlayer();
-  const { favorites, playlists, createPlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist, exportData, importData } = useLibrary();
+  const { favorites, playlists, createPlaylist, importPlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist, exportData, importData } = useLibrary();
   const [activeTab, setActiveTab] = useState<Tab>('favorites');
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -21,12 +21,14 @@ const Library: React.FC = () => {
 
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
   const [stats, setStats] = useState<StatsSummary | null>(null);
+  const [trends, setTrends] = useState<TrendStats | null>(null);
   const [health, setHealth] = useState<string>('checking');
 
   useEffect(() => {
     if (activeTab === 'status') {
         getSystemHealth().then(h => setHealth(h?.status || 'unknown'));
         getStatsSummary().then(s => setStats(s));
+        getTrends('week').then(t => setTrends(t));
     }
   }, [activeTab]);
 
@@ -43,26 +45,8 @@ const Library: React.FC = () => {
       setIsImporting(true);
       const result = await getOnlinePlaylist(importId, importSource);
       if (result) {
-          createPlaylist(result.name);
-          // Wait a tick for playlist creation (simplification) - in real app, createPlaylist should return ID
-          // Here we just add to the most recent one or handle differently.
-          // For now, we will just manually construct and append.
-          // Since createPlaylist is sync in context, we need to grab the latest or refactor context.
-          // Let's just create a new one with songs directly for this feature:
-          // NOTE: LibraryContext.createPlaylist doesn't accept songs. We'll improve this later or assume user adds manually. 
-          // Actually, let's update context usage:
-          const newId = Date.now().toString();
-          const newPl: Playlist = {
-             id: newId,
-             name: result.name,
-             createTime: Date.now(),
-             songs: result.songs
-          };
-          // We can't directly inject into context without exposing a method. 
-          // Let's use export/import logic hack or assume context updates.
-          // For this specific requirement, let's just alert success and user sees it?
-          // To do it properly, we should assume createPlaylist works.
-          alert(`成功获取歌单 "${result.name}"，包含 ${result.songs.length} 首歌曲。请手动新建歌单添加。`);
+          importPlaylist(result.name, result.songs);
+          alert(`成功导入歌单 "${result.name}"`);
       } else {
           alert('导入失败，请检查ID或源。');
       }
@@ -313,12 +297,37 @@ const Library: React.FC = () => {
                     </div>
 
                     <div className="bg-white p-5 rounded-2xl shadow-sm">
+                        <h3 className="font-bold text-gray-800 mb-4">API 调用趋势 (本周)</h3>
+                        <div className="h-40 flex items-end justify-between gap-1 mt-6">
+                            {trends?.trends.slice(-7).map((t, i) => {
+                                const height = Math.max(10, (t.total_calls / (Math.max(...trends.trends.map(x=>x.total_calls)) || 1)) * 100);
+                                return (
+                                    <div key={i} className="flex-1 flex flex-col items-center group relative">
+                                        {/* Tooltip */}
+                                        <div className="absolute bottom-full mb-2 bg-black text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap z-10">
+                                            {t.date}: {t.total_calls} ({t.success_rate}%)
+                                        </div>
+                                        <div 
+                                            className="w-full bg-ios-blue/20 rounded-t-md hover:bg-ios-blue transition-colors relative"
+                                            style={{ height: `${height}%` }}
+                                        ></div>
+                                        <span className="text-[10px] text-gray-400 mt-2 transform -rotate-45 origin-left">{t.date.slice(5)}</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-5 rounded-2xl shadow-sm">
                         <h3 className="font-bold text-gray-800 mb-4">今日热门平台</h3>
                         <div className="space-y-3">
                             {stats.top_platforms_today?.map((p, i) => (
-                                <div key={p.group_key} className="flex items-center justify-between">
-                                    <span className="text-sm font-medium text-gray-600 uppercase">{i+1}. {p.group_key}</span>
-                                    <span className="text-sm font-bold">{p.total_calls.toLocaleString()} 次</span>
+                                <div key={p.group_key} className="flex items-center justify-between border-b border-gray-50 pb-2 last:border-0">
+                                    <span className="text-sm font-medium text-gray-600 uppercase flex items-center">
+                                        <span className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-[10px] mr-2 text-gray-400">{i+1}</span>
+                                        {p.group_key}
+                                    </span>
+                                    <span className="text-sm font-bold text-ios-text">{p.total_calls.toLocaleString()}</span>
                                 </div>
                             ))}
                         </div>
@@ -381,6 +390,9 @@ const Library: React.FC = () => {
                         value={importId}
                         onChange={e => setImportId(e.target.value)}
                       />
+                      <p className="text-xs text-gray-400">
+                          提示: 请输入对应平台的纯数字 ID。导入可能需要几秒钟。
+                      </p>
                   </div>
                   
                   <div className="flex space-x-3">
