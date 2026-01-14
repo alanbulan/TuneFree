@@ -8,6 +8,7 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
   },
+  base: './',
   server: {
     port: 3000
   }
