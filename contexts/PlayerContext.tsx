@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
-import { Song } from '../types';
+import { Song, PlayMode } from '../types';
 import { getSongUrl, getSongInfo } from '../services/api';
 
 interface PlayerContextType {
@@ -10,13 +10,18 @@ interface PlayerContextType {
   currentTime: number;
   duration: number;
   volume: number;
+  playMode: PlayMode;
+  queue: Song[];
+  analyser: AnalyserNode | null;
   playSong: (song: Song) => Promise<void>;
   togglePlay: () => void;
   seek: (time: number) => void;
-  playNext: () => void;
+  playNext: (force?: boolean) => void;
   playPrev: () => void;
   addToQueue: (song: Song) => void;
-  queue: Song[];
+  removeFromQueue: (songId: string | number) => void;
+  togglePlayMode: () => void;
+  clearQueue: () => void;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -29,14 +34,37 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [queue, setQueue] = useState<Song[]>([]);
+  const [playMode, setPlayMode] = useState<PlayMode>('sequence');
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
-    audioRef.current = new Audio();
-    audioRef.current.preload = "auto"; // Ensure browser buffers ahead
+    const audio = new Audio();
+    audio.crossOrigin = "anonymous"; // Required for real audio visualization
+    audioRef.current = audio;
+    audio.preload = "auto"; 
     
-    const audio = audioRef.current;
+    // Initialize Web Audio API
+    try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContext) {
+            const ctx = new AudioContext();
+            audioCtxRef.current = ctx;
+            const analyserNode = ctx.createAnalyser();
+            analyserNode.fftSize = 512;
+            
+            // Connect nodes: Source -> Analyser -> Destination
+            const source = ctx.createMediaElementSource(audio);
+            source.connect(analyserNode);
+            analyserNode.connect(ctx.destination);
+            
+            setAnalyser(analyserNode);
+        }
+    } catch (e) {
+        console.warn("Web Audio API setup failed or restricted:", e);
+    }
 
     const handleTimeUpdate = () => {
       setCurrentTime(audio.currentTime);
@@ -46,6 +74,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setDuration(audio.duration);
       setIsLoading(false);
       if (isPlaying) {
+         // Resume context if suspended (browser autoplay policy)
+         if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+             audioCtxRef.current.resume();
+         }
          audio.play().catch(e => {
             console.warn("Autoplay blocked", e);
             setIsPlaying(false);
@@ -54,15 +86,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     const handleEnded = () => {
-      playNext();
+      playNext(false); // Auto play next
     };
 
     const handleError = (e: any) => {
         console.error("Audio error", e);
         setIsLoading(false);
         setIsPlaying(false);
-        // Optional: Auto-skip on error after delay
-        // setTimeout(() => playNext(), 3000);
     };
 
     const handleWaiting = () => {
@@ -88,50 +118,54 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       audio.removeEventListener('waiting', handleWaiting);
       audio.removeEventListener('canplay', handleCanPlay);
       audio.pause();
+      if (audioCtxRef.current) {
+          audioCtxRef.current.close();
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // Intentionally empty to run once
 
   const playSong = async (song: Song) => {
     if (!audioRef.current) return;
 
-    // Toggle if same song
     if (currentSong?.id === song.id) {
         togglePlay();
         return;
     }
 
     setIsLoading(true);
-    
-    // Optimistic update
     let fullSong = { ...song };
     setCurrentSong(fullSong);
 
-    // Queue logic
-    if (!queue.find(s => s.id === song.id)) {
-        setQueue(prev => [...prev, fullSong]);
-    }
+    // Add to queue if not present
+    setQueue(prev => {
+        if (prev.find(s => s.id === song.id)) return prev;
+        return [...prev, fullSong];
+    });
 
     try {
-        // 1. Get URL (The API returns a redirect link, which we can use directly)
         const url = await getSongUrl(song.id, song.source);
         
-        // 2. Get Info (Cover Art) if missing
         if (!song.pic) {
             getSongInfo(song.id, song.source).then(info => {
                  if (info && info.pic) {
-                    setCurrentSong(prev => prev && prev.id === song.id ? { ...prev, pic: info.pic } : prev);
-                    setQueue(prev => prev.map(s => s.id === song.id ? { ...s, pic: info.pic } : s));
+                    const updated = { ...fullSong, pic: info.pic };
+                    setCurrentSong(prev => prev && prev.id === song.id ? updated : prev);
+                    setQueue(prev => prev.map(s => s.id === song.id ? updated : s));
                  }
             });
         }
 
         if (url) {
-            fullSong.url = url; // Store constructed URL
+            fullSong.url = url;
             audioRef.current.src = url;
             audioRef.current.load();
             setIsPlaying(true);
-            // Attempt play
+            
+            if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+                audioCtxRef.current.resume();
+            }
+
             const playPromise = audioRef.current.play();
             if (playPromise !== undefined) {
                 playPromise.catch(error => {
@@ -152,6 +186,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const togglePlay = () => {
     if (!audioRef.current || !currentSong) return;
     
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume();
+    }
+
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
@@ -168,30 +206,70 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const playNext = useCallback(() => {
+  // force: true means user clicked "Next", false means auto-ended
+  const playNext = useCallback((force = true) => {
     if (queue.length === 0 || !currentSong) return;
-    const currentIndex = queue.findIndex(s => s.id === currentSong.id);
-    const nextIndex = (currentIndex + 1) % queue.length;
-    // Prevent immediate loop on error
-    if (queue.length > 1 || !isPlaying) {
-        playSong(queue[nextIndex]);
-    } else if (queue.length > 1) {
-         playSong(queue[nextIndex]);
+
+    // Handle Loop Single mode on auto-end
+    if (!force && playMode === 'loop') {
+        if (audioRef.current) {
+            audioRef.current.currentTime = 0;
+            audioRef.current.play();
+        }
+        return;
     }
-  }, [currentSong, queue]);
+
+    const currentIndex = queue.findIndex(s => s.id === currentSong.id);
+    let nextIndex = 0;
+
+    if (playMode === 'shuffle') {
+        // Simple random next
+        do {
+            nextIndex = Math.floor(Math.random() * queue.length);
+        } while (queue.length > 1 && nextIndex === currentIndex);
+    } else {
+        // Sequence or when user forces next in loop mode
+        nextIndex = (currentIndex + 1) % queue.length;
+    }
+
+    playSong(queue[nextIndex]);
+  }, [currentSong, queue, playMode]);
 
   const playPrev = useCallback(() => {
       if (queue.length === 0 || !currentSong) return;
       const currentIndex = queue.findIndex(s => s.id === currentSong.id);
-      const prevIndex = (currentIndex - 1 + queue.length) % queue.length;
+      let prevIndex = 0;
+
+      if (playMode === 'shuffle') {
+          prevIndex = Math.floor(Math.random() * queue.length);
+      } else {
+          prevIndex = (currentIndex - 1 + queue.length) % queue.length;
+      }
       playSong(queue[prevIndex]);
-  }, [currentSong, queue]);
+  }, [currentSong, queue, playMode]);
 
   const addToQueue = (song: Song) => {
     setQueue(prev => {
         if (prev.find(s => s.id === song.id)) return prev;
         return [...prev, song];
     });
+  };
+
+  const removeFromQueue = (songId: string | number) => {
+      setQueue(prev => prev.filter(s => s.id !== songId));
+  };
+
+  const clearQueue = () => {
+      setQueue([]);
+      // Optionally stop playing or keep current song
+  };
+
+  const togglePlayMode = () => {
+      setPlayMode(prev => {
+          if (prev === 'sequence') return 'loop';
+          if (prev === 'loop') return 'shuffle';
+          return 'sequence';
+      });
   };
 
   return (
@@ -202,13 +280,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       currentTime,
       duration,
       volume,
+      playMode,
+      queue,
+      analyser,
       playSong,
       togglePlay,
       seek,
       playNext,
       playPrev,
       addToQueue,
-      queue
+      removeFromQueue,
+      togglePlayMode,
+      clearQueue
     }}>
       {children}
     </PlayerContext.Provider>

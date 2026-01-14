@@ -64,6 +64,11 @@ export const getSongUrl = async (id: string | number, source: string): Promise<s
     return `${API_BASE}/?source=${source}&id=${id}&type=url&br=320k`;
 };
 
+// 2b. Get Download URL with specific Quality
+export const getDownloadUrl = (id: string | number, source: string, br: string): string => {
+    return `${API_BASE}/?source=${source}&id=${id}&type=url&br=${br}`;
+};
+
 // 3. Get Pic (Constructed URL helper)
 export const getPicUrl = (id: string | number, source: string) => {
     return `${API_BASE}/?source=${source}&id=${id}&type=pic`;
@@ -92,7 +97,8 @@ export const searchSongs = async (keyword: string, source: string, page: number 
         artist: Array.isArray(item.artist) ? item.artist.join('/') : (item.artist || "Unknown"),
         album: item.album || "",
         source: item.platform || source,
-        pic: item.pic_id ? getPicUrl(item.pic_id, source) : undefined
+        pic: item.pic_id ? getPicUrl(item.pic_id, source) : undefined,
+        types: item.types || []
       }));
     }
     return [];
@@ -113,7 +119,8 @@ export const searchAggregate = async (keyword: string, page: number = 1): Promis
             album: item.album || "",
             source: item.platform,
             // If pic is not provided, we might need to fetch info later or construct if pic_id exists
-            pic: item.pic || (item.pic_id ? getPicUrl(item.pic_id, item.platform) : undefined)
+            pic: item.pic || (item.pic_id ? getPicUrl(item.pic_id, item.platform) : undefined),
+            types: item.types || []
           }));
       }
       return [];
@@ -134,7 +141,8 @@ export const getOnlinePlaylist = async (id: string, source: string): Promise<{na
                 artist: item.artist_name || (Array.isArray(item.artist) ? item.artist.join(',') : item.artist) || "Unknown",
                 album: item.album_title || item.album || "",
                 source: source,
-                pic: item.pic || item.picUrl
+                pic: item.pic || item.picUrl,
+                types: item.types || []
             }));
             return {
                 name: data.data.info?.name || "Imported Playlist",
@@ -177,7 +185,8 @@ export const getTopListDetail = async (id: string | number, source: string): Pro
             artist: item.artist_name || (Array.isArray(item.artist) ? item.artist.join(',') : item.artist) || "Unknown",
             album: item.album_title || item.album || "",
             source: source,
-            pic: item.pic || item.picUrl
+            pic: item.pic || item.picUrl,
+            types: item.types || []
         }));
     }
     return [];
@@ -257,13 +266,18 @@ export const getRequestTypeStats = async (period: string = 'today'): Promise<Req
 };
 
 // --- Helpers ---
-export const downloadMusic = (song: Song) => {
-    if (!song.url) return;
+export const triggerDownload = (url: string, filename: string) => {
     const link = document.createElement('a');
-    link.href = song.url;
+    link.href = url;
     link.target = '_blank';
-    link.download = `${song.artist} - ${song.name}.mp3`;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+};
+
+export const downloadMusic = (song: Song) => {
+    // Deprecated in favor of UI with selection, but kept for compatibility
+    if (!song.url) return;
+    triggerDownload(song.url, `${song.artist} - ${song.name}.mp3`);
 };

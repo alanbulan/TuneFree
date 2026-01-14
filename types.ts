@@ -9,7 +9,10 @@ export interface Song {
   lrc?: string; // Lyric URL or text
   source: 'netease' | 'kuwo' | 'qq' | string; // Source platform
   duration?: number; // Optional, API doesn't always return this in lists
+  types?: string[]; // Available qualities: 128k, 320k, flac, flac24bit
 }
+
+export type PlayMode = 'sequence' | 'loop' | 'shuffle';
 
 export interface LyricData {
   lrc: string; // The API returns plain text for type=lrc
