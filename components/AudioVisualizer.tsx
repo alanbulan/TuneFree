@@ -10,88 +10,144 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
   const { analyser } = usePlayer();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Simulation State Refs (to persist across renders)
+  const simDataRef = useRef<{
+      values: number[], 
+      targets: number[],
+      phase: number
+  }>({
+      values: new Array(30).fill(0),
+      targets: new Array(30).fill(0),
+      phase: 0
+  });
+
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !analyser) return;
+    if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Use a smaller FFT size for visualizer to have wider bars
-    const bufferLength = analyser.frequencyBinCount; 
-    const dataArray = new Uint8Array(bufferLength);
+    const barCount = 30;
+    const dataArray = new Uint8Array(analyser ? analyser.frequencyBinCount : barCount);
     let animationId: number;
 
     const draw = () => {
       animationId = requestAnimationFrame(draw);
       
-      analyser.getByteFrequencyData(dataArray);
-
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
       const width = canvas.width;
       const height = canvas.height;
+      ctx.clearRect(0, 0, width, height);
       
-      // We only use the lower frequency range for better visuals (first 2/3 of bins)
-      const usableBins = Math.floor(bufferLength * 0.7);
-      const barWidth = (width / usableBins) * 1.5; 
+      const barWidth = (width / barCount) * 0.7; 
+      const gap = (width / barCount) * 0.3;
       let x = 0;
 
-      for (let i = 0; i < usableBins; i++) {
-        const barHeight = (dataArray[i] / 255) * height;
+      if (analyser) {
+          // --- REAL MODE (Desktop/Android) ---
+          analyser.getByteFrequencyData(dataArray);
+          
+          const step = Math.floor(dataArray.length / barCount);
+          for (let i = 0; i < barCount; i++) {
+            let sum = 0;
+            for(let j=0; j<step; j++) {
+                sum += dataArray[i * step + j];
+            }
+            const value = sum / step;
+            renderBar(ctx, x, value, height, barWidth);
+            x += barWidth + gap;
+          }
 
-        // Draw curved/rounded bar
-        ctx.fillStyle = `rgba(150, 150, 150, ${dataArray[i] / 255 * 0.8})`; 
-        
-        // Center alignment logic if desired, but left-to-right is standard for frequency
-        // Let's mirror it for "Pop" aesthetic? No, standard spectrum is fine.
-        
-        // Draw Rounded Rect manually or just Rect
-        if (barHeight > 0) {
-            const y = height - barHeight;
-            const radius = 2;
-            
-            ctx.beginPath();
-            ctx.moveTo(x, y + radius);
-            ctx.lineTo(x, height);
-            ctx.lineTo(x + barWidth - 1, height);
-            ctx.lineTo(x + barWidth - 1, y + radius);
-            ctx.quadraticCurveTo(x + barWidth - 1, y, x + barWidth - 1 - radius, y);
-            ctx.lineTo(x + radius, y);
-            ctx.quadraticCurveTo(x, y, x, y + radius);
-            ctx.fill();
-        }
+      } else {
+          // --- HIGH-FIDELITY SIMULATION MODE (iOS) ---
+          // Mimics gravity, kick drums, and high-frequency jitter
+          const sim = simDataRef.current;
+          sim.phase += 0.05;
 
-        x += barWidth;
+          // 1. Simulate Kick Drum (Low Freqs - Left Side)
+          // Every ~60 frames (1 sec approx), boost bass
+          if (Math.random() < 0.05) { // 5% chance per frame for a beat
+              for(let i=0; i<8; i++) {
+                  sim.targets[i] = 200 + Math.random() * 55;
+              }
+          }
+
+          // 2. Simulate Mids/Highs (Random Jitter)
+          for(let i=8; i<barCount; i++) {
+              if (Math.random() < 0.2) {
+                  sim.targets[i] = Math.random() * 150; 
+              }
+          }
+
+          // 3. Physics & Interpolation
+          for (let i = 0; i < barCount; i++) {
+             // Gravity: Targets decay continuously
+             sim.targets[i] -= 8;
+             if (sim.targets[i] < 0) sim.targets[i] = 0;
+
+             // Elastic Movement towards target
+             const diff = sim.targets[i] - sim.values[i];
+             sim.values[i] += diff * 0.3; 
+
+             // Add Sine wave flow for "alive" feel
+             const flow = Math.sin(i * 0.2 + sim.phase) * 10;
+             let displayValue = sim.values[i] + flow;
+
+             // Clamp
+             displayValue = Math.max(0, Math.min(255, displayValue));
+             
+             renderBar(ctx, x, displayValue, height, barWidth);
+             x += barWidth + gap;
+          }
       }
+    };
+
+    const renderBar = (context: CanvasRenderingContext2D, x: number, value: number, canvasHeight: number, bWidth: number) => {
+        // Non-linear height scaling for better look
+        const percent = value / 255;
+        const barHeight = Math.pow(percent, 1.5) * canvasHeight; 
+        
+        if (barHeight > 2) {
+            const y = canvasHeight - barHeight;
+            const radius = 2; 
+            
+            // Gradient or Dynamic Color
+            // Low freq (left) = slightly darker/redder? Keep simple gray/black for iOS style
+            const opacity = 0.3 + (percent * 0.7);
+            context.fillStyle = `rgba(100, 100, 100, ${opacity})`; 
+            
+            context.beginPath();
+            context.moveTo(x, canvasHeight);
+            context.lineTo(x, y + radius);
+            context.quadraticCurveTo(x, y, x + radius, y);
+            context.lineTo(x + bWidth - radius, y);
+            context.quadraticCurveTo(x + bWidth, y, x + bWidth, y + radius);
+            context.lineTo(x + bWidth, canvasHeight);
+            context.fill();
+        }
     };
 
     if (isPlaying) {
         draw();
     } else {
-        // Draw one last frame (flat or current state) or clear
-        // Ideally we keep the bars if paused, but clearing implies stopped
-        // Let's clear to indicate pause state visually
+        // Resting State
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        // Draw a flat line or simple dots to show "ready"
-        ctx.fillStyle = "rgba(200, 200, 200, 0.3)";
-        ctx.fillRect(0, canvas.height - 2, canvas.width, 2);
+        const barWidth = (canvas.width / barCount) * 0.7;
+        const gap = (canvas.width / barCount) * 0.3;
+        let x = 0;
+        
+        for (let i = 0; i < barCount; i++) {
+             ctx.fillStyle = "rgba(200, 200, 200, 0.4)";
+             const h = 3; 
+             const y = canvas.height - h;
+             ctx.fillRect(x, y, barWidth, h);
+             x += barWidth + gap;
+        }
+        cancelAnimationFrame(animationId);
     }
 
-    return () => {
-      cancelAnimationFrame(animationId);
-    };
+    return () => cancelAnimationFrame(animationId);
   }, [analyser, isPlaying]);
-
-  // Fallback if no analyser (e.g. CORS failed)
-  if (!analyser) {
-      return (
-          <div className="w-full h-8 flex items-end justify-center opacity-30">
-              <div className="w-full h-[2px] bg-gray-400"></div>
-          </div>
-      );
-  }
 
   return (
     <canvas 

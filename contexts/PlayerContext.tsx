@@ -67,32 +67,39 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // --- Audio Element Initialization ---
   useEffect(() => {
     const audio = new Audio();
-    audio.crossOrigin = "anonymous"; // Required for real audio visualization
-    // Important for iOS background audio:
+    audio.crossOrigin = "anonymous"; 
     audio.preload = "auto"; 
-    // While technically not part of HTMLAudioElement standard type, iOS respects this attribute in some contexts
     (audio as any).playsInline = true; 
     
     audioRef.current = audio;
     
-    // Initialize Web Audio API
-    try {
-        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioContext) {
-            const ctx = new AudioContext();
-            audioCtxRef.current = ctx;
-            const analyserNode = ctx.createAnalyser();
-            analyserNode.fftSize = 512;
-            
-            // Connect nodes: Source -> Analyser -> Destination
-            const source = ctx.createMediaElementSource(audio);
-            source.connect(analyserNode);
-            analyserNode.connect(ctx.destination);
-            
-            setAnalyser(analyserNode);
+    // --- COMPATIBILITY FIX FOR IOS/SAFARI ---
+    // According to Apple's guidelines and practical PWA behavior:
+    // Routing audio through Web Audio API (createMediaElementSource) causes the audio to be controlled by the AudioContext clock.
+    // When iOS Safari backgrounds a tab, it suspends the AudioContext to save power, killing the audio stream.
+    // To ensure persistent background playback, we MUST use the native <audio> element output on iOS.
+    // We disable the AnalyserNode on iOS, which triggers the "Simulated" visualizer mode in the UI.
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    if (!isIOS) {
+        try {
+            const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+            if (AudioContext) {
+                const ctx = new AudioContext();
+                audioCtxRef.current = ctx;
+                const analyserNode = ctx.createAnalyser();
+                analyserNode.fftSize = 512;
+                
+                // Connect nodes: Source -> Analyser -> Destination
+                const source = ctx.createMediaElementSource(audio);
+                source.connect(analyserNode);
+                analyserNode.connect(ctx.destination);
+                
+                setAnalyser(analyserNode);
+            }
+        } catch (e) {
+            console.warn("Web Audio API setup failed:", e);
         }
-    } catch (e) {
-        console.warn("Web Audio API setup failed or restricted:", e);
     }
 
     const handleTimeUpdate = () => {
@@ -102,15 +109,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const handleLoadedMetadata = () => {
       setDuration(audio.duration);
       setIsLoading(false);
-      if (isPlaying) {
-         // Resume context if suspended (browser autoplay policy)
-         if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-             audioCtxRef.current.resume();
-         }
-         audio.play().catch(e => {
-            console.warn("Autoplay blocked", e);
-            setIsPlaying(false);
-         });
+      // Update Media Session position
+      if ('mediaSession' in navigator && !isNaN(audio.duration)) {
+         try {
+             navigator.mediaSession.setPositionState({
+                 duration: audio.duration,
+                 playbackRate: audio.playbackRate,
+                 position: audio.currentTime
+             });
+         } catch(e) { /* ignore errors for infinite duration or similar */ }
       }
     };
 
@@ -152,16 +159,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Intentionally empty to run once
+  }, []); 
 
-  // --- Logic Definitions (Hoisted for Media Session) ---
+  // --- Logic Definitions ---
 
   const playSong = async (song: Song) => {
     if (!audioRef.current) return;
 
-    // Check if we are trying to play the same song
+    // Toggle if same song
     if (currentSong?.id === song.id) {
-        if (audioRef.current.currentSrc || (audioRef.current.src && audioRef.current.src !== window.location.href)) {
+        // If it has a src and is basically ready
+        if (audioRef.current.src && audioRef.current.src !== window.location.href) {
              togglePlay();
              return;
         }
@@ -171,7 +179,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     let fullSong = { ...song };
     setCurrentSong(fullSong);
 
-    // Add to queue if not present
+    // Queue management
     setQueue(prev => {
         if (prev.find(s => s.id === song.id)) return prev;
         return [...prev, fullSong];
@@ -180,6 +188,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
         const url = await getSongUrl(song.id, song.source);
         
+        // Optimistic UI update for pic
         if (!song.pic) {
             getSongInfo(song.id, song.source).then(info => {
                  if (info && info.pic) {
@@ -194,22 +203,26 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             fullSong.url = url;
             audioRef.current.src = url;
             audioRef.current.load();
-            setIsPlaying(true);
             
+            // Resume Context (Desktop only)
             if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
                 audioCtxRef.current.resume();
             }
 
             const playPromise = audioRef.current.play();
             if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    console.error("Play failed", error);
-                    setIsPlaying(false);
-                });
+                playPromise
+                    .then(() => {
+                        setIsPlaying(true);
+                        updateMediaSession(fullSong, 'playing');
+                    })
+                    .catch(error => {
+                        console.error("Play failed", error);
+                        setIsPlaying(false);
+                    });
             }
         } else {
             setIsLoading(false);
-            console.error("Could not obtain song URL");
         }
     } catch (err) {
         setIsLoading(false);
@@ -220,7 +233,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const togglePlay = useCallback(() => {
     if (!audioRef.current || !currentSong) return;
     
-    // Safety check for restored state without src
     if (!audioRef.current.src || audioRef.current.src === window.location.href) {
         playSong(currentSong);
         return;
@@ -233,16 +245,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
+      updateMediaSession(currentSong, 'paused');
     } else {
       audioRef.current.play().catch(e => console.error(e));
       setIsPlaying(true);
+      updateMediaSession(currentSong, 'playing');
     }
-  }, [isPlaying, currentSong]); // Dependencies are important here
+  }, [isPlaying, currentSong]);
 
   const seek = useCallback((time: number) => {
     if (audioRef.current) {
       audioRef.current.currentTime = time;
       setCurrentTime(time);
+      updatePositionState();
     }
   }, []);
 
@@ -284,44 +299,62 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       playSong(queue[prevIndex]);
   }, [currentSong, queue, playMode]);
 
-  // --- Media Session API Integration (iOS Background Play) ---
-  useEffect(() => {
-    if ('mediaSession' in navigator && currentSong) {
-        // 1. Update Metadata
-        navigator.mediaSession.metadata = new MediaMetadata({
-            title: currentSong.name,
-            artist: currentSong.artist,
-            album: currentSong.album || 'TuneFree Music',
-            artwork: currentSong.pic ? [
-                { src: currentSong.pic, sizes: '96x96', type: 'image/jpeg' },
-                { src: currentSong.pic, sizes: '128x128', type: 'image/jpeg' },
-                { src: currentSong.pic, sizes: '192x192', type: 'image/jpeg' },
-                { src: currentSong.pic, sizes: '256x256', type: 'image/jpeg' },
-                { src: currentSong.pic, sizes: '384x384', type: 'image/jpeg' },
-                { src: currentSong.pic, sizes: '512x512', type: 'image/jpeg' },
-            ] : []
-        });
+  // --- Helper for Media Session ---
+  const updateMediaSession = (song: Song | null, state: 'playing' | 'paused') => {
+      if (!('mediaSession' in navigator) || !song) return;
+      
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: song.name,
+        artist: song.artist,
+        album: song.album || 'TuneFree Music',
+        artwork: song.pic ? [
+            { src: song.pic, sizes: '96x96', type: 'image/jpeg' },
+            { src: song.pic, sizes: '128x128', type: 'image/jpeg' },
+            { src: song.pic, sizes: '192x192', type: 'image/jpeg' },
+            { src: song.pic, sizes: '256x256', type: 'image/jpeg' },
+            { src: song.pic, sizes: '384x384', type: 'image/jpeg' },
+            { src: song.pic, sizes: '512x512', type: 'image/jpeg' },
+        ] : []
+      });
 
-        // 2. Set Action Handlers
-        // We redefine these when dependencies (like queue or play function) change
-        // to ensure the lock screen controls call the latest version of the functions.
+      navigator.mediaSession.playbackState = state;
+  };
+
+  const updatePositionState = () => {
+      if ('mediaSession' in navigator && audioRef.current && !isNaN(audioRef.current.duration)) {
+         try {
+            navigator.mediaSession.setPositionState({
+                duration: audioRef.current.duration,
+                playbackRate: audioRef.current.playbackRate,
+                position: audioRef.current.currentTime
+            });
+         } catch (e) { /* ignore */ }
+      }
+  };
+
+  // --- Media Session Handlers Registration ---
+  useEffect(() => {
+    if ('mediaSession' in navigator) {
+        // We bind the handlers once, they will rely on the latest closures or refs if we used refs, 
+        // BUT for React, we need to ensure these functions capture the correct state/props.
+        // Re-registering them when dependencies change is the safest way in useEffect.
+        
         navigator.mediaSession.setActionHandler('play', () => togglePlay());
         navigator.mediaSession.setActionHandler('pause', () => togglePlay());
         navigator.mediaSession.setActionHandler('previoustrack', () => playPrev());
         navigator.mediaSession.setActionHandler('nexttrack', () => playNext(true));
         navigator.mediaSession.setActionHandler('seekto', (details) => {
-            if (details.seekTime !== undefined) {
-                seek(details.seekTime);
-            }
+            if (details.seekTime !== undefined) seek(details.seekTime);
         });
     }
+  }, [togglePlay, playNext, playPrev, seek]);
 
-    // 3. Update Playback State
-    if ('mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
-    }
-
-  }, [currentSong, isPlaying, togglePlay, playNext, playPrev, seek]);
+  // Ensure metadata is fresh on song change
+  useEffect(() => {
+      if(currentSong) {
+          updateMediaSession(currentSong, isPlaying ? 'playing' : 'paused');
+      }
+  }, [currentSong]);
 
   const addToQueue = (song: Song) => {
     setQueue(prev => {
