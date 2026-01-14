@@ -206,7 +206,8 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
           </div>
 
           {/* Song Info */}
-          <div className="px-8 mt-4 mb-2 min-h-[80px] flex items-center justify-between">
+          {/* Added z-30 to ensure this layer stays above the cover/lyrics layers which have lower z-indexes */}
+          <div className="relative z-30 px-8 mt-4 mb-2 min-h-[80px] flex items-center justify-between pointer-events-auto">
              <div className="flex-1 min-w-0 pr-4">
                 <h2 className="text-2xl font-bold truncate text-black leading-tight">
                     {hasSong ? currentSong.name : "未播放"}
@@ -222,14 +223,14 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
              <div className="flex items-center space-x-3">
                  <button 
                     onClick={(e) => { e.stopPropagation(); if (hasSong) setShowDownload(true); }}
-                    className={`p-2 rounded-full active:scale-90 transition-transform ${hasSong ? 'text-gray-500 hover:text-black' : 'text-gray-300'}`}
+                    className={`p-3 -m-1 rounded-full active:scale-90 transition-transform ${hasSong ? 'text-gray-500 hover:text-black' : 'text-gray-300'}`}
                     disabled={!hasSong}
                  >
                     <DownloadIcon size={24} />
                  </button>
                  <button 
                     onClick={(e) => { e.stopPropagation(); if (hasSong) toggleFavorite(currentSong); }}
-                    className={`p-2 rounded-full active:scale-90 transition-transform ${!hasSong ? 'opacity-50' : ''}`}
+                    className={`p-3 -m-1 rounded-full active:scale-90 transition-transform ${!hasSong ? 'opacity-50' : ''}`}
                     disabled={!hasSong}
                  >
                     {hasSong && isFavorite(Number(currentSong.id)) ? 
@@ -242,7 +243,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
       </div>
 
       {/* --- Footer Controls --- */}
-      <div className="relative z-10 w-full px-8 pb-safe mb-4">
+      <div className="relative z-30 w-full px-8 pb-safe mb-4">
         
         {/* Audio Visualizer */}
         <div className="mb-2 h-6 flex items-end">
