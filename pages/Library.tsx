@@ -234,13 +234,13 @@ const Library: React.FC = () => {
                         onClick={exportData}
                         className="flex items-center justify-center space-x-2 w-full py-3 bg-ios-blue text-white rounded-xl font-medium active:opacity-90 transition"
                       >
-                          <DownloadIcon size={18} />
+                          <UploadIcon size={18} />
                           <span>导出数据 (JSON)</span>
                       </button>
                       
                       <div className="relative">
                           <button className="flex items-center justify-center space-x-2 w-full py-3 bg-gray-100 text-ios-text rounded-xl font-medium active:bg-gray-200 transition">
-                              <UploadIcon size={18} />
+                              <DownloadIcon size={18} />
                               <span>导入数据</span>
                           </button>
                           <input 
@@ -253,9 +253,20 @@ const Library: React.FC = () => {
                   </div>
               </div>
 
-              <div className="bg-white p-5 rounded-2xl shadow-sm">
-                  <h3 className="font-bold mb-2">关于 TuneFree</h3>
+              <div className="bg-white p-5 rounded-2xl shadow-sm space-y-3">
+                  <h3 className="font-bold">关于 TuneFree</h3>
                   <p className="text-xs text-gray-400">Version 2.0.0 • React • Cloudflare Pages</p>
+                  <div className="pt-3 border-t border-gray-100">
+                      <p className="text-xs text-gray-400 mb-1">后端 API 提供</p>
+                      <a 
+                        href="https://linux.do/t/topic/1326425" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-xs text-ios-blue font-medium hover:underline flex items-center"
+                      >
+                          是青旨啊@sayqz (Linux.do)
+                      </a>
+                  </div>
               </div>
           </div>
       )}
