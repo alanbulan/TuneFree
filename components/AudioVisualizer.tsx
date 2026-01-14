@@ -30,7 +30,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
 
     const barCount = 30;
     const dataArray = new Uint8Array(analyser ? analyser.frequencyBinCount : barCount);
-    let animationId: number;
+    let animationId: number = 0;
 
     const draw = () => {
       animationId = requestAnimationFrame(draw);
