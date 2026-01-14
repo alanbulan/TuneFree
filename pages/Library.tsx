@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useLibrary } from '../contexts/LibraryContext';
 import { getOnlinePlaylist } from '../services/api';
@@ -11,16 +11,24 @@ type Tab = 'favorites' | 'playlists' | 'manage' | 'status';
 
 const Library: React.FC = () => {
   const { queue, playSong } = usePlayer();
-  const { favorites, playlists, createPlaylist, importPlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist, exportData, importData } = useLibrary();
+  const { favorites, playlists, createPlaylist, importPlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist, renamePlaylist, exportData, importData } = useLibrary();
   const [activeTab, setActiveTab] = useState<Tab>('favorites');
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
   const [importId, setImportId] = useState('');
   const [importSource, setImportSource] = useState('netease');
   const [isImporting, setIsImporting] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
 
-  const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
+  // Use ID to track selection to ensure we always get the latest data from context
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
+  
+  const selectedPlaylist = useMemo(() => 
+    playlists.find(p => p.id === selectedPlaylistId) || null
+  , [playlists, selectedPlaylistId]);
 
   const handleCreatePlaylist = () => {
     if (newPlaylistName.trim()) {
@@ -28,6 +36,21 @@ const Library: React.FC = () => {
       setNewPlaylistName('');
       setShowCreateModal(false);
     }
+  };
+
+  const handleRenamePlaylist = () => {
+      if (selectedPlaylist && renameValue.trim()) {
+          renamePlaylist(selectedPlaylist.id, renameValue);
+          // No need to manually update local object state, context update + re-render handles it
+          setShowRenameModal(false);
+      }
+  };
+
+  const openRenameModal = () => {
+      if (selectedPlaylist) {
+          setRenameValue(selectedPlaylist.name);
+          setShowRenameModal(true);
+      }
   };
 
   const handleImportOnlinePlaylist = async () => {
@@ -81,12 +104,12 @@ const Library: React.FC = () => {
                         <p className="text-ios-text text-[15px] font-medium truncate">{song.name}</p>
                         <p className="text-ios-subtext text-xs truncate">{song.artist}</p>
                     </div>
-                    {canRemove && playlistId && (
+                    {canRemove && playlistId && isEditMode && (
                         <button 
-                            className="p-2 text-gray-400 hover:text-red-500"
+                            className="p-2 text-red-400 hover:text-red-600 bg-red-50 rounded-full"
                             onClick={(e) => { e.stopPropagation(); removeFromPlaylist(playlistId, Number(song.id)); }}
                         >
-                            <TrashIcon size={18} />
+                            <TrashIcon size={16} />
                         </button>
                     )}
                 </div>
@@ -105,25 +128,25 @@ const Library: React.FC = () => {
       <div className="flex bg-gray-200/50 p-1 rounded-xl mb-6 overflow-x-auto no-scrollbar">
         <button 
             className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap px-2 ${activeTab === 'favorites' ? 'bg-white shadow-sm text-ios-text' : 'text-gray-500'}`}
-            onClick={() => { setActiveTab('favorites'); setSelectedPlaylist(null); }}
+            onClick={() => { setActiveTab('favorites'); setSelectedPlaylistId(null); }}
         >
             收藏
         </button>
         <button 
             className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap px-2 ${activeTab === 'playlists' ? 'bg-white shadow-sm text-ios-text' : 'text-gray-500'}`}
-            onClick={() => { setActiveTab('playlists'); setSelectedPlaylist(null); }}
+            onClick={() => { setActiveTab('playlists'); setSelectedPlaylistId(null); }}
         >
             歌单
         </button>
         <button 
             className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap px-2 ${activeTab === 'manage' ? 'bg-white shadow-sm text-ios-text' : 'text-gray-500'}`}
-            onClick={() => { setActiveTab('manage'); setSelectedPlaylist(null); }}
+            onClick={() => { setActiveTab('manage'); setSelectedPlaylistId(null); }}
         >
             管理
         </button>
         <button 
             className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap px-2 ${activeTab === 'status' ? 'bg-white shadow-sm text-ios-text' : 'text-gray-500'}`}
-            onClick={() => { setActiveTab('status'); setSelectedPlaylist(null); }}
+            onClick={() => { setActiveTab('status'); setSelectedPlaylistId(null); }}
         >
             监控
         </button>
@@ -163,7 +186,7 @@ const Library: React.FC = () => {
                 {playlists.map(p => (
                     <div 
                         key={p.id} 
-                        onClick={() => setSelectedPlaylist(p)}
+                        onClick={() => { setSelectedPlaylistId(p.id); setIsEditMode(false); }}
                         className="aspect-square bg-white rounded-2xl p-4 shadow-sm flex flex-col justify-between active:scale-95 transition relative overflow-hidden"
                     >
                         <div className="absolute top-0 right-0 p-2 opacity-50">
@@ -183,23 +206,54 @@ const Library: React.FC = () => {
       {activeTab === 'playlists' && selectedPlaylist && (
           <div>
               <button 
-                onClick={() => setSelectedPlaylist(null)}
+                onClick={() => setSelectedPlaylistId(null)}
                 className="mb-4 text-ios-blue text-sm font-medium flex items-center"
               >
                   &larr; 返回歌单列表
               </button>
-              <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-2xl font-bold">{selectedPlaylist.name}</h2>
-                  <button 
-                    onClick={() => { deletePlaylist(selectedPlaylist.id); setSelectedPlaylist(null); }}
-                    className="text-red-500 p-2 bg-red-50 rounded-full"
-                  >
-                      <TrashIcon size={18} />
-                  </button>
+              
+              <div className="bg-white p-4 rounded-2xl shadow-sm mb-4">
+                  <div className="flex items-center justify-between">
+                      <div className="min-w-0 flex-1">
+                          <h2 className="text-2xl font-bold truncate">{selectedPlaylist.name}</h2>
+                          <p className="text-xs text-gray-500">{selectedPlaylist.songs.length} 首歌曲</p>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                           <button 
+                                onClick={() => setIsEditMode(!isEditMode)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${isEditMode ? 'bg-ios-blue text-white' : 'bg-gray-100 text-ios-blue'}`}
+                            >
+                                {isEditMode ? '完成' : '编辑'}
+                           </button>
+                      </div>
+                  </div>
+                  
+                  {isEditMode && (
+                      <div className="flex items-center space-x-3 mt-4 pt-4 border-t border-gray-100 animate-fade-in">
+                          <button 
+                            onClick={openRenameModal}
+                            className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium"
+                          >
+                              重命名
+                          </button>
+                          <button 
+                            onClick={() => { 
+                                if(confirm('确定要删除此歌单吗？')) {
+                                    deletePlaylist(selectedPlaylist.id); 
+                                    setSelectedPlaylistId(null); 
+                                }
+                            }}
+                            className="flex-1 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-medium"
+                          >
+                              删除歌单
+                          </button>
+                      </div>
+                  )}
               </div>
+
               {renderSongList(selectedPlaylist.songs, true, selectedPlaylist.id)}
               
-              {queue.length > 0 && (
+              {queue.length > 0 && !isEditMode && (
                   <div className="mt-8 p-4 bg-white rounded-xl shadow-sm">
                        <h3 className="text-sm font-bold text-gray-500 mb-2">快速添加播放队列中的歌曲:</h3>
                        <div className="flex gap-2 overflow-x-auto no-scrollbar py-2">
@@ -300,6 +354,37 @@ const Library: React.FC = () => {
                         className="flex-1 py-3 text-white font-medium bg-ios-blue rounded-xl"
                       >
                           创建
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Rename Playlist Modal */}
+      {showRenameModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-6">
+              <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+                  <h3 className="text-xl font-bold mb-4 text-center">重命名歌单</h3>
+                  <input 
+                    type="text" 
+                    placeholder="输入新名称" 
+                    className="w-full bg-gray-100 p-3 rounded-xl mb-6 outline-none focus:ring-2 focus:ring-ios-blue/50"
+                    value={renameValue}
+                    onChange={e => setRenameValue(e.target.value)}
+                    autoFocus
+                  />
+                  <div className="flex space-x-3">
+                      <button 
+                        onClick={() => setShowRenameModal(false)}
+                        className="flex-1 py-3 text-gray-500 font-medium bg-gray-100 rounded-xl"
+                      >
+                          取消
+                      </button>
+                      <button 
+                        onClick={handleRenamePlaylist}
+                        className="flex-1 py-3 text-white font-medium bg-ios-blue rounded-xl"
+                      >
+                          保存
                       </button>
                   </div>
               </div>

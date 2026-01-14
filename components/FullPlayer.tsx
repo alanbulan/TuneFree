@@ -12,6 +12,7 @@ import {
 import AudioVisualizer from './AudioVisualizer';
 import QueuePopup from './QueuePopup';
 import DownloadPopup from './DownloadPopup';
+import PlayerMorePopup from './PlayerMorePopup';
 
 interface FullPlayerProps {
   isOpen: boolean;
@@ -49,11 +50,14 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
   const [showLyrics, setShowLyrics] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [showDownload, setShowDownload] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  
+  const lyricsContainerRef = useRef<HTMLDivElement>(null);
 
   // Fetch Lyrics
   useEffect(() => {
     if (isOpen && currentSong) {
-      // RESET STATE IMMEDIATELY to prevent old lyrics from showing
+      // RESET STATE IMMEDIATELY
       setLyrics([]);
       setActiveLyricIndex(0);
       
@@ -68,6 +72,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (lyrics.length === 0) return;
     
+    // Find the current line
     const index = lyrics.findIndex((line, i) => {
       const nextLine = lyrics[i + 1];
       return currentTime >= line.time && (!nextLine || currentTime < nextLine.time);
@@ -78,9 +83,26 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
     }
   }, [currentTime, lyrics, activeLyricIndex]);
 
+  // Scroll Lyrics
+  useEffect(() => {
+      if (showLyrics && lyricsContainerRef.current && lyrics.length > 0) {
+          const activeEl = lyricsContainerRef.current.children[activeLyricIndex] as HTMLElement;
+          if (activeEl) {
+              // Calculate scroll position to center the element
+              // We need to account for the container's padding and height
+              const container = lyricsContainerRef.current;
+              const scrollNew = activeEl.offsetTop - container.clientHeight / 2 + activeEl.clientHeight / 2;
+              
+              container.scrollTo({
+                  top: scrollNew,
+                  behavior: 'smooth'
+              });
+          }
+      }
+  }, [activeLyricIndex, showLyrics, lyrics]);
+
   if (!isOpen) return null;
   
-  // Empty State Handling inside FullPlayer
   const hasSong = !!currentSong;
 
   return (
@@ -104,12 +126,16 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
           <ChevronDownIcon size={30} />
         </button>
         <div className="w-10 h-1 bg-gray-300/80 rounded-full mx-auto absolute left-0 right-0 top-safe mt-4 pointer-events-none" />
-        <button className="p-2 text-gray-500 hover:text-black active:scale-90 transition">
+        <button 
+            onClick={() => hasSong && setShowMore(true)} 
+            className={`p-2 transition active:scale-90 ${hasSong ? 'text-gray-500 hover:text-black' : 'text-gray-300'}`}
+            disabled={!hasSong}
+        >
           <MoreIcon size={24} />
         </button>
       </div>
 
-      {/* --- Main Content Area (Layout Locked) --- */}
+      {/* --- Main Content Area --- */}
       <div className="relative z-10 flex-1 w-full overflow-hidden flex flex-col">
           
           <div className="relative flex-1 w-full">
@@ -135,39 +161,46 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
 
             {/* 2. Lyrics View */}
             <div 
-                className={`absolute inset-0 flex flex-col items-center justify-center transition-all duration-500 ease-in-out ${showLyrics ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}
-                onClick={() => setShowLyrics(false)}
+                className={`absolute inset-0 flex flex-col items-center justify-center transition-all duration-500 ease-in-out z-20 ${showLyrics ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}
             >
-                <div className="w-full h-full max-h-[450px] overflow-hidden mask-gradient relative">
-                    <div 
-                        className="transition-transform duration-500 ease-out flex flex-col items-center w-full px-8"
-                        style={{ transform: `translateY(${200 - (activeLyricIndex * 44)}px)` }} 
-                    >
-                        {lyrics.length > 0 ? lyrics.map((line, i) => (
-                            <p 
-                                key={i} 
-                                className={`text-center py-2 text-lg font-bold transition-all duration-300 w-full truncate ${
-                                    i === activeLyricIndex 
-                                    ? 'text-black scale-110 opacity-100' 
-                                    : 'text-gray-500/60 scale-95 opacity-50 blur-[0.5px]'
-                                }`}
-                                style={{ height: '44px', lineHeight: '28px' }}
-                            >
-                                {line.text}
-                            </p>
-                        )) : (
-                            <div className="flex flex-col items-center justify-center h-full pt-40">
-                                {hasSong ? (
-                                    <>
-                                        <div className="w-6 h-6 border-2 border-gray-300 border-t-transparent rounded-full animate-spin mb-2"></div>
-                                        <p className="text-gray-400 text-sm">加载歌词中...</p>
-                                    </>
-                                ) : (
-                                    <p className="text-gray-400 text-sm">暂无播放</p>
-                                )}
-                            </div>
-                        )}
-                    </div>
+                {/* Click background to close */}
+                <div className="absolute inset-0" onClick={() => setShowLyrics(false)} />
+
+                <div 
+                    ref={lyricsContainerRef}
+                    className="w-full h-full overflow-y-auto no-scrollbar relative px-8 py-[40vh] text-center"
+                    style={{ 
+                        maskImage: 'linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%)',
+                        WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%)'
+                    }}
+                >
+                    {lyrics.length > 0 ? lyrics.map((line, i) => (
+                        <p 
+                            key={i} 
+                            className={`py-3 text-lg font-bold transition-all duration-300 cursor-pointer ${
+                                i === activeLyricIndex 
+                                ? 'text-gray-900 scale-110 opacity-100' 
+                                : 'text-gray-500/60 scale-100 opacity-40 hover:opacity-70'
+                            }`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                seek(line.time);
+                            }}
+                        >
+                            {line.text}
+                        </p>
+                    )) : (
+                         <div className="flex flex-col items-center justify-center h-full absolute inset-0">
+                            {hasSong ? (
+                                <>
+                                    <div className="w-6 h-6 border-2 border-gray-300 border-t-transparent rounded-full animate-spin mb-2"></div>
+                                    <p className="text-gray-400 text-sm">加载歌词中...</p>
+                                </>
+                            ) : (
+                                <p className="text-gray-400 text-sm">暂无播放</p>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
           </div>
@@ -273,6 +306,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
       {/* Popups */}
       <QueuePopup isOpen={showQueue} onClose={() => setShowQueue(false)} />
       {hasSong && <DownloadPopup isOpen={showDownload} onClose={() => setShowDownload(false)} song={currentSong} />}
+      <PlayerMorePopup isOpen={showMore} onClose={() => setShowMore(false)} onClosePlayer={onClose} />
     </div>
   );
 };

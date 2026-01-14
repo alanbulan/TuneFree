@@ -9,8 +9,6 @@ import { Activity, Server, BarChart3, Radio, Zap, Cpu, Clock, Timer, Network } f
 import { formatUptime, formatBytes } from '../utils/formatting';
 
 const StatusDashboard: React.FC = () => {
-  const [period, setPeriod] = useState<'today' | 'week' | 'month'>('today');
-  
   // Data States
   const [stats, setStats] = useState<StatsSummary | null>(null);
   const [overallStats, setOverallStats] = useState<OverallStats | null>(null);
@@ -30,14 +28,15 @@ const StatusDashboard: React.FC = () => {
 
     const fetchData = async () => {
         // Parallel requests for all stats endpoints
+        // Hardcode specific periods since tabs were removed
         const [h, s, o, t, p, q, r, sys, lat] = await Promise.all([
             getSystemHealth(),
             getStatsSummary(),
-            getOverallStats(period), // Endpoint #12
-            getTrends(period),
-            getPlatformStats(period),
-            getQpsStats(period),
-            getRequestTypeStats(period),
+            getOverallStats('today'), 
+            getTrends('week'), // Trends look best over a week
+            getPlatformStats('today'),
+            getQpsStats('today'),
+            getRequestTypeStats('today'),
             getSystemStatus(),
             checkLatency()
         ]);
@@ -68,7 +67,7 @@ const StatusDashboard: React.FC = () => {
         isMounted = false; 
         clearInterval(interval);
     };
-  }, [period]);
+  }, []);
 
   const getSuccessColor = (rate: number) => {
       if (rate >= 95) return 'text-green-600 bg-green-500';
@@ -91,21 +90,6 @@ const StatusDashboard: React.FC = () => {
                 <Activity className="text-ios-blue" size={20} />
                 <span>系统监控</span>
             </h2>
-            <div className="flex bg-gray-100 rounded-lg p-1">
-                {(['today', 'week', 'month'] as const).map((p) => (
-                    <button
-                        key={p}
-                        onClick={() => setPeriod(p)}
-                        className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
-                            period === p 
-                            ? 'bg-white text-black shadow-sm' 
-                            : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                    >
-                        {p === 'today' ? '今日' : p === 'week' ? '本周' : '本月'}
-                    </button>
-                ))}
-            </div>
         </div>
 
         {isLoading && !health ? (
@@ -276,18 +260,16 @@ const StatusDashboard: React.FC = () => {
                             <h3 className="font-bold text-gray-800">趋势概览</h3>
                         </div>
                         
-                        {period === 'today' && (
-                            <div className="grid grid-cols-2 gap-4 mb-6">
-                                <div className="bg-gray-50 p-4 rounded-xl">
-                                    <p className="text-xs text-gray-400">今日总计</p>
-                                    <p className="text-xl font-bold text-ios-blue">{stats.today?.total_calls.toLocaleString()}</p>
-                                </div>
-                                <div className="bg-gray-50 p-4 rounded-xl">
-                                    <p className="text-xs text-gray-400">综合成功率</p>
-                                    <p className="text-xl font-bold text-ios-blue">{stats.today?.success_rate}%</p>
-                                </div>
+                        <div className="grid grid-cols-2 gap-4 mb-6">
+                            <div className="bg-gray-50 p-4 rounded-xl">
+                                <p className="text-xs text-gray-400">今日总计</p>
+                                <p className="text-xl font-bold text-ios-blue">{stats.today?.total_calls.toLocaleString()}</p>
                             </div>
-                        )}
+                            <div className="bg-gray-50 p-4 rounded-xl">
+                                <p className="text-xs text-gray-400">综合成功率</p>
+                                <p className="text-xl font-bold text-ios-blue">{stats.today?.success_rate}%</p>
+                            </div>
+                        </div>
 
                         <div className="h-40 flex items-end justify-between gap-1 pt-4 border-t border-gray-100">
                             {trends?.trends && trends.trends.length > 0 ? trends.trends.slice(-7).map((t, i) => {

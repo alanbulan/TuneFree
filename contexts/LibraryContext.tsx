@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Song, Playlist } from '../types';
 
@@ -6,8 +7,9 @@ interface LibraryContextType {
   playlists: Playlist[];
   toggleFavorite: (song: Song) => void;
   isFavorite: (songId: number) => boolean;
-  createPlaylist: (name: string) => void;
+  createPlaylist: (name: string, initialSongs?: Song[]) => void;
   importPlaylist: (name: string, songs: Song[]) => void;
+  renamePlaylist: (id: string, name: string) => void;
   deletePlaylist: (id: string) => void;
   addToPlaylist: (playlistId: string, song: Song) => void;
   removeFromPlaylist: (playlistId: string, songId: number) => void;
@@ -52,12 +54,12 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return favorites.some(s => String(s.id) === String(songId));
   };
 
-  const createPlaylist = (name: string) => {
+  const createPlaylist = (name: string, initialSongs: Song[] = []) => {
     const newPlaylist: Playlist = {
       id: Date.now().toString(),
       name,
       createTime: Date.now(),
-      songs: []
+      songs: initialSongs
     };
     setPlaylists(prev => [newPlaylist, ...prev]);
   };
@@ -70,6 +72,10 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       songs
     };
     setPlaylists(prev => [newPlaylist, ...prev]);
+  };
+
+  const renamePlaylist = (id: string, name: string) => {
+    setPlaylists(prev => prev.map(p => p.id === id ? { ...p, name } : p));
   };
 
   const deletePlaylist = (id: string) => {
@@ -131,6 +137,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       isFavorite,
       createPlaylist,
       importPlaylist,
+      renamePlaylist,
       deletePlaylist,
       addToPlaylist,
       removeFromPlaylist,

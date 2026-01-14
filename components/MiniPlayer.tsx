@@ -18,12 +18,15 @@ const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand }) => {
       className="fixed bottom-[88px] left-3 right-3 h-14 bg-white/90 backdrop-blur-xl rounded-2xl flex items-center px-4 shadow-[0_8px_30px_rgb(0,0,0,0.08)] z-40 border border-gray-100 transition-transform active:scale-[0.98]"
       onClick={onExpand}
     >
-      <div className={`relative w-10 h-10 rounded-lg overflow-hidden mr-3 flex-shrink-0 shadow-sm flex items-center justify-center ${hasSong ? 'bg-gray-200' : 'bg-gray-100'}`}>
+      <div className={`relative w-10 h-10 rounded-full overflow-hidden mr-3 flex-shrink-0 shadow-sm flex items-center justify-center ${hasSong ? 'bg-gray-200' : 'bg-gray-100'}`}>
         {hasSong && currentSong?.pic ? (
              <img 
                 src={currentSong.pic} 
                 alt="Art" 
-                className={`w-full h-full object-cover ${isPlaying ? 'animate-spin-slow' : ''}`}
+                className="w-full h-full object-cover animate-spin-slow"
+                style={{ 
+                    animationPlayState: isPlaying ? 'running' : 'paused'
+                }}
             />
         ) : (
             <MusicIcon className="text-gray-400 w-6 h-6" />

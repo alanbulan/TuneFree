@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { searchAggregate, searchSongs } from '../services/api';
 import { Song } from '../types';
 import { usePlayer } from '../contexts/PlayerContext';
@@ -15,7 +16,10 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 const Search: React.FC = () => {
-  const [query, setQuery] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialQuery = searchParams.get('q') || '';
+  
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<Song[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchMode, setSearchMode] = useState<'aggregate' | 'single'>('aggregate');
@@ -33,6 +37,14 @@ const Search: React.FC = () => {
       }
   });
   
+  // Update query when URL parameter changes (e.g. navigation from player)
+  useEffect(() => {
+      const q = searchParams.get('q');
+      if (q !== null && q !== query) {
+          setQuery(q);
+      }
+  }, [searchParams]);
+
   const debouncedQuery = useDebounce(query, 800);
   const { playSong, currentSong, isPlaying } = usePlayer();
 
@@ -58,6 +70,8 @@ const Search: React.FC = () => {
 
   // Reset results when query or mode changes
   useEffect(() => {
+      // Only reset if we are actually going to search (query not empty)
+      // or if query became empty
       setResults([]);
       setPage(1);
       setHasMore(true);
@@ -109,9 +123,18 @@ const Search: React.FC = () => {
       if (e.key === 'Enter') {
           e.preventDefault();
           addToHistory(query);
+          // Update URL to reflect search (optional but good practice)
+          setSearchParams({ q: query });
           // Force blur to hide keyboard on mobile
           (e.target as HTMLInputElement).blur();
       }
+  };
+  
+  const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value;
+      setQuery(val);
+      // We don't update URL immediately on typing to avoid history spam, 
+      // but we could if we wanted. For now let's keep it simple.
   };
 
   return (
@@ -127,7 +150,7 @@ const Search: React.FC = () => {
             placeholder={searchMode === 'aggregate' ? "聚合搜索全网资源..." : `搜索 ${selectedSource} 资源...`}
             className="w-full bg-white text-ios-text pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-ios-red/20 transition-all placeholder-gray-400 text-[15px]"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={handleQueryChange}
             onKeyDown={handleKeyDown}
           />
         </div>
@@ -187,7 +210,10 @@ const Search: React.FC = () => {
                     {history.map((term, idx) => (
                         <button
                             key={idx}
-                            onClick={() => setQuery(term)}
+                            onClick={() => {
+                                setQuery(term);
+                                setSearchParams({ q: term });
+                            }}
                             className="px-3 py-1.5 bg-white text-gray-600 text-xs rounded-lg border border-gray-100 active:bg-gray-100 transition truncate max-w-[150px]"
                         >
                             {term}

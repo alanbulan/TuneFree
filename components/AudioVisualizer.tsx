@@ -10,15 +10,18 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
   const { analyser } = usePlayer();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Simulation State Refs (to persist across renders)
-  const simDataRef = useRef<{
-      values: number[], 
-      targets: number[],
-      phase: number
-  }>({
-      values: new Array(30).fill(0),
-      targets: new Array(30).fill(0),
-      phase: 0
+  // Configuration
+  const BAR_COUNT = 64; // Higher count for thinner bars
+  
+  // State Refs for persistence
+  const stateRef = useRef({
+      // Simulation state
+      simValues: new Array(BAR_COUNT).fill(0),
+      simTargets: new Array(BAR_COUNT).fill(0),
+      phase: 0,
+      
+      // Real data smoothing state
+      realValues: new Array(BAR_COUNT).fill(0)
   });
 
   useEffect(() => {
@@ -28,120 +31,172 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const barCount = 30;
-    const dataArray = new Uint8Array(analyser ? analyser.frequencyBinCount : barCount);
+    // Handle High DPI
+    const dpr = window.devicePixelRatio || 1;
+    // We rely on CSS width/height, so get bounding rect
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const dataArray = new Uint8Array(analyser ? analyser.frequencyBinCount : 0);
     let animationId: number = 0;
 
     const draw = () => {
       animationId = requestAnimationFrame(draw);
       
-      const width = canvas.width;
-      const height = canvas.height;
+      const width = rect.width;
+      const height = rect.height;
       ctx.clearRect(0, 0, width, height);
       
-      const barWidth = (width / barCount) * 0.7; 
-      const gap = (width / barCount) * 0.3;
-      let x = 0;
+      // Styling: Thinner bars
+      const totalSpace = width / BAR_COUNT;
+      const barWidth = totalSpace * 0.5; // Bar is half the slot width
+      const gap = totalSpace * 0.5;
+      
+      // Start slightly offset to center visual weight
+      let x = gap / 2;
+
+      const state = stateRef.current;
 
       if (analyser) {
           // --- REAL MODE (Desktop/Android) ---
           analyser.getByteFrequencyData(dataArray);
           
-          const step = Math.floor(dataArray.length / barCount);
-          for (let i = 0; i < barCount; i++) {
+          // Determine how many bins to aggregate per bar
+          // fftSize 512 -> 256 bins. 256 / 64 = 4 bins per bar.
+          const step = Math.floor(dataArray.length / BAR_COUNT) || 1;
+          
+          for (let i = 0; i < BAR_COUNT; i++) {
             let sum = 0;
+            let count = 0;
             for(let j=0; j<step; j++) {
-                sum += dataArray[i * step + j];
+                if (dataArray[i * step + j] !== undefined) {
+                    sum += dataArray[i * step + j];
+                    count++;
+                }
             }
-            const value = sum / step;
-            renderBar(ctx, x, value, height, barWidth);
-            x += barWidth + gap;
+            const rawValue = count > 0 ? sum / count : 0;
+            
+            // Apply smoothing (Linear Interpolation)
+            // prev * alpha + curr * (1 - alpha)
+            state.realValues[i] = state.realValues[i] * 0.6 + rawValue * 0.4;
+            
+            renderBar(ctx, x, state.realValues[i], height, barWidth);
+            x += totalSpace;
           }
 
       } else {
-          // --- HIGH-FIDELITY SIMULATION MODE (iOS) ---
-          // Mimics gravity, kick drums, and high-frequency jitter
-          const sim = simDataRef.current;
-          sim.phase += 0.05;
+          // --- SIMULATION MODE (iOS/Safari) ---
+          // Optimized for "Realism" and "Thinner" look
+          state.phase += 0.03; // Slower, more organic phase
 
-          // 1. Simulate Kick Drum (Low Freqs - Left Side)
-          // Every ~60 frames (1 sec approx), boost bass
-          if (Math.random() < 0.05) { // 5% chance per frame for a beat
-              for(let i=0; i<8; i++) {
-                  sim.targets[i] = 200 + Math.random() * 55;
+          // 1. Kick / Bass (Left side, indices 0-12)
+          if (Math.random() < 0.05) { // Random beat trigger
+              const kickStrength = 180 + Math.random() * 75;
+              // Affect first few bars heavily
+              for(let i=0; i<12; i++) {
+                   const decay = 1 - (i/12); // Stronger at 0
+                   state.simTargets[i] = Math.max(state.simTargets[i], kickStrength * decay);
               }
           }
 
-          // 2. Simulate Mids/Highs (Random Jitter)
-          for(let i=8; i<barCount; i++) {
-              if (Math.random() < 0.2) {
-                  sim.targets[i] = Math.random() * 150; 
+          // 2. Mids / Highs (Indices 12-63)
+          // Create a flowing noise floor
+          for(let i=0; i<BAR_COUNT; i++) {
+              // Base curve: High at bass, lower at treble
+              const baseProfile = Math.max(0, 80 - i); 
+              
+              // Perlin-ish noise via sine superposition
+              const noise = (Math.sin(i * 0.3 + state.phase) + Math.sin(i * 0.7 - state.phase)) * 20;
+              
+              let target = baseProfile + Math.abs(noise);
+              
+              // Random high-freq flickers
+              if (i > 15 && Math.random() < 0.05) {
+                  target += Math.random() * 100 * (i / BAR_COUNT); // Higher flicker in treble
               }
+              
+              // Don't override big kick peaks immediately
+              state.simTargets[i] = Math.max(state.simTargets[i], target);
           }
 
-          // 3. Physics & Interpolation
-          for (let i = 0; i < barCount; i++) {
-             // Gravity: Targets decay continuously
-             sim.targets[i] -= 8;
-             if (sim.targets[i] < 0) sim.targets[i] = 0;
+          // 3. Physics (Decay & Lerp)
+          for (let i = 0; i < BAR_COUNT; i++) {
+             // Decay the target peak
+             state.simTargets[i] -= 3;
+             if (state.simTargets[i] < 0) state.simTargets[i] = 0;
 
-             // Elastic Movement towards target
-             const diff = sim.targets[i] - sim.values[i];
-             sim.values[i] += diff * 0.3; 
+             // Move value towards target
+             const diff = state.simTargets[i] - state.simValues[i];
+             state.simValues[i] += diff * 0.3; // Snappy response
 
-             // Add Sine wave flow for "alive" feel
-             const flow = Math.sin(i * 0.2 + sim.phase) * 10;
-             let displayValue = sim.values[i] + flow;
-
-             // Clamp
-             displayValue = Math.max(0, Math.min(255, displayValue));
-             
-             renderBar(ctx, x, displayValue, height, barWidth);
-             x += barWidth + gap;
+             renderBar(ctx, x, state.simValues[i], height, barWidth);
+             x += totalSpace;
           }
       }
     };
 
-    const renderBar = (context: CanvasRenderingContext2D, x: number, value: number, canvasHeight: number, bWidth: number) => {
-        // Non-linear height scaling for better look
-        const percent = value / 255;
-        const barHeight = Math.pow(percent, 1.5) * canvasHeight; 
+    const renderBar = (ctx: CanvasRenderingContext2D, x: number, val: number, h: number, w: number) => {
+        // Clamp and Scale
+        // Map 0-255 input to 0-height pixels
+        // Apply a curve so quiet sounds are visible but loud ones don't clip too hard
+        let percent = Math.max(0, Math.min(1, val / 255));
         
-        if (barHeight > 2) {
-            const y = canvasHeight - barHeight;
-            const radius = 2; 
-            
-            // Gradient or Dynamic Color
-            // Low freq (left) = slightly darker/redder? Keep simple gray/black for iOS style
-            const opacity = 0.3 + (percent * 0.7);
-            context.fillStyle = `rgba(100, 100, 100, ${opacity})`; 
-            
-            context.beginPath();
-            context.moveTo(x, canvasHeight);
-            context.lineTo(x, y + radius);
-            context.quadraticCurveTo(x, y, x + radius, y);
-            context.lineTo(x + bWidth - radius, y);
-            context.quadraticCurveTo(x + bWidth, y, x + bWidth, y + radius);
-            context.lineTo(x + bWidth, canvasHeight);
-            context.fill();
+        // Minimum visibility
+        if (percent < 0.03) percent = 0.03;
+        
+        // Scale to canvas height (leave a tiny bit of headroom)
+        const barHeight = percent * h;
+
+        const radius = w / 2;
+        const y = h - barHeight;
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.25)"; // Subtle dark gray
+        
+        ctx.beginPath();
+        // Modern rounded bar
+        // Cast to any to check for property existence without narrowing type to 'never' in else block
+        if ('roundRect' in (ctx as any)) {
+            // @ts-ignore
+            ctx.roundRect(x, y, w, barHeight, radius);
+        } else {
+            // Fallback for older browsers
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + w - radius, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+            ctx.lineTo(x + w, h - radius);
+            ctx.quadraticCurveTo(x + w, h, x + w - radius, h);
+            ctx.lineTo(x + radius, h);
+            ctx.quadraticCurveTo(x, h, x, h - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
         }
+        ctx.fill();
     };
 
     if (isPlaying) {
         draw();
     } else {
-        // Resting State
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const barWidth = (canvas.width / barCount) * 0.7;
-        const gap = (canvas.width / barCount) * 0.3;
-        let x = 0;
+        // Render Static "Paused" State - Flat line
+        ctx.clearRect(0, 0, rect.width, rect.height);
+        const totalSpace = rect.width / BAR_COUNT;
+        const barWidth = totalSpace * 0.5;
+        const gap = totalSpace * 0.5;
+        let x = gap / 2;
         
-        for (let i = 0; i < barCount; i++) {
-             ctx.fillStyle = "rgba(200, 200, 200, 0.4)";
-             const h = 3; 
-             const y = canvas.height - h;
-             ctx.fillRect(x, y, barWidth, h);
-             x += barWidth + gap;
+        ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+        for (let i = 0; i < BAR_COUNT; i++) {
+             const h = 4; // Small dot height
+             const y = rect.height - h;
+             if ('roundRect' in (ctx as any)) {
+                // @ts-ignore
+                ctx.roundRect(x, y, barWidth, h, barWidth/2);
+             } else {
+                ctx.fillRect(x, y, barWidth, h);
+             }
+             ctx.fill();
+             x += totalSpace;
         }
         cancelAnimationFrame(animationId);
     }
@@ -152,9 +207,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
   return (
     <canvas 
         ref={canvasRef} 
-        width={300} 
-        height={40} 
-        className="w-full h-8 block"
+        className="w-full h-full block"
     />
   );
 };
