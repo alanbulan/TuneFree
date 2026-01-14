@@ -64,15 +64,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       localStorage.setItem('tunefree_play_mode', JSON.stringify(playMode));
   }, [playMode]);
 
+  // --- Audio Element Initialization ---
   useEffect(() => {
     const audio = new Audio();
     audio.crossOrigin = "anonymous"; // Required for real audio visualization
-    audioRef.current = audio;
+    // Important for iOS background audio:
     audio.preload = "auto"; 
+    // While technically not part of HTMLAudioElement standard type, iOS respects this attribute in some contexts
+    (audio as any).playsInline = true; 
     
-    // If we have a restored song with a URL, we can hint the audio element
-    // However, URLs might expire, so we might not want to set src immediately 
-    // unless we are sure. For now, we leave it empty until user interacts.
+    audioRef.current = audio;
     
     // Initialize Web Audio API
     try {
@@ -153,18 +154,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Intentionally empty to run once
 
+  // --- Logic Definitions (Hoisted for Media Session) ---
+
   const playSong = async (song: Song) => {
     if (!audioRef.current) return;
 
     // Check if we are trying to play the same song
     if (currentSong?.id === song.id) {
-        // If audio source is already set and valid, just toggle play
-        // We check if currentSrc is present (length > 0)
         if (audioRef.current.currentSrc || (audioRef.current.src && audioRef.current.src !== window.location.href)) {
              togglePlay();
              return;
         }
-        // If src is missing (e.g. after page reload), we need to fall through to reload logic
     }
 
     setIsLoading(true);
@@ -217,7 +217,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const togglePlay = () => {
+  const togglePlay = useCallback(() => {
     if (!audioRef.current || !currentSong) return;
     
     // Safety check for restored state without src
@@ -237,20 +237,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       audioRef.current.play().catch(e => console.error(e));
       setIsPlaying(true);
     }
-  };
+  }, [isPlaying, currentSong]); // Dependencies are important here
 
-  const seek = (time: number) => {
+  const seek = useCallback((time: number) => {
     if (audioRef.current) {
       audioRef.current.currentTime = time;
       setCurrentTime(time);
     }
-  };
+  }, []);
 
-  // force: true means user clicked "Next", false means auto-ended
   const playNext = useCallback((force = true) => {
     if (queue.length === 0 || !currentSong) return;
 
-    // Handle Loop Single mode on auto-end
     if (!force && playMode === 'loop') {
         if (audioRef.current) {
             audioRef.current.currentTime = 0;
@@ -263,12 +261,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     let nextIndex = 0;
 
     if (playMode === 'shuffle') {
-        // Simple random next
         do {
             nextIndex = Math.floor(Math.random() * queue.length);
         } while (queue.length > 1 && nextIndex === currentIndex);
     } else {
-        // Sequence or when user forces next in loop mode
         nextIndex = (currentIndex + 1) % queue.length;
     }
 
@@ -288,6 +284,45 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       playSong(queue[prevIndex]);
   }, [currentSong, queue, playMode]);
 
+  // --- Media Session API Integration (iOS Background Play) ---
+  useEffect(() => {
+    if ('mediaSession' in navigator && currentSong) {
+        // 1. Update Metadata
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: currentSong.name,
+            artist: currentSong.artist,
+            album: currentSong.album || 'TuneFree Music',
+            artwork: currentSong.pic ? [
+                { src: currentSong.pic, sizes: '96x96', type: 'image/jpeg' },
+                { src: currentSong.pic, sizes: '128x128', type: 'image/jpeg' },
+                { src: currentSong.pic, sizes: '192x192', type: 'image/jpeg' },
+                { src: currentSong.pic, sizes: '256x256', type: 'image/jpeg' },
+                { src: currentSong.pic, sizes: '384x384', type: 'image/jpeg' },
+                { src: currentSong.pic, sizes: '512x512', type: 'image/jpeg' },
+            ] : []
+        });
+
+        // 2. Set Action Handlers
+        // We redefine these when dependencies (like queue or play function) change
+        // to ensure the lock screen controls call the latest version of the functions.
+        navigator.mediaSession.setActionHandler('play', () => togglePlay());
+        navigator.mediaSession.setActionHandler('pause', () => togglePlay());
+        navigator.mediaSession.setActionHandler('previoustrack', () => playPrev());
+        navigator.mediaSession.setActionHandler('nexttrack', () => playNext(true));
+        navigator.mediaSession.setActionHandler('seekto', (details) => {
+            if (details.seekTime !== undefined) {
+                seek(details.seekTime);
+            }
+        });
+    }
+
+    // 3. Update Playback State
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    }
+
+  }, [currentSong, isPlaying, togglePlay, playNext, playPrev, seek]);
+
   const addToQueue = (song: Song) => {
     setQueue(prev => {
         if (prev.find(s => s.id === song.id)) return prev;
@@ -301,7 +336,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const clearQueue = () => {
       setQueue([]);
-      // Optionally stop playing or keep current song
   };
 
   const togglePlayMode = () => {
