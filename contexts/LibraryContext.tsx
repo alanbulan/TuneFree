@@ -6,7 +6,7 @@ interface LibraryContextType {
   favorites: Song[];
   playlists: Playlist[];
   toggleFavorite: (song: Song) => void;
-  isFavorite: (songId: number) => boolean;
+  isFavorite: (songId: number | string) => boolean;
   createPlaylist: (name: string, initialSongs?: Song[]) => void;
   importPlaylist: (name: string, songs: Song[]) => void;
   renamePlaylist: (id: string, name: string) => void;
@@ -42,7 +42,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const toggleFavorite = (song: Song) => {
     setFavorites(prev => {
-      // Ensure strict type comparison for ID
+      // Ensure strict type comparison for ID by converting to String
       if (prev.find(s => String(s.id) === String(song.id))) {
         return prev.filter(s => String(s.id) !== String(song.id));
       }

@@ -58,10 +58,10 @@ export const getSongInfo = async (id: string | number, source: string): Promise<
   }
 };
 
-// 2. Get Song URL
-export const getSongUrl = async (id: string | number, source: string): Promise<string | null> => {
+// 2. Get Song URL (Updated with bitrate)
+export const getSongUrl = async (id: string | number, source: string, br: string = '320k'): Promise<string | null> => {
     // We construct the URL directly for the audio element to handle redirects
-    return `${API_BASE}/?source=${source}&id=${id}&type=url&br=320k`;
+    return `${API_BASE}/?source=${source}&id=${id}&type=url&br=${br}`;
 };
 
 // 2b. Get Download URL with specific Quality

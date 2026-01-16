@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
-import { Song, PlayMode } from '../types';
+import { Song, PlayMode, AudioQuality } from '../types';
 import { getSongUrl, getSongInfo } from '../services/api';
 
 interface PlayerContextType {
@@ -13,7 +13,8 @@ interface PlayerContextType {
   playMode: PlayMode;
   queue: Song[];
   analyser: AnalyserNode | null;
-  playSong: (song: Song) => Promise<void>;
+  audioQuality: AudioQuality;
+  playSong: (song: Song, forceQuality?: AudioQuality) => Promise<void>;
   togglePlay: () => void;
   seek: (time: number) => void;
   playNext: (force?: boolean) => void;
@@ -22,6 +23,7 @@ interface PlayerContextType {
   removeFromQueue: (songId: string | number) => void;
   togglePlayMode: () => void;
   clearQueue: () => void;
+  setAudioQuality: (quality: AudioQuality) => void;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -46,23 +48,40 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [volume, setVolume] = useState(1);
   const [queue, setQueue] = useState<Song[]>(() => getLocal('tunefree_queue', []));
   const [playMode, setPlayMode] = useState<PlayMode>(() => getLocal('tunefree_play_mode', 'sequence'));
+  const [audioQuality, setAudioQualityState] = useState<AudioQuality>(() => getLocal('tunefree_quality', '320k'));
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
+  // Refs to solve Stale Closure issues in Event Listeners
+  // This is CRITICAL for playNext/playPrev to work correctly when called from 'ended' event
+  const playNextRef = useRef<((force?: boolean) => void) | null>(null);
+  const currentSongRef = useRef(currentSong);
+  const queueRef = useRef(queue);
+  const playModeRef = useRef(playMode);
+  const audioQualityRef = useRef(audioQuality);
+
   // Persistence Effects
   useEffect(() => {
       localStorage.setItem('tunefree_queue', JSON.stringify(queue));
+      queueRef.current = queue;
   }, [queue]);
 
   useEffect(() => {
       localStorage.setItem('tunefree_current_song', JSON.stringify(currentSong));
+      currentSongRef.current = currentSong;
   }, [currentSong]);
 
   useEffect(() => {
       localStorage.setItem('tunefree_play_mode', JSON.stringify(playMode));
+      playModeRef.current = playMode;
   }, [playMode]);
+  
+  useEffect(() => {
+      localStorage.setItem('tunefree_quality', JSON.stringify(audioQuality));
+      audioQualityRef.current = audioQuality;
+  }, [audioQuality]);
 
   // --- Audio Element Initialization ---
   useEffect(() => {
@@ -74,11 +93,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     audioRef.current = audio;
     
     // --- COMPATIBILITY FIX FOR IOS/SAFARI ---
-    // According to Apple's guidelines and practical PWA behavior:
-    // Routing audio through Web Audio API (createMediaElementSource) causes the audio to be controlled by the AudioContext clock.
-    // When iOS Safari backgrounds a tab, it suspends the AudioContext to save power, killing the audio stream.
-    // To ensure persistent background playback, we MUST use the native <audio> element output on iOS.
-    // We disable the AnalyserNode on iOS, which triggers the "Simulated" visualizer mode in the UI.
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
     if (!isIOS) {
@@ -122,7 +136,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     const handleEnded = () => {
-      playNext(false); // Auto play next
+      // Use ref to access latest playNext logic
+      if (playNextRef.current) {
+          playNextRef.current(false);
+      }
     };
 
     const handleError = (e: any) => {
@@ -163,11 +180,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // --- Logic Definitions ---
 
-  const playSong = async (song: Song) => {
+  const playSong = async (song: Song, forceQuality?: AudioQuality) => {
     if (!audioRef.current) return;
+    
+    // Determine effective quality
+    const targetQuality = forceQuality || audioQualityRef.current;
 
-    // Toggle if same song
-    if (currentSong?.id === song.id) {
+    // Toggle if same song AND same quality (reloading for quality change handled below)
+    const isSameSong = currentSongRef.current?.id === song.id;
+    const isDifferentQuality = forceQuality && forceQuality !== audioQuality; // Simplification, ideally track play quality
+
+    if (isSameSong && !isDifferentQuality) {
         // If it has a src and is basically ready
         if (audioRef.current.src && audioRef.current.src !== window.location.href) {
              togglePlay();
@@ -181,12 +204,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // Queue management
     setQueue(prev => {
-        if (prev.find(s => s.id === song.id)) return prev;
+        if (prev.find(s => String(s.id) === String(song.id))) return prev;
         return [...prev, fullSong];
     });
 
     try {
-        const url = await getSongUrl(song.id, song.source);
+        const url = await getSongUrl(song.id, song.source, targetQuality);
         
         // Optimistic UI update for pic
         if (!song.pic) {
@@ -201,8 +224,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
         if (url) {
             fullSong.url = url;
+            // Preserve time if just switching quality of same song
+            const resumeTime = (isSameSong && isDifferentQuality) ? audioRef.current.currentTime : 0;
+            
             audioRef.current.src = url;
             audioRef.current.load();
+            
+            if (resumeTime > 0) {
+                audioRef.current.currentTime = resumeTime;
+            }
             
             // Resume Context (Desktop only)
             if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
@@ -231,10 +261,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const togglePlay = useCallback(() => {
-    if (!audioRef.current || !currentSong) return;
+    if (!audioRef.current || !currentSongRef.current) return;
     
     if (!audioRef.current.src || audioRef.current.src === window.location.href) {
-        playSong(currentSong);
+        playSong(currentSongRef.current);
         return;
     }
     
@@ -245,13 +275,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
-      updateMediaSession(currentSong, 'paused');
+      updateMediaSession(currentSongRef.current, 'paused');
     } else {
       audioRef.current.play().catch(e => console.error(e));
       setIsPlaying(true);
-      updateMediaSession(currentSong, 'playing');
+      updateMediaSession(currentSongRef.current, 'playing');
     }
-  }, [isPlaying, currentSong]);
+  }, [isPlaying]);
 
   const seek = useCallback((time: number) => {
     if (audioRef.current) {
@@ -262,9 +292,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   const playNext = useCallback((force = true) => {
-    if (queue.length === 0 || !currentSong) return;
+    const q = queueRef.current;
+    const c = currentSongRef.current;
+    const mode = playModeRef.current;
+    
+    if (q.length === 0) return;
 
-    if (!force && playMode === 'loop') {
+    // Handle Loop Single Mode (only if not forced by user click)
+    if (!force && mode === 'loop') {
         if (audioRef.current) {
             audioRef.current.currentTime = 0;
             audioRef.current.play();
@@ -272,32 +307,42 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return;
     }
 
-    const currentIndex = queue.findIndex(s => s.id === currentSong.id);
+    const currentIndex = c ? q.findIndex(s => String(s.id) === String(c.id)) : -1;
     let nextIndex = 0;
 
-    if (playMode === 'shuffle') {
+    if (mode === 'shuffle') {
         do {
-            nextIndex = Math.floor(Math.random() * queue.length);
-        } while (queue.length > 1 && nextIndex === currentIndex);
+            nextIndex = Math.floor(Math.random() * q.length);
+        } while (q.length > 1 && nextIndex === currentIndex);
     } else {
-        nextIndex = (currentIndex + 1) % queue.length;
+        nextIndex = (currentIndex + 1) % q.length;
     }
 
-    playSong(queue[nextIndex]);
-  }, [currentSong, queue, playMode]);
+    playSong(q[nextIndex]);
+  }, []); // Logic relies on refs, so deps are empty is technically ok if we use refs inside
 
   const playPrev = useCallback(() => {
-      if (queue.length === 0 || !currentSong) return;
-      const currentIndex = queue.findIndex(s => s.id === currentSong.id);
+      const q = queueRef.current;
+      const c = currentSongRef.current;
+      const mode = playModeRef.current;
+
+      if (q.length === 0) return;
+      const currentIndex = c ? q.findIndex(s => String(s.id) === String(c.id)) : -1;
       let prevIndex = 0;
 
-      if (playMode === 'shuffle') {
-          prevIndex = Math.floor(Math.random() * queue.length);
+      if (mode === 'shuffle') {
+          prevIndex = Math.floor(Math.random() * q.length);
       } else {
-          prevIndex = (currentIndex - 1 + queue.length) % queue.length;
+          prevIndex = (currentIndex - 1 + q.length) % q.length;
       }
-      playSong(queue[prevIndex]);
-  }, [currentSong, queue, playMode]);
+      playSong(q[prevIndex]);
+  }, []);
+
+  // Update refs in useEffect or useCallback
+  useEffect(() => {
+      playNextRef.current = playNext;
+  }, [playNext]);
+
 
   // --- Helper for Media Session ---
   const updateMediaSession = (song: Song | null, state: 'playing' | 'paused') => {
@@ -335,10 +380,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // --- Media Session Handlers Registration ---
   useEffect(() => {
     if ('mediaSession' in navigator) {
-        // We bind the handlers once, they will rely on the latest closures or refs if we used refs, 
-        // BUT for React, we need to ensure these functions capture the correct state/props.
-        // Re-registering them when dependencies change is the safest way in useEffect.
-        
         navigator.mediaSession.setActionHandler('play', () => togglePlay());
         navigator.mediaSession.setActionHandler('pause', () => togglePlay());
         navigator.mediaSession.setActionHandler('previoustrack', () => playPrev());
@@ -354,17 +395,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if(currentSong) {
           updateMediaSession(currentSong, isPlaying ? 'playing' : 'paused');
       }
-  }, [currentSong]);
+  }, [currentSong, isPlaying]);
 
   const addToQueue = (song: Song) => {
     setQueue(prev => {
-        if (prev.find(s => s.id === song.id)) return prev;
+        if (prev.find(s => String(s.id) === String(song.id))) return prev;
         return [...prev, song];
     });
   };
 
   const removeFromQueue = (songId: string | number) => {
-      setQueue(prev => prev.filter(s => s.id !== songId));
+      setQueue(prev => prev.filter(s => String(s.id) !== String(songId)));
   };
 
   const clearQueue = () => {
@@ -379,6 +420,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
   };
 
+  const setAudioQuality = (q: AudioQuality) => {
+      setAudioQualityState(q);
+      // Immediately reload current song with new quality if playing
+      if (currentSong && isPlaying) {
+          playSong(currentSong, q);
+      }
+  };
+
   return (
     <PlayerContext.Provider value={{
       currentSong,
@@ -390,6 +439,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       playMode,
       queue,
       analyser,
+      audioQuality,
       playSong,
       togglePlay,
       seek,
@@ -398,7 +448,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       addToQueue,
       removeFromQueue,
       togglePlayMode,
-      clearQueue
+      clearQueue,
+      setAudioQuality
     }}>
       {children}
     </PlayerContext.Provider>

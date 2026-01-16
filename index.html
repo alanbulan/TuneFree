@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-CN">
   <head>
@@ -52,9 +53,33 @@
         background-color: #f2f2f7;
         color: #000;
         font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
-        overscroll-behavior-y: none;
+        
+        /* Disable pull-to-refresh and swipe navigation */
+        overscroll-behavior: none;
+        touch-action: pan-x pan-y;
+        
+        /* Remove tap highlight color */
         -webkit-tap-highlight-color: transparent;
+
+        /* Disable long-press context menu */
+        -webkit-touch-callout: none;
+        
+        /* Disable text selection */
+        -webkit-user-select: none;
+        user-select: none;
       }
+
+      /* Re-enable text selection for input fields */
+      input, textarea {
+        -webkit-user-select: text;
+        user-select: text;
+      }
+
+      /* Prevent dragging images */
+      img {
+        -webkit-user-drag: none;
+      }
+
       .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
       .pt-safe { padding-top: env(safe-area-inset-top); }
       
