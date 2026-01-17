@@ -13,19 +13,31 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     <div className="flex flex-col h-screen w-full bg-ios-bg relative overflow-hidden">
       {/* Main Content - Scrollable */}
       <main 
-        className="flex-1 overflow-y-auto overflow-x-hidden pb-32 no-scrollbar"
+        className="flex-1 overflow-y-auto overflow-x-hidden pb-32 no-scrollbar transform-gpu"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {children}
       </main>
 
-      {/* Mini Player */}
-      <MiniPlayer onExpand={() => setIsFullPlayerOpen(true)} />
+      {/* 
+         Shared Layout Transition Strategy:
+         We use AnimatePresence but keep MiniPlayer rendered in the DOM (hidden) when FullPlayer is active 
+         OR we switch them. Here we switch them to allow `layoutId` to morph one into the other.
+      */}
+      
+      {/* Mini Player - Only shown when Full Player is closed */}
+      {!isFullPlayerOpen && (
+         <MiniPlayer onExpand={() => setIsFullPlayerOpen(true)} layoutId="player-container" />
+      )}
 
-      {/* Full Player Overlay with Animation */}
+      {/* Full Player Overlay with Shared Layout Animation */}
       <AnimatePresence>
         {isFullPlayerOpen && (
-          <FullPlayer isOpen={isFullPlayerOpen} onClose={() => setIsFullPlayerOpen(false)} />
+          <FullPlayer 
+            isOpen={isFullPlayerOpen} 
+            onClose={() => setIsFullPlayerOpen(false)} 
+            layoutId="player-container"
+          />
         )}
       </AnimatePresence>
 
