@@ -1,8 +1,7 @@
 
-import { Song, TopList, SystemHealth, StatsSummary, PlatformStats, QpsStats, RequestTypeStats, TrendStats, OverallStats } from '../types';
+import { Song, TopList, SystemHealth } from '../types';
 
 const API_BASE = 'https://music-dl.sayqz.com/api';
-const STATS_BASE = 'https://music-dl.sayqz.com/stats';
 
 // Helper to handle API response structure
 const fetchApi = async (params: Record<string, string>) => {
@@ -28,19 +27,6 @@ const fetchApi = async (params: Record<string, string>) => {
   }
 };
 
-const fetchStats = async (endpoint: string, params: Record<string, string> = {}) => {
-  const searchParams = new URLSearchParams(params);
-  // Handle root endpoint case specially if endpoint is empty string
-  const url = `${STATS_BASE}${endpoint}?${searchParams.toString()}`;
-  try {
-      const response = await fetch(url, { referrerPolicy: 'no-referrer' });
-      return await response.json();
-  } catch (e) {
-      console.warn(`Stats fetch failed: ${url}`, e);
-      return null;
-  }
-};
-
 // 1. Get Song Info
 export const getSongInfo = async (id: string | number, source: string): Promise<Partial<Song> | null> => {
   try {
@@ -58,10 +44,57 @@ export const getSongInfo = async (id: string | number, source: string): Promise<
   }
 };
 
-// 2. Get Song URL (Updated with bitrate)
+// 2. Get Song URL (Optimized & Robust)
 export const getSongUrl = async (id: string | number, source: string, br: string = '320k'): Promise<string | null> => {
-    // We construct the URL directly for the audio element to handle redirects
-    return `${API_BASE}/?source=${source}&id=${id}&type=url&br=${br}`;
+    const url = `${API_BASE}/?source=${source}&id=${id}&type=url&br=${br}`;
+    
+    try {
+        // Use AbortController to timeout the check quickly (1.5s)
+        // We only want to peek at headers or verify it's not a JSON error.
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1500);
+
+        const res = await fetch(url, { 
+            method: 'GET', 
+            referrerPolicy: 'no-referrer',
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+            const contentType = res.headers.get('content-type');
+            
+            // If explicit JSON/HTML, it's an error/landing page
+            if (contentType && (contentType.includes('application/json') || contentType.includes('text/html'))) {
+                // Read body to confirm error (if small)
+                try {
+                    const text = await res.text();
+                    // If it parses as JSON error, return null
+                    if (text.startsWith('{') || text.startsWith('[')) {
+                         const json = JSON.parse(text);
+                         if (json.code || json.msg || json.success === false) {
+                             return null;
+                         }
+                    }
+                    // If HTML, definitely not audio
+                    if (contentType.includes('text/html')) return null;
+                } catch {
+                    return null;
+                }
+            }
+            // If content-type is audio/mpeg, octet-stream, or missing (often redirects), assume valid.
+            return url;
+        }
+        
+        // HTTP 4xx/5xx
+        if (res.status >= 400) return null;
+
+        return url;
+    } catch (e: any) {
+        // Timeout (AbortError) or CORS Error (TypeError)
+        // In both cases, we assume the URL might be valid (audio CDN) and let the Audio Element try it.
+        return url;
+    }
 };
 
 // 2b. Get Download URL with specific Quality
@@ -195,7 +228,7 @@ export const getTopListDetail = async (id: string | number, source: string): Pro
   }
 };
 
-// 10. System Status
+// 10. System Status (Retained but optional if backend supports it)
 export const getSystemStatus = async () => {
     try {
         const response = await fetch(`${API_BASE.replace('/api', '')}/status`, { referrerPolicy: 'no-referrer' });
@@ -205,7 +238,7 @@ export const getSystemStatus = async () => {
     }
 };
 
-// 11. System Health
+// 11. System Health (Retained but optional if backend supports it)
 export const getSystemHealth = async (): Promise<SystemHealth | null> => {
     try {
         const response = await fetch(`${API_BASE.replace('/api', '')}/health`, { referrerPolicy: 'no-referrer' });
@@ -216,53 +249,16 @@ export const getSystemHealth = async (): Promise<SystemHealth | null> => {
     }
 };
 
-// Latency Checker (New)
+// Latency Checker
 export const checkLatency = async (): Promise<number> => {
     const start = performance.now();
     try {
-        await fetch(`${API_BASE.replace('/api', '')}/health`, { method: 'HEAD', referrerPolicy: 'no-referrer' });
+        await fetch(`${API_BASE}/?type=toplists&source=netease`, { method: 'HEAD', referrerPolicy: 'no-referrer' });
         const end = performance.now();
         return Math.round(end - start);
     } catch (e) {
         return -1;
     }
-};
-
-// 12. Get Stats (Overall)
-export const getOverallStats = async (period: string = 'today'): Promise<OverallStats | null> => {
-    // This calls the root /stats endpoint which corresponds to #12
-    const res = await fetchStats('', { period });
-    return res?.data || null;
-};
-
-// 13. Stats Summary
-export const getStatsSummary = async (): Promise<StatsSummary | null> => {
-    const res = await fetchStats('/summary');
-    return res?.data || null;
-};
-
-// 14. Platform Stats
-export const getPlatformStats = async (period: string = 'today'): Promise<PlatformStats | null> => {
-    const res = await fetchStats('/platforms', { period });
-    return res?.data || null;
-};
-
-// 15. QPS Stats
-export const getQpsStats = async (period: string = 'today'): Promise<QpsStats | null> => {
-    const res = await fetchStats('/qps', { period });
-    return res?.data || null;
-};
-
-// 16. Trends
-export const getTrends = async (period: string = 'week'): Promise<TrendStats | null> => {
-    const res = await fetchStats('/trends', { period });
-    return res?.data || null;
-};
-
-// 17. Request Types
-export const getRequestTypeStats = async (period: string = 'today'): Promise<RequestTypeStats | null> => {
-    const res = await fetchStats('/types', { period });
-    return res?.data || null;
 };
 
 // --- Helpers ---

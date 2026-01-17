@@ -40,7 +40,7 @@ export interface TopList {
   picUrl?: string; // Optional if we want to show icons
 }
 
-// --- Stats API Types ---
+// --- Stats API Types (Retained minimal health types if needed, others removed) ---
 
 export interface SystemHealth {
   status: string;
@@ -58,61 +58,4 @@ export interface SystemStatus {
     };
     load?: number[];
     [key: string]: any;
-}
-
-// Endpoint #12 Data Structure
-export interface OverallStats {
-  period: string;
-  overall: {
-    total_calls: number;
-    success_calls: number;
-    success_rate: number;
-    avg_duration: number; // Unique data point
-  };
-  breakdown: Array<{
-    group_key: string;
-    total_calls: number;
-    success_rate: number;
-  }>;
-  qps: {
-    avg_qps: number;
-    peak_qps: number;
-  };
-}
-
-export interface StatsSummary {
-  today: {
-    total_calls: number;
-    success_rate: number;
-  };
-  week: {
-    total_calls: number;
-  };
-  top_platforms_today: { group_key: string; total_calls: number }[];
-}
-
-export interface PlatformStats {
-  platforms: Record<string, { total_calls: number; success_rate: number }>;
-}
-
-export interface TrendPoint {
-  date: string;
-  total_calls: number;
-  success_rate: number;
-}
-
-export interface TrendStats {
-  trends: TrendPoint[];
-}
-
-export interface QpsStats {
-  qps: {
-    avg_qps: number;
-    peak_qps: number;
-    hourly_data: { date: string; hour: number; calls: number; qps: string }[];
-  };
-}
-
-export interface RequestTypeStats {
-  requestTypes: Record<string, { total_calls: number; success_rate: number }>;
 }

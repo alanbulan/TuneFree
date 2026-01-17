@@ -55,12 +55,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   // Refs to solve Stale Closure issues in Event Listeners
-  // This is CRITICAL for playNext/playPrev to work correctly when called from 'ended' event
   const playNextRef = useRef<((force?: boolean) => void) | null>(null);
   const currentSongRef = useRef(currentSong);
   const queueRef = useRef(queue);
   const playModeRef = useRef(playMode);
   const audioQualityRef = useRef(audioQuality);
+  
+  // Track error retry to prevent loops
+  const retryCountRef = useRef(0);
 
   // Persistence Effects
   useEffect(() => {
@@ -86,36 +88,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // --- Audio Element Initialization ---
   useEffect(() => {
     const audio = new Audio();
-    audio.crossOrigin = "anonymous"; 
     audio.preload = "auto"; 
     (audio as any).playsInline = true; 
     
     audioRef.current = audio;
     
-    // --- COMPATIBILITY FIX FOR IOS/SAFARI ---
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
-    if (!isIOS) {
-        try {
-            const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-            if (AudioContext) {
-                const ctx = new AudioContext();
-                audioCtxRef.current = ctx;
-                const analyserNode = ctx.createAnalyser();
-                analyserNode.fftSize = 512;
-                
-                // Connect nodes: Source -> Analyser -> Destination
-                const source = ctx.createMediaElementSource(audio);
-                source.connect(analyserNode);
-                analyserNode.connect(ctx.destination);
-                
-                setAnalyser(analyserNode);
-            }
-        } catch (e) {
-            console.warn("Web Audio API setup failed:", e);
-        }
-    }
-
     const handleTimeUpdate = () => {
       setCurrentTime(audio.currentTime);
     };
@@ -123,6 +100,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const handleLoadedMetadata = () => {
       setDuration(audio.duration);
       setIsLoading(false);
+      retryCountRef.current = 0; // Success, reset retry
+      
       // Update Media Session position
       if ('mediaSession' in navigator && !isNaN(audio.duration)) {
          try {
@@ -131,21 +110,33 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                  playbackRate: audio.playbackRate,
                  position: audio.currentTime
              });
-         } catch(e) { /* ignore errors for infinite duration or similar */ }
+         } catch(e) { /* ignore errors */ }
       }
     };
 
     const handleEnded = () => {
-      // Use ref to access latest playNext logic
       if (playNextRef.current) {
           playNextRef.current(false);
       }
     };
 
     const handleError = (e: any) => {
-        console.error("Audio error", e);
+        const errorCode = audio.error?.code;
+        const errorMessage = audio.error?.message;
+        console.warn(`Audio Element Error: Code=${errorCode}, Msg=${errorMessage}`);
+
+        // Fallback Logic: If 320k/flac fails, try 128k
+        if (currentSongRef.current && audioQualityRef.current !== '128k' && retryCountRef.current === 0) {
+            console.warn(`Triggering fallback to 128k for ${currentSongRef.current.name}`);
+            retryCountRef.current = 1; 
+            playSong(currentSongRef.current, '128k');
+            return;
+        }
+
+        console.error("Critical playback failure.", audio.error);
         setIsLoading(false);
         setIsPlaying(false);
+        retryCountRef.current = 0;
     };
 
     const handleWaiting = () => {
@@ -186,12 +177,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Determine effective quality
     const targetQuality = forceQuality || audioQualityRef.current;
 
-    // Toggle if same song AND same quality (reloading for quality change handled below)
     const isSameSong = currentSongRef.current?.id === song.id;
-    const isDifferentQuality = forceQuality && forceQuality !== audioQuality; // Simplification, ideally track play quality
+    const isDifferentQuality = forceQuality && forceQuality !== audioQualityRef.current; 
 
-    if (isSameSong && !isDifferentQuality) {
-        // If it has a src and is basically ready
+    // Logic: If same song, same quality, and audio has source -> toggle
+    if (isSameSong && !isDifferentQuality && !forceQuality) {
         if (audioRef.current.src && audioRef.current.src !== window.location.href) {
              togglePlay();
              return;
@@ -199,6 +189,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     setIsLoading(true);
+    if (!forceQuality) {
+        retryCountRef.current = 0; // Reset retry if user manually clicked a new song
+    }
+
     let fullSong = { ...song };
     setCurrentSong(fullSong);
 
@@ -211,10 +205,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
         const url = await getSongUrl(song.id, song.source, targetQuality);
         
+        // Race condition check
+        if (currentSongRef.current?.id !== song.id) {
+            return;
+        }
+
         // Optimistic UI update for pic
         if (!song.pic) {
             getSongInfo(song.id, song.source).then(info => {
-                 if (info && info.pic) {
+                 if (info && info.pic && currentSongRef.current?.id === song.id) {
                     const updated = { ...fullSong, pic: info.pic };
                     setCurrentSong(prev => prev && prev.id === song.id ? updated : prev);
                     setQueue(prev => prev.map(s => s.id === song.id ? updated : s));
@@ -224,7 +223,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
         if (url) {
             fullSong.url = url;
-            // Preserve time if just switching quality of same song
             const resumeTime = (isSameSong && isDifferentQuality) ? audioRef.current.currentTime : 0;
             
             audioRef.current.src = url;
@@ -234,7 +232,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 audioRef.current.currentTime = resumeTime;
             }
             
-            // Resume Context (Desktop only)
             if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
                 audioCtxRef.current.resume();
             }
@@ -247,12 +244,37 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                         updateMediaSession(fullSong, 'playing');
                     })
                     .catch(error => {
-                        console.error("Play failed", error);
-                        setIsPlaying(false);
+                        console.error("Play start failed:", error.name, error.message);
+                        
+                        // Handle "NotSupportedError" (Format not supported/Source invalid)
+                        // Trigger fallback if we haven't already
+                        if ((error.name === 'NotSupportedError' || error.message.includes('source')) && retryCountRef.current === 0 && targetQuality !== '128k') {
+                            console.warn("Play promise rejected with source error, triggering fallback to 128k");
+                            retryCountRef.current = 1;
+                            playSong(song, '128k');
+                            return;
+                        }
+
+                        if (error.name === 'NotAllowedError') {
+                            setIsPlaying(false);
+                            setIsLoading(false);
+                        }
                     });
             }
         } else {
+            // URL is null (Strict check failed in api.ts)
+            console.warn(`No valid URL for ${song.name} [${targetQuality}]`);
+            
+            if (targetQuality !== '128k' && retryCountRef.current === 0) {
+                 console.warn("Retrying with 128k...");
+                 retryCountRef.current = 1;
+                 playSong(song, '128k');
+                 return;
+            }
+
             setIsLoading(false);
+            setIsPlaying(false);
+            // alert('无法播放此歌曲'); // Optional: show toast
         }
     } catch (err) {
         setIsLoading(false);
@@ -277,7 +299,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setIsPlaying(false);
       updateMediaSession(currentSongRef.current, 'paused');
     } else {
-      audioRef.current.play().catch(e => console.error(e));
+      audioRef.current.play().catch(e => console.error("Toggle play error", e));
       setIsPlaying(true);
       updateMediaSession(currentSongRef.current, 'playing');
     }
@@ -298,7 +320,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     
     if (q.length === 0) return;
 
-    // Handle Loop Single Mode (only if not forced by user click)
     if (!force && mode === 'loop') {
         if (audioRef.current) {
             audioRef.current.currentTime = 0;
@@ -319,7 +340,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     playSong(q[nextIndex]);
-  }, []); // Logic relies on refs, so deps are empty is technically ok if we use refs inside
+  }, []); 
 
   const playPrev = useCallback(() => {
       const q = queueRef.current;
@@ -338,13 +359,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       playSong(q[prevIndex]);
   }, []);
 
-  // Update refs in useEffect or useCallback
   useEffect(() => {
       playNextRef.current = playNext;
   }, [playNext]);
 
-
-  // --- Helper for Media Session ---
   const updateMediaSession = (song: Song | null, state: 'playing' | 'paused') => {
       if (!('mediaSession' in navigator) || !song) return;
       
@@ -377,7 +395,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
   };
 
-  // --- Media Session Handlers Registration ---
   useEffect(() => {
     if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler('play', () => togglePlay());
@@ -390,7 +407,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [togglePlay, playNext, playPrev, seek]);
 
-  // Ensure metadata is fresh on song change
   useEffect(() => {
       if(currentSong) {
           updateMediaSession(currentSong, isPlaying ? 'playing' : 'paused');
@@ -422,7 +438,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const setAudioQuality = (q: AudioQuality) => {
       setAudioQualityState(q);
-      // Immediately reload current song with new quality if playing
       if (currentSong && isPlaying) {
           playSong(currentSong, q);
       }

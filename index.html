@@ -13,6 +13,9 @@
     <meta name="apple-mobile-web-app-title" content="TuneFree" />
     <meta name="format-detection" content="telephone=no" />
     
+    <!-- CRITICAL: Fix for audio playback 403 errors on Kuwo/NetEase CDNs -->
+    <meta name="referrer" content="no-referrer" />
+    
     <title>TuneFree 音乐</title>
     
     <!-- iOS & PWA Icons -->
@@ -104,7 +107,7 @@
 }
 </script>
 </head>
-  <body>
+  <body oncontextmenu="return false;">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

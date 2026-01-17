@@ -271,7 +271,8 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
                     className={`p-3 -m-1 rounded-full active:scale-90 transition-transform ${!hasSong ? 'opacity-50' : ''}`}
                     disabled={!hasSong}
                  >
-                    {hasSong && isFavorite(Number(currentSong.id)) ? 
+                    {/* FIXED: Removed Number() wrapper to support string IDs from QQ Music */}
+                    {hasSong && isFavorite(currentSong.id) ? 
                         <HeartFillIcon className="text-ios-red" size={26} /> : 
                         <HeartIcon className="text-gray-400" size={26} />
                     }

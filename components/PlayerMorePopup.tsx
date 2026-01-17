@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useLibrary } from '../contexts/LibraryContext';
 import { useNavigate } from 'react-router-dom';
-import { FolderIcon, PlusIcon, MusicIcon, SearchIcon, DownloadIcon } from './Icons';
+import { FolderIcon, PlusIcon, MusicIcon, SearchIcon, DownloadIcon, ShareIcon } from './Icons';
 
 interface PlayerMorePopupProps {
   isOpen: boolean;
@@ -45,6 +45,31 @@ const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onCl
             navigate('/search');
           }
       }, 300);
+  };
+
+  const handleShare = async () => {
+    if (!currentSong) return;
+    
+    const shareText = `我在 TuneFree 发现了一首好歌：${currentSong.artist} - ${currentSong.name}，快来听听吧！`;
+    const shareUrl = window.location.origin;
+
+    const shareData = {
+        title: currentSong.name,
+        text: shareText,
+        url: shareUrl
+    };
+
+    try {
+        if (navigator.share) {
+            await navigator.share(shareData);
+        } else {
+            await navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
+            alert('分享信息已复制到剪贴板');
+        }
+    } catch (e) {
+        // ignore share cancellation
+    }
+    onClose();
   };
 
   const qualities = [
@@ -101,15 +126,27 @@ const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onCl
                     </div>
                 </div>
 
-                <button 
-                    onClick={() => setShowPlaylistSelect(true)}
-                    className="w-full flex items-center space-x-4 p-4 bg-gray-50 hover:bg-gray-100 rounded-xl transition active:scale-[0.98]"
-                >
-                    <div className="p-2 bg-white rounded-full text-ios-blue shadow-sm">
-                        <FolderIcon size={20} />
-                    </div>
-                    <span className="font-medium text-gray-800">添加到歌单...</span>
-                </button>
+                <div className="space-y-2">
+                    <button 
+                        onClick={() => setShowPlaylistSelect(true)}
+                        className="w-full flex items-center space-x-4 p-4 bg-gray-50 hover:bg-gray-100 rounded-xl transition active:scale-[0.98]"
+                    >
+                        <div className="p-2 bg-white rounded-full text-ios-blue shadow-sm">
+                            <FolderIcon size={20} />
+                        </div>
+                        <span className="font-medium text-gray-800">添加到歌单...</span>
+                    </button>
+
+                    <button 
+                        onClick={handleShare}
+                        className="w-full flex items-center space-x-4 p-4 bg-gray-50 hover:bg-gray-100 rounded-xl transition active:scale-[0.98]"
+                    >
+                        <div className="p-2 bg-white rounded-full text-ios-blue shadow-sm">
+                            <ShareIcon size={20} />
+                        </div>
+                        <span className="font-medium text-gray-800">分享歌曲</span>
+                    </button>
+                </div>
 
                  <div className="grid grid-cols-2 gap-2 mt-2">
                     <button 

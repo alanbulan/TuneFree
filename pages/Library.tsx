@@ -5,9 +5,8 @@ import { useLibrary } from '../contexts/LibraryContext';
 import { getOnlinePlaylist } from '../services/api';
 import { Song, Playlist } from '../types';
 import { HeartFillIcon, FolderIcon, PlusIcon, TrashIcon, SettingsIcon, DownloadIcon, UploadIcon, MusicIcon } from '../components/Icons';
-import StatusDashboard from '../components/StatusDashboard';
 
-type Tab = 'favorites' | 'playlists' | 'manage' | 'status';
+type Tab = 'favorites' | 'playlists' | 'manage';
 
 const Library: React.FC = () => {
   const { queue, playSong } = usePlayer();
@@ -143,12 +142,6 @@ const Library: React.FC = () => {
             onClick={() => { setActiveTab('manage'); setSelectedPlaylistId(null); }}
         >
             管理
-        </button>
-        <button 
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap px-2 ${activeTab === 'status' ? 'bg-white shadow-sm text-ios-text' : 'text-gray-500'}`}
-            onClick={() => { setActiveTab('status'); setSelectedPlaylistId(null); }}
-        >
-            监控
         </button>
       </div>
 
@@ -323,10 +316,6 @@ const Library: React.FC = () => {
                   </div>
               </div>
           </div>
-      )}
-
-      {activeTab === 'status' && (
-          <StatusDashboard />
       )}
 
       {/* Create Playlist Modal */}
