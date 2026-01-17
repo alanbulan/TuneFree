@@ -52,23 +52,20 @@
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       
-      html {
-        /* Strictly disable browser swipe navigation (back/forward) */
-        overscroll-behavior-x: none;
-        overscroll-behavior-y: none;
+      html, body {
+        height: 100%;
+        overflow: hidden; /* Prevent body scroll, handle scroll in Layout */
+        /* Disable browser swipe navigation and rubber banding */
+        overscroll-behavior: none; 
       }
 
       body {
-        height: 100%;
         background-color: #f2f2f7;
         color: #000;
         font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
         
-        /* Prevent bounce effects globally */
-        overscroll-behavior: none; 
-        
-        /* Use manipulation to prevent double-tap zoom but allow panning */
-        touch-action: manipulation;
+        /* CRITICAL: Disable horizontal swipe gestures (browser back) */
+        touch-action: pan-y;
         
         /* Remove tap highlight color */
         -webkit-tap-highlight-color: transparent;
