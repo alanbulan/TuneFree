@@ -10,9 +10,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isFullPlayerOpen, setIsFullPlayerOpen] = useState(false);
 
   return (
-    <div className="flex flex-col h-full w-full bg-ios-bg relative overflow-hidden">
+    <div className="flex flex-col h-screen w-full bg-ios-bg relative overflow-hidden">
       {/* Main Content - Scrollable */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden pb-32 no-scrollbar touch-pan-y">
+      <main 
+        className="flex-1 overflow-y-auto overflow-x-hidden pb-32 no-scrollbar"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         {children}
       </main>
 
