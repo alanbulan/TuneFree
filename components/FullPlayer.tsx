@@ -13,6 +13,7 @@ import AudioVisualizer from './AudioVisualizer';
 import QueuePopup from './QueuePopup';
 import DownloadPopup from './DownloadPopup';
 import PlayerMorePopup from './PlayerMorePopup';
+import { motion, PanInfo } from 'framer-motion';
 
 interface FullPlayerProps {
   isOpen: boolean;
@@ -25,14 +26,12 @@ const parseLrc = (lrc: string): ParsedLyric[] => {
   const raw: { time: number; text: string }[] = [];
   const timeExp = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
   
-  // 1. Parse all lines first
   for (const line of lines) {
     const match = timeExp.exec(line);
     if (match) {
       const min = parseInt(match[1]);
       const sec = parseInt(match[2]);
       const msStr = match[3];
-      // Handle timestamp precision: 2 digits = 1/100s, 3 digits = 1/1000s
       const msVal = parseInt(msStr);
       const ms = msStr.length === 2 ? msVal * 10 : msVal;
       
@@ -45,19 +44,15 @@ const parseLrc = (lrc: string): ParsedLyric[] => {
     }
   }
 
-  // 2. Sort by time to ensure order
   raw.sort((a, b) => a.time - b.time);
 
-  // 3. Merge duplicate timestamps (assume second line is translation)
   const result: ParsedLyric[] = [];
   for (const item of raw) {
       const last = result[result.length - 1];
-      // Check if time is within 0.2s difference (tolerating slight offsets)
       if (last && Math.abs(last.time - item.time) < 0.2) {
           if (!last.translation) {
               last.translation = item.text;
           }
-          // If translation exists, ignore extra lines or append? Ignoring for now to keep UI clean.
       } else {
           result.push({ time: item.time, text: item.text });
       }
@@ -88,7 +83,6 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
   // Fetch Lyrics
   useEffect(() => {
     if (isOpen && currentSong) {
-      // RESET STATE IMMEDIATELY
       setLyrics([]);
       setActiveLyricIndex(0);
       
@@ -102,13 +96,10 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
   // Sync Lyrics Highlight
   useEffect(() => {
     if (lyrics.length === 0) return;
-    
-    // Find the current line
     const index = lyrics.findIndex((line, i) => {
       const nextLine = lyrics[i + 1];
       return currentTime >= line.time && (!nextLine || currentTime < nextLine.time);
     });
-    
     if (index !== -1 && index !== activeLyricIndex) {
       setActiveLyricIndex(index);
     }
@@ -119,29 +110,40 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
       if (showLyrics && lyricsContainerRef.current && lyrics.length > 0) {
           const activeEl = lyricsContainerRef.current.children[activeLyricIndex] as HTMLElement;
           if (activeEl) {
-              // Calculate scroll position to center the element
-              // We need to account for the container's padding and height
               const container = lyricsContainerRef.current;
               const scrollNew = activeEl.offsetTop - container.clientHeight / 2 + activeEl.clientHeight / 2;
-              
-              container.scrollTo({
-                  top: scrollNew,
-                  behavior: 'smooth'
-              });
+              container.scrollTo({ top: scrollNew, behavior: 'smooth' });
           }
       }
   }, [activeLyricIndex, showLyrics, lyrics]);
 
-  if (!isOpen) return null;
-  
   const hasSong = !!currentSong;
 
+  // Gesture Handler
+  const handleDragEnd = (_: any, info: PanInfo) => {
+    // If dragged down more than 150px or fast swipe down
+    if (info.offset.y > 150 || info.velocity.y > 200) {
+        onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white overflow-hidden transition-all duration-300">
+    <motion.div 
+      initial={{ y: '100%' }}
+      animate={{ y: 0 }}
+      exit={{ y: '100%' }}
+      transition={{ type: 'spring', damping: 25, stiffness: 300, mass: 0.8 }}
+      className="fixed inset-0 z-50 flex flex-col bg-white overflow-hidden"
+      drag="y"
+      dragConstraints={{ top: 0, bottom: 0 }} // Snap back to 0 unless closed
+      dragElastic={{ top: 0, bottom: 0.2 }} // Rubber band effect only on bottom
+      onDragEnd={handleDragEnd}
+      style={{ touchAction: 'none' }} // Prevents browser gestures interfering with drag
+    >
       {/* Ambient Background */}
       {hasSong && currentSong.pic && (
         <div 
-            className="absolute inset-0 z-0 opacity-40 scale-150 blur-3xl transition-opacity duration-1000"
+            className="absolute inset-0 z-0 opacity-40 scale-150 blur-3xl transition-opacity duration-1000 pointer-events-none"
             style={{ 
                 backgroundImage: `url(${currentSong.pic})`,
                 backgroundPosition: 'center',
@@ -149,14 +151,15 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
             }}
         />
       )}
-      <div className="absolute inset-0 z-0 bg-white/60 backdrop-blur-3xl" />
+      <div className="absolute inset-0 z-0 bg-white/60 backdrop-blur-3xl pointer-events-none" />
 
-      {/* --- Header --- */}
+      {/* --- Header (Draggable Area) --- */}
       <div className="relative z-10 flex items-center justify-between px-6 pt-safe mt-4 pb-2">
         <button onClick={onClose} className="p-2 text-gray-500 hover:text-black active:scale-90 transition">
           <ChevronDownIcon size={30} />
         </button>
-        <div className="w-10 h-1 bg-gray-300/80 rounded-full mx-auto absolute left-0 right-0 top-safe mt-4 pointer-events-none" />
+        {/* Drag Handle Indicator */}
+        <div className="w-10 h-1.5 bg-gray-300/80 rounded-full mx-auto absolute left-0 right-0 top-safe mt-4 pointer-events-none" />
         <button 
             onClick={() => hasSong && setShowMore(true)} 
             className={`p-2 transition active:scale-90 ${hasSong ? 'text-gray-500 hover:text-black' : 'text-gray-300'}`}
@@ -171,16 +174,20 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
           
           <div className="relative flex-1 w-full">
             {/* 1. Cover View */}
-            <div 
-                className={`absolute inset-0 flex flex-col items-center justify-center transition-all duration-500 ease-in-out px-8 ${showLyrics ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'}`}
+            <motion.div 
+                className={`absolute inset-0 flex flex-col items-center justify-center px-8`}
+                animate={{ opacity: showLyrics ? 0 : 1, scale: showLyrics ? 0.95 : 1 }}
+                style={{ pointerEvents: showLyrics ? 'none' : 'auto' }}
                 onClick={() => hasSong && setShowLyrics(true)}
             >
-                <div className="w-full aspect-square max-h-[350px] bg-gray-100 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.15)] rounded-[2rem] overflow-hidden transition-transform duration-700">
+                <div className="w-full aspect-square max-h-[350px] bg-gray-100 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.15)] rounded-[2rem] overflow-hidden">
                     {hasSong && currentSong.pic ? (
-                        <img 
+                        <motion.img 
                             src={currentSong.pic} 
                             alt="Album" 
-                            className={`w-full h-full object-cover transition-transform duration-700 ${isPlaying ? 'scale-100' : 'scale-95'}`}
+                            className="w-full h-full object-cover"
+                            animate={{ scale: isPlaying ? 1 : 0.95 }}
+                            transition={{ duration: 0.7, ease: "easeInOut" }}
                         />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center">
@@ -188,18 +195,23 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
                         </div>
                     )}
                 </div>
-            </div>
+            </motion.div>
 
             {/* 2. Lyrics View */}
-            <div 
-                className={`absolute inset-0 flex flex-col items-center justify-center transition-all duration-500 ease-in-out z-20 ${showLyrics ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}
+            <motion.div 
+                className={`absolute inset-0 flex flex-col items-center justify-center z-20`}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: showLyrics ? 1 : 0, scale: showLyrics ? 1 : 0.95 }}
+                style={{ pointerEvents: showLyrics ? 'auto' : 'none' }}
             >
-                {/* Click background to close */}
+                {/* Click background to close lyrics */}
                 <div className="absolute inset-0" onClick={() => setShowLyrics(false)} />
 
+                {/* Stop propagation on the scroll container so we can scroll lyrics without dragging the sheet */}
                 <div 
                     ref={lyricsContainerRef}
                     className="w-full h-full overflow-y-auto no-scrollbar relative px-8 py-[40vh] text-center"
+                    onPointerDown={(e) => e.stopPropagation()} // Vital: prevents dragging the sheet when interacting with lyrics
                     style={{ 
                         maskImage: 'linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%)',
                         WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%)'
@@ -240,12 +252,14 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
                         </div>
                     )}
                 </div>
-            </div>
+            </motion.div>
           </div>
 
-          {/* Song Info */}
-          {/* Added z-30 to ensure this layer stays above the cover/lyrics layers which have lower z-indexes */}
-          <div className="relative z-30 px-8 mt-4 mb-2 min-h-[80px] flex items-center justify-between pointer-events-auto">
+          {/* Song Info (Stop propagation to allow text selection or interactions) */}
+          <div 
+            className="relative z-30 px-8 mt-4 mb-2 min-h-[80px] flex items-center justify-between pointer-events-auto"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
              <div className="flex-1 min-w-0 pr-4">
                 <h2 className="text-2xl font-bold truncate text-black leading-tight">
                     {hasSong ? currentSong.name : "未播放"}
@@ -271,7 +285,6 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
                     className={`p-3 -m-1 rounded-full active:scale-90 transition-transform ${!hasSong ? 'opacity-50' : ''}`}
                     disabled={!hasSong}
                  >
-                    {/* FIXED: Removed Number() wrapper to support string IDs from QQ Music */}
                     {hasSong && isFavorite(currentSong.id) ? 
                         <HeartFillIcon className="text-ios-red" size={26} /> : 
                         <HeartIcon className="text-gray-400" size={26} />
@@ -281,8 +294,11 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
           </div>
       </div>
 
-      {/* --- Footer Controls --- */}
-      <div className="relative z-30 w-full px-8 pb-safe mb-4">
+      {/* --- Footer Controls (Stop Drag Propagation) --- */}
+      <div 
+        className="relative z-30 w-full px-8 pb-safe mb-4"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         
         {/* Audio Visualizer */}
         <div className="mb-2 h-6 flex items-end">
@@ -347,7 +363,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose }) => {
       <QueuePopup isOpen={showQueue} onClose={() => setShowQueue(false)} />
       {hasSong && <DownloadPopup isOpen={showDownload} onClose={() => setShowDownload(false)} song={currentSong} />}
       <PlayerMorePopup isOpen={showMore} onClose={() => setShowMore(false)} onClosePlayer={onClose} />
-    </div>
+    </motion.div>
   );
 };
 

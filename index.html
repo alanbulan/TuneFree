@@ -52,14 +52,20 @@
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       
+      html, body {
+        height: 100%;
+        overflow: hidden; /* Prevent body scroll, handle scroll in Layout */
+        /* Disable browser swipe navigation and rubber banding */
+        overscroll-behavior: none; 
+      }
+
       body {
         background-color: #f2f2f7;
         color: #000;
         font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
         
-        /* Disable pull-to-refresh and swipe navigation */
-        overscroll-behavior: none;
-        touch-action: pan-x pan-y;
+        /* CRITICAL: Disable horizontal swipe gestures (browser back) */
+        touch-action: pan-y;
         
         /* Remove tap highlight color */
         -webkit-tap-highlight-color: transparent;
@@ -96,13 +102,14 @@
   <script type="importmap">
 {
   "imports": {
-    "react": "https://esm.sh/react@^19.2.3",
     "react/": "https://esm.sh/react@^19.2.3/",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
     "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "framer-motion": "https://esm.sh/framer-motion@^12.26.2",
     "react-router-dom": "https://esm.sh/react-router-dom@^7.12.0",
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "vite": "https://esm.sh/vite@^7.3.1"
   }
 }
 </script>

@@ -2,6 +2,7 @@
 import React from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { PlayIcon, PauseIcon, NextIcon, MusicIcon } from './Icons';
+import { motion } from 'framer-motion';
 
 interface MiniPlayerProps {
   onExpand: () => void;
@@ -14,9 +15,12 @@ const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand }) => {
   const hasSong = !!currentSong;
   
   return (
-    <div 
-      className="fixed bottom-[88px] left-3 right-3 h-14 bg-white/90 backdrop-blur-xl rounded-2xl flex items-center px-4 shadow-[0_8px_30px_rgb(0,0,0,0.08)] z-40 border border-gray-100 transition-transform active:scale-[0.98]"
+    <motion.div 
+      className="fixed bottom-[88px] left-3 right-3 h-14 bg-white/90 backdrop-blur-xl rounded-2xl flex items-center px-4 shadow-[0_8px_30px_rgb(0,0,0,0.08)] z-40 border border-gray-100"
       onClick={onExpand}
+      initial={{ y: 20, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      whileTap={{ scale: 0.98 }}
     >
       <div className={`relative w-10 h-10 rounded-full overflow-hidden mr-3 flex-shrink-0 shadow-sm flex items-center justify-center ${hasSong ? 'bg-gray-200' : 'bg-gray-100'}`}>
         {hasSong && currentSong?.pic ? (
@@ -64,7 +68,7 @@ const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand }) => {
           <NextIcon size={24} className="fill-current" />
         </button>
       </div>
-    </div>
+    </motion.div>
   );
 };
 

@@ -1,23 +1,30 @@
+
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import MiniPlayer from './MiniPlayer';
 import FullPlayer from './FullPlayer';
 import { HomeIcon, SearchIcon, LibraryIcon } from './Icons';
+import { AnimatePresence } from 'framer-motion';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isFullPlayerOpen, setIsFullPlayerOpen] = useState(false);
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-ios-bg overflow-hidden relative">
-      <main className="flex-1 overflow-y-auto overflow-x-hidden pb-32 no-scrollbar">
+    <div className="flex flex-col h-full w-full bg-ios-bg relative overflow-hidden">
+      {/* Main Content - Scrollable */}
+      <main className="flex-1 overflow-y-auto overflow-x-hidden pb-32 no-scrollbar touch-pan-y">
         {children}
       </main>
 
       {/* Mini Player */}
       <MiniPlayer onExpand={() => setIsFullPlayerOpen(true)} />
 
-      {/* Full Player Overlay */}
-      <FullPlayer isOpen={isFullPlayerOpen} onClose={() => setIsFullPlayerOpen(false)} />
+      {/* Full Player Overlay with Animation */}
+      <AnimatePresence>
+        {isFullPlayerOpen && (
+          <FullPlayer isOpen={isFullPlayerOpen} onClose={() => setIsFullPlayerOpen(false)} />
+        )}
+      </AnimatePresence>
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 w-full glass border-t border-black/5 pb-safe z-30">
