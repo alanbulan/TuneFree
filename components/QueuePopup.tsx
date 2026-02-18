@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { Song } from '../types';
@@ -71,7 +70,7 @@ const QueuePopup: React.FC<QueuePopupProps> = ({ isOpen, onClose }) => {
                   >
                      <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden flex items-center justify-center">
                          {song.pic ? (
-                             <img src={song.pic} className="w-full h-full object-cover" />
+                             <img src={song.pic} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                          ) : (
                              <MusicIcon size={16} className="text-gray-300" />
                          )}

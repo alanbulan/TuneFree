@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { PlayIcon, PauseIcon, NextIcon, MusicIcon } from './Icons';
 import { motion } from 'framer-motion';
@@ -11,8 +10,13 @@ interface MiniPlayerProps {
 
 const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand, layoutId }) => {
   const { currentSong, isPlaying, togglePlay, playNext, queue } = usePlayer();
+  const [imgError, setImgError] = useState(false);
 
-  // Empty State Logic
+  // Reset error state when song changes
+  useEffect(() => {
+    setImgError(false);
+  }, [currentSong?.id, currentSong?.pic]);
+
   const hasSong = !!currentSong;
   
   return (
@@ -25,7 +29,6 @@ const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand, layoutId }) => {
       exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
       whileTap={{ scale: 0.98 }}
     >
-      {/* Content wrapper to fade content separately from the container morph */}
       <motion.div 
         className="flex items-center w-full"
         initial={{ opacity: 0 }}
@@ -34,14 +37,16 @@ const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand, layoutId }) => {
         transition={{ duration: 0.2 }}
       >
           <div className={`relative w-10 h-10 rounded-full overflow-hidden mr-3 flex-shrink-0 shadow-sm flex items-center justify-center ${hasSong ? 'bg-gray-200' : 'bg-gray-100'}`}>
-            {hasSong && currentSong?.pic ? (
+            {hasSong && currentSong?.pic && !imgError ? (
                 <img 
                     src={currentSong.pic} 
                     alt="Art" 
+                    referrerPolicy="no-referrer"
                     className="w-full h-full object-cover animate-spin-slow"
                     style={{ 
                         animationPlayState: isPlaying ? 'running' : 'paused'
                     }}
+                    onError={() => setImgError(true)}
                 />
             ) : (
                 <MusicIcon className="text-gray-400 w-6 h-6" />

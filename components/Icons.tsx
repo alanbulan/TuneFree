@@ -4,7 +4,7 @@ import {
   Play, Pause, SkipForward, SkipBack, Search, Home, 
   ListMusic, MoreHorizontal, ChevronDown, Music2, AlertCircle,
   Heart, Plus, Share, Download, Upload, Trash2, Settings, Folder,
-  Repeat, Repeat1, Shuffle, List
+  Repeat, Repeat1, Shuffle, List, Key
 } from 'lucide-react';
 
 export const PlayIcon = ({ size = 24, className = "" }) => <Play size={size} className={className} fill="currentColor" />;
@@ -33,3 +33,6 @@ export const RepeatIcon = ({ size = 24, className = "" }) => <Repeat size={size}
 export const RepeatOneIcon = ({ size = 24, className = "" }) => <Repeat1 size={size} className={className} />;
 export const ShuffleIcon = ({ size = 24, className = "" }) => <Shuffle size={size} className={className} />;
 export const QueueIcon = ({ size = 24, className = "" }) => <List size={size} className={className} />;
+
+// Fix: Added KeyIcon export to resolve Library.tsx import error
+export const KeyIcon = ({ size = 24, className = "" }) => <Key size={size} className={className} />;

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useLibrary } from '../contexts/LibraryContext';
@@ -78,6 +77,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
   const [showQueue, setShowQueue] = useState(false);
   const [showDownload, setShowDownload] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  const [imgError, setImgError] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
 
@@ -86,6 +86,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
     if (isOpen && currentSong) {
       setLyrics([]);
       setActiveLyricIndex(0);
+      setImgError(false); // Reset image error
       
       getLyrics(currentSong.id, currentSong.source).then(rawLrc => {
         if (rawLrc) setLyrics(parseLrc(rawLrc));
@@ -132,27 +133,17 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
     <motion.div 
       layoutId={layoutId}
       className="fixed inset-0 z-50 flex flex-col bg-white overflow-hidden touch-none"
-      // Animation Config
       initial={{ y: '100%' }}
       animate={{ y: 0 }}
       exit={{ y: '100%' }}
       transition={{ type: 'spring', damping: 28, stiffness: 300, mass: 0.8 }}
-      
-      // Drag Config
       drag="y"
       dragConstraints={{ top: 0, bottom: 0 }}
-      dragElastic={{ top: 0.05, bottom: 0.5 }} // Stiff top, rubbery bottom
+      dragElastic={{ top: 0.05, bottom: 0.5 }}
       dragDirectionLock={true}
       onDragEnd={handleDragEnd}
-      
-      // Stop overscroll chaining to body (prevents browser back swipe)
       style={{ overscrollBehavior: 'none' }}
     >
-      {/* 
-         Content Wrapper
-         We wrap content in a separate motion div to fade it in/out slightly delayed from the container morph
-         to prevent "stretching" of internal text/images during the shared layout transition.
-      */}
       <motion.div 
         className="flex flex-col h-full w-full relative"
         initial={{ opacity: 0 }}
@@ -161,7 +152,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
         transition={{ duration: 0.3 }}
       >
           {/* Ambient Background */}
-          {hasSong && currentSong.pic && (
+          {hasSong && currentSong.pic && !imgError && (
             <div 
                 className="absolute inset-0 z-0 opacity-40 scale-150 blur-3xl transition-opacity duration-1000 pointer-events-none"
                 style={{ 
@@ -173,12 +164,11 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
           )}
           <div className="absolute inset-0 z-0 bg-white/60 backdrop-blur-3xl pointer-events-none" />
 
-          {/* --- Header (Draggable Area) --- */}
+          {/* --- Header --- */}
           <div className="relative z-10 flex items-center justify-between px-6 pt-safe mt-4 pb-2">
             <button onClick={onClose} className="p-2 text-gray-500 hover:text-black active:scale-90 transition">
               <ChevronDownIcon size={30} />
             </button>
-            {/* Drag Handle Indicator */}
             <div className="w-10 h-1.5 bg-gray-300/80 rounded-full mx-auto absolute left-0 right-0 top-safe mt-4 pointer-events-none" />
             <button 
                 onClick={() => hasSong && setShowMore(true)} 
@@ -189,7 +179,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
             </button>
           </div>
 
-          {/* --- Main Content Area --- */}
+          {/* --- Main Content --- */}
           <div className="relative z-10 flex-1 w-full overflow-hidden flex flex-col">
               
               <div className="relative flex-1 w-full">
@@ -201,13 +191,15 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
                     onClick={() => hasSong && setShowLyrics(true)}
                 >
                     <div className="w-full aspect-square max-h-[350px] bg-gray-100 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.15)] rounded-[2rem] overflow-hidden">
-                        {hasSong && currentSong.pic ? (
+                        {hasSong && currentSong.pic && !imgError ? (
                             <motion.img 
                                 src={currentSong.pic} 
                                 alt="Album" 
+                                referrerPolicy="no-referrer"
                                 className="w-full h-full object-cover"
                                 animate={{ scale: isPlaying ? 1 : 0.95 }}
                                 transition={{ duration: 0.7, ease: "easeInOut" }}
+                                onError={() => setImgError(true)}
                             />
                         ) : (
                             <div className="w-full h-full flex items-center justify-center">
@@ -224,14 +216,12 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
                     animate={{ opacity: showLyrics ? 1 : 0, scale: showLyrics ? 1 : 0.95 }}
                     style={{ pointerEvents: showLyrics ? 'auto' : 'none' }}
                 >
-                    {/* Click background to close lyrics */}
                     <div className="absolute inset-0" onClick={() => setShowLyrics(false)} />
 
-                    {/* Stop propagation on the scroll container so we can scroll lyrics without dragging the sheet */}
                     <div 
                         ref={lyricsContainerRef}
                         className="w-full h-full overflow-y-auto no-scrollbar relative px-8 py-[40vh] text-center"
-                        onPointerDown={(e) => e.stopPropagation()} // Vital: prevents dragging the sheet when interacting with lyrics
+                        onPointerDown={(e) => e.stopPropagation()} 
                         style={{ 
                             maskImage: 'linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%)',
                             WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%)'
@@ -275,7 +265,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
                 </motion.div>
               </div>
 
-              {/* Song Info (Stop propagation to allow text selection or interactions) */}
+              {/* Song Info */}
               <div 
                 className="relative z-30 px-8 mt-4 mb-2 min-h-[80px] flex items-center justify-between pointer-events-auto"
                 onPointerDown={(e) => e.stopPropagation()}
@@ -314,18 +304,15 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
               </div>
           </div>
 
-          {/* --- Footer Controls (Stop Drag Propagation) --- */}
+          {/* --- Footer Controls --- */}
           <div 
             className="relative z-30 w-full px-8 pb-safe mb-4"
             onPointerDown={(e) => e.stopPropagation()}
           >
-            
-            {/* Audio Visualizer */}
             <div className="mb-2 h-6 flex items-end">
                 <AudioVisualizer isPlaying={isPlaying} />
             </div>
 
-            {/* Progress Bar */}
             <div className="w-full mb-6 group">
                 <input 
                     type="range" 
@@ -342,12 +329,10 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
                 </div>
             </div>
 
-            {/* Main Controls */}
             <div className="flex items-center justify-between mb-4">
                 <button 
                     onClick={togglePlayMode} 
                     className={`p-2 transition active:scale-90 ${playMode !== 'sequence' ? 'text-ios-red' : 'text-gray-400 hover:text-gray-600'}`}
-                    title="切换模式"
                 >
                     {playMode === 'sequence' && <RepeatIcon size={22} />}
                     {playMode === 'loop' && <RepeatOneIcon size={22} />}
@@ -379,7 +364,6 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
             </div>
           </div>
 
-          {/* Popups */}
           <QueuePopup isOpen={showQueue} onClose={() => setShowQueue(false)} />
           {hasSong && <DownloadPopup isOpen={showDownload} onClose={() => setShowDownload(false)} song={currentSong} />}
           <PlayerMorePopup isOpen={showMore} onClose={() => setShowMore(false)} onClosePlayer={onClose} />

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { searchAggregate, searchSongs } from '../services/api';
@@ -27,7 +26,6 @@ const Search: React.FC = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   
-  // History State
   const [history, setHistory] = useState<string[]>(() => {
       try {
           const stored = localStorage.getItem('tunefree_search_history');
@@ -37,7 +35,6 @@ const Search: React.FC = () => {
       }
   });
   
-  // Update query when URL parameter changes (e.g. navigation from player)
   useEffect(() => {
       const q = searchParams.get('q');
       if (q !== null && q !== query) {
@@ -48,15 +45,13 @@ const Search: React.FC = () => {
   const debouncedQuery = useDebounce(query, 800);
   const { playSong, currentSong, isPlaying } = usePlayer();
 
-  // Save history to local storage
   useEffect(() => {
       localStorage.setItem('tunefree_search_history', JSON.stringify(history));
   }, [history]);
 
   const addToHistory = (term: string) => {
-      if (!term.trim()) return;
+      if (!term || typeof term !== 'string' || !term.trim()) return;
       setHistory(prev => {
-          // Remove duplicate if exists, add new to top, limit to 15
           const newHist = [term, ...prev.filter(h => h !== term)].slice(0, 15);
           return newHist;
       });
@@ -68,10 +63,7 @@ const Search: React.FC = () => {
       }
   };
 
-  // Reset results when query or mode changes
   useEffect(() => {
-      // Only reset if we are actually going to search (query not empty)
-      // or if query became empty
       setResults([]);
       setPage(1);
       setHasMore(true);
@@ -90,7 +82,7 @@ const Search: React.FC = () => {
                   data = await searchSongs(debouncedQuery, selectedSource, page);
               }
               
-              if (data.length === 0) {
+              if (!data || data.length === 0) {
                   setHasMore(false);
               } else {
                   setResults(prev => page === 1 ? data : [...prev, ...data]);
@@ -113,7 +105,6 @@ const Search: React.FC = () => {
       }
   };
 
-  // Wrap playSong to record history
   const handlePlaySong = (song: Song) => {
       addToHistory(query);
       playSong(song);
@@ -123,18 +114,13 @@ const Search: React.FC = () => {
       if (e.key === 'Enter') {
           e.preventDefault();
           addToHistory(query);
-          // Update URL to reflect search (optional but good practice)
           setSearchParams({ q: query });
-          // Force blur to hide keyboard on mobile
           (e.target as HTMLInputElement).blur();
       }
   };
   
   const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = e.target.value;
-      setQuery(val);
-      // We don't update URL immediately on typing to avoid history spam, 
-      // but we could if we wanted. For now let's keep it simple.
+      setQuery(e.target.value);
   };
 
   return (
@@ -142,12 +128,11 @@ const Search: React.FC = () => {
       <div className="sticky top-0 bg-ios-bg/95 backdrop-blur-md z-20 pb-2 transition-all">
         <h1 className="text-3xl font-bold mb-4 text-ios-text">搜索</h1>
         
-        {/* Search Input */}
         <div className="relative shadow-sm rounded-xl mb-3">
           <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
-            placeholder={searchMode === 'aggregate' ? "聚合搜索全网资源..." : `搜索 ${selectedSource} 资源...`}
+            placeholder={searchMode === 'aggregate' ? "全网聚合搜索 (已启用跨域代理)..." : `搜索 ${selectedSource} 资源...`}
             className="w-full bg-white text-ios-text pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-ios-red/20 transition-all placeholder-gray-400 text-[15px]"
             value={query}
             onChange={handleQueryChange}
@@ -155,7 +140,6 @@ const Search: React.FC = () => {
           />
         </div>
 
-        {/* Search Mode Toggles */}
         <div className="flex items-center space-x-2 overflow-x-auto no-scrollbar py-1">
              <button 
                 onClick={() => setSearchMode('aggregate')}
@@ -186,9 +170,9 @@ const Search: React.FC = () => {
                         onChange={(e) => setSelectedSource(e.target.value)}
                         className="bg-white border border-gray-200 text-xs font-medium px-3 py-1.5 rounded-full outline-none text-gray-700"
                     >
-                        <option value="netease">网易云 (Netease)</option>
-                        <option value="qq">QQ音乐 (QQ)</option>
-                        <option value="kuwo">酷我 (Kuwo)</option>
+                        <option value="netease">网易云</option>
+                        <option value="qq">QQ音乐</option>
+                        <option value="kuwo">酷我音乐</option>
                     </select>
                  </>
              )}
@@ -196,8 +180,6 @@ const Search: React.FC = () => {
       </div>
 
       <div className="space-y-2 mt-4 pb-20">
-        
-        {/* Search History (Show only when query is empty) */}
         {!query && history.length > 0 && (
             <div className="mb-6">
                 <div className="flex items-center justify-between mb-3 px-1">
@@ -211,12 +193,12 @@ const Search: React.FC = () => {
                         <button
                             key={idx}
                             onClick={() => {
-                                setQuery(term);
-                                setSearchParams({ q: term });
+                                setQuery(String(term));
+                                setSearchParams({ q: String(term) });
                             }}
                             className="px-3 py-1.5 bg-white text-gray-600 text-xs rounded-lg border border-gray-100 active:bg-gray-100 transition truncate max-w-[150px]"
                         >
-                            {term}
+                            {String(term)}
                         </button>
                     ))}
                 </div>
@@ -225,6 +207,10 @@ const Search: React.FC = () => {
 
         {results.length > 0 && results.map((song, idx) => {
             const isCurrent = currentSong?.id === song.id;
+            // 防御性处理：确保 name 和 artist 是字符串
+            const songName = typeof song.name === 'string' ? song.name : '未知歌曲';
+            const songArtist = typeof song.artist === 'string' ? song.artist : '未知歌手';
+
             return (
                 <div 
                     key={`${song.source}-${song.id}-${idx}`} 
@@ -233,11 +219,10 @@ const Search: React.FC = () => {
                 >
                     <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
                         {song.pic ? (
-                            <img src={song.pic} alt={song.name} className="w-full h-full object-cover" />
+                            <img src={song.pic} alt={songName} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                         ) : (
                             <MusicIcon className="text-gray-300" size={24} />
                         )}
-                        
                         {isCurrent && isPlaying && (
                              <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
                                  <div className="w-3 h-3 rounded-full bg-ios-red animate-pulse" />
@@ -245,15 +230,17 @@ const Search: React.FC = () => {
                         )}
                     </div>
                     <div className="flex-1 min-w-0">
-                        <p className={`font-medium truncate text-[15px] ${isCurrent ? 'text-ios-red' : 'text-ios-text'}`}>{song.name}</p>
+                        <p className={`font-medium truncate text-[15px] ${isCurrent ? 'text-ios-red' : 'text-ios-text'}`}>
+                            {songName}
+                        </p>
                         <div className="flex items-center mt-0.5 space-x-2">
                             <span className={`text-[9px] px-1 rounded uppercase tracking-wider ${
                                 song.source === 'netease' ? 'bg-red-100 text-red-600' :
                                 song.source === 'qq' ? 'bg-green-100 text-green-600' :
                                 song.source === 'kuwo' ? 'bg-yellow-100 text-yellow-700' : 
                                 'bg-gray-200 text-gray-600'
-                            }`}>{song.source}</span>
-                            <p className="text-xs text-ios-subtext truncate">{song.artist}</p>
+                            }`}>{String(song.source)}</span>
+                            <p className="text-xs text-ios-subtext truncate">{songArtist}</p>
                         </div>
                     </div>
                 </div>
@@ -261,8 +248,9 @@ const Search: React.FC = () => {
         })}
 
         {isSearching && (
-           <div className="flex justify-center py-6">
-              <div className="w-6 h-6 border-2 border-ios-red border-t-transparent rounded-full animate-spin"></div>
+           <div className="flex flex-col items-center justify-center py-10 space-y-3">
+              <div className="w-8 h-8 border-3 border-ios-red border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-xs text-gray-400">正在通过代理聚合资源...</p>
            </div>
         )}
 
@@ -271,21 +259,15 @@ const Search: React.FC = () => {
                 onClick={handleLoadMore}
                 className="w-full py-4 text-sm text-ios-subtext font-medium active:bg-gray-100 rounded-xl transition"
             >
-                加载更多
+                查看更多结果
             </button>
         )}
         
         {!isSearching && results.length === 0 && query !== '' && (
-             <div className="text-center py-10 text-gray-400 text-sm">
-                未找到相关歌曲
+             <div className="text-center py-16 text-gray-400 text-sm">
+                <MusicIcon size={48} className="mx-auto mb-4 opacity-10" />
+                <p>未找到相关歌曲，请尝试简化关键词</p>
              </div>
-        )}
-        
-        {query === '' && history.length === 0 && (
-            <div className="flex flex-col items-center justify-center pt-16 text-gray-400 space-y-4 opacity-60">
-                <MusicIcon size={48} className="opacity-30" />
-                <p className="text-sm">支持网易云、QQ、酷我</p>
-            </div>
         )}
       </div>
     </div>

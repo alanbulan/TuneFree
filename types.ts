@@ -4,20 +4,15 @@ export interface Song {
   name: string;
   artist: string;
   album: string;
-  pic?: string; // Cover image URL
-  url?: string; // Audio URL
-  lrc?: string; // Lyric URL or text
-  source: 'netease' | 'kuwo' | 'qq' | string; // Source platform
-  duration?: number; // Optional, API doesn't always return this in lists
-  types?: string[]; // Available qualities: 128k, 320k, flac, flac24bit
+  pic?: string;
+  url?: string;
+  lrc?: string;
+  source: 'netease' | 'qq' | 'kuwo' | string;
+  types?: string[];
 }
 
 export type PlayMode = 'sequence' | 'loop' | 'shuffle';
 export type AudioQuality = '128k' | '320k' | 'flac' | 'flac24bit';
-
-export interface LyricData {
-  lrc: string; // The API returns plain text for type=lrc
-}
 
 export interface ParsedLyric {
   time: number;
@@ -28,7 +23,6 @@ export interface ParsedLyric {
 export interface Playlist {
   id: string;
   name: string;
-  description?: string;
   createTime: number;
   songs: Song[];
 }
@@ -37,25 +31,23 @@ export interface TopList {
   id: string | number;
   name: string;
   updateFrequency?: string;
-  picUrl?: string; // Optional if we want to show icons
+  picUrl?: string;
+  coverImgUrl?: string; // Netease often uses this
 }
 
-// --- Stats API Types (Retained minimal health types if needed, others removed) ---
-
-export interface SystemHealth {
-  status: string;
-  msg?: string;
-  data?: any;
+// TuneHub Method Configuration
+export interface TuneHubMethod {
+  type: 'http';
+  method: 'GET' | 'POST';
+  url: string;
+  params?: Record<string, string>;
+  body?: any;
+  headers?: Record<string, string>;
+  transform?: string;
 }
 
-export interface SystemStatus {
-    version?: string;
-    uptime?: number;
-    memory?: {
-        rss: number;
-        heapTotal: number;
-        heapUsed: number;
-    };
-    load?: number[];
-    [key: string]: any;
+export interface TuneHubResponse<T> {
+  code: number;
+  msg: string;
+  data: T;
 }
