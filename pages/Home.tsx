@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback } from 'react';
 import { getTopLists, getTopListDetail } from '../services/api';
 import { Song, TopList } from '../types';
@@ -21,7 +20,6 @@ const Home: React.FC = () => {
         const lists = await getTopLists(source);
         if (lists && lists.length > 0) {
             setTopLists(lists);
-            // Fetch first list details
             try {
                  const songs = await getTopListDetail(lists[0].id, source);
                  setFeaturedSongs(songs.slice(0, 20));
@@ -42,7 +40,6 @@ const Home: React.FC = () => {
     }
   }, [activeSource]);
 
-  // Initial load
   useEffect(() => {
     fetchLists(activeSource);
   }, [activeSource, fetchLists]);
@@ -74,12 +71,11 @@ const Home: React.FC = () => {
         <h1 className="text-3xl font-bold text-ios-text tracking-tight">{getGreeting()}</h1>
       </div>
       
-      {/* Top Lists Section */}
       <section className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-ios-text">排行榜</h2>
             <div className="flex bg-gray-200/80 p-0.5 rounded-lg">
-                {(['netease', 'kuwo', 'qq'] as const).map(src => (
+                {(['netease', 'qq', 'kuwo'] as const).map(src => (
                     <button 
                         key={src}
                         onClick={() => setActiveSource(src)}
@@ -106,16 +102,29 @@ const Home: React.FC = () => {
               </div>
           ) : (
               <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
-                  {topLists.map((list) => (
-                      <button 
-                        key={list.id}
-                        onClick={() => handleTopListClick(list)}
-                        className="flex-shrink-0 bg-white p-3 rounded-xl shadow-sm border border-gray-100 min-w-[120px] max-w-[140px] text-left active:scale-95 transition"
-                      >
-                          <p className="font-bold text-ios-text text-sm truncate">{list.name}</p>
-                          <p className="text-xs text-ios-subtext mt-1 truncate">{list.updateFrequency || '每日更新'}</p>
-                      </button>
-                  ))}
+                  {topLists.map((list) => {
+                      const cover = list.coverImgUrl || list.picUrl;
+                      return (
+                          <button 
+                            key={list.id}
+                            onClick={() => handleTopListClick(list)}
+                            className="flex-shrink-0 bg-white p-2 rounded-2xl shadow-sm border border-gray-100 min-w-[120px] max-w-[140px] text-left active:scale-95 transition"
+                          >
+                              <div className="w-full aspect-square mb-2 rounded-xl overflow-hidden bg-gray-100 relative">
+                                    {cover ? (
+                                        <img src={cover} alt={list.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                            <MusicIcon size={24} />
+                                        </div>
+                                    )}
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none"></div>
+                              </div>
+                              <p className="font-bold text-ios-text text-sm truncate px-1">{String(list.name || '未知榜单')}</p>
+                              <p className="text-[10px] text-ios-subtext mt-0.5 truncate px-1">{String(list.updateFrequency || '每日更新')}</p>
+                          </button>
+                      );
+                  })}
               </div>
           )}
       </section>
@@ -132,34 +141,39 @@ const Home: React.FC = () => {
              </div>
         ) : featuredSongs.length > 0 ? (
             <div className="space-y-3 pb-24">
-            {featuredSongs.map((song, idx) => (
-                <div 
-                    key={`${song.id}-${idx}`} 
-                    className="flex items-center space-x-4 bg-white p-3 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.02)] active:scale-[0.99] transition cursor-pointer"
-                    onClick={() => playSong(song)}
-                >
-                <span className={`font-bold text-lg w-6 text-center italic ${idx < 3 ? 'text-ios-red' : 'text-ios-subtext/50'}`}>{idx + 1}</span>
-                <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                    {song.pic ? (
-                        <img src={song.pic} alt={song.name} className="w-full h-full object-cover" />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-300">
-                            <MusicIcon size={20} />
-                        </div>
-                    )}
-                </div>
-                <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-ios-text truncate text-[15px]">{song.name}</p>
-                    <div className="flex items-center mt-1 space-x-2">
-                        <span className="text-[10px] px-1 rounded bg-gray-100 text-gray-500 uppercase">{song.source}</span>
-                        <p className="text-xs text-ios-subtext truncate">{song.artist}</p>
+            {featuredSongs.map((song, idx) => {
+                const songName = typeof song.name === 'string' ? song.name : '未知歌曲';
+                const songArtist = typeof song.artist === 'string' ? song.artist : '未知歌手';
+
+                return (
+                    <div 
+                        key={`${song.id}-${idx}`} 
+                        className="flex items-center space-x-4 bg-white p-3 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.02)] active:scale-[0.99] transition cursor-pointer"
+                        onClick={() => playSong(song)}
+                    >
+                    <span className={`font-bold text-lg w-6 text-center italic ${idx < 3 ? 'text-ios-red' : 'text-ios-subtext/50'}`}>{idx + 1}</span>
+                    <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                        {song.pic ? (
+                            <img src={song.pic} alt={songName} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                <MusicIcon size={20} />
+                            </div>
+                        )}
                     </div>
-                </div>
-                <button className="p-3 text-ios-red/80 hover:text-ios-red bg-gray-50 rounded-full">
-                    <PlayIcon size={18} className="fill-current ml-0.5" />
-                </button>
-                </div>
-            ))}
+                    <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-ios-text truncate text-[15px]">{songName}</p>
+                        <div className="flex items-center mt-1 space-x-2">
+                            <span className="text-[10px] px-1 rounded bg-gray-100 text-gray-500 uppercase">{String(song.source)}</span>
+                            <p className="text-xs text-ios-subtext truncate">{songArtist}</p>
+                        </div>
+                    </div>
+                    <button className="p-3 text-ios-red/80 hover:text-ios-red bg-gray-50 rounded-full">
+                        <PlayIcon size={18} className="fill-current ml-0.5" />
+                    </button>
+                    </div>
+                );
+            })}
             </div>
         ) : (
             !loading && (

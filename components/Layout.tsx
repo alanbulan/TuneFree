@@ -1,23 +1,45 @@
+
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import MiniPlayer from './MiniPlayer';
 import FullPlayer from './FullPlayer';
 import { HomeIcon, SearchIcon, LibraryIcon } from './Icons';
+import { AnimatePresence } from 'framer-motion';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isFullPlayerOpen, setIsFullPlayerOpen] = useState(false);
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-ios-bg overflow-hidden relative">
-      <main className="flex-1 overflow-y-auto overflow-x-hidden pb-32 no-scrollbar">
+    <div className="flex flex-col h-screen w-full bg-ios-bg relative overflow-hidden">
+      {/* Main Content - Scrollable */}
+      <main 
+        className="flex-1 overflow-y-auto overflow-x-hidden pb-32 no-scrollbar transform-gpu"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         {children}
       </main>
 
-      {/* Mini Player */}
-      <MiniPlayer onExpand={() => setIsFullPlayerOpen(true)} />
+      {/* 
+         Shared Layout Transition Strategy:
+         We use AnimatePresence but keep MiniPlayer rendered in the DOM (hidden) when FullPlayer is active 
+         OR we switch them. Here we switch them to allow `layoutId` to morph one into the other.
+      */}
+      
+      {/* Mini Player - Only shown when Full Player is closed */}
+      {!isFullPlayerOpen && (
+         <MiniPlayer onExpand={() => setIsFullPlayerOpen(true)} layoutId="player-container" />
+      )}
 
-      {/* Full Player Overlay */}
-      <FullPlayer isOpen={isFullPlayerOpen} onClose={() => setIsFullPlayerOpen(false)} />
+      {/* Full Player Overlay with Shared Layout Animation */}
+      <AnimatePresence>
+        {isFullPlayerOpen && (
+          <FullPlayer 
+            isOpen={isFullPlayerOpen} 
+            onClose={() => setIsFullPlayerOpen(false)} 
+            layoutId="player-container"
+          />
+        )}
+      </AnimatePresence>
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 w-full glass border-t border-black/5 pb-safe z-30">

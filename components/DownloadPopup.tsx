@@ -1,8 +1,8 @@
-
 import React from 'react';
 import { Song } from '../types';
 import { DownloadIcon, MusicIcon } from './Icons';
-import { getDownloadUrl, triggerDownload } from '../services/api';
+// Changed getDownloadUrl to getSongUrl as it is the correct function name in api.ts
+import { getSongUrl, triggerDownload } from '../services/api';
 
 interface DownloadPopupProps {
   isOpen: boolean;
@@ -25,8 +25,14 @@ const DownloadPopup: React.FC<DownloadPopupProps> = ({ isOpen, onClose, song }) 
     ? song.types 
     : ['128k', '320k', 'flac'];
 
-  const handleDownload = (type: string) => {
-    const url = getDownloadUrl(song.id, song.source, type);
+  // Fix: handleDownload needs to be async to await the download URL from the API
+  const handleDownload = async (type: string) => {
+    // Changed getDownloadUrl to getSongUrl which is exported in api.ts
+    const url = await getSongUrl(song.id, song.source, type);
+    if (!url) {
+        alert('获取下载链接失败');
+        return;
+    }
     const meta = QUALITY_MAP[type] || { ext: 'mp3' };
     const filename = `${song.artist} - ${song.name}.${meta.ext}`;
     triggerDownload(url, filename);
@@ -44,7 +50,7 @@ const DownloadPopup: React.FC<DownloadPopupProps> = ({ isOpen, onClose, song }) 
         <div className="flex items-center space-x-3 mb-6">
             <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
                 {song.pic ? (
-                    <img src={song.pic} className="w-full h-full object-cover" />
+                    <img src={song.pic} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-300">
                         <MusicIcon size={24} />
