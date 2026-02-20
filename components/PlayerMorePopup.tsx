@@ -75,6 +75,7 @@ const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onCl
       { id: '128k', label: '标准', desc: '128k' },
       { id: '320k', label: '高品', desc: '320k' },
       { id: 'flac', label: '无损', desc: 'FLAC' },
+      { id: 'flac24bit', label: 'Hi-Res', desc: '24bit' },
   ];
 
   return (
