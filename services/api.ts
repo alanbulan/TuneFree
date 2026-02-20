@@ -374,10 +374,12 @@ export async function executeMethod<T>(platform: string, fn: string, variables: 
             console.log(`Trying proxy: ${proxy} -> ${requestUrl}`);
 
             // 构建 fetch 选项（POST 请求需带 body，QQ 音乐必需）
+            // 自建代理是同源请求，不需要 cors mode（避免 CF 透传头引发 CORS 预检失败）
+            const isSelfProxy = proxy === SELF_HOSTED_PROXY;
             const fetchOpts: RequestInit = {
                 method: config.method,
                 headers: safeHeaders,
-                mode: 'cors',
+                ...(isSelfProxy ? {} : { mode: 'cors' as RequestMode }),
                 credentials: 'omit'
             };
             if (config.body) {
@@ -574,11 +576,12 @@ const fetchFallbackLyrics = async (id: string | number, source: string): Promise
             for (const proxy of proxies) {
                 try {
                     const finalUrl = `${proxy}${encodeURIComponent('https://u.y.qq.com/cgi-bin/musicu.fcg')}`;
+                    const isSelfProxy = proxy === SELF_HOSTED_PROXY;
                     const resp = await fetch(finalUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(body),
-                        mode: 'cors',
+                        ...(isSelfProxy ? {} : { mode: 'cors' as RequestMode }),
                         credentials: 'omit'
                     });
                     const data = await resp.json();
@@ -680,7 +683,9 @@ const proxyFetchJson = async (url: string): Promise<any> => {
             // 超时控制：8 秒
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000);
-            const resp = await fetch(finalUrl, { mode: 'cors', credentials: 'omit', signal: controller.signal });
+            // 自建代理是同源请求，不设 mode: 'cors'
+            const isSelfProxy = proxy === SELF_HOSTED_PROXY;
+            const resp = await fetch(finalUrl, { ...(isSelfProxy ? {} : { mode: 'cors' as RequestMode }), credentials: 'omit', signal: controller.signal });
             clearTimeout(timeoutId);
             const text = await resp.text();
             let data: any = null;
@@ -716,11 +721,13 @@ const qqSearchFallback = async (keyword: string, page: number, limit: number): P
             const finalUrl = `${proxy}${encodeURIComponent('https://u.y.qq.com/cgi-bin/musicu.fcg')}`;
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000);
+            // 自建代理是同源请求，不设 mode: 'cors'
+            const isSelfProxy = proxy === SELF_HOSTED_PROXY;
             const resp = await fetch(finalUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
-                mode: 'cors',
+                ...(isSelfProxy ? {} : { mode: 'cors' as RequestMode }),
                 credentials: 'omit',
                 signal: controller.signal
             });
@@ -803,8 +810,9 @@ const batchFetchKuwoCovers = async (songs: Song[]): Promise<Song[]> => {
             const apiUrl = `http://artistpicserver.kuwo.cn/pic.web?corp=kuwo&type=rid_pic&pictype=500&size=500&rid=${song.id}`;
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000);
+            const isSelfProxy = proxy === SELF_HOSTED_PROXY;
             const resp = await fetch(`${proxy}${encodeURIComponent(apiUrl)}`, {
-                mode: 'cors', credentials: 'omit', signal: controller.signal
+                ...(isSelfProxy ? {} : { mode: 'cors' as RequestMode }), credentials: 'omit', signal: controller.signal
             });
             clearTimeout(timeoutId);
             const picUrl = (await resp.text()).trim();
@@ -831,7 +839,8 @@ const kuwoSearchFallback = async (keyword: string, page: number, limit: number):
                 : `${proxy}${encodeURIComponent(rawUrl)}`;
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000);
-            const resp = await fetch(finalUrl, { mode: 'cors', credentials: 'omit', signal: controller.signal });
+            const isSelfProxy = proxy === SELF_HOSTED_PROXY;
+            const resp = await fetch(finalUrl, { ...(isSelfProxy ? {} : { mode: 'cors' as RequestMode }), credentials: 'omit', signal: controller.signal });
             clearTimeout(timeoutId);
             let text = await resp.text();
             // 旧版 kuwo API 返回单引号 dict，转换为标准 JSON
