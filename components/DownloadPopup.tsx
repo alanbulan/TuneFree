@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Song } from '../types';
 import { DownloadIcon, MusicIcon } from './Icons';
 // Changed getDownloadUrl to getSongUrl as it is the correct function name in api.ts
@@ -18,25 +18,40 @@ const QUALITY_MAP: Record<string, { label: string, desc: string, ext: string }> 
 };
 
 const DownloadPopup: React.FC<DownloadPopupProps> = ({ isOpen, onClose, song }) => {
+  const [downloadingType, setDownloadingType] = useState<string | null>(null);
+
+  // 弹窗打开时锁定背景滚动
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = ''; };
+    }
+  }, [isOpen]);
+
   if (!isOpen || !song) return null;
 
   // Determine available qualities. If song.types is missing, show standard options.
-  const availableTypes = song.types && song.types.length > 0 
-    ? song.types 
+  const availableTypes = song.types && song.types.length > 0
+    ? song.types
     : ['128k', '320k', 'flac', 'flac24bit'];
 
-  // Fix: handleDownload needs to be async to await the download URL from the API
+  // 异步获取下载 URL，防止重复点击
   const handleDownload = async (type: string) => {
-    // Changed getDownloadUrl to getSongUrl which is exported in api.ts
-    const url = await getSongUrl(song.id, song.source, type);
-    if (!url) {
-        alert('获取下载链接失败');
-        return;
+    if (downloadingType) return; // 防止重复点击
+    setDownloadingType(type);
+    try {
+      const url = await getSongUrl(song.id, song.source, type);
+      if (!url) {
+          alert('获取下载链接失败');
+          return;
+      }
+      const meta = QUALITY_MAP[type] || { ext: 'mp3' };
+      const filename = `${song.artist} - ${song.name}.${meta.ext}`;
+      triggerDownload(url, filename);
+      onClose();
+    } finally {
+      setDownloadingType(null);
     }
-    const meta = QUALITY_MAP[type] || { ext: 'mp3' };
-    const filename = `${song.artist} - ${song.name}.${meta.ext}`;
-    triggerDownload(url, filename);
-    onClose();
   };
 
   return (
@@ -71,17 +86,22 @@ const DownloadPopup: React.FC<DownloadPopupProps> = ({ isOpen, onClose, song }) 
             {availableTypes.map((type) => {
                 const info = QUALITY_MAP[type] || { label: type.toUpperCase(), desc: '未知格式', ext: 'mp3' };
                 return (
-                    <button 
+                    <button
                         key={type}
                         onClick={() => handleDownload(type)}
-                        className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 rounded-xl transition"
+                        disabled={!!downloadingType}
+                        className={`w-full flex items-center justify-between p-4 bg-gray-50 rounded-xl transition ${downloadingType ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-100 active:bg-gray-200'}`}
                     >
                         <div className="flex flex-col items-start">
                             <span className="font-bold text-gray-800">{info.label}</span>
                             <span className="text-xs text-gray-400">{info.desc}</span>
                         </div>
                         <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-gray-400 shadow-sm">
-                            <DownloadIcon size={16} />
+                            {downloadingType === type ? (
+                                <div className="w-4 h-4 border-2 border-gray-300 border-t-ios-red rounded-full animate-spin" />
+                            ) : (
+                                <DownloadIcon size={16} />
+                            )}
                         </div>
                     </button>
                 )

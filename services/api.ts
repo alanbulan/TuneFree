@@ -66,13 +66,13 @@ const fixUrl = (url: string | undefined): string => {
 const findId = (item: any, platform: string): string | undefined => {
     if (!item) return undefined;
     
-    // QQ Specific
+    // QQ Specific — parse API 需要 songmid（字母数字格式），优先于 numeric id
     if (platform === 'qq') {
-        if (item.topId) return String(item.topId); 
-        if (item.id) return String(item.id); 
-        if (item.mid) return String(item.mid);
         if (item.songmid) return String(item.songmid);
+        if (item.mid) return String(item.mid);
         if (item.file?.media_mid) return String(item.file.media_mid);
+        if (item.topId) return String(item.topId);
+        if (item.id) return String(item.id);
     }
     
     // Kuwo Specific
@@ -503,7 +503,7 @@ export const getSongInfo = async (id: string | number, source: string): Promise<
 export const getLyrics = async (id: string | number, source: string): Promise<string> => {
     // 先尝试 TuneHub parse 获取歌词
     const data = await parseSongs(String(id), source);
-    const lrc = data?.[0]?.lrc || data?.[0]?.lyric || "";
+    const lrc = data?.[0]?.lrc || data?.[0]?.lyric || data?.[0]?.lyrics || "";
     if (lrc) return lrc;
 
     // parse 未返回歌词，使用平台原生歌词 API 作为备用
@@ -611,7 +611,7 @@ export const parseSongFull = async (
     if (cached && Date.now() - cached.timestamp < PARSE_CACHE_TTL) {
         const item = cached.data[0];
         const normalized = normalizeSongs(cached.data, platform)[0];
-        let lrc = item?.lrc || item?.lyric || '';
+        let lrc = item?.lrc || item?.lyric || item?.lyrics || '';
         if (!lrc) lrc = await fetchFallbackLyrics(id, platform);
         return {
             url: fixUrl(item?.url) || null,
@@ -627,7 +627,7 @@ export const parseSongFull = async (
 
     const item = data[0];
     const normalized = normalizeSongs(data, platform)[0];
-    let lrc = item?.lrc || item?.lyric || '';
+    let lrc = item?.lrc || item?.lyric || item?.lyrics || '';
 
     // parse 未返回歌词时，异步获取备用歌词（不阻塞 URL 返回）
     if (!lrc) {

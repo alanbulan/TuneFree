@@ -331,16 +331,25 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 audioCtxRef.current.resume();
             }
 
+            // 乐观更新：先设置播放状态，避免切换音质时 UI 闪烁到暂停
+            setIsPlaying(true);
+            setIsLoading(false);
+
             const playPromise = audioRef.current.play();
             if (playPromise !== undefined) {
                 playPromise
                     .then(() => {
-                        setIsPlaying(true);
                         updateMediaSession(fullSong, 'playing');
                     })
                     .catch(error => {
+                        // AbortError: play() 被新的 load() 中断（切换音质场景），忽略
+                        if (error.name === 'AbortError') {
+                            console.log('[Player] play() 被中断（AbortError），等待新请求');
+                            return;
+                        }
+
                         console.error("Play start failed:", error.name, error.message);
-                        
+
                         // Handle "NotSupportedError" (Format not supported/Source invalid)
                         // Trigger fallback if we haven't already
                         if ((error.name === 'NotSupportedError' || error.message.includes('source')) && retryCountRef.current === 0 && targetQuality !== '128k') {

@@ -12,6 +12,14 @@ const QueuePopup: React.FC<QueuePopupProps> = ({ isOpen, onClose }) => {
   const { queue, currentSong, playSong, removeFromQueue, clearQueue, playMode, togglePlayMode } = usePlayer();
   const listRef = useRef<HTMLDivElement>(null);
 
+  // 弹窗打开时锁定背景滚动
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = ''; };
+    }
+  }, [isOpen]);
+
   // Auto scroll to current song when opened
   useEffect(() => {
     if (isOpen && currentSong && listRef.current) {
@@ -28,14 +36,14 @@ const QueuePopup: React.FC<QueuePopupProps> = ({ isOpen, onClose }) => {
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/40 z-[60] backdrop-blur-sm transition-opacity touch-auto"
+        className="fixed inset-0 bg-black/40 z-[65] backdrop-blur-sm transition-opacity touch-auto"
         onClick={onClose}
         onPointerDown={e => e.stopPropagation()}
       />
 
       {/* Drawer */}
       <div
-        className="fixed bottom-4 left-4 right-4 h-[60vh] bg-white rounded-3xl z-[61] shadow-2xl flex flex-col overflow-hidden animate-slide-up touch-auto"
+        className="fixed bottom-4 left-4 right-4 h-[60vh] bg-white rounded-3xl z-[66] shadow-2xl flex flex-col overflow-hidden animate-slide-up touch-auto"
         onPointerDown={e => e.stopPropagation()}
       >
         {/* Header */}

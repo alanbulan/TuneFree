@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useLibrary } from '../contexts/LibraryContext';
 import { useNavigate } from 'react-router-dom';
@@ -17,6 +17,18 @@ const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onCl
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const navigate = useNavigate();
+
+  // 弹窗打开时锁定背景滚动；关闭时重置子状态
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = ''; };
+    } else {
+      setShowPlaylistSelect(false);
+      setNewPlaylistName('');
+      setIsCreating(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen || !currentSong) return null;
 
