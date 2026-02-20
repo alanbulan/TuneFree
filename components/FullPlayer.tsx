@@ -87,11 +87,17 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
       setLyrics([]);
       setActiveLyricIndex(0);
       setImgError(false); // Reset image error
-      
-      getLyrics(currentSong.id, currentSong.source).then(rawLrc => {
-        if (rawLrc) setLyrics(parseLrc(rawLrc));
-        else setLyrics([{ time: 0, text: "暂无歌词" }]);
-      });
+
+      // 优先使用播放时已缓存的歌词，避免重复调用 parse 浪费积分
+      if (currentSong.lrc) {
+        const parsed = parseLrc(currentSong.lrc);
+        setLyrics(parsed.length > 0 ? parsed : [{ time: 0, text: "暂无歌词" }]);
+      } else {
+        getLyrics(currentSong.id, currentSong.source).then(rawLrc => {
+          if (rawLrc) setLyrics(parseLrc(rawLrc));
+          else setLyrics([{ time: 0, text: "暂无歌词" }]);
+        });
+      }
     }
   }, [currentSong, isOpen]);
 
@@ -190,13 +196,14 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
                     style={{ pointerEvents: showLyrics ? 'none' : 'auto' }}
                     onClick={() => hasSong && setShowLyrics(true)}
                 >
-                    <div className="w-full aspect-square max-h-[350px] bg-gray-100 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.15)] rounded-[2rem] overflow-hidden">
+                    <div className="w-full max-w-[350px] bg-gray-100 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.15)] rounded-2xl overflow-hidden">
                         {hasSong && currentSong.pic && !imgError ? (
-                            <motion.img 
-                                src={currentSong.pic} 
-                                alt="Album" 
+                            <motion.img
+                                src={currentSong.pic}
+                                alt="Album"
                                 referrerPolicy="no-referrer"
-                                className="w-full h-full object-cover"
+                                loading="lazy"
+                                className="w-full h-auto block"
                                 animate={{ scale: isPlaying ? 1 : 0.95 }}
                                 transition={{ duration: 0.7, ease: "easeInOut" }}
                                 onError={() => setImgError(true)}
@@ -309,7 +316,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
             className="relative z-30 w-full px-8 pb-safe mb-4"
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <div className="mb-2 h-6 flex items-end">
+            <div className="mb-2 h-12 flex items-end">
                 <AudioVisualizer isPlaying={isPlaying} />
             </div>
 

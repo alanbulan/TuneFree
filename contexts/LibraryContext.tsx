@@ -180,8 +180,33 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   );
 };
 
+// HMR 热更新时 Provider 可能暂时不可用，返回安全默认值避免崩溃
+const LIBRARY_DEFAULTS: LibraryContextType = {
+  favorites: [],
+  playlists: [],
+  apiKey: '',
+  corsProxy: '',
+  apiBase: DEFAULT_API_BASE,
+  setApiKey: () => {},
+  setCorsProxy: () => {},
+  setApiBase: () => {},
+  toggleFavorite: () => {},
+  isFavorite: () => false,
+  createPlaylist: () => {},
+  importPlaylist: () => {},
+  renamePlaylist: () => {},
+  deletePlaylist: () => {},
+  addToPlaylist: () => {},
+  removeFromPlaylist: () => {},
+  exportData: () => {},
+  importData: () => false,
+};
+
 export const useLibrary = () => {
   const context = useContext(LibraryContext);
-  if (!context) throw new Error('useLibrary must be used within a LibraryProvider');
+  if (!context) {
+    console.warn('[useLibrary] Provider 未就绪，返回默认值（HMR 热更新中）');
+    return LIBRARY_DEFAULTS;
+  }
   return context;
 };

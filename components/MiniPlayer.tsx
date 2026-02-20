@@ -38,10 +38,11 @@ const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand, layoutId }) => {
       >
           <div className={`relative w-10 h-10 rounded-full overflow-hidden mr-3 flex-shrink-0 shadow-sm flex items-center justify-center ${hasSong ? 'bg-gray-200' : 'bg-gray-100'}`}>
             {hasSong && currentSong?.pic && !imgError ? (
-                <img 
-                    src={currentSong.pic} 
-                    alt="Art" 
+                <img
+                    src={currentSong.pic}
+                    alt="Art"
                     referrerPolicy="no-referrer"
+                    loading="lazy"
                     className="w-full h-full object-cover animate-spin-slow"
                     style={{ 
                         animationPlayState: isPlaying ? 'running' : 'paused'

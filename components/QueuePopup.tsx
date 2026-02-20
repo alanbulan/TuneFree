@@ -27,13 +27,17 @@ const QueuePopup: React.FC<QueuePopupProps> = ({ isOpen, onClose }) => {
   return (
     <>
       {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black/40 z-[60] backdrop-blur-sm transition-opacity"
+      <div
+        className="fixed inset-0 bg-black/40 z-[60] backdrop-blur-sm transition-opacity touch-auto"
         onClick={onClose}
+        onPointerDown={e => e.stopPropagation()}
       />
-      
+
       {/* Drawer */}
-      <div className="fixed bottom-4 left-4 right-4 h-[60vh] bg-white rounded-3xl z-[61] shadow-2xl flex flex-col overflow-hidden animate-slide-up">
+      <div
+        className="fixed bottom-4 left-4 right-4 h-[60vh] bg-white rounded-3xl z-[61] shadow-2xl flex flex-col overflow-hidden animate-slide-up touch-auto"
+        onPointerDown={e => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-white/95 backdrop-blur z-10">
           <div>
@@ -46,7 +50,7 @@ const QueuePopup: React.FC<QueuePopupProps> = ({ isOpen, onClose }) => {
           </div>
           <button 
             onClick={clearQueue}
-            className="p-2 text-gray-400 hover:text-red-500 transition"
+            className="p-2 text-gray-400 hover:text-ios-red transition"
           >
             <TrashIcon size={18} />
           </button>
@@ -68,7 +72,7 @@ const QueuePopup: React.FC<QueuePopupProps> = ({ isOpen, onClose }) => {
                     className={`flex items-center space-x-3 p-3 rounded-xl mb-1 transition cursor-pointer ${isCurrent ? 'bg-ios-red/5' : 'hover:bg-gray-50 active:bg-gray-100'}`}
                     onClick={() => playSong(song)}
                   >
-                     <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                     <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden flex items-center justify-center relative">
                          {song.pic ? (
                              <img src={song.pic} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                          ) : (
@@ -88,7 +92,7 @@ const QueuePopup: React.FC<QueuePopupProps> = ({ isOpen, onClose }) => {
                          </div>
                      </div>
                      <button 
-                        className="p-2 text-gray-300 hover:text-red-500"
+                        className="p-2 text-gray-300 hover:text-ios-red"
                         onClick={(e) => { e.stopPropagation(); removeFromQueue(song.id); }}
                      >
                          <TrashIcon size={16} />

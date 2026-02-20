@@ -14,7 +14,6 @@ const QUALITY_MAP: Record<string, { label: string, desc: string, ext: string }> 
   '128k': { label: '标准音质', desc: '128kbps / MP3', ext: 'mp3' },
   '320k': { label: '高品质', desc: '320kbps / MP3', ext: 'mp3' },
   'flac': { label: '无损音质', desc: 'FLAC', ext: 'flac' },
-  'flac24bit': { label: 'Hi-Res', desc: '24bit / FLAC', ext: 'flac' }
 };
 
 const DownloadPopup: React.FC<DownloadPopupProps> = ({ isOpen, onClose, song }) => {
@@ -41,12 +40,16 @@ const DownloadPopup: React.FC<DownloadPopupProps> = ({ isOpen, onClose, song }) 
 
   return (
     <>
-      <div 
-        className="fixed inset-0 bg-black/40 z-[70] backdrop-blur-sm transition-opacity"
+      <div
+        className="fixed inset-0 bg-black/40 z-[70] backdrop-blur-sm transition-opacity touch-auto"
         onClick={onClose}
+        onPointerDown={e => e.stopPropagation()}
       />
-      
-      <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl z-[71] p-6 pb-safe shadow-2xl animate-slide-up">
+
+      <div
+        className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl z-[71] p-6 pb-safe shadow-2xl animate-slide-up touch-auto"
+        onPointerDown={e => e.stopPropagation()}
+      >
         <div className="flex items-center space-x-3 mb-6">
             <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
                 {song.pic ? (

@@ -1,10 +1,10 @@
 
 import React from 'react';
-import { 
-  Play, Pause, SkipForward, SkipBack, Search, Home, 
+import {
+  Play, Pause, SkipForward, SkipBack, Search, Home,
   ListMusic, MoreHorizontal, ChevronDown, Music2, AlertCircle,
   Heart, Plus, Share, Download, Upload, Trash2, Settings, Folder,
-  Repeat, Repeat1, Shuffle, List, Key
+  Repeat, Repeat1, Shuffle, List, Key, Info, ExternalLink, Github
 } from 'lucide-react';
 
 export const PlayIcon = ({ size = 24, className = "" }) => <Play size={size} className={className} fill="currentColor" />;
@@ -36,3 +36,6 @@ export const QueueIcon = ({ size = 24, className = "" }) => <List size={size} cl
 
 // Fix: Added KeyIcon export to resolve Library.tsx import error
 export const KeyIcon = ({ size = 24, className = "" }) => <Key size={size} className={className} />;
+export const InfoIcon = ({ size = 24, className = "" }) => <Info size={size} className={className} />;
+export const ExternalLinkIcon = ({ size = 24, className = "" }) => <ExternalLink size={size} className={className} />;
+export const GithubIcon = ({ size = 24, className = "" }) => <Github size={size} className={className} />;

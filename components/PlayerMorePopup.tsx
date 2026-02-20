@@ -79,12 +79,16 @@ const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onCl
 
   return (
     <>
-      <div 
-        className="fixed inset-0 bg-black/40 z-[60] backdrop-blur-sm transition-opacity"
+      <div
+        className="fixed inset-0 bg-black/40 z-[60] backdrop-blur-sm transition-opacity touch-auto"
         onClick={onClose}
+        onPointerDown={e => e.stopPropagation()}
       />
-      
-      <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl z-[61] p-6 pb-safe shadow-2xl animate-slide-up max-h-[85vh] overflow-y-auto">
+
+      <div
+        className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl z-[61] p-6 pb-safe shadow-2xl animate-slide-up max-h-[85vh] overflow-y-auto touch-auto"
+        onPointerDown={e => e.stopPropagation()}
+      >
         
         {/* Header Song Info */}
         <div className="flex items-center space-x-3 mb-6 border-b border-gray-100 pb-4">
@@ -130,7 +134,7 @@ const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onCl
                         onClick={() => setShowPlaylistSelect(true)}
                         className="w-full flex items-center space-x-4 p-4 bg-gray-50 hover:bg-gray-100 rounded-xl transition active:scale-[0.98]"
                     >
-                        <div className="p-2 bg-white rounded-full text-ios-blue shadow-sm">
+                        <div className="p-2 bg-white rounded-full text-ios-red shadow-sm">
                             <FolderIcon size={20} />
                         </div>
                         <span className="font-medium text-gray-800">添加到歌单...</span>
@@ -140,7 +144,7 @@ const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onCl
                         onClick={handleShare}
                         className="w-full flex items-center space-x-4 p-4 bg-gray-50 hover:bg-gray-100 rounded-xl transition active:scale-[0.98]"
                     >
-                        <div className="p-2 bg-white rounded-full text-ios-blue shadow-sm">
+                        <div className="p-2 bg-white rounded-full text-ios-red shadow-sm">
                             <ShareIcon size={20} />
                         </div>
                         <span className="font-medium text-gray-800">分享歌曲</span>
@@ -177,7 +181,7 @@ const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onCl
             <div className="space-y-3">
                 <div className="flex items-center justify-between mb-2">
                     <h4 className="font-bold text-gray-800">选择歌单</h4>
-                    <button onClick={() => setShowPlaylistSelect(false)} className="text-xs text-ios-blue font-medium">返回</button>
+                    <button onClick={() => setShowPlaylistSelect(false)} className="text-xs text-ios-red font-medium">返回</button>
                 </div>
                 
                 <div className="max-h-[300px] overflow-y-auto no-scrollbar space-y-2">
@@ -185,7 +189,7 @@ const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onCl
                     {!isCreating ? (
                          <button 
                             onClick={() => setIsCreating(true)}
-                            className="w-full flex items-center space-x-3 p-3 border-2 border-dashed border-gray-200 rounded-xl text-gray-500 hover:border-ios-blue hover:text-ios-blue transition"
+                            className="w-full flex items-center space-x-3 p-3 border-2 border-dashed border-gray-200 rounded-xl text-gray-500 hover:border-ios-red hover:text-ios-red transition"
                         >
                             <PlusIcon size={20} />
                             <span className="font-medium text-sm">新建歌单</span>
@@ -196,13 +200,13 @@ const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onCl
                                 autoFocus
                                 type="text" 
                                 placeholder="歌单名称" 
-                                className="flex-1 bg-gray-100 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-ios-blue/20"
+                                className="flex-1 bg-gray-100 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-ios-red/20"
                                 value={newPlaylistName}
                                 onChange={e => setNewPlaylistName(e.target.value)}
                             />
                             <button 
                                 onClick={handleCreateAndAdd}
-                                className="p-3 bg-ios-blue text-white rounded-xl font-medium text-sm"
+                                className="p-3 bg-ios-red text-white rounded-xl font-medium text-sm"
                             >
                                 创建
                             </button>
@@ -216,14 +220,14 @@ const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onCl
                             className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 rounded-xl transition active:scale-[0.98]"
                         >
                             <div className="flex items-center space-x-3">
-                                <FolderIcon size={20} className="text-ios-blue" />
+                                <FolderIcon size={20} className="text-ios-red" />
                                 <div className="text-left">
                                     <p className="font-medium text-sm text-gray-800">{p.name}</p>
                                     <p className="text-[10px] text-gray-400">{p.songs.length} 首歌曲</p>
                                 </div>
                             </div>
                             {p.songs.find(s => String(s.id) === String(currentSong.id)) && (
-                                <span className="text-[10px] bg-green-100 text-green-600 px-2 py-0.5 rounded-full">已添加</span>
+                                <span className="text-[10px] bg-ios-red/10 text-ios-red px-2 py-0.5 rounded-full">已添加</span>
                             )}
                         </button>
                     ))}

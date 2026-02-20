@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { searchAggregate, searchSongs } from '../services/api';
 import { Song } from '../types';
@@ -14,10 +14,70 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
+// ====== 记忆化搜索结果卡片 ======
+const SearchResultItem = memo<{
+    song: Song;
+    isCurrent: boolean;
+    isPlaying: boolean;
+    onPlay: (song: Song) => void;
+}>(({ song, isCurrent, isPlaying, onPlay }) => {
+    const songName = typeof song.name === 'string' ? song.name : '未知歌曲';
+    const songArtist = typeof song.artist === 'string' ? song.artist : '未知歌手';
+
+    return (
+        <div
+            className={`flex items-center space-x-3 p-3 rounded-xl transition cursor-pointer ${isCurrent ? 'bg-white shadow-sm ring-1 ring-ios-red/20' : 'hover:bg-white/50 active:bg-white'}`}
+            onClick={() => onPlay(song)}
+        >
+            <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
+                {song.pic ? (
+                    <img src={song.pic} alt={songName} referrerPolicy="no-referrer" loading="lazy" className="w-full h-full object-cover" />
+                ) : (
+                    <MusicIcon className="text-gray-300" size={24} />
+                )}
+                {isCurrent && isPlaying && (
+                     <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                         <div className="w-3 h-3 rounded-full bg-ios-red animate-pulse" />
+                     </div>
+                )}
+            </div>
+            <div className="flex-1 min-w-0">
+                <p className={`font-medium truncate text-[15px] ${isCurrent ? 'text-ios-red' : 'text-ios-text'}`}>
+                    {songName}
+                </p>
+                <div className="flex items-center mt-0.5 space-x-2">
+                    <span className={`text-[9px] px-1 rounded uppercase tracking-wider ${
+                        song.source === 'netease' ? 'bg-red-100 text-red-600' :
+                        song.source === 'qq' ? 'bg-green-100 text-green-600' :
+                        song.source === 'kuwo' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-gray-200 text-gray-600'
+                    }`}>{String(song.source)}</span>
+                    <p className="text-xs text-ios-subtext truncate">{songArtist}</p>
+                </div>
+            </div>
+        </div>
+    );
+});
+
+// ====== 搜索骨架屏 ======
+const SearchSkeleton = () => (
+    <div className="space-y-2">
+        {[0,1,2,3,4,5].map(i => (
+            <div key={i} className="flex items-center space-x-3 p-3 rounded-xl animate-pulse">
+                <div className="w-12 h-12 rounded-lg bg-gray-200 flex-shrink-0" />
+                <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-gray-200 rounded w-2/3" />
+                    <div className="h-3 bg-gray-100 rounded w-1/3" />
+                </div>
+            </div>
+        ))}
+    </div>
+);
+
 const Search: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
-  
+
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<Song[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -25,7 +85,7 @@ const Search: React.FC = () => {
   const [selectedSource, setSelectedSource] = useState('netease');
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  
+
   const [history, setHistory] = useState<string[]>(() => {
       try {
           const stored = localStorage.getItem('tunefree_search_history');
@@ -34,7 +94,7 @@ const Search: React.FC = () => {
           return [];
       }
   });
-  
+
   useEffect(() => {
       const q = searchParams.get('q');
       if (q !== null && q !== query) {
@@ -49,19 +109,19 @@ const Search: React.FC = () => {
       localStorage.setItem('tunefree_search_history', JSON.stringify(history));
   }, [history]);
 
-  const addToHistory = (term: string) => {
+  const addToHistory = useCallback((term: string) => {
       if (!term || typeof term !== 'string' || !term.trim()) return;
       setHistory(prev => {
           const newHist = [term, ...prev.filter(h => h !== term)].slice(0, 15);
           return newHist;
       });
-  };
+  }, []);
 
-  const clearHistory = () => {
+  const clearHistory = useCallback(() => {
       if (confirm('确定要清空搜索历史吗？')) {
           setHistory([]);
       }
-  };
+  }, []);
 
   useEffect(() => {
       setResults([]);
@@ -72,7 +132,7 @@ const Search: React.FC = () => {
   useEffect(() => {
     if (debouncedQuery) {
       setIsSearching(true);
-      
+
       const fetchSearch = async () => {
           try {
               let data: Song[] = [];
@@ -81,7 +141,7 @@ const Search: React.FC = () => {
               } else {
                   data = await searchSongs(debouncedQuery, selectedSource, page);
               }
-              
+
               if (!data || data.length === 0) {
                   setHasMore(false);
               } else {
@@ -99,35 +159,35 @@ const Search: React.FC = () => {
     }
   }, [debouncedQuery, searchMode, selectedSource, page]);
 
-  const handleLoadMore = () => {
+  const handleLoadMore = useCallback(() => {
       if (!isSearching && hasMore) {
           setPage(prev => prev + 1);
       }
-  };
+  }, [isSearching, hasMore]);
 
-  const handlePlaySong = (song: Song) => {
+  const handlePlaySong = useCallback((song: Song) => {
       addToHistory(query);
       playSong(song);
-  };
+  }, [query, playSong, addToHistory]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
       if (e.key === 'Enter') {
           e.preventDefault();
           addToHistory(query);
           setSearchParams({ q: query });
           (e.target as HTMLInputElement).blur();
       }
-  };
-  
-  const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  }, [query, addToHistory, setSearchParams]);
+
+  const handleQueryChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
       setQuery(e.target.value);
-  };
+  }, []);
 
   return (
     <div className="min-h-full p-5 pt-safe bg-ios-bg">
       <div className="sticky top-0 bg-ios-bg/95 backdrop-blur-md z-20 pb-2 transition-all">
         <h1 className="text-3xl font-bold mb-4 text-ios-text">搜索</h1>
-        
+
         <div className="relative shadow-sm rounded-xl mb-3">
           <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
           <input
@@ -141,31 +201,31 @@ const Search: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2 overflow-x-auto no-scrollbar py-1">
-             <button 
+             <button
                 onClick={() => setSearchMode('aggregate')}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
-                    searchMode === 'aggregate' 
-                    ? 'bg-black text-white border-black' 
+                    searchMode === 'aggregate'
+                    ? 'bg-black text-white border-black'
                     : 'bg-white text-gray-600 border-gray-200'
                 }`}
              >
                  聚合搜索
              </button>
-             <button 
+             <button
                 onClick={() => setSearchMode('single')}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
-                    searchMode === 'single' 
-                    ? 'bg-black text-white border-black' 
+                    searchMode === 'single'
+                    ? 'bg-black text-white border-black'
                     : 'bg-white text-gray-600 border-gray-200'
                 }`}
              >
                  指定源
              </button>
-             
+
              {searchMode === 'single' && (
                  <>
                     <div className="w-px h-4 bg-gray-300 mx-2"></div>
-                    <select 
+                    <select
                         value={selectedSource}
                         onChange={(e) => setSelectedSource(e.target.value)}
                         className="bg-white border border-gray-200 text-xs font-medium px-3 py-1.5 rounded-full outline-none text-gray-700"
@@ -205,64 +265,35 @@ const Search: React.FC = () => {
             </div>
         )}
 
-        {results.length > 0 && results.map((song, idx) => {
-            const isCurrent = currentSong?.id === song.id;
-            // 防御性处理：确保 name 和 artist 是字符串
-            const songName = typeof song.name === 'string' ? song.name : '未知歌曲';
-            const songArtist = typeof song.artist === 'string' ? song.artist : '未知歌手';
+        {results.length > 0 && results.map((song, idx) => (
+            <SearchResultItem
+                key={`${song.source}-${song.id}-${idx}`}
+                song={song}
+                isCurrent={currentSong?.id === song.id}
+                isPlaying={isPlaying}
+                onPlay={handlePlaySong}
+            />
+        ))}
 
-            return (
-                <div 
-                    key={`${song.source}-${song.id}-${idx}`} 
-                    className={`flex items-center space-x-3 p-3 rounded-xl transition cursor-pointer ${isCurrent ? 'bg-white shadow-sm ring-1 ring-ios-red/20' : 'hover:bg-white/50 active:bg-white'}`}
-                    onClick={() => handlePlaySong(song)}
-                >
-                    <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
-                        {song.pic ? (
-                            <img src={song.pic} alt={songName} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
-                        ) : (
-                            <MusicIcon className="text-gray-300" size={24} />
-                        )}
-                        {isCurrent && isPlaying && (
-                             <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                                 <div className="w-3 h-3 rounded-full bg-ios-red animate-pulse" />
-                             </div>
-                        )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <p className={`font-medium truncate text-[15px] ${isCurrent ? 'text-ios-red' : 'text-ios-text'}`}>
-                            {songName}
-                        </p>
-                        <div className="flex items-center mt-0.5 space-x-2">
-                            <span className={`text-[9px] px-1 rounded uppercase tracking-wider ${
-                                song.source === 'netease' ? 'bg-red-100 text-red-600' :
-                                song.source === 'qq' ? 'bg-green-100 text-green-600' :
-                                song.source === 'kuwo' ? 'bg-yellow-100 text-yellow-700' : 
-                                'bg-gray-200 text-gray-600'
-                            }`}>{String(song.source)}</span>
-                            <p className="text-xs text-ios-subtext truncate">{songArtist}</p>
-                        </div>
-                    </div>
-                </div>
-            );
-        })}
+        {isSearching && results.length === 0 && (
+           <SearchSkeleton />
+        )}
 
-        {isSearching && (
-           <div className="flex flex-col items-center justify-center py-10 space-y-3">
-              <div className="w-8 h-8 border-3 border-ios-red border-t-transparent rounded-full animate-spin"></div>
-              <p className="text-xs text-gray-400">正在通过代理聚合资源...</p>
+        {isSearching && results.length > 0 && (
+           <div className="flex justify-center py-4">
+              <div className="w-6 h-6 border-2 border-ios-red border-t-transparent rounded-full animate-spin"></div>
            </div>
         )}
 
         {!isSearching && results.length > 0 && hasMore && (
-            <button 
+            <button
                 onClick={handleLoadMore}
                 className="w-full py-4 text-sm text-ios-subtext font-medium active:bg-gray-100 rounded-xl transition"
             >
                 查看更多结果
             </button>
         )}
-        
+
         {!isSearching && results.length === 0 && query !== '' && (
              <div className="text-center py-16 text-gray-400 text-sm">
                 <MusicIcon size={48} className="mx-auto mb-4 opacity-10" />
