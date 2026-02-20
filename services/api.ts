@@ -282,7 +282,8 @@ async function tuneHubFetch<T>(endpoint: string, options: RequestInit = {}): Pro
         ...((options.headers as any) || {}),
     };
 
-    if (apiKey) {
+    // API Key 仅用于解析接口（/v1/parse），不影响搜索和排行榜
+    if (apiKey && endpoint.includes('/parse')) {
         headers['X-API-Key'] = apiKey;
     }
 
