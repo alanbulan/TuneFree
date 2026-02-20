@@ -24,6 +24,7 @@ const ALLOWED_HOSTS = [
     'mobi.kuwo.cn',
     'nmobi.kuwo.cn',
     'musicpay.kuwo.cn',
+    'm.kuwo.cn',
 ];
 
 export const onRequest: PagesFunction = async (context) => {
