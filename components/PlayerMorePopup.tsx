@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useLibrary } from '../contexts/LibraryContext';
+import { getImgReferrerPolicy } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import { FolderIcon, PlusIcon, MusicIcon, SearchIcon, DownloadIcon, ShareIcon } from './Icons';
 
@@ -107,7 +108,7 @@ const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onCl
         <div className="flex items-center space-x-3 mb-6 border-b border-gray-100 pb-4">
             <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
                 {currentSong.pic ? (
-                    <img src={currentSong.pic} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                    <img src={currentSong.pic} referrerPolicy={getImgReferrerPolicy(currentSong.pic)} className="w-full h-full object-cover" />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-300">
                         <MusicIcon size={24} />

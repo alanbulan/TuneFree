@@ -1,6 +1,6 @@
 import React, { useState, useEffect, memo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { searchAggregate, searchSongs } from '../services/api';
+import { searchAggregate, searchSongs, getImgReferrerPolicy } from '../services/api';
 import { Song } from '../types';
 import { usePlayer } from '../contexts/PlayerContext';
 import { SearchIcon, MusicIcon, TrashIcon } from '../components/Icons';
@@ -31,7 +31,7 @@ const SearchResultItem = memo<{
         >
             <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
                 {song.pic ? (
-                    <img src={song.pic} alt={songName} referrerPolicy="no-referrer" loading="lazy" className="w-full h-full object-cover" />
+                    <img src={song.pic} alt={songName} referrerPolicy={getImgReferrerPolicy(song.pic)} loading="lazy" className="w-full h-full object-cover" />
                 ) : (
                     <MusicIcon className="text-gray-300" size={24} />
                 )}

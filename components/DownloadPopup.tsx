@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Song } from '../types';
 import { DownloadIcon, MusicIcon } from './Icons';
 // Changed getDownloadUrl to getSongUrl as it is the correct function name in api.ts
-import { getSongUrl, triggerDownload } from '../services/api';
+import { getSongUrl, triggerDownload, getImgReferrerPolicy } from '../services/api';
 
 interface DownloadPopupProps {
   isOpen: boolean;
@@ -69,7 +69,7 @@ const DownloadPopup: React.FC<DownloadPopupProps> = ({ isOpen, onClose, song }) 
         <div className="flex items-center space-x-3 mb-6">
             <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
                 {song.pic ? (
-                    <img src={song.pic} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                    <img src={song.pic} referrerPolicy={getImgReferrerPolicy(song.pic)} className="w-full h-full object-cover" />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-300">
                         <MusicIcon size={24} />

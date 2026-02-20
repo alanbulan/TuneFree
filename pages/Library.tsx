@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useLibrary } from '../contexts/LibraryContext';
-import { getPlaylistDetail, DEFAULT_API_BASE } from '../services/api';
+import { getPlaylistDetail, DEFAULT_API_BASE, getImgReferrerPolicy } from '../services/api';
 import { Song } from '../types';
 import { HeartFillIcon, FolderIcon, PlusIcon, TrashIcon, SettingsIcon, DownloadIcon, UploadIcon, MusicIcon, KeyIcon, InfoIcon, ExternalLinkIcon, GithubIcon } from '../components/Icons';
 
@@ -123,7 +123,7 @@ const Library: React.FC = () => {
                     >
                         <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 flex items-center justify-center">
                             {song.pic ? (
-                                <img src={song.pic} alt="art" referrerPolicy="no-referrer" loading="lazy" className="w-full h-full object-cover" />
+                                <img src={song.pic} alt="art" referrerPolicy={getImgReferrerPolicy(song.pic)} loading="lazy" className="w-full h-full object-cover" />
                             ) : (
                                 <MusicIcon className="text-gray-300" />
                             )}

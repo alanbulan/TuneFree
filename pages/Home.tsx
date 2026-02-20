@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, memo } from 'react';
-import { getTopLists, getTopListDetail } from '../services/api';
+import { getTopLists, getTopListDetail, getImgReferrerPolicy } from '../services/api';
 import { Song, TopList } from '../types';
 import { usePlayer } from '../contexts/PlayerContext';
 import { PlayIcon, MusicIcon, ErrorIcon } from '../components/Icons';
@@ -22,7 +22,7 @@ const SongCard = memo<{ song: Song; idx: number; onPlay: (s: Song) => void }>(({
             <span className={`font-bold text-lg w-6 text-center italic ${idx < 3 ? 'text-ios-red' : 'text-ios-subtext/50'}`}>{idx + 1}</span>
             <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
                 {song.pic ? (
-                    <img src={song.pic} alt={songName} referrerPolicy="no-referrer" loading="lazy" className="w-full h-full object-cover" />
+                    <img src={song.pic} alt={songName} referrerPolicy={getImgReferrerPolicy(song.pic)} loading="lazy" className="w-full h-full object-cover" />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-300">
                         <MusicIcon size={20} />
@@ -221,7 +221,7 @@ const Home: React.FC = () => {
                           >
                               <div className="w-full aspect-square mb-2 rounded-xl overflow-hidden bg-gray-100 relative">
                                     {cover ? (
-                                        <img src={cover} alt={list.name} referrerPolicy="no-referrer" loading="lazy" className="w-full h-full object-cover" />
+                                        <img src={cover} alt={list.name} referrerPolicy={getImgReferrerPolicy(cover)} loading="lazy" className="w-full h-full object-cover" />
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center text-gray-300">
                                             <MusicIcon size={24} />

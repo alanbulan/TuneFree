@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
+import { getImgReferrerPolicy } from '../services/api';
 import { PlayIcon, PauseIcon, NextIcon, MusicIcon } from './Icons';
 import { motion } from 'framer-motion';
 
@@ -41,7 +42,7 @@ const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand, layoutId }) => {
                 <img
                     src={currentSong.pic}
                     alt="Art"
-                    referrerPolicy="no-referrer"
+                    referrerPolicy={getImgReferrerPolicy(currentSong.pic)}
                     loading="lazy"
                     className="w-full h-full object-cover animate-spin-slow"
                     style={{ 

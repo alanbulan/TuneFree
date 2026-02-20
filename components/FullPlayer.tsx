@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useLibrary } from '../contexts/LibraryContext';
-import { getLyrics } from '../services/api';
+import { getLyrics, getImgReferrerPolicy } from '../services/api';
 import { ParsedLyric } from '../types';
 import { 
     ChevronDownIcon, MoreIcon, PlayIcon, PauseIcon, NextIcon, PrevIcon, 
@@ -201,7 +201,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({ isOpen, onClose, layoutId }) =>
                             <motion.img
                                 src={currentSong.pic}
                                 alt="Album"
-                                referrerPolicy="no-referrer"
+                                referrerPolicy={getImgReferrerPolicy(currentSong.pic)}
                                 loading="lazy"
                                 className="w-full h-auto block"
                                 animate={{ scale: isPlaying ? 1 : 0.95 }}
