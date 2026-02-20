@@ -9,14 +9,12 @@ const FORBIDDEN_HEADERS = [
     'connection', 'content-length'
 ];
 
-// 自建 CF Pages Function CORS 代理（国内外均可访问），优先使用
-// 外部代理作为备用（仅国外可用）
+// 自建 CF Pages Function CORS 代理（国内外均可访问）
+// 搜索和排行榜直接通过此代理调用各平台 API，不依赖 TuneHub 后端
 const SELF_HOSTED_PROXY = '/api/cors-proxy?url=';
 const DEFAULT_PROXIES = [
     SELF_HOSTED_PROXY,
     'https://corsproxy.io/?',
-    'https://api.codetabs.com/v1/proxy?quest=',
-    'https://api.allorigins.win/raw?url=',
 ];
 
 const getStoredApiKey = () => localStorage.getItem('tunefree_api_key') || '';
@@ -370,11 +368,7 @@ export async function executeMethod<T>(platform: string, fn: string, variables: 
 
     for (const proxy of proxies) {
         let finalFetchUrl = `${proxy}${encodeURIComponent(requestUrl)}`;
-        
-        if (proxy.includes('allorigins')) {
-            finalFetchUrl += `&_t=${Date.now()}`;
-        }
-        
+
         try {
             console.log(`Trying proxy: ${proxy} -> ${requestUrl}`);
 
@@ -423,24 +417,6 @@ export async function executeMethod<T>(platform: string, fn: string, variables: 
                 }
             }
             
-            // 3. Check for AllOrigins wrapper
-            if (rawData && rawData.contents && rawData.status?.url) {
-                try {
-                    rawData = JSON.parse(rawData.contents);
-                } catch (e) {
-                    // contents might be string or JSONP
-                    const contentText = rawData.contents;
-                    try {
-                        rawData = JSON.parse(contentText);
-                    } catch {
-                        const match = contentText.match(/^\s*[\w\.]+\s*\((.*)\)\s*;?\s*$/s);
-                        if (match && match[1]) {
-                            try { rawData = JSON.parse(match[1]); } catch {}
-                        }
-                    }
-                }
-            }
-
             if (!rawData) {
                 console.warn(`Proxy ${proxy} returned unparsable data.`);
                 continue;
@@ -672,9 +648,8 @@ export const parseSongFull = async (
     };
 };
 
-// ====== 网易云备用接口（绕过 -447 反爬） ======
-// TuneHub 返回的 method config 使用 music.163.com/api/search/get/web，已被加密
-// 以下使用经验证可用的替代接口
+// ====== 网易云直连接口 ======
+// 通过 CORS 代理直接调用网易云 API，不依赖 TuneHub 后端
 
 /** 通过 CORS 代理请求外部 URL 并返回 JSON */
 const proxyFetchJson = async (url: string): Promise<any> => {
@@ -682,9 +657,7 @@ const proxyFetchJson = async (url: string): Promise<any> => {
     const proxies = storedProxy ? [storedProxy] : DEFAULT_PROXIES;
     for (const proxy of proxies) {
         try {
-            const finalUrl = proxy.includes('allorigins')
-                ? `${proxy}${encodeURIComponent(url)}&_t=${Date.now()}`
-                : `${proxy}${encodeURIComponent(url)}`;
+            const finalUrl = `${proxy}${encodeURIComponent(url)}`;
             // 超时控制：8 秒
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -699,17 +672,13 @@ const proxyFetchJson = async (url: string): Promise<any> => {
                 const m = text.match(/^\s*[\w.]+\s*\((.*)\)\s*;?\s*$/s);
                 if (m) data = JSON.parse(m[1]);
             }
-            // AllOrigins 解包
-            if (data && data.contents && data.status?.url) {
-                try { data = JSON.parse(data.contents); } catch {}
-            }
             if (data) return data;
         } catch { /* 继续下一个代理 */ }
     }
     return null;
 };
 
-/** QQ 搜索备用：使用 ct=11（移动客户端标识）避免 ct=23 被限流 */
+/** QQ 搜索：使用 musicu.fcg ct=11（移动客户端标识） */
 const qqSearchFallback = async (keyword: string, page: number, limit: number): Promise<Song[]> => {
     const body = {
         comm: { ct: 11, cv: 1003006, v: 1003006, os_ver: '12', phonetype: 0, buildnum: 166, tmeLoginType: 2 },
@@ -754,7 +723,7 @@ const qqSearchFallback = async (keyword: string, page: number, limit: number): P
     return [];
 };
 
-/** 网易云搜索备用：cloudsearch/pc（未加密，支持分页） */
+/** 网易云搜索：cloudsearch/pc（未加密，支持分页） */
 const neteaseSearchFallback = async (keyword: string, page: number, limit: number): Promise<Song[]> => {
     const offset = (page - 1) * limit;
     const url = `https://music.163.com/api/cloudsearch/pc?s=${encodeURIComponent(keyword)}&type=1&offset=${offset}&limit=${limit}`;
@@ -771,7 +740,7 @@ const neteaseSearchFallback = async (keyword: string, page: number, limit: numbe
     }));
 };
 
-/** 网易云榜单列表备用：/api/toplist/detail */
+/** 网易云榜单列表：/api/toplist/detail */
 const neteaseToplistsFallback = async (): Promise<TopList[]> => {
     const data = await proxyFetchJson('https://music.163.com/api/toplist/detail');
     const list = data?.list;
@@ -785,7 +754,7 @@ const neteaseToplistsFallback = async (): Promise<TopList[]> => {
     }));
 };
 
-/** 网易云榜单详情备用：/api/v6/playlist/detail */
+/** 网易云榜单详情：/api/v6/playlist/detail */
 const neteaseToplistDetailFallback = async (id: string | number): Promise<Song[]> => {
     const url = `https://music.163.com/api/v6/playlist/detail?id=${id}&n=30`;
     const data = await proxyFetchJson(url);
@@ -801,7 +770,7 @@ const neteaseToplistDetailFallback = async (id: string | number): Promise<Song[]
     }));
 };
 
-// ====== 酷我备用接口 ======
+// ====== 酷我直连接口 ======
 
 /** 批量获取酷我歌曲封面（通过 artistpicserver 接口，并行请求） */
 const batchFetchKuwoCovers = async (songs: Song[]): Promise<Song[]> => {
@@ -831,7 +800,7 @@ const batchFetchKuwoCovers = async (songs: Song[]): Promise<Song[]> => {
     return Promise.all(coverPromises);
 };
 
-/** 酷我搜索备用：旧版 search.kuwo.cn/r.s（无需 CSRF） */
+/** 酷我搜索：旧版 search.kuwo.cn/r.s（无需 CSRF） */
 const kuwoSearchFallback = async (keyword: string, page: number, limit: number): Promise<Song[]> => {
     const pn = page - 1; // 旧版 API 从 0 开始
     const rawUrl = `http://search.kuwo.cn/r.s?all=${encodeURIComponent(keyword)}&ft=music&itemset=web_2013&pn=${pn}&rn=${limit}&encoding=utf8&rformat=json&moession=1&vkey=VKEY`;
@@ -839,9 +808,7 @@ const kuwoSearchFallback = async (keyword: string, page: number, limit: number):
     const proxies = storedProxy ? [storedProxy] : DEFAULT_PROXIES;
     for (const proxy of proxies) {
         try {
-            const finalUrl = proxy.includes('allorigins')
-                ? `${proxy}${encodeURIComponent(rawUrl)}&_t=${Date.now()}`
-                : `${proxy}${encodeURIComponent(rawUrl)}`;
+            const finalUrl = `${proxy}${encodeURIComponent(rawUrl)}`;
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000);
             const isSelfProxy = proxy === SELF_HOSTED_PROXY;
@@ -872,7 +839,7 @@ const kuwoSearchFallback = async (keyword: string, page: number, limit: number):
     return [];
 };
 
-/** 酷我榜单列表备用：硬编码常用榜单 + kbangserver 端点 */
+/** 酷我榜单列表：硬编码常用榜单 + kbangserver 端点 */
 const KUWO_POPULAR_CHARTS = [
     { id: '93', name: '酷我飙升榜', pic: '' },
     { id: '17', name: '酷我新歌榜', pic: '' },
@@ -900,7 +867,7 @@ const kuwoToplistsFallback = async (): Promise<TopList[]> => {
     }));
 };
 
-/** 酷我榜单详情备用：kbangserver.kuwo.cn */
+/** 酷我榜单详情：kbangserver.kuwo.cn */
 const kuwoToplistDetailFallback = async (id: string | number): Promise<Song[]> => {
     const data = await proxyFetchJson(`http://kbangserver.kuwo.cn/ksong.s?from=pc&fmt=json&pn=0&rn=30&type=bang&data=content&id=${id}`);
     const list = data?.musiclist;
@@ -917,36 +884,97 @@ const kuwoToplistDetailFallback = async (id: string | number): Promise<Song[]> =
     return batchFetchKuwoCovers(songs);
 };
 
-export const searchSongs = async (keyword: string, platform: string, page: number = 1): Promise<Song[]> => {
-    // page 传 1-indexed，让 API 模板自行转换（如 kuwo 的 {{(page || 1) - 1}}）
-    // limit 变量供模板 {{limit || 20}} 使用
-    const data: any = await executeMethod(platform, 'search', {
-        keyword,
-        page: String(page),
-        limit: '30'
-    });
-    const results = normalizeSongs(extractList(data), platform);
+// ====== QQ 音乐直连接口 ======
 
-    // 网易云备用：当 TuneHub method 返回空（加密/反爬）时回退到 cloudsearch
-    if (results.length === 0 && platform === 'netease') {
-        console.log('[Fallback] 网易云搜索使用 cloudsearch/pc 备用接口');
-        return neteaseSearchFallback(keyword, page, 30);
+/** 通过 CORS 代理调用 QQ 音乐 musicu.fcg 接口 */
+const qqMusicuFetch = async (reqBody: any): Promise<any> => {
+    const body = {
+        comm: { ct: 11, cv: 1003006, v: 1003006, os_ver: '12', phonetype: 0, buildnum: 166, tmeLoginType: 2 },
+        req: reqBody
+    };
+    const storedProxy = getStoredProxy();
+    const proxies = storedProxy ? [storedProxy] : DEFAULT_PROXIES;
+    for (const proxy of proxies) {
+        try {
+            const finalUrl = `${proxy}${encodeURIComponent('https://u.y.qq.com/cgi-bin/musicu.fcg')}`;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const isSelfProxy = proxy === SELF_HOSTED_PROXY;
+            const resp = await fetch(finalUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+                ...(isSelfProxy ? {} : { mode: 'cors' as RequestMode }),
+                credentials: 'omit',
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            const data = await resp.json();
+            if (data?.req?.code === 0) return data.req.data;
+        } catch { /* 继续下一个代理 */ }
     }
-    // QQ 备用：当 TuneHub method 返回空（服务端封锁）时使用 ct=23 小程序接口
-    if (results.length === 0 && platform === 'qq') {
-        console.log('[Fallback] QQ 搜索使用 ct=11 移动客户端备用接口');
-        return qqSearchFallback(keyword, page, 30);
+    return null;
+};
+
+/** QQ 榜单列表：通过 musicu.fcg GetAll 接口 */
+const qqToplistsFetch = async (): Promise<TopList[]> => {
+    const data = await qqMusicuFetch({
+        module: 'musicToplist.ToplistInfoServer',
+        method: 'GetAll',
+        param: {}
+    });
+    if (!data) return [];
+    // 响应包含 group 数组，每组有 toplist 子数组
+    const groups = data.group || data.groupList || [];
+    const allLists: TopList[] = [];
+    for (const g of groups) {
+        const toplists = g.toplist || g.topList || g.list || [];
+        for (const item of toplists) {
+            allLists.push({
+                id: String(item.topId),
+                name: item.title || item.name || '',
+                updateFrequency: item.period || '',
+                picUrl: fixUrl(item.frontPicUrl || item.headPicUrl || item.musichallPicUrl || ''),
+                coverImgUrl: fixUrl(item.frontPicUrl || item.headPicUrl || item.musichallPicUrl || '')
+            });
+        }
     }
-    // 酷我备用：当 TuneHub method 返回空时使用旧版 search.kuwo.cn
-    if (results.length === 0 && platform === 'kuwo') {
-        console.log('[Fallback] 酷我搜索使用 search.kuwo.cn 备用接口');
-        return kuwoSearchFallback(keyword, page, 30);
+    return allLists;
+};
+
+/** QQ 榜单详情：通过 musicu.fcg GetDetail 接口 */
+const qqToplistDetailFetch = async (topId: string | number): Promise<Song[]> => {
+    const data = await qqMusicuFetch({
+        module: 'musicToplist.ToplistInfoServer',
+        method: 'GetDetail',
+        param: { topId: Number(topId), offset: 0, num: 100 }
+    });
+    if (!data) return [];
+    // songInfoList 在 data.data 或直接在 data 下
+    const songs = data.data?.songInfoList || data.songInfoList || [];
+    if (!Array.isArray(songs) || songs.length === 0) return [];
+    return songs.map((s: any) => ({
+        id: s.mid || String(s.id || ''),
+        name: s.title || s.name || '',
+        artist: s.singer?.map((si: any) => si.name).join(', ') || '',
+        album: s.album?.title || s.album?.name || '',
+        pic: s.album?.mid ? fixUrl(`https://y.gtimg.cn/music/photo_new/T002R500x500M000${s.album.mid}.jpg`) : '',
+        source: 'qq'
+    }));
+};
+
+// ====== 搜索：直接通过 CORS 代理调用各平台 API ======
+
+export const searchSongs = async (keyword: string, platform: string, page: number = 1): Promise<Song[]> => {
+    const limit = 30;
+    if (platform === 'netease') {
+        return neteaseSearchFallback(keyword, page, limit);
+    } else if (platform === 'qq') {
+        return qqSearchFallback(keyword, page, limit);
+    } else if (platform === 'kuwo') {
+        return kuwoSearchFallback(keyword, page, limit);
     }
-    // 酷我搜索结果普遍缺少封面，通过 artistpicserver 批量补全
-    if (platform === 'kuwo' && results.length > 0 && results.some(s => !s.pic)) {
-        return batchFetchKuwoCovers(results);
-    }
-    return results;
+    return [];
 };
 
 export const searchAggregate = async (keyword: string, page: number = 1): Promise<Song[]> => {
@@ -962,55 +990,28 @@ export const searchAggregate = async (keyword: string, page: number = 1): Promis
     return merged;
 };
 
+// ====== 排行榜：直接通过 CORS 代理调用各平台 API ======
+
 export const getTopLists = async (platform: string): Promise<TopList[]> => {
-    const data: any = await executeMethod(platform, 'toplists');
-    const rawList = extractList(data);
-
-    // 映射所有可能的字段，修复封面丢失问题
-    const results = rawList.map((item: any) => ({
-        ...item,
-        // QQ 使用 topId, 网易/酷我使用 id
-        id: findId(item, platform),
-        name: item.name || item.topTitle || item.group_name || item.title || item.intro,
-        updateFrequency: item.updateFrequency || item.update_key || item.period,
-        // 穷举所有可能的图片字段
-        picUrl: fixUrl(findImage(item)),
-        coverImgUrl: fixUrl(findImage(item))
-    }));
-
-    // 网易云备用：当 TuneHub method 返回空（-447 反爬）时回退
-    if (results.length === 0 && platform === 'netease') {
-        console.log('[Fallback] 网易云榜单列表使用 toplist/detail 备用接口');
+    if (platform === 'netease') {
         return neteaseToplistsFallback();
-    }
-
-    // 酷我备用
-    if (results.length === 0 && platform === 'kuwo') {
-        console.log('[Fallback] 酷我榜单列表使用硬编码 + kbangserver 备用接口');
+    } else if (platform === 'qq') {
+        return qqToplistsFetch();
+    } else if (platform === 'kuwo') {
         return kuwoToplistsFallback();
     }
-    return results;
+    return [];
 };
 
 export const getTopListDetail = async (id: string | number, platform: string): Promise<Song[]> => {
-    const data: any = await executeMethod(platform, 'toplist', { id: String(id) });
-    const results = normalizeSongs(extractList(data), platform);
-
-    // 网易云备用：当 TuneHub method 返回空（-447 反爬）时回退到 v6/playlist/detail
-    if (results.length === 0 && platform === 'netease') {
-        console.log('[Fallback] 网易云榜单详情使用 v6/playlist/detail 备用接口');
+    if (platform === 'netease') {
         return neteaseToplistDetailFallback(id);
-    }
-    // 酷我备用
-    if (results.length === 0 && platform === 'kuwo') {
-        console.log('[Fallback] 酷我榜单详情使用 kbangserver 备用接口');
+    } else if (platform === 'qq') {
+        return qqToplistDetailFetch(id);
+    } else if (platform === 'kuwo') {
         return kuwoToplistDetailFallback(id);
     }
-    // 酷我歌曲普遍缺少封面，通过 artistpicserver 批量补全
-    if (platform === 'kuwo' && results.length > 0 && results.some(s => !s.pic)) {
-        return batchFetchKuwoCovers(results);
-    }
-    return results;
+    return [];
 };
 
 export const getPlaylistDetail = async (id: string, platform: string): Promise<{name: string, songs: Song[]} | null> => {
