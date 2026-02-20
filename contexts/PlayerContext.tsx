@@ -51,7 +51,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [playMode, setPlayMode] = useState<PlayMode>(() => getLocal('tunefree_play_mode', 'sequence'));
   const [audioQuality, setAudioQualityState] = useState<AudioQuality>(() => getLocal('tunefree_quality', '320k'));
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
-  
+  const analyserRef = useRef<AnalyserNode | null>(null);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -123,6 +124,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           audioCtxRef.current = null;
           sourceNodeRef.current = null;
           audioCtxConnectedRef.current = false;
+          analyserRef.current = null;
           setAnalyser(null);
       }
 
@@ -224,17 +226,40 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           audioCtxRef.current = ctx;
           sourceNodeRef.current = source;
           audioCtxConnectedRef.current = true;
+          analyserRef.current = node;
           setAnalyser(node);
       } catch (e) {
           console.warn('AudioContext 初始化失败，使用模拟可视化', e);
       }
   }, []);
 
-  // 页面可见性变化：回到前台时恢复 AudioContext
+  // 页面可见性变化：后台时断开 Web Audio 路由让 Audio 直接播放，前台时重连可视化
   useEffect(() => {
       const handleVisibility = () => {
-          if (document.visibilityState === 'visible' && audioCtxRef.current?.state === 'suspended') {
-              audioCtxRef.current.resume();
+          const ctx = audioCtxRef.current;
+          const source = sourceNodeRef.current;
+          const node = analyserRef.current;
+
+          if (document.visibilityState === 'hidden') {
+              // 后台：断开 AudioContext 路由，让 HTMLAudioElement 直接输出
+              // iOS Safari 会 suspend AudioContext 导致路由中的音频停止
+              if (ctx && source && node) {
+                  try {
+                      source.disconnect();
+                      node.disconnect();
+                  } catch {}
+              }
+          } else {
+              // 前台：恢复 AudioContext 并重连可视化管线
+              if (ctx && ctx.state === 'suspended') {
+                  ctx.resume();
+              }
+              if (ctx && source && node) {
+                  try {
+                      source.connect(node);
+                      node.connect(ctx.destination);
+                  } catch {}
+              }
           }
       };
       document.addEventListener('visibilitychange', handleVisibility);

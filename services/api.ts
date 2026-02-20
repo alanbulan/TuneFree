@@ -62,6 +62,16 @@ const fixUrl = (url: string | undefined): string => {
     return fixed;
 };
 
+/** 根据图片 URL 来源返回合适的 referrerPolicy
+ *  网易云 (music.126.net) 需要 no-referrer，否则 403
+ *  酷我/QQ 等需要带 referrer（至少 origin），否则防盗链拦截
+ */
+export const getImgReferrerPolicy = (url?: string): React.HTMLAttributeReferrerPolicy => {
+    if (!url) return 'no-referrer';
+    if (url.includes('126.net') || url.includes('netease.com')) return 'no-referrer';
+    return 'origin';
+};
+
 // 深度查找 ID
 const findId = (item: any, platform: string): string | undefined => {
     if (!item) return undefined;
@@ -375,7 +385,13 @@ export async function executeMethod<T>(platform: string, fn: string, variables: 
                 }
             }
 
+            // 超时控制：代理无响应时 8 秒后自动中断，防止长时间 hang
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            fetchOpts.signal = controller.signal;
+
             const response = await fetch(finalFetchUrl, fetchOpts);
+            clearTimeout(timeoutId);
             
             // Critical Change: Read as TEXT first to handle JSONP or malformed JSON
             const rawText = await response.text();
@@ -659,7 +675,11 @@ const proxyFetchJson = async (url: string): Promise<any> => {
             const finalUrl = proxy.includes('allorigins')
                 ? `${proxy}${encodeURIComponent(url)}&_t=${Date.now()}`
                 : `${proxy}${encodeURIComponent(url)}`;
-            const resp = await fetch(finalUrl, { mode: 'cors', credentials: 'omit' });
+            // 超时控制：8 秒
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const resp = await fetch(finalUrl, { mode: 'cors', credentials: 'omit', signal: controller.signal });
+            clearTimeout(timeoutId);
             const text = await resp.text();
             let data: any = null;
             try { data = JSON.parse(text); } catch {
@@ -692,13 +712,17 @@ const qqSearchFallback = async (keyword: string, page: number, limit: number): P
     for (const proxy of proxies) {
         try {
             const finalUrl = `${proxy}${encodeURIComponent('https://u.y.qq.com/cgi-bin/musicu.fcg')}`;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
             const resp = await fetch(finalUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
                 mode: 'cors',
-                credentials: 'omit'
+                credentials: 'omit',
+                signal: controller.signal
             });
+            clearTimeout(timeoutId);
             const data = await resp.json();
             const songs = data?.req?.data?.body?.song?.list;
             if (!songs || !Array.isArray(songs) || songs.length === 0) continue;
@@ -775,9 +799,12 @@ const batchFetchKuwoCovers = async (songs: Song[]): Promise<Song[]> => {
         if (song.pic || !song.id) return song;
         try {
             const apiUrl = `http://artistpicserver.kuwo.cn/pic.web?corp=kuwo&type=rid_pic&pictype=500&size=500&rid=${song.id}`;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
             const resp = await fetch(`${proxy}${encodeURIComponent(apiUrl)}`, {
-                mode: 'cors', credentials: 'omit'
+                mode: 'cors', credentials: 'omit', signal: controller.signal
             });
+            clearTimeout(timeoutId);
             const picUrl = (await resp.text()).trim();
             if (picUrl && picUrl.startsWith('http')) {
                 return { ...song, pic: fixUrl(picUrl) };
@@ -800,7 +827,10 @@ const kuwoSearchFallback = async (keyword: string, page: number, limit: number):
             const finalUrl = proxy.includes('allorigins')
                 ? `${proxy}${encodeURIComponent(rawUrl)}&_t=${Date.now()}`
                 : `${proxy}${encodeURIComponent(rawUrl)}`;
-            const resp = await fetch(finalUrl, { mode: 'cors', credentials: 'omit' });
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const resp = await fetch(finalUrl, { mode: 'cors', credentials: 'omit', signal: controller.signal });
+            clearTimeout(timeoutId);
             let text = await resp.text();
             // 旧版 kuwo API 返回单引号 dict，转换为标准 JSON
             text = text.replace(/'/g, '"');
