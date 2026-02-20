@@ -12,7 +12,7 @@ export interface Song {
 }
 
 export type PlayMode = 'sequence' | 'loop' | 'shuffle';
-export type AudioQuality = '128k' | '320k' | 'flac';
+export type AudioQuality = '128k' | '320k' | 'flac' | 'flac24bit';
 
 export interface ParsedLyric {
   time: number;

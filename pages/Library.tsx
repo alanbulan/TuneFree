@@ -320,7 +320,7 @@ const Library: React.FC = () => {
                           <span className="text-ios-red font-bold mt-0.5">2</span>
                           <div>
                               <p className="font-medium text-ios-text">无损音质播放</p>
-                              <p className="text-xs text-gray-400">支持 128k / 320k / FLAC 无损</p>
+                              <p className="text-xs text-gray-400">支持 128k / 320k / FLAC / Hi-Res</p>
                           </div>
                       </div>
                       <div className="flex items-start gap-3">

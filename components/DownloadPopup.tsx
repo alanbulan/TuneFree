@@ -14,6 +14,7 @@ const QUALITY_MAP: Record<string, { label: string, desc: string, ext: string }> 
   '128k': { label: '标准音质', desc: '128kbps / MP3', ext: 'mp3' },
   '320k': { label: '高品质', desc: '320kbps / MP3', ext: 'mp3' },
   'flac': { label: '无损音质', desc: 'FLAC', ext: 'flac' },
+  'flac24bit': { label: 'Hi-Res', desc: '24bit FLAC', ext: 'flac' },
 };
 
 const DownloadPopup: React.FC<DownloadPopupProps> = ({ isOpen, onClose, song }) => {
@@ -22,7 +23,7 @@ const DownloadPopup: React.FC<DownloadPopupProps> = ({ isOpen, onClose, song }) 
   // Determine available qualities. If song.types is missing, show standard options.
   const availableTypes = song.types && song.types.length > 0 
     ? song.types 
-    : ['128k', '320k', 'flac'];
+    : ['128k', '320k', 'flac', 'flac24bit'];
 
   // Fix: handleDownload needs to be async to await the download URL from the API
   const handleDownload = async (type: string) => {
