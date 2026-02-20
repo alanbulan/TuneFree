@@ -436,6 +436,11 @@ export async function executeMethod<T>(platform: string, fn: string, variables: 
                     const transformer = new Function(`return ${config.transform}`)();
                     const transformed = transformer(rawData);
 
+                    // transform 返回无效值时直接 fallback
+                    if (!transformed) {
+                        return rawData;
+                    }
+
                     // TuneHub 的 transform 函数普遍丢弃了封面字段
                     // 这里从原始数据中补回封面 URL
                     if (Array.isArray(transformed) && transformed.length > 0 && !transformed[0].pic) {
@@ -466,7 +471,7 @@ export async function executeMethod<T>(platform: string, fn: string, variables: 
                     return transformed;
                 } catch (e) {
                     // transform 失败时回退到原始数据（由 normalizeSongs 兜底解析）
-                    console.warn("Transform fallback to rawData:", (e as Error)?.message);
+                    console.log("[Transform] fallback to rawData:", (e as Error)?.message);
                     return rawData;
                 }
             }
