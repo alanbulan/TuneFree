@@ -9,9 +9,11 @@ const FORBIDDEN_HEADERS = [
     'connection', 'content-length'
 ];
 
-// 恢复 corsproxy.io 为首选，因为它对 Referer 支持最好（QQ 必须）
-// 增加备用代理以防万一
+// 自建 CF Pages Function CORS 代理（国内外均可访问），优先使用
+// 外部代理作为备用（仅国外可用）
+const SELF_HOSTED_PROXY = '/api/cors-proxy?url=';
 const DEFAULT_PROXIES = [
+    SELF_HOSTED_PROXY,
     'https://corsproxy.io/?',
     'https://api.codetabs.com/v1/proxy?quest=',
     'https://api.allorigins.win/raw?url=',
