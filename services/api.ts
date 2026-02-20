@@ -52,8 +52,8 @@ const fixUrl = (url: string | undefined): string => {
         ) {
             fixed = fixed.replace('http://', 'https://');
         }
-        // 酷我 CDN (kwcdn.kuwo.cn) 不支持 HTTPS，通过自建代理解决 Mixed Content
-        if (fixed.includes('kwcdn.kuwo.cn') || fixed.includes('kuwo.cn/star/')) {
+        // 酷我所有子域名均不支持 HTTPS（kwcdn/img1/img4 等），通过自建代理解决 Mixed Content
+        if (fixed.includes('kuwo.cn')) {
             fixed = `${SELF_HOSTED_PROXY}${encodeURIComponent(fixed)}`;
         }
     }
@@ -851,14 +851,19 @@ const KUWO_POPULAR_CHARTS = [
 ];
 
 const kuwoToplistsFallback = async (): Promise<TopList[]> => {
-    // 尝试从 kbangserver 获取第一个榜单的图片信息
-    try {
-        const data = await proxyFetchJson('http://kbangserver.kuwo.cn/ksong.s?from=pc&fmt=json&type=bang&data=content&id=93&pn=0&rn=1');
-        if (data?.pic) {
-            KUWO_POPULAR_CHARTS[0].pic = data.pic;
-        }
-    } catch { /* 忽略 */ }
-    return KUWO_POPULAR_CHARTS.map(c => ({
+    // 并行获取所有榜单的封面信息（v9_pic2 字段包含实际图片 URL）
+    const chartsWithCovers = await Promise.all(
+        KUWO_POPULAR_CHARTS.map(async (c) => {
+            try {
+                const data = await proxyFetchJson(`http://kbangserver.kuwo.cn/ksong.s?from=pc&fmt=json&type=bang&data=content&id=${c.id}&pn=0&rn=1`);
+                const pic = data?.v9_pic2 || data?.pic || '';
+                return { ...c, pic };
+            } catch {
+                return c;
+            }
+        })
+    );
+    return chartsWithCovers.map(c => ({
         id: c.id,
         name: c.name,
         updateFrequency: '每日更新',
