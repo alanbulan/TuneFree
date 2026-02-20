@@ -45,7 +45,7 @@ const fixUrl = (url: string | undefined): string => {
         fixed = `https:${fixed}`;
     }
 
-    // 4. 强制 HTTPS (针对已知支持 HTTPS 的图床；酷我 CDN kwcdn.kuwo.cn 证书无效，保持 HTTP)
+    // 4. 强制 HTTPS (针对已知支持 HTTPS 的图床)
     if (fixed.startsWith('http://')) {
         if (
             fixed.includes('music.126.net') ||
@@ -53,6 +53,10 @@ const fixUrl = (url: string | undefined): string => {
             fixed.includes('qpic.cn')
         ) {
             fixed = fixed.replace('http://', 'https://');
+        }
+        // 酷我 CDN (kwcdn.kuwo.cn) 不支持 HTTPS，通过自建代理解决 Mixed Content
+        if (fixed.includes('kwcdn.kuwo.cn') || fixed.includes('kuwo.cn/star/')) {
+            fixed = `${SELF_HOSTED_PROXY}${encodeURIComponent(fixed)}`;
         }
     }
 
