@@ -210,8 +210,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // iOS 设备检测：iOS 会在后台 suspend AudioContext 导致音频停止，
+  // 因此 iOS 上不使用 createMediaElementSource，让 Audio 直接播放，可视化使用模拟模式
+  const isIOSRef = useRef(
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+
   // --- AudioContext 延迟初始化（需要用户交互上下文） ---
   const initAudioContext = useCallback(() => {
+      // iOS 强制跳过：确保后台播放不中断
+      if (isIOSRef.current) return;
       if (audioCtxRef.current || !audioRef.current) return;
       try {
           const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
