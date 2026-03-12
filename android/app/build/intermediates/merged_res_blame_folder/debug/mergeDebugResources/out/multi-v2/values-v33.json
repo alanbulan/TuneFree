@@ -1,0 +1,20 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.tunefree.mobile.app-mergeDebugResources-26:/values-v33/values-v33.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\13080\\.gradle\\caches\\8.14.3\\transforms\\4f5eb2e1ae45a07736e2f6ed862ea36a\\transformed\\core-splashscreen-1.2.0\\res\\values-v33\\values-v33.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endLines": "5",
+                        "endColumns": "12",
+                        "endOffsets": "284"
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.tunefree.mobile.app-mergeDebugResources-26:/values-land/values-land.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\13080\\.gradle\\caches\\8.14.3\\transforms\\c3f09e8abd8bb01c9314454bd06bb337\\transformed\\appcompat-1.7.1\\res\\values-land\\values-land.xml",
+                    "from": {
+                        "startLines": "2,3,4",
+                        "startColumns": "4,4,4",
+                        "startOffsets": "55,125,196",
+                        "endColumns": "69,70,67",
+                        "endOffsets": "120,191,259"
+                    }
+                }
+            ]
+        }
+    ]
+}
