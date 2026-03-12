@@ -1,3 +1,0 @@
-com.tunefree.mobile.test
-style WhiteBackgroundDialogTheme
-style WhiteBackgroundTheme
