@@ -516,11 +516,31 @@ export const getLyrics = async (id: string | number, source: string): Promise<st
     return fetchFallbackLyrics(id, source);
 };
 
+// 优先尝试本地原生直连解析（跳过 TuneHub 积分计费）
+export const fetchNativeUrl = async (id: string, platform: string, quality: string): Promise<string | null> => {
+    try {
+        const resp = await fetch(`/api/url?platform=${encodeURIComponent(platform)}&id=${encodeURIComponent(id)}&quality=${encodeURIComponent(quality)}`);
+        if (resp.ok) {
+            const data = await resp.json();
+            if (data.url) return data.url;
+        }
+    } catch {
+        // fail silently
+    }
+    return null;
+}
+
 export const getSongUrl = async (id: string | number, source: string, quality: string = '320k'): Promise<string | null> => {
     if (!source || source === 'undefined') return null;
+    
+    // 优先尝试本地原生直连获取 URL
+    let url: string | undefined | null = await fetchNativeUrl(String(id), source, quality);
+    if (url) return fixUrl(url || undefined) || null;
+
+    // 回退到 TuneHub
     const data = await parseSongs(String(id), source, quality);
-    let url = data?.[0]?.url;
-    return fixUrl(url) || null;
+    url = data?.[0]?.url;
+    return fixUrl(url || undefined) || null;
 };
 
 // 解析缓存 — 避免同一首歌重复调用 parse 浪费积分
@@ -627,7 +647,15 @@ export const parseSongFull = async (
         };
     }
 
-    const data = await parseSongs(String(id), platform, quality);
+    let url = await fetchNativeUrl(String(id), platform, quality);
+    let data;
+    
+    if (url) {
+        data = [{ url, id: String(id), platform }];
+    } else {
+        data = await parseSongs(String(id), platform, quality);
+    }
+    
     if (!data || data.length === 0) return null;
 
     _parseCache.set(cacheKey, { data, timestamp: Date.now() });
