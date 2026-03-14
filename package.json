@@ -6,7 +6,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler pages deploy dist"
+    "deploy": "npm run build && wrangler pages deploy dist",
+    "cap:sync": "cap sync",
+    "cap:copy": "cap copy",
+    "cap:open": "cap open android",
+    "android:build": "npm run build && npx cap copy android && npx cap sync android"
   },
   "dependencies": {
     "@babel/generator": "^7.29.1",
