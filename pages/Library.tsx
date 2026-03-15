@@ -592,11 +592,11 @@ const Library: React.FC = () => {
       {/* ====== 新建歌单弹窗 ====== */}
       {showCreateModal && (
         <div
-          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4"
           onClick={() => setShowCreateModal(false)}
         >
           <div
-            className="w-full max-w-md bg-white rounded-t-2xl p-6 pb-safe animate-fade-in"
+            className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl animate-fade-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-bold mb-4">新建歌单</h3>
@@ -630,11 +630,11 @@ const Library: React.FC = () => {
       {/* ====== 导入在线歌单弹窗 ====== */}
       {showImportModal && (
         <div
-          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4"
           onClick={() => !isImporting && setShowImportModal(false)}
         >
           <div
-            className="w-full max-w-md bg-white rounded-t-2xl p-6 pb-safe animate-fade-in"
+            className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl animate-fade-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-bold mb-4">导入在线歌单</h3>
@@ -692,11 +692,11 @@ const Library: React.FC = () => {
       {/* ====== 重命名歌单弹窗 ====== */}
       {showRenameModal && (
         <div
-          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4"
           onClick={() => setShowRenameModal(false)}
         >
           <div
-            className="w-full max-w-md bg-white rounded-t-2xl p-6 pb-safe animate-fade-in"
+            className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl animate-fade-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-bold mb-4">重命名歌单</h3>
