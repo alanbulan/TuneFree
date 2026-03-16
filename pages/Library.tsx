@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { usePlayerActions } from "../contexts/PlayerContext";
 import { useLibrary } from "../contexts/LibraryContext";
 import {
@@ -33,10 +34,13 @@ const useToast = () => {
   }, []);
   const ToastUI = useMemo(() => {
     if (!toast) return null;
-    return (
-      <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[999] bg-black/80 text-white text-sm px-5 py-2.5 rounded-xl shadow-lg animate-fade-in pointer-events-none">
-        {toast}
-      </div>
+    return createPortal(
+      <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[999] pointer-events-none">
+        <div className="bg-black/80 text-white text-sm px-5 py-2.5 rounded-xl shadow-lg whitespace-nowrap animate-[fadeInToast_0.3s_ease-out]">
+          {toast}
+        </div>
+      </div>,
+      document.body,
     );
   }, [toast]);
   return { show, ToastUI };
