@@ -15,6 +15,7 @@ import {
   isSameSong,
 } from "../types";
 import { parseSongFull } from "../services/api";
+import { getNextQueueIndex, getPrevQueueIndex } from "./playerQueue";
 
 interface PlayerContextType {
   currentSong: Song | null;
@@ -647,16 +648,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    const currentIndex = c ? q.findIndex((s) => isSameSong(s, c)) : -1;
-    let nextIndex = 0;
-
-    if (mode === "shuffle") {
-      do {
-        nextIndex = Math.floor(Math.random() * q.length);
-      } while (q.length > 1 && nextIndex === currentIndex);
-    } else {
-      nextIndex = (currentIndex + 1) % q.length;
-    }
+    const nextIndex = getNextQueueIndex(q, c, mode);
+    if (nextIndex < 0) return;
 
     playSongRef.current(q[nextIndex]);
   }, []);
@@ -667,14 +660,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     const mode = playModeRef.current;
 
     if (q.length === 0) return;
-    const currentIndex = c ? q.findIndex((s) => isSameSong(s, c)) : -1;
-    let prevIndex = 0;
 
-    if (mode === "shuffle") {
-      prevIndex = Math.floor(Math.random() * q.length);
-    } else {
-      prevIndex = (currentIndex - 1 + q.length) % q.length;
-    }
+    const prevIndex = getPrevQueueIndex(q, c, mode);
+    if (prevIndex < 0) return;
+
     playSongRef.current(q[prevIndex]);
   }, []);
 
