@@ -1,16 +1,20 @@
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import MiniPlayer from './MiniPlayer';
 import FullPlayer from './FullPlayer';
 import { HomeIcon, SearchIcon, LibraryIcon } from './Icons';
 import { AnimatePresence } from 'framer-motion';
+import { usePreventIosEdgeSwipe } from './usePreventIosEdgeSwipe';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isFullPlayerOpen, setIsFullPlayerOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  usePreventIosEdgeSwipe(containerRef);
 
   return (
-    <div className="flex flex-col h-screen w-full bg-ios-bg relative overflow-hidden">
+    <div ref={containerRef} className="flex flex-col h-screen w-full bg-ios-bg relative overflow-hidden">
       {/* Main Content - Scrollable */}
       <main 
         className="flex-1 overflow-y-auto overflow-x-hidden pb-32 no-scrollbar transform-gpu"
