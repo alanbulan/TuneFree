@@ -17,6 +17,7 @@ const _parseCache = new Map<
   string,
   { data: any[]; timestamp: number; expiresAt: number }
 >();
+const _parsePending = new Map<string, Promise<any[] | null>>();
 
 /** 默认解析缓存 TTL：5 分钟（URL 有临时签名，过期后需重新解析） */
 const DEFAULT_PARSE_CACHE_TTL = 5 * 60 * 1000;
@@ -151,6 +152,61 @@ const warmLyricsCache = (
   }
 };
 
+const getParseCacheKey = (
+  id: string | number,
+  platform: string,
+  quality: string,
+): string => `${platform}:${id}:${quality}`;
+
+const getValidParseCache = (
+  id: string | number,
+  platform: string,
+  quality: string,
+): { data: any[]; timestamp: number; expiresAt: number } | null => {
+  const cached = _parseCache.get(getParseCacheKey(id, platform, quality));
+  if (!cached) return null;
+  if (Date.now() >= cached.expiresAt) return null;
+  return cached;
+};
+
+const setParseCache = (
+  id: string | number,
+  platform: string,
+  quality: string,
+  data: any[],
+): void => {
+  _parseCache.set(getParseCacheKey(id, platform, quality), {
+    data,
+    timestamp: Date.now(),
+    expiresAt: getParseCacheExpiry(data[0]),
+  });
+};
+
+const fetchParsedData = async (
+  id: string | number,
+  platform: string,
+  quality: string = "320k",
+): Promise<any[] | null> => {
+  const cached = getValidParseCache(id, platform, quality);
+  if (cached) return cached.data;
+
+  const cacheKey = getParseCacheKey(id, platform, quality);
+  const pending = _parsePending.get(cacheKey);
+  if (pending) return pending;
+
+  const request = (async () => {
+    const data = await parseSongs(String(id), platform, quality);
+    if (data && data.length > 0) {
+      setParseCache(id, platform, quality, data);
+    }
+    _parsePending.delete(cacheKey);
+    return data;
+  })();
+
+  _parsePending.set(cacheKey, request);
+  return request;
+};
+
 // ==============================
 // 原生 URL 直连（Cloudflare Pages Function）
 // ==============================
@@ -248,7 +304,7 @@ export const getLyrics = async (
   id: string | number,
   source: string,
 ): Promise<string> => {
-  const data = await parseSongs(String(id), source);
+  const data = await fetchParsedData(id, source);
   return resolveLyricsFromParse(data?.[0], id, source);
 };
 
@@ -278,8 +334,8 @@ export const getSongUrl = async (
   const nativeUrl = await fetchNativeUrl(String(id), source, quality);
   if (nativeUrl) return fixUrl(nativeUrl) || null;
 
-  // 回退：TuneHub parse
-  const data = await parseSongs(String(id), source, quality);
+  // 回退：TuneHub parse / cache
+  const data = await fetchParsedData(id, source, quality);
   const url = data?.[0]?.url;
   return fixUrl(url) || null;
 };
@@ -310,11 +366,9 @@ export const parseSongFull = async (
 ): Promise<{ url: string | null; lrc: string; pic: string } | null> => {
   if (!id || !platform || String(id).startsWith("temp_")) return null;
 
-  const cacheKey = `${platform}:${id}:${quality}`;
-  const cached = _parseCache.get(cacheKey);
+  const cached = getValidParseCache(id, platform, quality);
 
-  // 缓存命中
-  if (cached && Date.now() < cached.expiresAt) {
+  if (cached) {
     const item = cached.data[0];
     const normalized = normalizeSongs(cached.data, platform)[0];
     const lrc = resolvePlaybackLyrics(item, id, platform);
@@ -335,16 +389,10 @@ export const parseSongFull = async (
     data = [{ url: nativeUrl, id: String(id), platform }];
   } else {
     // 回退：TuneHub parse（获取 URL + 歌词 + 封面）
-    data = await parseSongs(String(id), platform, quality);
+    data = await fetchParsedData(id, platform, quality);
   }
 
   if (!data || data.length === 0) return null;
-
-  _parseCache.set(cacheKey, {
-    data,
-    timestamp: Date.now(),
-    expiresAt: getParseCacheExpiry(data[0]),
-  });
 
   const item = data[0];
   const normalized = normalizeSongs(data, platform)[0];
