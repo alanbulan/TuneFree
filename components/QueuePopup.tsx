@@ -1,5 +1,9 @@
 import React, { useRef, useEffect } from 'react';
-import { usePlayer } from '../contexts/PlayerContext';
+import {
+  usePlayerActions,
+  usePlayerNowPlaying,
+  usePlayerQueueState,
+} from '../contexts/PlayerContext';
 import { getImgReferrerPolicy } from '../services/api';
 import { Song } from '../types';
 import { TrashIcon, MusicIcon } from './Icons';
@@ -10,7 +14,10 @@ interface QueuePopupProps {
 }
 
 const QueuePopup: React.FC<QueuePopupProps> = ({ isOpen, onClose }) => {
-  const { queue, currentSong, playSong, removeFromQueue, clearQueue, playMode, togglePlayMode } = usePlayer();
+  const { queue, playMode } = usePlayerQueueState();
+  const { currentSong } = usePlayerNowPlaying();
+  const { playSong, removeFromQueue, clearQueue, togglePlayMode } =
+    usePlayerActions();
   const listRef = useRef<HTMLDivElement>(null);
 
   // 弹窗打开时锁定背景滚动
