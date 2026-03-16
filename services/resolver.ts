@@ -13,10 +13,39 @@ import { fetchKuwoLyrics } from "./kuwo";
  * 解析结果缓存 — 避免同一首歌在同一会话中重复调用 /v1/parse 浪费积分。
  * Key 格式："{platform}:{id}:{quality}"
  */
-const _parseCache = new Map<string, { data: any[]; timestamp: number }>();
+const _parseCache = new Map<
+  string,
+  { data: any[]; timestamp: number; expiresAt: number }
+>();
 
-/** 解析缓存 TTL：5 分钟（URL 有临时签名，过期后需重新解析） */
-const PARSE_CACHE_TTL = 5 * 60 * 1000;
+/** 默认解析缓存 TTL：5 分钟（URL 有临时签名，过期后需重新解析） */
+const DEFAULT_PARSE_CACHE_TTL = 5 * 60 * 1000;
+const MIN_PARSE_CACHE_TTL = 30 * 1000;
+
+const getExpireTimestamp = (expire: unknown): number | null => {
+  if (typeof expire === "number" && Number.isFinite(expire)) {
+    return expire > 1e12 ? expire : expire * 1000;
+  }
+
+  if (typeof expire === "string" && expire.trim()) {
+    const numeric = Number(expire);
+    if (Number.isFinite(numeric) && expire.trim() === String(numeric)) {
+      return numeric > 1e12 ? numeric : numeric * 1000;
+    }
+
+    const parsed = Date.parse(expire);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+
+  return null;
+};
+
+const getParseCacheExpiry = (item: any): number => {
+  const expireAt = getExpireTimestamp(item?.expire);
+  if (!expireAt) return Date.now() + DEFAULT_PARSE_CACHE_TTL;
+
+  return Math.max(Date.now() + MIN_PARSE_CACHE_TTL, expireAt - 15 * 1000);
+};
 
 /**
  * 歌词缓存 — 避免重复请求备用歌词 API（歌词内容不会变化，长期缓存安全）。
@@ -285,7 +314,7 @@ export const parseSongFull = async (
   const cached = _parseCache.get(cacheKey);
 
   // 缓存命中
-  if (cached && Date.now() - cached.timestamp < PARSE_CACHE_TTL) {
+  if (cached && Date.now() < cached.expiresAt) {
     const item = cached.data[0];
     const normalized = normalizeSongs(cached.data, platform)[0];
     const lrc = resolvePlaybackLyrics(item, id, platform);
@@ -311,7 +340,11 @@ export const parseSongFull = async (
 
   if (!data || data.length === 0) return null;
 
-  _parseCache.set(cacheKey, { data, timestamp: Date.now() });
+  _parseCache.set(cacheKey, {
+    data,
+    timestamp: Date.now(),
+    expiresAt: getParseCacheExpiry(data[0]),
+  });
 
   const item = data[0];
   const normalized = normalizeSongs(data, platform)[0];
