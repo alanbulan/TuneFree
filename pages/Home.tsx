@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, memo } from 'react';
-import { getTopLists, getTopListDetail, getImgReferrerPolicy, parseSongFull } from '../services/api';
+import { getTopLists, getTopListDetail, getImgReferrerPolicy } from '../services/api';
 import { Song, TopList } from '../types';
 import { usePlayerActions } from '../contexts/PlayerContext';
 import { PlayIcon, MusicIcon, ErrorIcon } from '../components/Icons';
@@ -18,9 +18,6 @@ const SongCard = memo<{ song: Song; idx: number; onPlay: (s: Song) => void }>(({
         <div
             className="flex items-center space-x-4 bg-white p-3 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.02)] active:scale-[0.99] transition cursor-pointer"
             onClick={() => onPlay(song)}
-            onPointerEnter={() => {
-                void parseSongFull(song.id, song.source).catch(() => null);
-            }}
         >
             <span className={`font-bold text-lg w-6 text-center italic ${idx < 3 ? 'text-ios-red' : 'text-ios-subtext/50'}`}>{idx + 1}</span>
             <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
