@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { usePlayer } from '../contexts/PlayerContext';
+import {
+  usePlayerActions,
+  usePlayerNowPlaying,
+  usePlayerSettings,
+} from '../contexts/PlayerContext';
 import { useLibrary } from '../contexts/LibraryContext';
 import { getImgReferrerPolicy } from '../services/api';
 import { useNavigate } from 'react-router-dom';
@@ -12,7 +16,9 @@ interface PlayerMorePopupProps {
 }
 
 const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onClosePlayer }) => {
-  const { currentSong, audioQuality, setAudioQuality } = usePlayer();
+  const { currentSong } = usePlayerNowPlaying();
+  const { audioQuality } = usePlayerSettings();
+  const { setAudioQuality } = usePlayerActions();
   const { playlists, addToPlaylist, createPlaylist } = useLibrary();
   const [showPlaylistSelect, setShowPlaylistSelect] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');

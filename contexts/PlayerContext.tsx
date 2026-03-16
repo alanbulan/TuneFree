@@ -56,6 +56,8 @@ type PlayerNowPlayingType = Pick<
 
 type PlayerQueueStateType = Pick<PlayerContextType, "queue" | "playMode">;
 
+type PlayerSettingsType = Pick<PlayerContextType, "audioQuality">;
+
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 const PlayerActionsContext =
   createContext<PlayerActionsType | undefined>(undefined);
@@ -63,6 +65,8 @@ const PlayerNowPlayingContext =
   createContext<PlayerNowPlayingType | undefined>(undefined);
 const PlayerQueueStateContext =
   createContext<PlayerQueueStateType | undefined>(undefined);
+const PlayerSettingsContext =
+  createContext<PlayerSettingsType | undefined>(undefined);
 
 // Helper to get local storage safely
 const getLocal = <T,>(key: string, def: T): T => {
@@ -772,6 +776,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [queue, playMode],
   );
 
+  const settingsValue = useMemo(
+    () => ({
+      audioQuality,
+    }),
+    [audioQuality],
+  );
+
   // Context value 用 useMemo 稳定对象引用：
   // 只有 state 值实际变化时才创建新对象，避免因无关渲染导致所有消费者重渲
   const contextValue = useMemo(
@@ -807,7 +818,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     <PlayerActionsContext.Provider value={actionsValue}>
       <PlayerNowPlayingContext.Provider value={nowPlayingValue}>
         <PlayerQueueStateContext.Provider value={queueStateValue}>
-          <PlayerContext.Provider value={contextValue}>{children}</PlayerContext.Provider>
+          <PlayerSettingsContext.Provider value={settingsValue}>
+            <PlayerContext.Provider value={contextValue}>{children}</PlayerContext.Provider>
+          </PlayerSettingsContext.Provider>
         </PlayerQueueStateContext.Provider>
       </PlayerNowPlayingContext.Provider>
     </PlayerActionsContext.Provider>
@@ -895,6 +908,19 @@ export const usePlayerQueueState = () => {
     return {
       queue: PLAYER_DEFAULTS.queue,
       playMode: PLAYER_DEFAULTS.playMode,
+    };
+  }
+  return context;
+};
+
+export const usePlayerSettings = () => {
+  const context = useContext(PlayerSettingsContext);
+  if (!context) {
+    console.warn(
+      "[usePlayerSettings] Provider 未就绪，返回默认设置（HMR 热更新中）",
+    );
+    return {
+      audioQuality: PLAYER_DEFAULTS.audioQuality,
     };
   }
   return context;
