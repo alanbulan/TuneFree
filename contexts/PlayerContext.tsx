@@ -445,6 +445,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         retryCountRef.current = 0; // Reset retry if user manually clicked a new song
       }
 
+      if (!isCurrentSong) {
+        audioRef.current.pause();
+        audioRef.current.removeAttribute("src");
+        audioRef.current.load();
+        setIsPlaying(false);
+        setCurrentTime(0);
+        setDuration(0);
+      }
+
       let fullSong = { ...song };
       setCurrentSong(fullSong);
 

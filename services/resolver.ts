@@ -23,6 +23,12 @@ const PARSE_CACHE_TTL = 5 * 60 * 1000;
  * Key 格式："lrc:{source}:{id}"
  */
 const _lyricsCache = new Map<string, string>();
+const _lyricsPending = new Map<string, Promise<string>>();
+
+const getCachedFallbackLyrics = (
+  id: string | number,
+  source: string,
+): string => _lyricsCache.get(`lrc:${source}:${id}`) || "";
 
 const extractParsedLyrics = (item: any): string => {
   if (typeof item?.lyrics === "string" && item.lyrics.trim()) {
@@ -62,6 +68,12 @@ const hasMergedTranslationLines = (lrc: string): boolean => {
   return false;
 };
 
+const shouldPreferFallbackLyrics = (
+  platform: string,
+  parsedLyrics: string,
+): boolean =>
+  platform === "qq" && !!parsedLyrics && !hasMergedTranslationLines(parsedLyrics);
+
 const resolveLyricsFromParse = async (
   item: any,
   id: string | number,
@@ -69,7 +81,7 @@ const resolveLyricsFromParse = async (
 ): Promise<string> => {
   const parsedLyrics = extractParsedLyrics(item);
 
-  if (platform === "qq" && parsedLyrics && !hasMergedTranslationLines(parsedLyrics)) {
+  if (shouldPreferFallbackLyrics(platform, parsedLyrics)) {
     const fallbackLyrics = await fetchFallbackLyrics(id, platform);
     return fallbackLyrics || parsedLyrics;
   }
@@ -79,6 +91,35 @@ const resolveLyricsFromParse = async (
   }
 
   return fetchFallbackLyrics(id, platform);
+};
+
+const resolvePlaybackLyrics = (
+  item: any,
+  id: string | number,
+  platform: string,
+): string => {
+  const parsedLyrics = extractParsedLyrics(item);
+
+  if (shouldPreferFallbackLyrics(platform, parsedLyrics)) {
+    return getCachedFallbackLyrics(id, platform);
+  }
+
+  if (parsedLyrics) {
+    return parsedLyrics;
+  }
+
+  return getCachedFallbackLyrics(id, platform);
+};
+
+const warmLyricsCache = (
+  item: any,
+  id: string | number,
+  platform: string,
+): void => {
+  const parsedLyrics = extractParsedLyrics(item);
+  if (!parsedLyrics || shouldPreferFallbackLyrics(platform, parsedLyrics)) {
+    void fetchFallbackLyrics(id, platform);
+  }
 };
 
 // ==============================
@@ -137,22 +178,31 @@ export const fetchFallbackLyrics = async (
   const cached = _lyricsCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
-  let lrc = "";
+  const pending = _lyricsPending.get(cacheKey);
+  if (pending) return pending;
 
-  try {
-    if (source === "netease") {
-      lrc = await fetchNeteaselyrics(id);
-    } else if (source === "qq") {
-      lrc = await fetchQQLyrics(id);
-    } else if (source === "kuwo") {
-      lrc = await fetchKuwoLyrics(id);
+  const request = (async () => {
+    let lrc = "";
+
+    try {
+      if (source === "netease") {
+        lrc = await fetchNeteaselyrics(id);
+      } else if (source === "qq") {
+        lrc = await fetchQQLyrics(id);
+      } else if (source === "kuwo") {
+        lrc = await fetchKuwoLyrics(id);
+      }
+    } catch (e) {
+      console.warn(`[Resolver] fetchFallbackLyrics failed (${source}:${id}):`, e);
     }
-  } catch (e) {
-    console.warn(`[Resolver] fetchFallbackLyrics failed (${source}:${id}):`, e);
-  }
 
-  _lyricsCache.set(cacheKey, lrc);
-  return lrc;
+    _lyricsCache.set(cacheKey, lrc);
+    _lyricsPending.delete(cacheKey);
+    return lrc;
+  })();
+
+  _lyricsPending.set(cacheKey, request);
+  return request;
 };
 
 /**
@@ -238,7 +288,8 @@ export const parseSongFull = async (
   if (cached && Date.now() - cached.timestamp < PARSE_CACHE_TTL) {
     const item = cached.data[0];
     const normalized = normalizeSongs(cached.data, platform)[0];
-    const lrc = await resolveLyricsFromParse(item, id, platform);
+    const lrc = resolvePlaybackLyrics(item, id, platform);
+    warmLyricsCache(item, id, platform);
     return {
       url: fixUrl(item?.url) || null,
       lrc,
@@ -264,7 +315,8 @@ export const parseSongFull = async (
 
   const item = data[0];
   const normalized = normalizeSongs(data, platform)[0];
-  const lrc = await resolveLyricsFromParse(item, id, platform);
+  const lrc = resolvePlaybackLyrics(item, id, platform);
+  warmLyricsCache(item, id, platform);
 
   return {
     url: fixUrl(item?.url) || null,

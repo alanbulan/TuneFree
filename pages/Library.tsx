@@ -6,6 +6,7 @@ import {
   getPlaylistDetail,
   DEFAULT_API_BASE,
   getImgReferrerPolicy,
+  parseSongFull,
 } from "../services/api";
 import { Song } from "../types";
 import {
@@ -161,6 +162,9 @@ const Library: React.FC = () => {
               key={`${song.id}-${idx}`}
               className="flex items-center space-x-3 bg-white p-2 rounded-xl shadow-sm active:scale-[0.98] transition cursor-pointer"
               onClick={() => playSong(song)}
+              onPointerEnter={() => {
+                void parseSongFull(song.id, song.source).catch(() => null);
+              }}
             >
               <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 flex items-center justify-center">
                 {song.pic ? (

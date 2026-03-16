@@ -4,6 +4,7 @@ import {
   searchAggregate,
   searchSongs,
   getImgReferrerPolicy,
+  parseSongFull,
 } from "../services/api";
 import { Song, isSameSong } from "../types";
 import {
@@ -35,6 +36,9 @@ const SearchResultItem = memo<{
     <div
       className={`flex items-center space-x-3 p-3 rounded-xl transition cursor-pointer ${isCurrent ? "bg-white shadow-sm ring-1 ring-ios-red/20" : "hover:bg-white/50 active:bg-white"}`}
       onClick={() => onPlay(song)}
+      onPointerEnter={() => {
+        void parseSongFull(song.id, song.source).catch(() => null);
+      }}
     >
       <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
         {song.pic ? (
