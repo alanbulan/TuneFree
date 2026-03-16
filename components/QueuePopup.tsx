@@ -1,17 +1,61 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, memo } from 'react';
 import {
   usePlayerActions,
   usePlayerNowPlaying,
   usePlayerQueueState,
 } from '../contexts/PlayerContext';
 import { getImgReferrerPolicy } from '../services/api';
-import { getSongKey, isSameSong } from '../types';
+import { Song, getSongKey, isSameSong } from '../types';
 import { TrashIcon, MusicIcon } from './Icons';
 
 interface QueuePopupProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+const QueueItem = memo<{
+  song: Song;
+  isCurrent: boolean;
+  onPlay: (song: Song) => void;
+  onRemove: (song: Song) => void;
+}>(({ song, isCurrent, onPlay, onRemove }) => {
+  return (
+    <div
+      id={`queue-item-${getSongKey(song)}`}
+      className={`flex items-center space-x-3 p-3 rounded-xl mb-1 transition cursor-pointer ${isCurrent ? 'bg-ios-red/5' : 'hover:bg-gray-50 active:bg-gray-100'}`}
+      onClick={() => onPlay(song)}
+    >
+      <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden flex items-center justify-center relative">
+        {song.pic ? (
+          <img src={song.pic} referrerPolicy={getImgReferrerPolicy(song.pic)} className="w-full h-full object-cover" />
+        ) : (
+          <MusicIcon size={16} className="text-gray-300" />
+        )}
+        {isCurrent && (
+          <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+            <div className="w-1.5 h-1.5 bg-ios-red rounded-full animate-pulse" />
+          </div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium truncate ${isCurrent ? 'text-ios-red' : 'text-gray-900'}`}>{song.name}</p>
+        <div className="flex items-center gap-1">
+          <span className="text-[9px] px-1 bg-gray-100 text-gray-500 rounded uppercase">{song.source}</span>
+          <p className="text-xs text-gray-500 truncate">{song.artist}</p>
+        </div>
+      </div>
+      <button
+        className="p-2 text-gray-300 hover:text-ios-red"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove(song);
+        }}
+      >
+        <TrashIcon size={16} />
+      </button>
+    </div>
+  );
+});
 
 const QueuePopupContent: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { queue, playMode } = usePlayerQueueState();
@@ -71,46 +115,17 @@ const QueuePopupContent: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <span className="text-sm">队列为空</span>
             </div>
           ) : (
-            queue.map((song) => {
-              const isCurrent = isSameSong(currentSong, song);
-              return (
-                <div
-                  key={`${song.id}-${song.source}`}
-                  id={`queue-item-${getSongKey(song)}`}
-                  className={`flex items-center space-x-3 p-3 rounded-xl mb-1 transition cursor-pointer ${isCurrent ? 'bg-ios-red/5' : 'hover:bg-gray-50 active:bg-gray-100'}`}
-                  onClick={() => playSong(song)}
-                >
-                  <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden flex items-center justify-center relative">
-                    {song.pic ? (
-                      <img src={song.pic} referrerPolicy={getImgReferrerPolicy(song.pic)} className="w-full h-full object-cover" />
-                    ) : (
-                      <MusicIcon size={16} className="text-gray-300" />
-                    )}
-                    {isCurrent && (
-                      <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                        <div className="w-1.5 h-1.5 bg-ios-red rounded-full animate-pulse" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium truncate ${isCurrent ? 'text-ios-red' : 'text-gray-900'}`}>{song.name}</p>
-                    <div className="flex items-center gap-1">
-                      <span className="text-[9px] px-1 bg-gray-100 text-gray-500 rounded uppercase">{song.source}</span>
-                      <p className="text-xs text-gray-500 truncate">{song.artist}</p>
-                    </div>
-                  </div>
-                  <button
-                    className="p-2 text-gray-300 hover:text-ios-red"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeFromQueue(song.id, song.source);
-                    }}
-                  >
-                    <TrashIcon size={16} />
-                  </button>
-                </div>
-              );
-            })
+            queue.map((song) => (
+              <QueueItem
+                key={`${song.id}-${song.source}`}
+                song={song}
+                isCurrent={isSameSong(currentSong, song)}
+                onPlay={playSong}
+                onRemove={(targetSong) =>
+                  removeFromQueue(targetSong.id, targetSong.source)
+                }
+              />
+            ))
           )}
         </div>
       </div>
