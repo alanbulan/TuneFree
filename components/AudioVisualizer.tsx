@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect } from 'react';
-import { usePlayer } from '../contexts/PlayerContext';
+import { usePlayerAnalyser } from '../contexts/PlayerContext';
 
 interface AudioVisualizerProps {
   isPlaying: boolean;
@@ -14,7 +14,7 @@ const MIN_BAR_PERCENT = 0.04;           // 最小可见高度百分比
 const DECAY_SPEED = 0.92;               // 暂停时衰减系数 (越接近1越慢)
 
 const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
-  const { analyser } = usePlayer();
+  const { analyser } = usePlayerAnalyser();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // 持久化状态，跨帧保留

@@ -58,6 +58,8 @@ type PlayerQueueStateType = Pick<PlayerContextType, "queue" | "playMode">;
 
 type PlayerSettingsType = Pick<PlayerContextType, "audioQuality">;
 
+type PlayerAnalyserType = Pick<PlayerContextType, "analyser">;
+
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 const PlayerActionsContext =
   createContext<PlayerActionsType | undefined>(undefined);
@@ -67,6 +69,8 @@ const PlayerQueueStateContext =
   createContext<PlayerQueueStateType | undefined>(undefined);
 const PlayerSettingsContext =
   createContext<PlayerSettingsType | undefined>(undefined);
+const PlayerAnalyserContext =
+  createContext<PlayerAnalyserType | undefined>(undefined);
 
 // Helper to get local storage safely
 const getLocal = <T,>(key: string, def: T): T => {
@@ -783,6 +787,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [audioQuality],
   );
 
+  const analyserValue = useMemo(
+    () => ({
+      analyser,
+    }),
+    [analyser],
+  );
+
   // Context value 用 useMemo 稳定对象引用：
   // 只有 state 值实际变化时才创建新对象，避免因无关渲染导致所有消费者重渲
   const contextValue = useMemo(
@@ -819,7 +830,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       <PlayerNowPlayingContext.Provider value={nowPlayingValue}>
         <PlayerQueueStateContext.Provider value={queueStateValue}>
           <PlayerSettingsContext.Provider value={settingsValue}>
-            <PlayerContext.Provider value={contextValue}>{children}</PlayerContext.Provider>
+            <PlayerAnalyserContext.Provider value={analyserValue}>
+              <PlayerContext.Provider value={contextValue}>{children}</PlayerContext.Provider>
+            </PlayerAnalyserContext.Provider>
           </PlayerSettingsContext.Provider>
         </PlayerQueueStateContext.Provider>
       </PlayerNowPlayingContext.Provider>
@@ -921,6 +934,19 @@ export const usePlayerSettings = () => {
     );
     return {
       audioQuality: PLAYER_DEFAULTS.audioQuality,
+    };
+  }
+  return context;
+};
+
+export const usePlayerAnalyser = () => {
+  const context = useContext(PlayerAnalyserContext);
+  if (!context) {
+    console.warn(
+      "[usePlayerAnalyser] Provider 未就绪，返回默认分析器状态（HMR 热更新中）",
+    );
+    return {
+      analyser: PLAYER_DEFAULTS.analyser,
     };
   }
   return context;
