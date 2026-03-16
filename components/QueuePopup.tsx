@@ -5,7 +5,7 @@ import {
   usePlayerQueueState,
 } from '../contexts/PlayerContext';
 import { getImgReferrerPolicy } from '../services/api';
-import { Song, isSameSong } from '../types';
+import { Song, getSongKey, isSameSong } from '../types';
 import { TrashIcon, MusicIcon } from './Icons';
 
 interface QueuePopupProps {
@@ -31,7 +31,7 @@ const QueuePopup: React.FC<QueuePopupProps> = ({ isOpen, onClose }) => {
   // Auto scroll to current song when opened
   useEffect(() => {
     if (isOpen && currentSong && listRef.current) {
-      const activeEl = document.getElementById(`queue-item-${currentSong.id}`);
+      const activeEl = document.getElementById(`queue-item-${getSongKey(currentSong)}`);
       if (activeEl) {
           activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }
@@ -84,7 +84,7 @@ const QueuePopup: React.FC<QueuePopupProps> = ({ isOpen, onClose }) => {
                 return (
                   <div 
                     key={`${song.id}-${song.source}`}
-                    id={`queue-item-${song.id}`}
+                    id={`queue-item-${getSongKey(song)}`}
                     className={`flex items-center space-x-3 p-3 rounded-xl mb-1 transition cursor-pointer ${isCurrent ? 'bg-ios-red/5' : 'hover:bg-gray-50 active:bg-gray-100'}`}
                     onClick={() => playSong(song)}
                   >
