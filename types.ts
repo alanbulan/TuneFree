@@ -11,6 +11,17 @@ export interface Song {
   types?: string[];
 }
 
+export const getSongKey = (song: Pick<Song, 'id' | 'source'>): string =>
+  `${String(song.source)}:${String(song.id)}`;
+
+export const isSameSong = (
+  a: Pick<Song, 'id' | 'source'> | null | undefined,
+  b: Pick<Song, 'id' | 'source'> | null | undefined,
+): boolean => {
+  if (!a || !b) return false;
+  return getSongKey(a) === getSongKey(b);
+};
+
 export type PlayMode = 'sequence' | 'loop' | 'shuffle';
 export type AudioQuality = '128k' | '320k' | 'flac' | 'flac24bit';
 

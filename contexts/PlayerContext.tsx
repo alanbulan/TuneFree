@@ -7,7 +7,13 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import { Song, PlayMode, AudioQuality } from "../types";
+import {
+  Song,
+  PlayMode,
+  AudioQuality,
+  getSongKey,
+  isSameSong,
+} from "../types";
 import { parseSongFull } from "../services/api";
 
 interface PlayerContextType {
@@ -27,7 +33,7 @@ interface PlayerContextType {
   playNext: (force?: boolean) => void;
   playPrev: () => void;
   addToQueue: (song: Song) => void;
-  removeFromQueue: (songId: string | number) => void;
+  removeFromQueue: (songId: string | number, source?: string) => void;
   togglePlayMode: () => void;
   clearQueue: () => void;
   setAudioQuality: (quality: AudioQuality) => void;
@@ -410,12 +416,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       // Determine effective quality
       const targetQuality = forceQuality || audioQualityRef.current;
 
-      const isSameSong = currentSongRef.current?.id === song.id;
+      const isCurrentSong = isSameSong(currentSongRef.current, song);
       const isDifferentQuality =
         forceQuality && forceQuality !== audioQualityRef.current;
 
       // Logic: If same song, same quality, and audio has source -> toggle via audioRef directly
-      if (isSameSong && !isDifferentQuality && !forceQuality) {
+      if (isCurrentSong && !isDifferentQuality && !forceQuality) {
         if (
           audioRef.current.src &&
           audioRef.current.src !== window.location.href
@@ -443,7 +449,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Queue management
       setQueue((prev) => {
-        if (prev.find((s) => String(s.id) === String(song.id))) return prev;
+        if (prev.find((s) => isSameSong(s, song))) return prev;
         return [...prev, fullSong];
       });
 
@@ -452,7 +458,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         const parsed = await parseSongFull(song.id, song.source, targetQuality);
 
         // Race condition check
-        if (currentSongRef.current?.id !== song.id) {
+        if (!isSameSong(currentSongRef.current, song)) {
           return;
         }
 
@@ -463,12 +469,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             if (parsed.pic && !fullSong.pic) patch.pic = parsed.pic;
             if (parsed.lrc) patch.lrc = parsed.lrc;
             fullSong = { ...fullSong, ...patch };
-            setCurrentSong((prev) =>
-              prev && prev.id === song.id ? { ...prev, ...patch } : prev,
-            );
+            setCurrentSong((prev) => {
+              if (!isSameSong(prev, song) || !prev) return prev;
+              return { ...prev, ...patch };
+            });
             setQueue((prev) =>
               prev.map((s) =>
-                String(s.id) === String(song.id) ? { ...s, ...patch } : s,
+                isSameSong(s, song) ? { ...s, ...patch } : s,
               ),
             );
           }
@@ -479,7 +486,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         if (url) {
           fullSong.url = url;
           const resumeTime =
-            isSameSong && isDifferentQuality ? audioRef.current.currentTime : 0;
+            isCurrentSong && isDifferentQuality ? audioRef.current.currentTime : 0;
 
           // 酷我 CDN 不支持 CORS，crossOrigin="anonymous" 会导致请求失败
           // createMediaElementSource 绑定后的 Audio 播放非 CORS 源也会静音
@@ -640,9 +647,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    const currentIndex = c
-      ? q.findIndex((s) => String(s.id) === String(c.id))
-      : -1;
+    const currentIndex = c ? q.findIndex((s) => isSameSong(s, c)) : -1;
     let nextIndex = 0;
 
     if (mode === "shuffle") {
@@ -662,9 +667,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     const mode = playModeRef.current;
 
     if (q.length === 0) return;
-    const currentIndex = c
-      ? q.findIndex((s) => String(s.id) === String(c.id))
-      : -1;
+    const currentIndex = c ? q.findIndex((s) => isSameSong(s, c)) : -1;
     let prevIndex = 0;
 
     if (mode === "shuffle") {
@@ -705,14 +708,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const addToQueue = useCallback((song: Song) => {
     setQueue((prev) => {
-      if (prev.find((s) => String(s.id) === String(song.id))) return prev;
+      if (prev.find((s) => isSameSong(s, song))) return prev;
       return [...prev, song];
     });
   }, []);
 
-  const removeFromQueue = useCallback((songId: string | number) => {
-    setQueue((prev) => prev.filter((s) => String(s.id) !== String(songId)));
-  }, []);
+  const removeFromQueue = useCallback(
+    (songId: string | number, source?: string) => {
+      setQueue((prev) =>
+        prev.filter(
+          (s) => !(String(s.id) === String(songId) && (!source || s.source === source)),
+        ),
+      );
+    },
+    [],
+  );
 
   const clearQueue = useCallback(() => {
     setQueue([]);

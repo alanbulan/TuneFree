@@ -8,6 +8,7 @@ import {
 import { useLibrary } from "../contexts/LibraryContext";
 import { getLyrics, getImgReferrerPolicy } from "../services/api";
 import { ParsedLyric } from "../types";
+import { isSameSong } from "../types";
 import {
   ChevronDownIcon,
   MoreIcon,
@@ -380,7 +381,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({
                 className={`p-3 -m-1 rounded-full active:scale-90 transition-transform ${!hasSong ? "opacity-50" : ""}`}
                 disabled={!hasSong}
               >
-                {hasSong && isFavorite(currentSong.id) ? (
+                {hasSong && isFavorite(currentSong.id, currentSong.source) ? (
                   <HeartFillIcon className="text-ios-red" size={26} />
                 ) : (
                   <HeartIcon className="text-gray-400" size={26} />

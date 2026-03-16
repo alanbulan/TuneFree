@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Song, Playlist } from "../types";
+import { Song, Playlist, getSongKey } from "../types";
 import { DEFAULT_API_BASE } from "../services/api";
 
 interface LibraryContextType {
@@ -19,7 +19,7 @@ interface LibraryContextType {
   setCorsProxy: (url: string) => void;
   setApiBase: (url: string) => void;
   toggleFavorite: (song: Song) => void;
-  isFavorite: (songId: number | string) => boolean;
+  isFavorite: (songId: number | string, source?: string) => boolean;
   createPlaylist: (name: string, initialSongs?: Song[]) => void;
   importPlaylist: (name: string, songs: Song[]) => void;
   renamePlaylist: (id: string, name: string) => void;
@@ -109,8 +109,9 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const toggleFavorite = useCallback((song: Song) => {
     setFavorites((prev) => {
-      if (prev.find((s) => String(s.id) === String(song.id))) {
-        return prev.filter((s) => String(s.id) !== String(song.id));
+      const songKey = getSongKey(song);
+      if (prev.find((s) => getSongKey(s) === songKey)) {
+        return prev.filter((s) => getSongKey(s) !== songKey);
       }
       return [song, ...prev];
     });
@@ -121,8 +122,11 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
    * 由于只在用户交互（收藏按钮）和渲染时调用，dep 随 favorites 变化可接受。
    */
   const isFavorite = useCallback(
-    (songId: number | string) =>
-      favorites.some((s) => String(s.id) === String(songId)),
+    (songId: number | string, source?: string) =>
+      favorites.some(
+        (s) =>
+          String(s.id) === String(songId) && (!source || s.source === source),
+      ),
     [favorites],
   );
 
@@ -167,20 +171,23 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
     setPlaylists((prev) =>
       prev.map((p) => {
         if (p.id !== playlistId) return p;
-        if (p.songs.find((s) => String(s.id) === String(song.id))) return p;
+        const songKey = getSongKey(song);
+        if (p.songs.find((s) => getSongKey(s) === songKey)) return p;
         return { ...p, songs: [...p.songs, song] };
       }),
     );
   }, []);
 
   const removeFromPlaylist = useCallback(
-    (playlistId: string, songId: number | string) => {
+    (playlistId: string, songId: number | string, source?: string) => {
       setPlaylists((prev) =>
         prev.map((p) => {
           if (p.id !== playlistId) return p;
           return {
             ...p,
-            songs: p.songs.filter((s) => String(s.id) !== String(songId)),
+            songs: p.songs.filter(
+              (s) => !(String(s.id) === String(songId) && (!source || s.source === source)),
+            ),
           };
         }),
       );

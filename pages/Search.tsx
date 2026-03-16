@@ -5,7 +5,7 @@ import {
   searchSongs,
   getImgReferrerPolicy,
 } from "../services/api";
-import { Song } from "../types";
+import { Song, isSameSong } from "../types";
 import {
   usePlayerActions,
   usePlayerNowPlaying,
@@ -324,7 +324,7 @@ const Search: React.FC = () => {
             <SearchResultItem
               key={`${song.source}-${song.id}-${idx}`}
               song={song}
-              isCurrent={currentSong?.id === song.id}
+              isCurrent={isSameSong(currentSong, song)}
               isPlaying={isPlaying}
               onPlay={handlePlaySong}
             />

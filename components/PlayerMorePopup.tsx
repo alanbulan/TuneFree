@@ -8,6 +8,7 @@ import { useLibrary } from '../contexts/LibraryContext';
 import { getImgReferrerPolicy } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import { FolderIcon, PlusIcon, MusicIcon, SearchIcon, DownloadIcon, ShareIcon } from './Icons';
+import { getSongKey } from '../types';
 
 interface PlayerMorePopupProps {
   isOpen: boolean;
@@ -246,7 +247,7 @@ const PlayerMorePopup: React.FC<PlayerMorePopupProps> = ({ isOpen, onClose, onCl
                                     <p className="text-[10px] text-gray-400">{p.songs.length} 首歌曲</p>
                                 </div>
                             </div>
-                            {p.songs.find(s => String(s.id) === String(currentSong.id)) && (
+                            {p.songs.find(s => getSongKey(s) === getSongKey(currentSong)) && (
                                 <span className="text-[10px] bg-ios-red/10 text-ios-red px-2 py-0.5 rounded-full">已添加</span>
                             )}
                         </button>

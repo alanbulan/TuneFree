@@ -5,7 +5,7 @@ import {
   usePlayerQueueState,
 } from '../contexts/PlayerContext';
 import { getImgReferrerPolicy } from '../services/api';
-import { Song } from '../types';
+import { Song, isSameSong } from '../types';
 import { TrashIcon, MusicIcon } from './Icons';
 
 interface QueuePopupProps {
@@ -80,7 +80,7 @@ const QueuePopup: React.FC<QueuePopupProps> = ({ isOpen, onClose }) => {
               </div>
           ) : (
               queue.map((song) => {
-                const isCurrent = currentSong?.id === song.id;
+                const isCurrent = isSameSong(currentSong, song);
                 return (
                   <div 
                     key={`${song.id}-${song.source}`}
@@ -109,7 +109,7 @@ const QueuePopup: React.FC<QueuePopupProps> = ({ isOpen, onClose }) => {
                      </div>
                      <button 
                         className="p-2 text-gray-300 hover:text-ios-red"
-                        onClick={(e) => { e.stopPropagation(); removeFromQueue(song.id); }}
+                        onClick={(e) => { e.stopPropagation(); removeFromQueue(song.id, song.source); }}
                      >
                          <TrashIcon size={16} />
                      </button>
