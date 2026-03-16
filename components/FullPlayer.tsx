@@ -1,5 +1,10 @@
 import React, { useEffect, useState, useRef } from "react";
-import { usePlayer } from "../contexts/PlayerContext";
+import {
+  usePlayerActions,
+  usePlayerNowPlaying,
+  usePlayerProgress,
+  usePlayerQueueState,
+} from "../contexts/PlayerContext";
 import { useLibrary } from "../contexts/LibraryContext";
 import { getLyrics, getImgReferrerPolicy } from "../services/api";
 import { ParsedLyric } from "../types";
@@ -109,19 +114,11 @@ const FullPlayer: React.FC<FullPlayerProps> = ({
   onClose,
   layoutId,
 }) => {
-  const {
-    currentSong,
-    isPlaying,
-    togglePlay,
-    playNext,
-    playPrev,
-    currentTime,
-    duration,
-    seek,
-    playMode,
-    togglePlayMode,
-    queue,
-  } = usePlayer();
+  const { currentSong, isPlaying } = usePlayerNowPlaying();
+  const { currentTime, duration } = usePlayerProgress();
+  const { queue, playMode } = usePlayerQueueState();
+  const { togglePlay, playNext, playPrev, seek, togglePlayMode } =
+    usePlayerActions();
   const { isFavorite, toggleFavorite } = useLibrary();
   const [lyrics, setLyrics] = useState<ParsedLyric[]>([]);
   const [activeLyricIndex, setActiveLyricIndex] = useState(0);
