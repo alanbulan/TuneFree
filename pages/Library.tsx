@@ -186,7 +186,7 @@ const Library: React.FC = () => {
                   className="p-2 text-ios-red/70 hover:text-ios-red bg-ios-red/5 rounded-full"
                   onClick={(e) => {
                     e.stopPropagation();
-                    removeFromPlaylist(playlistId, song.id);
+                    removeFromPlaylist(playlistId, song.id, song.source);
                   }}
                 >
                   <TrashIcon size={16} />

@@ -25,7 +25,11 @@ interface LibraryContextType {
   renamePlaylist: (id: string, name: string) => void;
   deletePlaylist: (id: string) => void;
   addToPlaylist: (playlistId: string, song: Song) => void;
-  removeFromPlaylist: (playlistId: string, songId: number | string) => void;
+  removeFromPlaylist: (
+    playlistId: string,
+    songId: number | string,
+    source?: string,
+  ) => void;
   exportData: () => void;
   importData: (jsonData: string) => boolean;
 }
