@@ -15,6 +15,16 @@ import {
   isSameSong,
 } from "../types";
 import { parseSongFull } from "../services/api";
+import {
+  loadStoredAudioQuality,
+  loadStoredCurrentSong,
+  loadStoredPlayMode,
+  loadStoredQueue,
+  persistAudioQuality,
+  persistCurrentSong,
+  persistPlayMode,
+  persistQueue,
+} from "./playerPersistence";
 import { getNextQueueIndex, getPrevQueueIndex } from "./playerQueue";
 
 interface PlayerContextType {
@@ -83,36 +93,22 @@ const PlayerAnalyserContext =
 const PlayerProgressContext =
   createContext<PlayerProgressType | undefined>(undefined);
 
-// Helper to get local storage safely
-const getLocal = <T,>(key: string, def: T): T => {
-  try {
-    const item = localStorage.getItem(key);
-    return item ? JSON.parse(item) : def;
-  } catch {
-    return def;
-  }
-};
-
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   // Initialize state from LocalStorage where appropriate
   const [currentSong, setCurrentSong] = useState<Song | null>(() =>
-    getLocal("tunefree_current_song", null),
+    loadStoredCurrentSong(),
   );
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
-  const [queue, setQueue] = useState<Song[]>(() =>
-    getLocal("tunefree_queue", []),
-  );
-  const [playMode, setPlayMode] = useState<PlayMode>(() =>
-    getLocal("tunefree_play_mode", "sequence"),
-  );
+  const [queue, setQueue] = useState<Song[]>(() => loadStoredQueue());
+  const [playMode, setPlayMode] = useState<PlayMode>(() => loadStoredPlayMode());
   const [audioQuality, setAudioQualityState] = useState<AudioQuality>(() =>
-    getLocal("tunefree_quality", "320k"),
+    loadStoredAudioQuality(),
   );
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -138,22 +134,22 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Persistence Effects
   useEffect(() => {
-    localStorage.setItem("tunefree_queue", JSON.stringify(queue));
+    persistQueue(queue);
     queueRef.current = queue;
   }, [queue]);
 
   useEffect(() => {
-    localStorage.setItem("tunefree_current_song", JSON.stringify(currentSong));
+    persistCurrentSong(currentSong);
     currentSongRef.current = currentSong;
   }, [currentSong]);
 
   useEffect(() => {
-    localStorage.setItem("tunefree_play_mode", JSON.stringify(playMode));
+    persistPlayMode(playMode);
     playModeRef.current = playMode;
   }, [playMode]);
 
   useEffect(() => {
-    localStorage.setItem("tunefree_quality", JSON.stringify(audioQuality));
+    persistAudioQuality(audioQuality);
     audioQualityRef.current = audioQuality;
   }, [audioQuality]);
 
