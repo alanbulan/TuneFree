@@ -6,10 +6,13 @@ import FullPlayer from './FullPlayer';
 import { HomeIcon, SearchIcon, LibraryIcon } from './Icons';
 import { AnimatePresence } from 'framer-motion';
 import { usePreventIosEdgeSwipe } from './usePreventIosEdgeSwipe';
+import { useIsIosStandalone } from './useIsIosStandalone';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isFullPlayerOpen, setIsFullPlayerOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const isIosStandalone = useIsIosStandalone();
+  const playerLayoutId = isIosStandalone ? undefined : 'player-container';
 
   usePreventIosEdgeSwipe(containerRef);
 
@@ -31,16 +34,16 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       
       {/* Mini Player - Only shown when Full Player is closed */}
       {!isFullPlayerOpen && (
-         <MiniPlayer onExpand={() => setIsFullPlayerOpen(true)} layoutId="player-container" />
+         <MiniPlayer onExpand={() => setIsFullPlayerOpen(true)} layoutId={playerLayoutId} />
       )}
 
       {/* Full Player Overlay with Shared Layout Animation */}
       <AnimatePresence>
         {isFullPlayerOpen && (
-          <FullPlayer 
-            isOpen={isFullPlayerOpen} 
-            onClose={() => setIsFullPlayerOpen(false)} 
-            layoutId="player-container"
+          <FullPlayer
+            isOpen={isFullPlayerOpen}
+            onClose={() => setIsFullPlayerOpen(false)}
+            layoutId={playerLayoutId}
           />
         )}
       </AnimatePresence>
