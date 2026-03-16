@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef, memo } from 'react';
 import { getTopLists, getTopListDetail, getImgReferrerPolicy } from '../services/api';
 import { Song, TopList } from '../types';
-import { usePlayer } from '../contexts/PlayerContext';
+import { usePlayerActions } from '../contexts/PlayerContext';
 import { PlayIcon, MusicIcon, ErrorIcon } from '../components/Icons';
 
 // ====== 数据缓存 — 切换音源时不重复请求 ======
@@ -74,7 +74,7 @@ const Home: React.FC = () => {
   const [songsLoading, setSongsLoading] = useState(true);    // 仅歌曲列表加载中
   const [error, setError] = useState(false);
   const [activeSource, setActiveSource] = useState('netease');
-  const { playSong } = usePlayer();
+  const { playSong } = usePlayerActions();
   // 防止竞态：切换音源时旧请求覆盖新请求
   const fetchIdRef = useRef(0);
 

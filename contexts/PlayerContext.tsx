@@ -34,7 +34,31 @@ interface PlayerContextType {
   initAudioContext: () => void;
 }
 
+type PlayerActionsType = Pick<
+  PlayerContextType,
+  | "playSong"
+  | "togglePlay"
+  | "seek"
+  | "playNext"
+  | "playPrev"
+  | "addToQueue"
+  | "removeFromQueue"
+  | "togglePlayMode"
+  | "clearQueue"
+  | "setAudioQuality"
+  | "initAudioContext"
+>;
+
+type PlayerNowPlayingType = Pick<
+  PlayerContextType,
+  "currentSong" | "isPlaying" | "isLoading"
+>;
+
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
+const PlayerActionsContext =
+  createContext<PlayerActionsType | undefined>(undefined);
+const PlayerNowPlayingContext =
+  createContext<PlayerNowPlayingType | undefined>(undefined);
 
 // Helper to get local storage safely
 const getLocal = <T,>(key: string, def: T): T => {
@@ -698,20 +722,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
-  // Context value 用 useMemo 稳定对象引用：
-  // 只有 state 值实际变化时才创建新对象，避免因无关渲染导致所有消费者重渲
-  const contextValue = useMemo(
+  const actionsValue = useMemo(
     () => ({
-      currentSong,
-      isPlaying,
-      isLoading,
-      currentTime,
-      duration,
-      volume,
-      playMode,
-      queue,
-      analyser,
-      audioQuality,
       playSong,
       togglePlay,
       seek,
@@ -725,16 +737,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       initAudioContext,
     }),
     [
-      currentSong,
-      isPlaying,
-      isLoading,
-      currentTime,
-      duration,
-      volume,
-      playMode,
-      queue,
-      analyser,
-      audioQuality,
       playSong,
       togglePlay,
       seek,
@@ -749,10 +751,52 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     ],
   );
 
+  const nowPlayingValue = useMemo(
+    () => ({
+      currentSong,
+      isPlaying,
+      isLoading,
+    }),
+    [currentSong, isPlaying, isLoading],
+  );
+
+  // Context value 用 useMemo 稳定对象引用：
+  // 只有 state 值实际变化时才创建新对象，避免因无关渲染导致所有消费者重渲
+  const contextValue = useMemo(
+    () => ({
+      currentSong,
+      isPlaying,
+      isLoading,
+      currentTime,
+      duration,
+      volume,
+      playMode,
+      queue,
+      analyser,
+      audioQuality,
+      ...actionsValue,
+    }),
+    [
+      currentSong,
+      isPlaying,
+      isLoading,
+      currentTime,
+      duration,
+      volume,
+      playMode,
+      queue,
+      analyser,
+      audioQuality,
+      actionsValue,
+    ],
+  );
+
   return (
-    <PlayerContext.Provider value={contextValue}>
-      {children}
-    </PlayerContext.Provider>
+    <PlayerActionsContext.Provider value={actionsValue}>
+      <PlayerNowPlayingContext.Provider value={nowPlayingValue}>
+        <PlayerContext.Provider value={contextValue}>{children}</PlayerContext.Provider>
+      </PlayerNowPlayingContext.Provider>
+    </PlayerActionsContext.Provider>
   );
 };
 
@@ -786,6 +830,44 @@ export const usePlayer = () => {
   if (!context) {
     console.warn("[usePlayer] Provider 未就绪，返回默认值（HMR 热更新中）");
     return PLAYER_DEFAULTS;
+  }
+  return context;
+};
+
+export const usePlayerActions = () => {
+  const context = useContext(PlayerActionsContext);
+  if (!context) {
+    console.warn(
+      "[usePlayerActions] Provider 未就绪，返回默认动作（HMR 热更新中）",
+    );
+    return {
+      playSong: PLAYER_DEFAULTS.playSong,
+      togglePlay: PLAYER_DEFAULTS.togglePlay,
+      seek: PLAYER_DEFAULTS.seek,
+      playNext: PLAYER_DEFAULTS.playNext,
+      playPrev: PLAYER_DEFAULTS.playPrev,
+      addToQueue: PLAYER_DEFAULTS.addToQueue,
+      removeFromQueue: PLAYER_DEFAULTS.removeFromQueue,
+      togglePlayMode: PLAYER_DEFAULTS.togglePlayMode,
+      clearQueue: PLAYER_DEFAULTS.clearQueue,
+      setAudioQuality: PLAYER_DEFAULTS.setAudioQuality,
+      initAudioContext: PLAYER_DEFAULTS.initAudioContext,
+    };
+  }
+  return context;
+};
+
+export const usePlayerNowPlaying = () => {
+  const context = useContext(PlayerNowPlayingContext);
+  if (!context) {
+    console.warn(
+      "[usePlayerNowPlaying] Provider 未就绪，返回默认状态（HMR 热更新中）",
+    );
+    return {
+      currentSong: PLAYER_DEFAULTS.currentSong,
+      isPlaying: PLAYER_DEFAULTS.isPlaying,
+      isLoading: PLAYER_DEFAULTS.isLoading,
+    };
   }
   return context;
 };

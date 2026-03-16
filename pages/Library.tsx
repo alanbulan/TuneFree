@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from "react";
-import { usePlayer } from "../contexts/PlayerContext";
+import { usePlayerActions } from "../contexts/PlayerContext";
 import { useLibrary } from "../contexts/LibraryContext";
 import {
   getPlaylistDetail,
@@ -43,7 +43,7 @@ const useToast = () => {
 };
 
 const Library: React.FC = () => {
-  const { queue, playSong } = usePlayer();
+  const { playSong } = usePlayerActions();
   const {
     favorites,
     playlists,

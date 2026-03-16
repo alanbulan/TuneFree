@@ -6,7 +6,10 @@ import {
   getImgReferrerPolicy,
 } from "../services/api";
 import { Song } from "../types";
-import { usePlayer } from "../contexts/PlayerContext";
+import {
+  usePlayerActions,
+  usePlayerNowPlaying,
+} from "../contexts/PlayerContext";
 import { SearchIcon, MusicIcon, TrashIcon } from "../components/Icons";
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -127,7 +130,8 @@ const Search: React.FC = () => {
   }, [searchParams]);
 
   const debouncedQuery = useDebounce(query, 800);
-  const { playSong, currentSong, isPlaying } = usePlayer();
+  const { playSong } = usePlayerActions();
+  const { currentSong, isPlaying } = usePlayerNowPlaying();
 
   useEffect(() => {
     localStorage.setItem("tunefree_search_history", JSON.stringify(history));
