@@ -24,6 +24,63 @@ const PARSE_CACHE_TTL = 5 * 60 * 1000;
  */
 const _lyricsCache = new Map<string, string>();
 
+const extractParsedLyrics = (item: any): string => {
+  if (typeof item?.lyrics === "string" && item.lyrics.trim()) {
+    return item.lyrics.trim();
+  }
+  if (typeof item?.lrc === "string" && item.lrc.trim()) {
+    return item.lrc.trim();
+  }
+  if (typeof item?.lyric === "string" && item.lyric.trim()) {
+    return item.lyric.trim();
+  }
+  return "";
+};
+
+const hasMergedTranslationLines = (lrc: string): boolean => {
+  if (!lrc) return false;
+
+  const timeToText = new Map<string, string>();
+  const lines = lrc.split("\n");
+
+  for (const line of lines) {
+    const match = line.match(/^\[(\d{2}:\d{2}\.\d{2,3})\](.*)$/);
+    if (!match) continue;
+
+    const time = match[1];
+    const text = match[2].trim();
+    if (!text) continue;
+
+    const previousText = timeToText.get(time);
+    if (previousText && previousText !== text) {
+      return true;
+    }
+
+    timeToText.set(time, text);
+  }
+
+  return false;
+};
+
+const resolveLyricsFromParse = async (
+  item: any,
+  id: string | number,
+  platform: string,
+): Promise<string> => {
+  const parsedLyrics = extractParsedLyrics(item);
+
+  if (platform === "qq" && parsedLyrics && !hasMergedTranslationLines(parsedLyrics)) {
+    const fallbackLyrics = await fetchFallbackLyrics(id, platform);
+    return fallbackLyrics || parsedLyrics;
+  }
+
+  if (parsedLyrics) {
+    return parsedLyrics;
+  }
+
+  return fetchFallbackLyrics(id, platform);
+};
+
 // ==============================
 // 原生 URL 直连（Cloudflare Pages Function）
 // ==============================
@@ -113,10 +170,7 @@ export const getLyrics = async (
   source: string,
 ): Promise<string> => {
   const data = await parseSongs(String(id), source);
-  const lrc = data?.[0]?.lrc || data?.[0]?.lyric || data?.[0]?.lyrics || "";
-  if (lrc) return lrc;
-
-  return fetchFallbackLyrics(id, source);
+  return resolveLyricsFromParse(data?.[0], id, source);
 };
 
 // ==============================
@@ -184,8 +238,7 @@ export const parseSongFull = async (
   if (cached && Date.now() - cached.timestamp < PARSE_CACHE_TTL) {
     const item = cached.data[0];
     const normalized = normalizeSongs(cached.data, platform)[0];
-    let lrc = item?.lrc || item?.lyric || item?.lyrics || "";
-    if (!lrc) lrc = await fetchFallbackLyrics(id, platform);
+    const lrc = await resolveLyricsFromParse(item, id, platform);
     return {
       url: fixUrl(item?.url) || null,
       lrc,
@@ -211,13 +264,7 @@ export const parseSongFull = async (
 
   const item = data[0];
   const normalized = normalizeSongs(data, platform)[0];
-
-  let lrc: string = item?.lrc || item?.lyric || item?.lyrics || "";
-
-  // parse 未返回歌词时，获取备用歌词
-  if (!lrc) {
-    lrc = await fetchFallbackLyrics(id, platform);
-  }
+  const lrc = await resolveLyricsFromParse(item, id, platform);
 
   return {
     url: fixUrl(item?.url) || null,

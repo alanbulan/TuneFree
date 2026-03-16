@@ -35,23 +35,24 @@ const parseLrc = (lrc: string): ParsedLyric[] => {
   if (!lrc) return [];
   const lines = lrc.split("\n");
   const raw: { time: number; text: string }[] = [];
-  const timeExp = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
+  const timeExp = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/g;
 
   for (const line of lines) {
-    const match = timeExp.exec(line);
-    if (match) {
-      const min = parseInt(match[1]);
-      const sec = parseInt(match[2]);
+    const matches = Array.from(line.matchAll(timeExp));
+    if (matches.length === 0) continue;
+
+    const text = line.replace(timeExp, "").trim();
+    if (!text) continue;
+
+    for (const match of matches) {
+      const min = parseInt(match[1], 10);
+      const sec = parseInt(match[2], 10);
       const msStr = match[3];
-      const msVal = parseInt(msStr);
+      const msVal = parseInt(msStr, 10);
       const ms = msStr.length === 2 ? msVal * 10 : msVal;
-
       const time = min * 60 + sec + ms / 1000;
-      const text = line.replace(timeExp, "").trim();
 
-      if (text) {
-        raw.push({ time, text });
-      }
+      raw.push({ time, text });
     }
   }
 
@@ -60,8 +61,8 @@ const parseLrc = (lrc: string): ParsedLyric[] => {
   const result: ParsedLyric[] = [];
   for (const item of raw) {
     const last = result[result.length - 1];
-    if (last && Math.abs(last.time - item.time) < 0.2) {
-      if (!last.translation) {
+    if (last && Math.abs(last.time - item.time) < 0.5) {
+      if (!last.translation && last.text !== item.text) {
         last.translation = item.text;
       }
     } else {
