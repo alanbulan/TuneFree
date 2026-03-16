@@ -6,10 +6,9 @@ import {
   usePlayerQueueState,
 } from "../contexts/PlayerContext";
 import { useLibrary } from "../contexts/LibraryContext";
-import { getLyrics, getImgReferrerPolicy } from "../services/api";
-import { ParsedLyric } from "../types";
+import { getImgReferrerPolicy } from "../services/api";
 import { isSameSong } from "../types";
-import { findActiveLyricIndex, parseLrc } from "./playerLyrics";
+import { usePlayerLyrics } from "./usePlayerLyrics";
 import {
   ChevronDownIcon,
   MoreIcon,
@@ -56,8 +55,6 @@ const FullPlayer: React.FC<FullPlayerProps> = ({
   const { togglePlay, playNext, playPrev, seek, togglePlayMode } =
     usePlayerActions();
   const { isFavorite, toggleFavorite } = useLibrary();
-  const [lyrics, setLyrics] = useState<ParsedLyric[]>([]);
-  const [activeLyricIndex, setActiveLyricIndex] = useState(0);
   const [showLyrics, setShowLyrics] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [showDownload, setShowDownload] = useState(false);
@@ -65,50 +62,17 @@ const FullPlayer: React.FC<FullPlayerProps> = ({
   const [imgError, setImgError] = useState(false);
 
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
+  const { lyrics, activeLyricIndex } = usePlayerLyrics(
+    currentSong,
+    isOpen,
+    currentTime,
+    showLyrics,
+    lyricsContainerRef,
+  );
 
-  // Fetch Lyrics
   useEffect(() => {
-    if (isOpen && currentSong) {
-      setLyrics([]);
-      setActiveLyricIndex(0);
-      setImgError(false); // Reset image error
-
-      // 优先使用播放时已缓存的歌词，避免重复调用 parse 浪费积分
-      if (currentSong.lrc) {
-        const parsed = parseLrc(currentSong.lrc);
-        setLyrics(parsed.length > 0 ? parsed : [{ time: 0, text: "暂无歌词" }]);
-      } else {
-        getLyrics(currentSong.id, currentSong.source).then((rawLrc) => {
-          if (rawLrc) setLyrics(parseLrc(rawLrc));
-          else setLyrics([{ time: 0, text: "暂无歌词" }]);
-        });
-      }
-    }
-  }, [currentSong, isOpen]);
-
-  // Sync Lyrics Highlight（二分查找，移除 activeLyricIndex 依赖避免重复触发）
-  useEffect(() => {
-    if (lyrics.length === 0) return;
-    const index = findActiveLyricIndex(lyrics, currentTime);
-    setActiveLyricIndex((prev) => (prev !== index ? index : prev));
-  }, [currentTime, lyrics]);
-
-  // Scroll Lyrics
-  useEffect(() => {
-    if (showLyrics && lyricsContainerRef.current && lyrics.length > 0) {
-      const activeEl = lyricsContainerRef.current.children[
-        activeLyricIndex
-      ] as HTMLElement;
-      if (activeEl) {
-        const container = lyricsContainerRef.current;
-        const scrollNew =
-          activeEl.offsetTop -
-          container.clientHeight / 2 +
-          activeEl.clientHeight / 2;
-        container.scrollTo({ top: scrollNew, behavior: "smooth" });
-      }
-    }
-  }, [activeLyricIndex, showLyrics, lyrics]);
+    setImgError(false);
+  }, [currentSong?.id, currentSong?.source, currentSong?.pic, isOpen]);
 
   const hasSong = !!currentSong;
 
