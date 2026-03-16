@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { usePlayer } from '../contexts/PlayerContext';
+import {
+  usePlayerActions,
+  usePlayerNowPlaying,
+  usePlayerQueueState,
+} from '../contexts/PlayerContext';
 import { getImgReferrerPolicy } from '../services/api';
 import { PlayIcon, PauseIcon, NextIcon, MusicIcon } from './Icons';
 import { motion } from 'framer-motion';
@@ -10,7 +14,9 @@ interface MiniPlayerProps {
 }
 
 const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand, layoutId }) => {
-  const { currentSong, isPlaying, togglePlay, playNext, queue } = usePlayer();
+  const { currentSong, isPlaying } = usePlayerNowPlaying();
+  const { togglePlay, playNext } = usePlayerActions();
+  const { queue } = usePlayerQueueState();
   const [imgError, setImgError] = useState(false);
 
   // Reset error state when song changes

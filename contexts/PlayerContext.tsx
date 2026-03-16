@@ -54,11 +54,15 @@ type PlayerNowPlayingType = Pick<
   "currentSong" | "isPlaying" | "isLoading"
 >;
 
+type PlayerQueueStateType = Pick<PlayerContextType, "queue" | "playMode">;
+
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 const PlayerActionsContext =
   createContext<PlayerActionsType | undefined>(undefined);
 const PlayerNowPlayingContext =
   createContext<PlayerNowPlayingType | undefined>(undefined);
+const PlayerQueueStateContext =
+  createContext<PlayerQueueStateType | undefined>(undefined);
 
 // Helper to get local storage safely
 const getLocal = <T,>(key: string, def: T): T => {
@@ -760,6 +764,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [currentSong, isPlaying, isLoading],
   );
 
+  const queueStateValue = useMemo(
+    () => ({
+      queue,
+      playMode,
+    }),
+    [queue, playMode],
+  );
+
   // Context value 用 useMemo 稳定对象引用：
   // 只有 state 值实际变化时才创建新对象，避免因无关渲染导致所有消费者重渲
   const contextValue = useMemo(
@@ -794,7 +806,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   return (
     <PlayerActionsContext.Provider value={actionsValue}>
       <PlayerNowPlayingContext.Provider value={nowPlayingValue}>
-        <PlayerContext.Provider value={contextValue}>{children}</PlayerContext.Provider>
+        <PlayerQueueStateContext.Provider value={queueStateValue}>
+          <PlayerContext.Provider value={contextValue}>{children}</PlayerContext.Provider>
+        </PlayerQueueStateContext.Provider>
       </PlayerNowPlayingContext.Provider>
     </PlayerActionsContext.Provider>
   );
@@ -867,6 +881,20 @@ export const usePlayerNowPlaying = () => {
       currentSong: PLAYER_DEFAULTS.currentSong,
       isPlaying: PLAYER_DEFAULTS.isPlaying,
       isLoading: PLAYER_DEFAULTS.isLoading,
+    };
+  }
+  return context;
+};
+
+export const usePlayerQueueState = () => {
+  const context = useContext(PlayerQueueStateContext);
+  if (!context) {
+    console.warn(
+      "[usePlayerQueueState] Provider 未就绪，返回默认队列状态（HMR 热更新中）",
+    );
+    return {
+      queue: PLAYER_DEFAULTS.queue,
+      playMode: PLAYER_DEFAULTS.playMode,
     };
   }
   return context;
