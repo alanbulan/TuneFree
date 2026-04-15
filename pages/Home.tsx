@@ -34,7 +34,7 @@ const SongCard = memo<{ song: Song; idx: number; onPlay: (s: Song) => void }>(({
             <div className="flex-1 min-w-0">
                 <p className="font-semibold text-ios-text truncate text-[15px]">{songName}</p>
                 <div className="flex items-center mt-1 space-x-2">
-                    <span className={`text-[10px] px-1 rounded ${getMusicSourceBadgeClass(song.source)}`}>{sourceLabel}</span>
+                    <span className={`inline-block whitespace-nowrap text-[10px] px-1 rounded ${getMusicSourceBadgeClass(song.source)}`}>{sourceLabel}</span>
                     <p className="text-xs text-ios-subtext truncate">{songArtist}</p>
                 </div>
             </div>

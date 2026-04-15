@@ -74,7 +74,7 @@ const SearchResultItem = memo<{
         </p>
         <div className="flex items-center mt-0.5 space-x-2">
           <span
-            className={`text-[9px] px-1 rounded tracking-wider ${getMusicSourceBadgeClass(song.source)}`}
+            className={`inline-block whitespace-nowrap text-[9px] px-1 rounded tracking-wider ${getMusicSourceBadgeClass(song.source)}`}
           >
             {sourceLabel}
           </span>

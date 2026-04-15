@@ -320,6 +320,11 @@ export const getLyrics = async (
     return getGDStudioLyrics(id, source);
   }
 
+  if (isGDStudioSource(source)) {
+    const gdLyrics = await getGDStudioLyrics(id, source);
+    if (gdLyrics) return gdLyrics;
+  }
+
   const data = await fetchParsedData(id, source);
   return resolveLyricsFromParse(data?.[0], id, source);
 };
@@ -354,14 +359,15 @@ export const getSongUrl = async (
   const nativeUrl = await fetchNativeUrl(String(id), source, quality);
   if (nativeUrl) return fixUrl(nativeUrl) || null;
 
+  if (isGDStudioSource(source)) {
+    const gdStudioUrl = await getGDStudioSongUrl(id, source, quality);
+    if (gdStudioUrl) return gdStudioUrl;
+  }
+
   // 回退：TuneHub parse / cache
   const data = await fetchParsedData(id, source, quality);
   const url = data?.[0]?.url;
   if (url) return fixUrl(url) || null;
-
-  if (isGDStudioSource(source)) {
-    return getGDStudioSongUrl(id, source, quality);
-  }
 
   return null;
 };
@@ -419,6 +425,11 @@ export const parseSongFull = async (
     // 直连成功：构造最小化数据集（仍需 normalizeSongs 提取封面等字段）
     data = [{ url: nativeUrl, id: String(id), platform }];
   } else {
+    if (isGDStudioSource(platform)) {
+      const gdParsed = await parseGDStudioSongFull(id, platform, quality, songMeta);
+      if (gdParsed) return gdParsed;
+    }
+
     // 回退：TuneHub parse（获取 URL + 歌词 + 封面）
     data = await fetchParsedData(id, platform, quality);
   }
