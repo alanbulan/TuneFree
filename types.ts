@@ -5,8 +5,11 @@ export interface Song {
   artist: string;
   album: string;
   pic?: string;
+  picId?: string;
   url?: string;
+  urlId?: string;
   lrc?: string;
+  lyricId?: string;
   source: 'netease' | 'qq' | 'kuwo' | string;
   types?: string[];
 }

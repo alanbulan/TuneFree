@@ -22,6 +22,11 @@ import {
   ExternalLinkIcon,
   GithubIcon,
 } from "../components/Icons";
+import {
+  GD_STUDIO_ATTRIBUTION,
+  GD_STUDIO_RATE_LIMIT_HINT,
+  getMusicSourceLabel,
+} from "../utils/musicSource";
 
 type Tab = "favorites" | "playlists" | "manage" | "about";
 
@@ -439,7 +444,7 @@ const Library: React.FC = () => {
               <p className="text-sm text-gray-500 mt-1">
                 一个高颜值的现代化 PWA 音乐播放器
               </p>
-              <p className="text-xs text-gray-400 mt-2">v1.1.0</p>
+              <p className="text-xs text-gray-400 mt-2">v1.2.0</p>
             </div>
 
             {/* 功能特性 */}
@@ -454,7 +459,7 @@ const Library: React.FC = () => {
                   <div>
                     <p className="font-medium text-ios-text">多源聚合搜索</p>
                     <p className="text-xs text-gray-400">
-                      支持网易云、QQ音乐、酷我音乐等多平台
+                      支持网易云、QQ音乐、酷我音乐，以及 JOOX、B站扩展音源
                     </p>
                   </div>
                 </div>
@@ -525,21 +530,33 @@ const Library: React.FC = () => {
               <h3 className="font-bold text-lg mb-3 text-ios-text">后端 API</h3>
               <p className="text-sm text-gray-500 leading-relaxed">
                 音乐数据服务由{" "}
-                <span className="font-medium text-ios-text">TuneHub API</span>{" "}
-                提供。
+                <span className="font-medium text-ios-text">TuneHub API</span>
+                与 <span className="font-medium text-ios-text">{GD_STUDIO_ATTRIBUTION}</span>{" "}
+                共同提供。
               </p>
               <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-                API 作者：是青旨啊@sayqz (Linux.do)
+                TuneHub 负责原有解析链路；JOOX、B站等扩展音源走 GD Studio 公开接口，建议控制频率：{GD_STUDIO_RATE_LIMIT_HINT}。
               </p>
-              <a
-                href="https://linux.do/t/topic/1326425"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs text-ios-red font-medium mt-2"
-              >
-                <ExternalLinkIcon size={12} />
-                查看原帖
-              </a>
+              <div className="mt-2 flex flex-wrap gap-3">
+                <a
+                  href="https://linux.do/t/topic/1326425"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs text-ios-red font-medium"
+                >
+                  <ExternalLinkIcon size={12} />
+                  TuneHub 原帖
+                </a>
+                <a
+                  href="https://music.gdstudio.xyz/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs text-ios-red font-medium"
+                >
+                  <ExternalLinkIcon size={12} />
+                  GD音乐台
+                </a>
+              </div>
             </div>
 
             {/* 链接 */}
@@ -653,7 +670,7 @@ const Library: React.FC = () => {
                     onClick={() => setImportSource(s)}
                     className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${importSource === s ? "bg-ios-red text-white" : "bg-gray-100 text-gray-500"}`}
                   >
-                    {s.toUpperCase()}
+                    {getMusicSourceLabel(s)}
                   </button>
                 ))}
               </div>

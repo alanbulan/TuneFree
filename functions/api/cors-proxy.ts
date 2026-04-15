@@ -25,9 +25,10 @@ const ALLOWED_HOSTS = [
     'nmobi.kuwo.cn',
     'musicpay.kuwo.cn',
     'm.kuwo.cn',
+    'music-api.gdstudio.xyz',
 ];
 
-export const onRequest: PagesFunction = async (context) => {
+export const onRequest = async (context: any) => {
     const { request } = context;
 
     // 处理 CORS 预检请求
@@ -64,9 +65,15 @@ export const onRequest: PagesFunction = async (context) => {
         const ct = request.headers.get('Content-Type');
         if (ct) headers.set('Content-Type', ct);
         // 某些 API 需要 User-Agent
-        headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+        headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36');
         // 某些 API 需要 Referer
         headers.set('Referer', parsedTarget.origin);
+
+        // GD Studio API 对浏览器头更敏感，使用接近真实站点的请求头可减少风控挑战页。
+        if (parsedTarget.hostname === 'music-api.gdstudio.xyz') {
+            headers.set('Accept', 'application/json,text/plain,*/*');
+            headers.set('Referer', 'https://music.gdstudio.xyz/');
+        }
 
         const fetchOpts: RequestInit = {
             method: request.method,

@@ -15,6 +15,7 @@
  *  netease.ts  — 网易云音乐直连实现
  *  qq.ts       — QQ 音乐直连实现
  *  kuwo.ts     — 酷我音乐直连实现
+ *  gdStudio.ts — GD Studio 统一音源适配（JOOX / Bilibili 等）
  *  resolver.ts — 播放 URL / 歌词 / 封面完整解析（带缓存）
  */
 
@@ -73,6 +74,14 @@ export {
   fetchKuwoLyrics,
   batchFetchKuwoCovers,
 } from "./kuwo";
+export {
+  searchGDStudio,
+  getGDStudioSongUrl,
+  getGDStudioLyrics,
+  getGDStudioPic,
+  isGDStudioSource,
+  isGDStudioOnlySource,
+} from "./gdStudio";
 
 // ==============================
 // 依赖导入（供聚合函数使用）
@@ -85,6 +94,7 @@ import {
 } from "./netease";
 import { searchQQ, getQQTopLists, getQQTopListDetail } from "./qq";
 import { searchKuwo, getKuwoTopLists, getKuwoTopListDetail } from "./kuwo";
+import { searchGDStudio } from "./gdStudio";
 import { executeMethod } from "./tunehub";
 import { extractList, normalizeSongs } from "./utils";
 
@@ -95,7 +105,7 @@ import { extractList, normalizeSongs } from "./utils";
 /**
  * 单平台搜索入口。
  * 根据 platform 参数路由到对应平台的搜索实现。
- * 目前支持：netease、qq、kuwo。
+ * 目前支持：netease、qq、kuwo，以及通过 GD Studio 接入的 joox、bilibili。
  *
  * @param keyword  搜索关键词
  * @param platform 目标平台
@@ -111,15 +121,20 @@ export const searchSongs = async (
   if (platform === "netease") return searchNetease(keyword, page, limit);
   if (platform === "qq") return searchQQ(keyword, page, limit);
   if (platform === "kuwo") return searchKuwo(keyword, page, limit);
+  if (platform === "joox" || platform === "bilibili") {
+    return searchGDStudio(keyword, platform, page, limit);
+  }
 
   return [];
 };
 
 /**
  * 多平台聚合搜索。
- * 并行请求 netease / qq / kuwo 三个平台，结果按"轮询交叉"方式合并，
+ * 并行请求多个平台，结果按"轮询交叉"方式合并，
  * 保证结果多样性（netease[0], qq[0], kuwo[0], netease[1], ...）。
  * 单平台失败不影响其他平台结果。
+ * 默认只聚合 netease / qq / kuwo；启用 includeExtendedSources 后，
+ * 会额外纳入 joox / bilibili。
  *
  * @param keyword 搜索关键词
  * @param page    页码（从 1 开始，默认 1）
@@ -127,8 +142,11 @@ export const searchSongs = async (
 export const searchAggregate = async (
   keyword: string,
   page: number = 1,
+  options: { includeExtendedSources?: boolean } = {},
 ): Promise<Song[]> => {
-  const platforms = ["netease", "qq", "kuwo"] as const;
+  const platforms = options.includeExtendedSources
+    ? (["netease", "qq", "kuwo", "joox", "bilibili"] as const)
+    : (["netease", "qq", "kuwo"] as const);
 
   const results = await Promise.all(
     platforms.map((p) =>

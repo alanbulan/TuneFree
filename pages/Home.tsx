@@ -3,6 +3,7 @@ import { getTopLists, getTopListDetail, getImgReferrerPolicy } from '../services
 import { Song, TopList } from '../types';
 import { usePlayerActions } from '../contexts/PlayerContext';
 import { PlayIcon, MusicIcon, ErrorIcon } from '../components/Icons';
+import { getMusicSourceBadgeClass, getMusicSourceLabel } from '../utils/musicSource';
 
 // ====== 数据缓存 — 切换音源时不重复请求 ======
 const _topListCache = new Map<string, { lists: TopList[]; ts: number }>();
@@ -13,6 +14,7 @@ const CACHE_TTL = 3 * 60 * 1000; // 3 分钟
 const SongCard = memo<{ song: Song; idx: number; onPlay: (s: Song) => void }>(({ song, idx, onPlay }) => {
     const songName = typeof song.name === 'string' ? song.name : '未知歌曲';
     const songArtist = typeof song.artist === 'string' ? song.artist : '未知歌手';
+    const sourceLabel = getMusicSourceLabel(song.source);
 
     return (
         <div
@@ -32,7 +34,7 @@ const SongCard = memo<{ song: Song; idx: number; onPlay: (s: Song) => void }>(({
             <div className="flex-1 min-w-0">
                 <p className="font-semibold text-ios-text truncate text-[15px]">{songName}</p>
                 <div className="flex items-center mt-1 space-x-2">
-                    <span className="text-[10px] px-1 rounded bg-gray-100 text-gray-500 uppercase">{String(song.source)}</span>
+                    <span className={`text-[10px] px-1 rounded ${getMusicSourceBadgeClass(song.source)}`}>{sourceLabel}</span>
                     <p className="text-xs text-ios-subtext truncate">{songArtist}</p>
                 </div>
             </div>
@@ -196,7 +198,7 @@ const Home: React.FC = () => {
                             : 'text-gray-500'
                         }`}
                     >
-                        {src}
+                        {getMusicSourceLabel(src)}
                     </button>
                 ))}
             </div>
@@ -241,7 +243,7 @@ const Home: React.FC = () => {
       <section>
         <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-ios-text tracking-tight">榜单热歌</h2>
-            <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-1 rounded-full uppercase">{activeSource}</span>
+            <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-1 rounded-full">{getMusicSourceLabel(activeSource)}</span>
         </div>
 
         {songsLoading && featuredSongs.length === 0 ? (

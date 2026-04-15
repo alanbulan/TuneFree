@@ -3,6 +3,9 @@ import { Capacitor } from "@capacitor/core";
 /** TuneHub 后端默认地址（用户可在设置中覆盖） */
 export const DEFAULT_API_BASE = "https://tunehub.sayqz.com/api";
 
+/** GD Studio 音源 API 地址（搜索 / 播放链接 / 歌词 / 封面） */
+export const GD_STUDIO_API_BASE = "https://music-api.gdstudio.xyz/api.php";
+
 /**
  * 代理透传时需要过滤掉的请求头列表。
  * 浏览器禁止 JS 设置这些头，CORS 代理转发时也必须跳过，

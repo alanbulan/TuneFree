@@ -4,6 +4,14 @@ import { parseSongs } from "./tunehub";
 import { fetchNeteaselyrics } from "./netease";
 import { fetchQQLyrics } from "./qq";
 import { fetchKuwoLyrics } from "./kuwo";
+import {
+  getGDStudioLyrics,
+  getGDStudioSongUrl,
+  isGDStudioOnlySource,
+  isGDStudioSource,
+  parseGDStudioSongFull,
+} from "./gdStudio";
+import type { Song } from "../types";
 
 // ==============================
 // 解析缓存
@@ -277,6 +285,10 @@ export const fetchFallbackLyrics = async (
       } else if (source === "kuwo") {
         lrc = await fetchKuwoLyrics(id);
       }
+
+      if (!lrc && isGDStudioSource(source)) {
+        lrc = await getGDStudioLyrics(id, source);
+      }
     } catch (e) {
       console.warn(`[Resolver] fetchFallbackLyrics failed (${source}:${id}):`, e);
     }
@@ -304,6 +316,10 @@ export const getLyrics = async (
   id: string | number,
   source: string,
 ): Promise<string> => {
+  if (isGDStudioOnlySource(source)) {
+    return getGDStudioLyrics(id, source);
+  }
+
   const data = await fetchParsedData(id, source);
   return resolveLyricsFromParse(data?.[0], id, source);
 };
@@ -330,6 +346,10 @@ export const getSongUrl = async (
 ): Promise<string | null> => {
   if (!source || source === "undefined") return null;
 
+  if (isGDStudioOnlySource(source)) {
+    return getGDStudioSongUrl(id, source, quality);
+  }
+
   // 优先：本地原生直连（无积分）
   const nativeUrl = await fetchNativeUrl(String(id), source, quality);
   if (nativeUrl) return fixUrl(nativeUrl) || null;
@@ -337,7 +357,13 @@ export const getSongUrl = async (
   // 回退：TuneHub parse / cache
   const data = await fetchParsedData(id, source, quality);
   const url = data?.[0]?.url;
-  return fixUrl(url) || null;
+  if (url) return fixUrl(url) || null;
+
+  if (isGDStudioSource(source)) {
+    return getGDStudioSongUrl(id, source, quality);
+  }
+
+  return null;
 };
 
 // ==============================
@@ -363,8 +389,13 @@ export const parseSongFull = async (
   id: string | number,
   platform: string,
   quality: string = "320k",
+  songMeta?: Pick<Song, "pic" | "picId">,
 ): Promise<{ url: string | null; lrc: string; pic: string } | null> => {
   if (!id || !platform || String(id).startsWith("temp_")) return null;
+
+  if (isGDStudioOnlySource(platform)) {
+    return parseGDStudioSongFull(id, platform, quality, songMeta);
+  }
 
   const cached = getValidParseCache(id, platform, quality);
 
@@ -392,7 +423,12 @@ export const parseSongFull = async (
     data = await fetchParsedData(id, platform, quality);
   }
 
-  if (!data || data.length === 0) return null;
+  if (!data || data.length === 0) {
+    if (isGDStudioSource(platform)) {
+      return parseGDStudioSongFull(id, platform, quality, songMeta);
+    }
+    return null;
+  }
 
   const item = data[0];
   const normalized = normalizeSongs(data, platform)[0];
@@ -402,6 +438,6 @@ export const parseSongFull = async (
   return {
     url: fixUrl(item?.url) || null,
     lrc,
-    pic: normalized?.pic || "",
+    pic: normalized?.pic || songMeta?.pic || "",
   };
 };

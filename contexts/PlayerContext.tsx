@@ -461,7 +461,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       try {
         // 单次 parse 获取 url / 歌词 / 封面，避免重复消耗积分
-        const parsed = await parseSongFull(song.id, song.source, targetQuality);
+        const parsed = await parseSongFull(
+          song.id,
+          song.source,
+          targetQuality,
+          song,
+        );
 
         // Race condition check
         if (!isSameSong(currentSongRef.current, song)) {

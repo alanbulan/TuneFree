@@ -17,6 +17,11 @@ export const fixUrl = (url: string | undefined): string => {
   if (!url || typeof url !== "string") return "";
   let fixed = url.trim();
 
+  // 某些公开接口会把查询参数中的 & 返回为 HTML 实体。
+  if (fixed.includes("&amp;")) {
+    fixed = fixed.replace(/&amp;/g, "&");
+  }
+
   // 补全协议（仅针对明显缺失协议的 // 开头 URL）
   if (fixed.startsWith("//")) {
     fixed = `https:${fixed}`;
