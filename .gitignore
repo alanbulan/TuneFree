@@ -25,3 +25,4 @@ dist-ssr
 
 android/
 .claude/settings.local.json
+.worktrees/
