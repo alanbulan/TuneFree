@@ -19,3 +19,8 @@ legacy/react_app/dist/
 # Local Claude files
 .worktrees/
 .claude/settings.local.json
+
+# Local Android / test artifacts
+android/.kotlin/
+*.log
+test/**/failures/
