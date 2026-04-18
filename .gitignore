@@ -1,28 +1,21 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+build/
+pubspec_overrides.yaml
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# IDE / OS
+.idea/
+.vscode/
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
 
-android/
-.claude/settings.local.json
+# Legacy web reference artifacts
+legacy/react_app/node_modules/
+legacy/react_app/dist/
+
+# Local Claude files
 .worktrees/
+.claude/settings.local.json
