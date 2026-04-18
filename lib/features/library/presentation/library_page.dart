@@ -11,6 +11,7 @@ import '../../player/application/player_controller.dart';
 import '../application/library_controller.dart';
 import '../application/library_state.dart';
 import '../data/playlist_import_repository.dart';
+import 'widgets/downloads_management_section.dart';
 import 'widgets/library_backup_transfer.dart';
 import 'widgets/library_playlist_grid.dart';
 import 'widgets/library_song_tile.dart';
@@ -939,6 +940,28 @@ class _ManageTabState extends State<_ManageTab> {
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 16),
+        DownloadsManagementSection(
+          downloads: widget.state.downloads,
+          onDelete: (item) async {
+            try {
+              await widget.controller.deleteDownload(item);
+              if (!context.mounted) {
+                return;
+              }
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text('已删除 ${item.songName}')));
+            } catch (_) {
+              if (!context.mounted) {
+                return;
+              }
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('删除失败，请稍后重试')));
+            }
+          },
         ),
         const SizedBox(height: 16),
         SettingsCard(

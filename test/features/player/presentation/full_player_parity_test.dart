@@ -16,6 +16,10 @@ import 'package:tunefree/features/library/data/library_storage.dart';
 import 'package:tunefree/features/player/application/just_audio_player_engine.dart';
 import 'package:tunefree/features/player/application/media_session_adapter.dart';
 import 'package:tunefree/features/player/application/player_controller.dart';
+import 'package:tunefree/features/player/data/download_library_repository.dart';
+import 'package:tunefree/features/player/data/download_record.dart';
+import 'package:tunefree/features/player/data/download_record_store.dart';
+import 'package:tunefree/features/player/data/local_playback_resolver.dart';
 import 'package:tunefree/features/player/data/player_download_manager.dart';
 import 'package:tunefree/features/player/data/player_download_service.dart';
 import 'package:tunefree/features/player/data/player_preferences_store.dart';
@@ -347,6 +351,51 @@ class TestPlayerPreferencesStore implements PlayerPreferencesStore {
   Future<void> saveQueue(List<Song> value) async => queue = value;
 }
 
+LocalPlaybackResolver _noopLocalPlaybackResolver() {
+  return LocalPlaybackResolver(
+    recordsForSong: (songKey) async => const <DownloadRecord>[],
+    fileExists: (path) async => false,
+    removeRecord: ({required songKey, required quality}) async {},
+  );
+}
+
+DownloadLibraryRepository _noopDownloadLibraryRepository() {
+  return const DownloadLibraryRepository(
+    recordStore: _NoopDownloadRecordStore(),
+    fileExists: _noopFileExists,
+    deleteFile: _noopDeleteFile,
+  );
+}
+
+Future<bool> _noopFileExists(String path) async => false;
+Future<void> _noopDeleteFile(String path) async {}
+
+final class _NoopDownloadRecordStore implements DownloadRecordStore {
+  const _NoopDownloadRecordStore();
+
+  @override
+  Future<DownloadRecord?> load({
+    required String songKey,
+    required String quality,
+  }) async => null;
+
+  @override
+  Future<List<DownloadRecord>> listAll() async => const <DownloadRecord>[];
+
+  @override
+  Future<List<DownloadRecord>> listBySongKey(String songKey) async =>
+      const <DownloadRecord>[];
+
+  @override
+  Future<void> remove({
+    required String songKey,
+    required String quality,
+  }) async {}
+
+  @override
+  Future<void> save(DownloadRecord record) async {}
+}
+
 void main() {
   setUpAll(() {
     HttpOverrides.global = _TestHttpOverrides();
@@ -366,10 +415,18 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           playerEngineProvider.overrideWithValue(engine),
-          mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
           libraryStorageProvider.overrideWithValue(storage),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            _noopDownloadLibraryRepository(),
+          ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            _noopLocalPlaybackResolver(),
           ),
           songResolutionRepositoryProvider.overrideWithValue(
             SongResolutionRepository.test(
@@ -460,10 +517,18 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           playerEngineProvider.overrideWithValue(engine),
-          mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
           libraryStorageProvider.overrideWithValue(storage),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            _noopDownloadLibraryRepository(),
+          ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            _noopLocalPlaybackResolver(),
           ),
           songResolutionRepositoryProvider.overrideWithValue(
             SongResolutionRepository.test(
@@ -472,7 +537,7 @@ void main() {
               ),
             ),
           ),
-              playerDownloadServiceProvider.overrideWithValue(
+          playerDownloadServiceProvider.overrideWithValue(
             PlayerDownloadService.test(
               download: (song, quality) async => DownloadResult(
                 song: song,
@@ -598,9 +663,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('player-download-button')));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const Key('player-download-close-button')),
-      );
+      await tester.tap(find.byKey(const Key('player-download-close-button')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('player-more-button')));
@@ -679,8 +742,15 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           playerEngineProvider.overrideWithValue(engine),
-          mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
-          playerPreferencesStoreProvider.overrideWithValue(TestPlayerPreferencesStore()),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
+          playerPreferencesStoreProvider.overrideWithValue(
+            TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            _noopLocalPlaybackResolver(),
+          ),
           songResolutionRepositoryProvider.overrideWithValue(
             SongResolutionRepository.test(
               resolveSongValue: (song, quality) async => song.copyWith(
@@ -708,7 +778,10 @@ void main() {
         title: '第一首',
         artist: '歌手甲',
       );
-      await controller.openTrack(firstTrack, queue: const <PlayerTrack>[firstTrack]);
+      await controller.openTrack(
+        firstTrack,
+        queue: const <PlayerTrack>[firstTrack],
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('mini-player')));
@@ -720,90 +793,100 @@ void main() {
       await tester.tap(find.byKey(const Key('player-download-option-flac')));
       await tester.pumpAndSettle();
 
-      expect(
-        find.text('该音质已下载'),
-        findsOneWidget,
-      );
+      expect(find.text('该音质已下载'), findsOneWidget);
     },
   );
 
-  testWidgets('download sheet ignores repeated taps while a single download is in flight', (tester) async {
-    final completer = Completer<DownloadResult>();
-    var downloadCalls = 0;
-    final downloadService = PlayerDownloadService.test(
-      download: (song, quality) {
-        downloadCalls += 1;
-        return completer.future;
-      },
-    );
+  testWidgets(
+    'download sheet ignores repeated taps while a single download is in flight',
+    (tester) async {
+      final completer = Completer<DownloadResult>();
+      var downloadCalls = 0;
+      final downloadService = PlayerDownloadService.test(
+        download: (song, quality) {
+          downloadCalls += 1;
+          return completer.future;
+        },
+      );
 
-    final engine = JustAudioPlayerEngine.test();
-    addTearDown(engine.dispose);
+      final engine = JustAudioPlayerEngine.test();
+      addTearDown(engine.dispose);
 
-    final container = ProviderContainer(
-      overrides: [
-        playerEngineProvider.overrideWithValue(engine),
-        mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
-        playerPreferencesStoreProvider.overrideWithValue(TestPlayerPreferencesStore()),
-        songResolutionRepositoryProvider.overrideWithValue(
-          SongResolutionRepository.test(
-            resolveSongValue: (song, quality) async => song.copyWith(
-              url: 'https://example.com/${song.id}-$quality.mp3',
+      final container = ProviderContainer(
+        overrides: [
+          playerEngineProvider.overrideWithValue(engine),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
+          playerPreferencesStoreProvider.overrideWithValue(
+            TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            _noopLocalPlaybackResolver(),
+          ),
+          songResolutionRepositoryProvider.overrideWithValue(
+            SongResolutionRepository.test(
+              resolveSongValue: (song, quality) async => song.copyWith(
+                url: 'https://example.com/${song.id}-$quality.mp3',
+              ),
             ),
           ),
+          playerDownloadServiceProvider.overrideWithValue(downloadService),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const TuneFreeApp(),
         ),
-        playerDownloadServiceProvider.overrideWithValue(downloadService),
-      ],
-    );
-    addTearDown(container.dispose);
+      );
+      await tester.pumpAndSettle();
 
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const TuneFreeApp(),
-      ),
-    );
-    await tester.pumpAndSettle();
+      final controller = container.read(playerControllerProvider.notifier);
+      const firstTrack = PlayerTrack(
+        id: 'track-1',
+        source: 'netease',
+        title: '第一首',
+        artist: '歌手甲',
+      );
+      await controller.openTrack(
+        firstTrack,
+        queue: const <PlayerTrack>[firstTrack],
+      );
+      await tester.pumpAndSettle();
 
-    final controller = container.read(playerControllerProvider.notifier);
-    const firstTrack = PlayerTrack(
-      id: 'track-1',
-      source: 'netease',
-      title: '第一首',
-      artist: '歌手甲',
-    );
-    await controller.openTrack(firstTrack, queue: const <PlayerTrack>[firstTrack]);
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('mini-player')));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('mini-player')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('player-download-button')));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('player-download-button')));
-    await tester.pumpAndSettle();
+      final option = find.byKey(const Key('player-download-option-flac'));
+      await tester.tap(option);
+      await tester.tap(option);
+      await tester.pump();
 
-    final option = find.byKey(const Key('player-download-option-flac'));
-    await tester.tap(option);
-    await tester.tap(option);
-    await tester.pump();
+      expect(downloadCalls, 1);
 
-    expect(downloadCalls, 1);
-
-    completer.complete(
-      DownloadResult(
-        song: const Song(
-          id: 'track-1',
-          name: '第一首',
-          artist: '歌手甲',
-          source: MusicSource.netease,
+      completer.complete(
+        DownloadResult(
+          song: const Song(
+            id: 'track-1',
+            name: '第一首',
+            artist: '歌手甲',
+            source: MusicSource.netease,
+          ),
+          quality: AudioQuality.flac,
+          fileName: '歌手甲 - 第一首 [netease-track-1].flac',
+          filePath: '/downloads/track-1.flac',
+          alreadyExisted: false,
         ),
-        quality: AudioQuality.flac,
-        fileName: '歌手甲 - 第一首 [netease-track-1].flac',
-        filePath: '/downloads/track-1.flac',
-        alreadyExisted: false,
-      ),
-    );
-    await tester.pumpAndSettle();
-  });
+      );
+      await tester.pumpAndSettle();
+    },
+  );
 
   testWidgets('full player shows an error snackbar when download fails', (
     tester,
@@ -814,7 +897,12 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         playerEngineProvider.overrideWithValue(engine),
-        playerPreferencesStoreProvider.overrideWithValue(TestPlayerPreferencesStore()),
+        playerPreferencesStoreProvider.overrideWithValue(
+          TestPlayerPreferencesStore(),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          _noopLocalPlaybackResolver(),
+        ),
         songResolutionRepositoryProvider.overrideWithValue(
           SongResolutionRepository.test(
             resolveSongValue: (song, quality) async => song.copyWith(
@@ -824,7 +912,8 @@ void main() {
         ),
         playerDownloadServiceProvider.overrideWithValue(
           PlayerDownloadService.test(
-            download: (song, quality) async => throw StateError('download failed'),
+            download: (song, quality) async =>
+                throw StateError('download failed'),
           ),
         ),
       ],
@@ -846,7 +935,10 @@ void main() {
       title: '第一首',
       artist: '歌手甲',
     );
-    await controller.openTrack(firstTrack, queue: const <PlayerTrack>[firstTrack]);
+    await controller.openTrack(
+      firstTrack,
+      queue: const <PlayerTrack>[firstTrack],
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('mini-player')));
@@ -887,10 +979,18 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           playerEngineProvider.overrideWithValue(engine),
-          mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
           libraryStorageProvider.overrideWithValue(storage),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            _noopDownloadLibraryRepository(),
+          ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            _noopLocalPlaybackResolver(),
           ),
           songResolutionRepositoryProvider.overrideWithValue(
             SongResolutionRepository.test(
@@ -978,10 +1078,18 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           playerEngineProvider.overrideWithValue(engine),
-          mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
           libraryStorageProvider.overrideWithValue(storage),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            _noopDownloadLibraryRepository(),
+          ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            _noopLocalPlaybackResolver(),
           ),
           songResolutionRepositoryProvider.overrideWithValue(
             SongResolutionRepository.test(
@@ -1074,10 +1182,18 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           playerEngineProvider.overrideWithValue(engine),
-          mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
           libraryStorageProvider.overrideWithValue(storage),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            _noopDownloadLibraryRepository(),
+          ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            _noopLocalPlaybackResolver(),
           ),
           songResolutionRepositoryProvider.overrideWithValue(
             SongResolutionRepository.test(
@@ -1175,6 +1291,9 @@ void main() {
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
         ),
+        localPlaybackResolverProvider.overrideWithValue(
+          _noopLocalPlaybackResolver(),
+        ),
         songResolutionRepositoryProvider.overrideWithValue(
           SongResolutionRepository.test(
             resolveSongValue: (song, quality) async => song.copyWith(
@@ -1245,10 +1364,18 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           playerEngineProvider.overrideWithValue(engine),
-          mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
           libraryStorageProvider.overrideWithValue(storage),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            _noopDownloadLibraryRepository(),
+          ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            _noopLocalPlaybackResolver(),
           ),
           songResolutionRepositoryProvider.overrideWithValue(
             SongResolutionRepository.test(

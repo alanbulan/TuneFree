@@ -8,6 +8,8 @@ import 'package:tunefree/core/models/song.dart';
 import 'package:tunefree/features/player/application/media_session_adapter.dart';
 import 'package:tunefree/features/player/application/player_controller.dart';
 import 'package:tunefree/features/player/application/player_engine.dart';
+import 'package:tunefree/features/player/data/download_record.dart';
+import 'package:tunefree/features/player/data/local_playback_resolver.dart';
 import 'package:tunefree/features/player/data/player_preferences_store.dart';
 import 'package:tunefree/features/player/data/song_resolution_repository.dart';
 import 'package:tunefree/features/player/domain/player_track.dart';
@@ -30,6 +32,8 @@ class FakePlayerEngine implements PlayerEngine {
   int stopCalls = 0;
   Duration? lastSeek;
   Object? stopFail;
+  Object? loadSongError;
+  final List<Object> loadSongErrors = <Object>[];
 
   @override
   Stream<PlayerEngineSnapshot> get snapshots => _controller.stream;
@@ -40,6 +44,14 @@ class FakePlayerEngine implements PlayerEngine {
   @override
   Future<void> loadSong(Song song, {required AudioQuality quality}) async {
     loadCalls += 1;
+
+    if (loadSongErrors.isNotEmpty) {
+      throw loadSongErrors.removeAt(0);
+    }
+
+    if (loadSongError case final Object error) {
+      throw error;
+    }
 
     if (_loadCompleter != null && _delayedLoadCall == loadCalls) {
       await _loadCompleter.future;
@@ -163,6 +175,20 @@ void main() {
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
         ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -202,6 +228,150 @@ void main() {
     );
   });
 
+  test(
+    'playSong prefers exact-quality local files before resolving remotely',
+    () async {
+      final fakeEngine = FakePlayerEngine();
+      final container = ProviderContainer(
+        overrides: [
+          playerEngineProvider.overrideWithValue(fakeEngine),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
+          playerPreferencesStoreProvider.overrideWithValue(
+            TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            LocalPlaybackResolver(
+              recordsForSong: (songKey) async => const <DownloadRecord>[],
+              fileExists: (path) async => false,
+              removeRecord: ({required songKey, required quality}) async {},
+            ),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            LocalPlaybackResolver(
+              recordsForSong: (songKey) async => const <DownloadRecord>[],
+              fileExists: (path) async => false,
+              removeRecord: ({required songKey, required quality}) async {},
+            ),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            LocalPlaybackResolver(
+              recordsForSong: (songKey) async => <DownloadRecord>[
+                const DownloadRecord(
+                  songKey: 'netease:current-track',
+                  songId: 'current-track',
+                  songName: 'Current Track',
+                  artist: 'TuneFree',
+                  quality: '320k',
+                  filePath: '/downloads/current-track.flac',
+                  fileName: 'current-track.flac',
+                  downloadedAtIso8601: '2026-04-17T10:00:00.000Z',
+                ),
+              ],
+              fileExists: (path) async => true,
+              removeRecord: ({required songKey, required quality}) async {},
+            ),
+          ),
+          songResolutionRepositoryProvider.overrideWithValue(
+            SongResolutionRepository.test(
+              resolveSongValue: (song, quality) async {
+                throw StateError('remote resolve should not run');
+              },
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      const track = PlayerTrack(
+        id: 'current-track',
+        source: 'netease',
+        title: 'Current Track',
+        artist: 'TuneFree',
+      );
+
+      final controller = container.read(playerControllerProvider.notifier);
+
+      await controller.openTrack(track, queue: const [track]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        fakeEngine.latestSnapshot.currentSong?.url,
+        'file:///downloads/current-track.flac',
+      );
+    },
+  );
+
+  test(
+    'playSong falls back to remote playback when local load fails',
+    () async {
+      final fakeEngine = FakePlayerEngine();
+      fakeEngine.loadSongErrors.add(StateError('local load failed'));
+      final removed = <String>[];
+      final container = ProviderContainer(
+        overrides: [
+          playerEngineProvider.overrideWithValue(fakeEngine),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
+          playerPreferencesStoreProvider.overrideWithValue(
+            TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            LocalPlaybackResolver(
+              recordsForSong: (songKey) async => <DownloadRecord>[
+                const DownloadRecord(
+                  songKey: 'netease:current-track',
+                  songId: 'current-track',
+                  songName: 'Current Track',
+                  artist: 'TuneFree',
+                  quality: '320k',
+                  filePath: '/downloads/current-track.flac',
+                  fileName: 'current-track.flac',
+                  downloadedAtIso8601: '2026-04-17T10:00:00.000Z',
+                ),
+              ],
+              fileExists: (path) async => true,
+              removeRecord: ({required songKey, required quality}) async {
+                removed.add('$songKey::$quality');
+              },
+            ),
+          ),
+          songResolutionRepositoryProvider.overrideWithValue(
+            SongResolutionRepository.test(
+              resolveSongValue: (song, quality) async {
+                return song.copyWith(
+                  url: 'https://resolved.example/${song.id}-$quality.mp3',
+                );
+              },
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      const track = PlayerTrack(
+        id: 'current-track',
+        source: 'netease',
+        title: 'Current Track',
+        artist: 'TuneFree',
+      );
+
+      final controller = container.read(playerControllerProvider.notifier);
+
+      await controller.openTrack(track, queue: const [track]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(removed, <String>['netease:current-track::320k']);
+      expect(
+        fakeEngine.latestSnapshot.currentSong?.url,
+        'https://resolved.example/current-track-320k.mp3',
+      );
+      expect(fakeEngine.loadCalls, 2);
+    },
+  );
+
   test('openTrack stores an immutable defensive queue copy', () async {
     final fakeEngine = FakePlayerEngine();
     final container = ProviderContainer(
@@ -212,6 +382,20 @@ void main() {
         ),
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
         ),
       ],
     );
@@ -258,6 +442,20 @@ void main() {
         ),
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
         ),
       ],
     );
@@ -306,6 +504,13 @@ void main() {
             NoopMediaSessionAdapter(),
           ),
           playerPreferencesStoreProvider.overrideWithValue(store),
+          localPlaybackResolverProvider.overrideWithValue(
+            LocalPlaybackResolver(
+              recordsForSong: (songKey) async => const <DownloadRecord>[],
+              fileExists: (path) async => false,
+              removeRecord: ({required songKey, required quality}) async {},
+            ),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -332,9 +537,13 @@ void main() {
       expect(controller.state.isLoading, isFalse);
       expect(controller.state.position, Duration.zero);
       expect(controller.state.duration, Duration.zero);
-      expect(container.read(playerControllerProvider).queueTracks, const [track]);
+      expect(container.read(playerControllerProvider).queueTracks, const [
+        track,
+      ]);
       expect(store.currentSong, isNull);
-      expect(store.queue.map((song) => song.key), <String>['demo:clear-failure-stop']);
+      expect(store.queue.map((song) => song.key), <String>[
+        'demo:clear-failure-stop',
+      ]);
     },
   );
 
@@ -362,6 +571,20 @@ void main() {
         ),
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
         ),
         songResolutionRepositoryProvider.overrideWithValue(
           resolutionRepository,
@@ -409,6 +632,13 @@ void main() {
           ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            LocalPlaybackResolver(
+              recordsForSong: (songKey) async => const <DownloadRecord>[],
+              fileExists: (path) async => false,
+              removeRecord: ({required songKey, required quality}) async {},
+            ),
           ),
           songResolutionRepositoryProvider.overrideWithValue(
             SongResolutionRepository.test(
@@ -458,6 +688,13 @@ void main() {
           ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            LocalPlaybackResolver(
+              recordsForSong: (songKey) async => const <DownloadRecord>[],
+              fileExists: (path) async => false,
+              removeRecord: ({required songKey, required quality}) async {},
+            ),
           ),
         ],
       );
@@ -519,6 +756,20 @@ void main() {
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
         ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -561,6 +812,20 @@ void main() {
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
         ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -585,6 +850,20 @@ void main() {
         ),
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
         ),
       ],
     );
@@ -683,6 +962,20 @@ void main() {
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
           ),
+          localPlaybackResolverProvider.overrideWithValue(
+            LocalPlaybackResolver(
+              recordsForSong: (songKey) async => const <DownloadRecord>[],
+              fileExists: (path) async => false,
+              removeRecord: ({required songKey, required quality}) async {},
+            ),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            LocalPlaybackResolver(
+              recordsForSong: (songKey) async => const <DownloadRecord>[],
+              fileExists: (path) async => false,
+              removeRecord: ({required songKey, required quality}) async {},
+            ),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -721,6 +1014,13 @@ void main() {
             NoopMediaSessionAdapter(),
           ),
           playerPreferencesStoreProvider.overrideWithValue(store),
+          localPlaybackResolverProvider.overrideWithValue(
+            LocalPlaybackResolver(
+              recordsForSong: (songKey) async => const <DownloadRecord>[],
+              fileExists: (path) async => false,
+              removeRecord: ({required songKey, required quality}) async {},
+            ),
+          ),
         ],
       );
       addTearDown(container.dispose);

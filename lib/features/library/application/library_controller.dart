@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/playlist.dart';
 import '../../../core/models/song.dart';
+import '../../player/data/download_library_repository.dart';
+import '../../player/data/player_download_service.dart';
 import '../data/library_storage.dart';
 import 'library_state.dart';
 
@@ -12,16 +14,34 @@ final libraryStorageProvider = Provider<LibraryStorage>((ref) {
   return LegacyLibraryStorage();
 });
 
+final downloadLibraryRepositoryProvider = Provider<DownloadLibraryRepository>((ref) {
+  final fileStore = ref.watch(downloadFileStoreProvider);
+  final recordStore = ref.watch(downloadRecordStoreProvider);
+  return DownloadLibraryRepository(
+    recordStore: recordStore,
+    fileExists: fileStore.fileExists,
+    deleteFile: fileStore.deleteFinalFile,
+  );
+});
+
 final libraryControllerProvider = ChangeNotifierProvider<LibraryController>((ref) {
-  final controller = LibraryController(storage: ref.watch(libraryStorageProvider));
+  final controller = LibraryController(
+    storage: ref.watch(libraryStorageProvider),
+    downloadLibraryRepository: ref.watch(downloadLibraryRepositoryProvider),
+  );
   controller.load();
   return controller;
 });
 
 final class LibraryController extends ChangeNotifier {
-  LibraryController({required LibraryStorage storage}) : _storage = storage;
+  LibraryController({
+    required LibraryStorage storage,
+    required DownloadLibraryRepository downloadLibraryRepository,
+  })  : _storage = storage,
+        _downloadLibraryRepository = downloadLibraryRepository;
 
   final LibraryStorage _storage;
+  final DownloadLibraryRepository _downloadLibraryRepository;
 
   LibraryState _state = const LibraryState();
   LibraryState get state => _state;
@@ -33,6 +53,7 @@ final class LibraryController extends ChangeNotifier {
       apiKey: await _storage.loadApiKey(),
       corsProxy: await _storage.loadCorsProxy(),
       apiBase: await _storage.loadApiBase(),
+      downloads: await _downloadLibraryRepository.listDownloads(),
       isLoaded: true,
     );
     notifyListeners();
@@ -161,6 +182,28 @@ final class LibraryController extends ChangeNotifier {
       exportedBackupJson: null,
       lastImportSummary: '已导入 ${backup.favorites.length} 首收藏和 ${backup.playlists.length} 个歌单',
     );
+    await refreshDownloads();
     notifyListeners();
+  }
+
+  void setDownloadFilter(String value) {
+    _state = _state.copyWith(downloadFilter: value);
+    notifyListeners();
+  }
+
+  Future<void> refreshDownloads() async {
+    _state = _state.copyWith(
+      downloads: await _downloadLibraryRepository.listDownloads(),
+    );
+    notifyListeners();
+  }
+
+  Future<void> deleteDownload(DownloadedTrackItem item) async {
+    await _downloadLibraryRepository.deleteDownload(
+      songKey: item.songKey,
+      quality: item.quality,
+      filePath: item.filePath,
+    );
+    await refreshDownloads();
   }
 }

@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/audio_quality.dart';
 import '../../../core/models/music_source.dart';
 import '../../../core/models/song.dart';
+import '../data/player_download_service.dart';
+import '../data/local_playback_resolver.dart';
 import '../data/player_preferences_store.dart';
 import '../data/song_resolution_repository.dart';
 import '../domain/player_state.dart';
@@ -37,6 +39,17 @@ const Set<String> _tunehubResolvableSources = <String>{
   'bilibili',
 };
 
+final localPlaybackResolverProvider = Provider<LocalPlaybackResolver>((ref) {
+  final recordStore = ref.watch(downloadRecordStoreProvider);
+  final fileStore = ref.watch(downloadFileStoreProvider);
+  return LocalPlaybackResolver(
+    recordsForSong: (songKey) => recordStore.listBySongKey(songKey),
+    fileExists: fileStore.fileExists,
+    removeRecord: ({required songKey, required quality}) =>
+        recordStore.remove(songKey: songKey, quality: quality),
+  );
+});
+
 final playerControllerProvider =
     NotifierProvider<PlayerControllerNotifier, PlayerState>(
       PlayerControllerNotifier.new,
@@ -50,6 +63,7 @@ final class PlayerController extends ChangeNotifier
     SongResolutionRepository? songResolutionRepository,
     MediaSessionAdapter? mediaSessionAdapter,
     PlaybackLifecycleEventSource? lifecycleEventSource,
+    LocalPlaybackResolver? localPlaybackResolver,
   }) {
     initializeRuntime(
       engine: engine,
@@ -63,6 +77,7 @@ final class PlayerController extends ChangeNotifier
               song,
               quality: quality.wireValue,
             ),
+      localPlaybackResolver: localPlaybackResolver,
     );
   }
 
@@ -97,6 +112,7 @@ final class PlayerControllerNotifier extends Notifier<PlayerState>
         resolveSongOverride: (song, quality) => ref
             .read(songResolutionRepositoryProvider)
             .resolveSong(song, quality: quality.wireValue),
+        localPlaybackResolver: ref.read(localPlaybackResolverProvider),
       );
       ref.onDispose(() {
         unawaited(disposeController(disposeEngine: false));
@@ -115,6 +131,7 @@ mixin _PlayerControllerRuntimeApi {
   late final PlayerPreferencesStore _preferencesStore;
   PlaybackLifecycleCoordinator? _playbackLifecycleCoordinator;
   PlayerSongResolver? _resolveSongOverride;
+  LocalPlaybackResolver? _localPlaybackResolver;
   StreamSubscription<PlayerEngineSnapshot>? _subscription;
   int _playbackMutationRevision = 0;
   int _playModeMutationRevision = 0;
@@ -136,10 +153,12 @@ mixin _PlayerControllerRuntimeApi {
     required MediaSessionAdapter mediaSessionAdapter,
     required PlaybackLifecycleEventSource lifecycleEventSource,
     PlayerSongResolver? resolveSongOverride,
+    LocalPlaybackResolver? localPlaybackResolver,
   }) {
     _engine = engine;
     _preferencesStore = preferencesStore;
     _resolveSongOverride = resolveSongOverride;
+    _localPlaybackResolver = localPlaybackResolver;
     _subscription = _engine.snapshots.listen(_applySnapshot);
     _playbackLifecycleCoordinator = PlaybackLifecycleCoordinator(
       remoteCommands: mediaSessionAdapter.remoteCommands,
@@ -496,6 +515,31 @@ mixin _PlayerControllerRuntimeApi {
 
     final attemptedResolution = _canResolveSong(song);
 
+    final localMatch = await _resolveLocalPlaybackIfAvailable(song, quality);
+    if (localMatch != null) {
+      final localSong = localMatch.song;
+      final localQueue = List<Song>.unmodifiable(
+        nextQueue
+            .map((item) => item.key == localSong.key ? localSong : item)
+            .toList(growable: false),
+      );
+      state = state.copyWith(currentSong: localSong, queue: localQueue);
+
+      try {
+        await _preferencesStore.saveCurrentSong(localSong);
+        await _preferencesStore.saveQueue(localQueue);
+        await _preferencesStore.saveAudioQuality(quality);
+        await _engine.loadSong(localSong, quality: quality);
+        if (autoPlay) {
+          await _engine.play();
+        }
+        return;
+      } catch (_) {
+        await _removeLocalPlaybackRecord(song, quality);
+        state = state.copyWith(currentSong: song, queue: nextQueue);
+      }
+    }
+
     try {
       final playableSong = await _resolveSongIfNeeded(song, quality);
       final playableQueue = List<Song>.unmodifiable(
@@ -612,6 +656,35 @@ mixin _PlayerControllerRuntimeApi {
     }
 
     return resolver(song, quality);
+  }
+
+  Future<LocalPlaybackMatch?> _resolveLocalPlaybackIfAvailable(
+    Song song,
+    AudioQuality quality,
+  ) {
+    final resolver = _localPlaybackResolver;
+    if (resolver == null) {
+      return Future<LocalPlaybackMatch?>.value(null);
+    }
+
+    try {
+      return resolver.resolve(song, quality);
+    } catch (_) {
+      return Future<LocalPlaybackMatch?>.value(null);
+    }
+  }
+
+  Future<void> _removeLocalPlaybackRecord(Song song, AudioQuality quality) {
+    final resolver = _localPlaybackResolver;
+    if (resolver == null) {
+      return Future<void>.value();
+    }
+
+    try {
+      return resolver.remove(song, quality);
+    } catch (_) {
+      return Future<void>.value();
+    }
   }
 
   bool _canResolveSong(Song song) {

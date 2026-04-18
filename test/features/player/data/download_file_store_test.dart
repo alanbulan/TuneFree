@@ -28,4 +28,28 @@ void main() {
     expect(target.finalFile.path, isNot(contains('/ Live?')));
     expect(target.temporaryFile.path, endsWith('.download'));
   });
+
+  test('file store deletes final files and reports file existence', () async {
+    final fileStore = DownloadFileStore.test(
+      rootDirectory: await Directory.systemTemp.createTemp('tf-downloads-delete-'),
+    );
+    addTearDown(() async {
+      await fileStore.deleteTestRoot();
+    });
+
+    const song = Song(
+      id: 'delete-song',
+      name: '删除测试',
+      artist: 'TuneFree',
+      source: MusicSource.netease,
+    );
+
+    final target = await fileStore.createTarget(song: song, quality: AudioQuality.flac);
+    await target.finalFile.create(recursive: true);
+    await target.finalFile.writeAsString('bytes');
+
+    expect(await fileStore.fileExists(target.finalFile.path), isTrue);
+    await fileStore.deleteFinalFile(target.finalFile.path);
+    expect(await fileStore.fileExists(target.finalFile.path), isFalse);
+  });
 }

@@ -2,6 +2,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 
 import '../../../core/models/playlist.dart';
 import '../../../core/models/song.dart';
+import '../../player/data/download_library_repository.dart';
 
 part 'library_state.freezed.dart';
 
@@ -15,6 +16,8 @@ abstract class LibraryState with _$LibraryState {
     @Default('') String apiBase,
     String? exportedBackupJson,
     String? lastImportSummary,
+    @Default(<DownloadedTrackItem>[]) List<DownloadedTrackItem> downloads,
+    @Default('all') String downloadFilter,
     @Default(false) bool isLoaded,
   }) = _LibraryState;
 }

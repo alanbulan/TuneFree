@@ -75,6 +75,13 @@ class DownloadFileStore {
     return File(path).exists();
   }
 
+  Future<void> deleteFinalFile(String path) async {
+    final file = File(path);
+    if (await file.exists()) {
+      await file.delete();
+    }
+  }
+
   Future<void> deleteTestRoot() async {
     if (_deleteRootOnDispose && await _rootDirectory.exists()) {
       await _rootDirectory.delete(recursive: true);

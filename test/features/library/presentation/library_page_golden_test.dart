@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golden_toolkit/golden_toolkit.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tunefree/core/models/audio_quality.dart';
 import 'package:tunefree/core/models/music_source.dart';
 import 'package:tunefree/core/models/playlist.dart';
@@ -16,6 +17,7 @@ import 'package:tunefree/features/library/data/library_storage.dart';
 import 'package:tunefree/features/library/data/playlist_import_repository.dart';
 import 'package:tunefree/features/library/presentation/library_page.dart';
 import 'package:tunefree/features/library/presentation/widgets/library_backup_transfer.dart';
+import 'package:tunefree/features/player/data/download_library_repository.dart';
 import 'package:tunefree/features/player/application/just_audio_player_engine.dart';
 import 'package:tunefree/features/player/application/media_session_adapter.dart';
 import 'package:tunefree/features/player/application/player_controller.dart';
@@ -170,6 +172,42 @@ final class TestPlaylistImportClient implements PlaylistImportClient {
   ) async {
     calls.add('$source:$id');
     return onImportPlaylist(source, id);
+  }
+}
+
+final class TestDownloadLibraryRepository implements DownloadLibraryRepository {
+  TestDownloadLibraryRepository({
+    List<DownloadedTrackItem>? downloads,
+    this.failDelete = false,
+  }) : downloads = List<DownloadedTrackItem>.from(
+         downloads ?? const <DownloadedTrackItem>[],
+       );
+
+  final List<DownloadedTrackItem> downloads;
+  final bool failDelete;
+  int deleteCallCount = 0;
+
+  @override
+  Future<void> deleteDownload({
+    required String songKey,
+    required String quality,
+    required String filePath,
+  }) async {
+    deleteCallCount += 1;
+    if (failDelete) {
+      throw StateError('failed');
+    }
+    downloads.removeWhere(
+      (item) =>
+          item.songKey == songKey &&
+          item.quality == quality &&
+          item.filePath == filePath,
+    );
+  }
+
+  @override
+  Future<List<DownloadedTrackItem>> listDownloads() async {
+    return List<DownloadedTrackItem>.from(downloads);
   }
 }
 
@@ -370,6 +408,7 @@ final class _TestHttpHeaders implements HttpHeaders {
 void main() {
   setUpAll(() {
     HttpOverrides.global = _TestHttpOverrides();
+    SharedPreferences.setMockInitialValues(<String, Object>{});
   });
 
   tearDownAll(() {
@@ -401,6 +440,28 @@ void main() {
     source: MusicSource.kuwo,
   );
 
+  final downloadedSong = DownloadedTrackItem(
+    songKey: 'netease:dl-1',
+    songName: '离线海与你',
+    artist: '马也_Crabbit',
+    quality: 'flac',
+    fileName: 'maiye-flac.mp3',
+    filePath: '/downloads/mayiye-flac.mp3',
+    downloadedAt: DateTime.utc(2026, 4, 17, 10, 0),
+    exists: true,
+  );
+
+  final downloadedSongSecond = DownloadedTrackItem(
+    songKey: 'qq:dl-2',
+    songName: '离线晴天',
+    artist: '周杰伦',
+    quality: '320k',
+    fileName: 'qingtian-320k.mp3',
+    filePath: '/downloads/qingtian-320k.mp3',
+    downloadedAt: DateTime.utc(2026, 4, 17, 10, 1),
+    exists: true,
+  );
+
   testWidgets(
     'library page keeps the legacy tab labels and song tap opens playback queue',
     (tester) async {
@@ -422,7 +483,9 @@ void main() {
         overrides: [
           libraryStorageProvider.overrideWithValue(storage),
           playerEngineProvider.overrideWithValue(engine),
-          mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
           ),
@@ -477,7 +540,9 @@ void main() {
         overrides: [
           libraryStorageProvider.overrideWithValue(storage),
           playerEngineProvider.overrideWithValue(engine),
-          mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
           ),
@@ -601,7 +666,9 @@ void main() {
         overrides: [
           libraryStorageProvider.overrideWithValue(storage),
           playerEngineProvider.overrideWithValue(engine),
-          mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
           ),
@@ -689,6 +756,128 @@ void main() {
             .map((playlist) => playlist.name),
         ['跑步歌单'],
       );
+    },
+  );
+
+  testWidgets('library manage tab shows empty downloaded state', (
+    tester,
+  ) async {
+    final storage = TestLibraryStorage();
+    final downloadRepository = TestDownloadLibraryRepository();
+    final container = ProviderContainer(
+      overrides: [
+        libraryStorageProvider.overrideWithValue(storage),
+        downloadLibraryRepositoryProvider.overrideWithValue(downloadRepository),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: LibraryPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('管理'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('已下载歌曲'), findsOneWidget);
+    expect(find.text('暂无已下载歌曲'), findsOneWidget);
+  });
+
+  testWidgets(
+    'library manage tab shows downloaded tracks and allows deleting one',
+    (tester) async {
+      final storage = TestLibraryStorage();
+      final downloadRepository = TestDownloadLibraryRepository(
+        downloads: <DownloadedTrackItem>[downloadedSong, downloadedSongSecond],
+      );
+      final container = ProviderContainer(
+        overrides: [
+          libraryStorageProvider.overrideWithValue(storage),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            downloadRepository,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: LibraryPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('管理'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('已下载歌曲'), findsOneWidget);
+      expect(find.text('离线海与你'), findsOneWidget);
+      expect(find.text('离线晴天'), findsOneWidget);
+
+      await tester.ensureVisible(
+        find.byKey(const Key('delete-downloaded-track-netease:dl-1-flac')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('delete-downloaded-track-netease:dl-1-flac')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(downloadRepository.deleteCallCount, 1);
+      expect(find.text('离线海与你'), findsNothing);
+      expect(find.text('已删除 离线海与你'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'library manage tab shows delete failure message for downloaded tracks',
+    (tester) async {
+      final storage = TestLibraryStorage();
+      final downloadRepository = TestDownloadLibraryRepository(
+        downloads: <DownloadedTrackItem>[downloadedSong],
+        failDelete: true,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          libraryStorageProvider.overrideWithValue(storage),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            downloadRepository,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: LibraryPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('管理'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('已下载歌曲'), findsOneWidget);
+      expect(find.text('离线海与你'), findsOneWidget);
+
+      await tester.ensureVisible(
+        find.byKey(const Key('delete-downloaded-track-netease:dl-1-flac')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('delete-downloaded-track-netease:dl-1-flac')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(downloadRepository.deleteCallCount, 1);
+      expect(find.text('删除失败，请稍后重试'), findsOneWidget);
+      expect(find.text('离线海与你'), findsOneWidget);
     },
   );
 
@@ -786,7 +975,9 @@ void main() {
         overrides: [
           libraryStorageProvider.overrideWithValue(storage),
           playerEngineProvider.overrideWithValue(engine),
-          mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
           ),

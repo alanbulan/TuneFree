@@ -7,6 +7,8 @@ import 'package:tunefree/core/models/song.dart';
 import 'package:tunefree/features/player/application/just_audio_player_engine.dart';
 import 'package:tunefree/features/player/application/media_session_adapter.dart';
 import 'package:tunefree/features/player/application/player_controller.dart';
+import 'package:tunefree/features/player/data/download_record.dart';
+import 'package:tunefree/features/player/data/local_playback_resolver.dart';
 import 'package:tunefree/features/player/data/player_preferences_store.dart';
 import 'package:tunefree/features/player/data/song_resolution_repository.dart';
 
@@ -29,7 +31,8 @@ final class TestPlayerPreferencesStore implements PlayerPreferencesStore {
   Future<List<Song>> loadQueue() async => queue;
 
   @override
-  Future<void> saveAudioQuality(AudioQuality value) async => audioQuality = value;
+  Future<void> saveAudioQuality(AudioQuality value) async =>
+      audioQuality = value;
 
   @override
   Future<void> saveCurrentSong(Song? value) async => currentSong = value;
@@ -43,23 +46,37 @@ final class TestPlayerPreferencesStore implements PlayerPreferencesStore {
 
 SongResolutionRepository _testResolutionRepository() {
   return SongResolutionRepository.test(
-    resolveSongValue: (song, quality) async => song.copyWith(
-      url: 'https://example.com/${song.id}-$quality.mp3',
-    ),
+    resolveSongValue: (song, quality) async =>
+        song.copyWith(url: 'https://example.com/${song.id}-$quality.mp3'),
+  );
+}
+
+LocalPlaybackResolver _noopLocalPlaybackResolver() {
+  return LocalPlaybackResolver(
+    recordsForSong: (songKey) async => const <DownloadRecord>[],
+    fileExists: (path) async => false,
+    removeRecord: ({required songKey, required quality}) async {},
   );
 }
 
 void main() {
-  testWidgets('demo track opens mini player and full player scaffold', (tester) async {
+  testWidgets('demo track opens mini player and full player scaffold', (
+    tester,
+  ) async {
     final engine = JustAudioPlayerEngine.test();
     addTearDown(engine.dispose);
 
     final container = ProviderContainer(
       overrides: [
         playerEngineProvider.overrideWithValue(engine),
-        mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
+        mediaSessionAdapterProvider.overrideWithValue(
+          NoopMediaSessionAdapter(),
+        ),
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          _noopLocalPlaybackResolver(),
         ),
         songResolutionRepositoryProvider.overrideWithValue(
           _testResolutionRepository(),
@@ -69,14 +86,19 @@ void main() {
     addTearDown(container.dispose);
 
     await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: const TuneFreeApp()),
+      UncontrolledProviderScope(
+        container: container,
+        child: const TuneFreeApp(),
+      ),
     );
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('mini-player')), findsOneWidget);
     expect(find.text('TuneFree 音乐'), findsOneWidget);
 
-    await container.read(playerControllerProvider.notifier).openLegacySong(
+    await container
+        .read(playerControllerProvider.notifier)
+        .openLegacySong(
           id: 'player-surface-demo',
           source: 'netease',
           title: 'Player Skeleton',
@@ -102,16 +124,23 @@ void main() {
     expect(find.byKey(const Key('full-player')), findsNothing);
   });
 
-  testWidgets('full player overlays the shell navigation chrome', (tester) async {
+  testWidgets('full player overlays the shell navigation chrome', (
+    tester,
+  ) async {
     final engine = JustAudioPlayerEngine.test();
     addTearDown(engine.dispose);
 
     final container = ProviderContainer(
       overrides: [
         playerEngineProvider.overrideWithValue(engine),
-        mediaSessionAdapterProvider.overrideWithValue(NoopMediaSessionAdapter()),
+        mediaSessionAdapterProvider.overrideWithValue(
+          NoopMediaSessionAdapter(),
+        ),
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          _noopLocalPlaybackResolver(),
         ),
         songResolutionRepositoryProvider.overrideWithValue(
           _testResolutionRepository(),
@@ -121,11 +150,16 @@ void main() {
     addTearDown(container.dispose);
 
     await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: const TuneFreeApp()),
+      UncontrolledProviderScope(
+        container: container,
+        child: const TuneFreeApp(),
+      ),
     );
     await tester.pumpAndSettle();
 
-    await container.read(playerControllerProvider.notifier).openLegacySong(
+    await container
+        .read(playerControllerProvider.notifier)
+        .openLegacySong(
           id: 'player-surface-demo',
           source: 'netease',
           title: 'Player Skeleton',
@@ -140,6 +174,9 @@ void main() {
     final fullPlayerRect = tester.getRect(find.byKey(const Key('full-player')));
     final navigationBarRect = tester.getRect(find.byType(NavigationBar));
 
-    expect(fullPlayerRect.bottom, greaterThanOrEqualTo(navigationBarRect.bottom));
+    expect(
+      fullPlayerRect.bottom,
+      greaterThanOrEqualTo(navigationBarRect.bottom),
+    );
   });
 }

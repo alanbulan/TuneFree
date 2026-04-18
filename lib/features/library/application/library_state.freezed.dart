@@ -14,7 +14,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$LibraryState {
 
- List<Song> get favorites; List<Playlist> get playlists; String get apiKey; String get corsProxy; String get apiBase; String? get exportedBackupJson; String? get lastImportSummary; bool get isLoaded;
+ List<Song> get favorites; List<Playlist> get playlists; String get apiKey; String get corsProxy; String get apiBase; String? get exportedBackupJson; String? get lastImportSummary; List<DownloadedTrackItem> get downloads; String get downloadFilter; bool get isLoaded;
 /// Create a copy of LibraryState
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -25,16 +25,16 @@ $LibraryStateCopyWith<LibraryState> get copyWith => _$LibraryStateCopyWithImpl<L
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryState&&const DeepCollectionEquality().equals(other.favorites, favorites)&&const DeepCollectionEquality().equals(other.playlists, playlists)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.corsProxy, corsProxy) || other.corsProxy == corsProxy)&&(identical(other.apiBase, apiBase) || other.apiBase == apiBase)&&(identical(other.exportedBackupJson, exportedBackupJson) || other.exportedBackupJson == exportedBackupJson)&&(identical(other.lastImportSummary, lastImportSummary) || other.lastImportSummary == lastImportSummary)&&(identical(other.isLoaded, isLoaded) || other.isLoaded == isLoaded));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryState&&const DeepCollectionEquality().equals(other.favorites, favorites)&&const DeepCollectionEquality().equals(other.playlists, playlists)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.corsProxy, corsProxy) || other.corsProxy == corsProxy)&&(identical(other.apiBase, apiBase) || other.apiBase == apiBase)&&(identical(other.exportedBackupJson, exportedBackupJson) || other.exportedBackupJson == exportedBackupJson)&&(identical(other.lastImportSummary, lastImportSummary) || other.lastImportSummary == lastImportSummary)&&const DeepCollectionEquality().equals(other.downloads, downloads)&&(identical(other.downloadFilter, downloadFilter) || other.downloadFilter == downloadFilter)&&(identical(other.isLoaded, isLoaded) || other.isLoaded == isLoaded));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(favorites),const DeepCollectionEquality().hash(playlists),apiKey,corsProxy,apiBase,exportedBackupJson,lastImportSummary,isLoaded);
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(favorites),const DeepCollectionEquality().hash(playlists),apiKey,corsProxy,apiBase,exportedBackupJson,lastImportSummary,const DeepCollectionEquality().hash(downloads),downloadFilter,isLoaded);
 
 @override
 String toString() {
-  return 'LibraryState(favorites: $favorites, playlists: $playlists, apiKey: $apiKey, corsProxy: $corsProxy, apiBase: $apiBase, exportedBackupJson: $exportedBackupJson, lastImportSummary: $lastImportSummary, isLoaded: $isLoaded)';
+  return 'LibraryState(favorites: $favorites, playlists: $playlists, apiKey: $apiKey, corsProxy: $corsProxy, apiBase: $apiBase, exportedBackupJson: $exportedBackupJson, lastImportSummary: $lastImportSummary, downloads: $downloads, downloadFilter: $downloadFilter, isLoaded: $isLoaded)';
 }
 
 
@@ -45,7 +45,7 @@ abstract mixin class $LibraryStateCopyWith<$Res>  {
   factory $LibraryStateCopyWith(LibraryState value, $Res Function(LibraryState) _then) = _$LibraryStateCopyWithImpl;
 @useResult
 $Res call({
- List<Song> favorites, List<Playlist> playlists, String apiKey, String corsProxy, String apiBase, String? exportedBackupJson, String? lastImportSummary, bool isLoaded
+ List<Song> favorites, List<Playlist> playlists, String apiKey, String corsProxy, String apiBase, String? exportedBackupJson, String? lastImportSummary, List<DownloadedTrackItem> downloads, String downloadFilter, bool isLoaded
 });
 
 
@@ -62,7 +62,7 @@ class _$LibraryStateCopyWithImpl<$Res>
 
 /// Create a copy of LibraryState
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? favorites = null,Object? playlists = null,Object? apiKey = null,Object? corsProxy = null,Object? apiBase = null,Object? exportedBackupJson = freezed,Object? lastImportSummary = freezed,Object? isLoaded = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? favorites = null,Object? playlists = null,Object? apiKey = null,Object? corsProxy = null,Object? apiBase = null,Object? exportedBackupJson = freezed,Object? lastImportSummary = freezed,Object? downloads = null,Object? downloadFilter = null,Object? isLoaded = null,}) {
   return _then(_self.copyWith(
 favorites: null == favorites ? _self.favorites : favorites // ignore: cast_nullable_to_non_nullable
 as List<Song>,playlists: null == playlists ? _self.playlists : playlists // ignore: cast_nullable_to_non_nullable
@@ -71,7 +71,9 @@ as String,corsProxy: null == corsProxy ? _self.corsProxy : corsProxy // ignore: 
 as String,apiBase: null == apiBase ? _self.apiBase : apiBase // ignore: cast_nullable_to_non_nullable
 as String,exportedBackupJson: freezed == exportedBackupJson ? _self.exportedBackupJson : exportedBackupJson // ignore: cast_nullable_to_non_nullable
 as String?,lastImportSummary: freezed == lastImportSummary ? _self.lastImportSummary : lastImportSummary // ignore: cast_nullable_to_non_nullable
-as String?,isLoaded: null == isLoaded ? _self.isLoaded : isLoaded // ignore: cast_nullable_to_non_nullable
+as String?,downloads: null == downloads ? _self.downloads : downloads // ignore: cast_nullable_to_non_nullable
+as List<DownloadedTrackItem>,downloadFilter: null == downloadFilter ? _self.downloadFilter : downloadFilter // ignore: cast_nullable_to_non_nullable
+as String,isLoaded: null == isLoaded ? _self.isLoaded : isLoaded // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
 }
@@ -157,10 +159,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( List<Song> favorites,  List<Playlist> playlists,  String apiKey,  String corsProxy,  String apiBase,  String? exportedBackupJson,  String? lastImportSummary,  bool isLoaded)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( List<Song> favorites,  List<Playlist> playlists,  String apiKey,  String corsProxy,  String apiBase,  String? exportedBackupJson,  String? lastImportSummary,  List<DownloadedTrackItem> downloads,  String downloadFilter,  bool isLoaded)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _LibraryState() when $default != null:
-return $default(_that.favorites,_that.playlists,_that.apiKey,_that.corsProxy,_that.apiBase,_that.exportedBackupJson,_that.lastImportSummary,_that.isLoaded);case _:
+return $default(_that.favorites,_that.playlists,_that.apiKey,_that.corsProxy,_that.apiBase,_that.exportedBackupJson,_that.lastImportSummary,_that.downloads,_that.downloadFilter,_that.isLoaded);case _:
   return orElse();
 
 }
@@ -178,10 +180,10 @@ return $default(_that.favorites,_that.playlists,_that.apiKey,_that.corsProxy,_th
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( List<Song> favorites,  List<Playlist> playlists,  String apiKey,  String corsProxy,  String apiBase,  String? exportedBackupJson,  String? lastImportSummary,  bool isLoaded)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( List<Song> favorites,  List<Playlist> playlists,  String apiKey,  String corsProxy,  String apiBase,  String? exportedBackupJson,  String? lastImportSummary,  List<DownloadedTrackItem> downloads,  String downloadFilter,  bool isLoaded)  $default,) {final _that = this;
 switch (_that) {
 case _LibraryState():
-return $default(_that.favorites,_that.playlists,_that.apiKey,_that.corsProxy,_that.apiBase,_that.exportedBackupJson,_that.lastImportSummary,_that.isLoaded);case _:
+return $default(_that.favorites,_that.playlists,_that.apiKey,_that.corsProxy,_that.apiBase,_that.exportedBackupJson,_that.lastImportSummary,_that.downloads,_that.downloadFilter,_that.isLoaded);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -198,10 +200,10 @@ return $default(_that.favorites,_that.playlists,_that.apiKey,_that.corsProxy,_th
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( List<Song> favorites,  List<Playlist> playlists,  String apiKey,  String corsProxy,  String apiBase,  String? exportedBackupJson,  String? lastImportSummary,  bool isLoaded)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( List<Song> favorites,  List<Playlist> playlists,  String apiKey,  String corsProxy,  String apiBase,  String? exportedBackupJson,  String? lastImportSummary,  List<DownloadedTrackItem> downloads,  String downloadFilter,  bool isLoaded)?  $default,) {final _that = this;
 switch (_that) {
 case _LibraryState() when $default != null:
-return $default(_that.favorites,_that.playlists,_that.apiKey,_that.corsProxy,_that.apiBase,_that.exportedBackupJson,_that.lastImportSummary,_that.isLoaded);case _:
+return $default(_that.favorites,_that.playlists,_that.apiKey,_that.corsProxy,_that.apiBase,_that.exportedBackupJson,_that.lastImportSummary,_that.downloads,_that.downloadFilter,_that.isLoaded);case _:
   return null;
 
 }
@@ -213,7 +215,7 @@ return $default(_that.favorites,_that.playlists,_that.apiKey,_that.corsProxy,_th
 
 
 class _LibraryState implements LibraryState {
-  const _LibraryState({final  List<Song> favorites = const <Song>[], final  List<Playlist> playlists = const <Playlist>[], this.apiKey = '', this.corsProxy = '', this.apiBase = '', this.exportedBackupJson, this.lastImportSummary, this.isLoaded = false}): _favorites = favorites,_playlists = playlists;
+  const _LibraryState({final  List<Song> favorites = const <Song>[], final  List<Playlist> playlists = const <Playlist>[], this.apiKey = '', this.corsProxy = '', this.apiBase = '', this.exportedBackupJson, this.lastImportSummary, final  List<DownloadedTrackItem> downloads = const <DownloadedTrackItem>[], this.downloadFilter = 'all', this.isLoaded = false}): _favorites = favorites,_playlists = playlists,_downloads = downloads;
   
 
  final  List<Song> _favorites;
@@ -235,6 +237,14 @@ class _LibraryState implements LibraryState {
 @override@JsonKey() final  String apiBase;
 @override final  String? exportedBackupJson;
 @override final  String? lastImportSummary;
+ final  List<DownloadedTrackItem> _downloads;
+@override@JsonKey() List<DownloadedTrackItem> get downloads {
+  if (_downloads is EqualUnmodifiableListView) return _downloads;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_downloads);
+}
+
+@override@JsonKey() final  String downloadFilter;
 @override@JsonKey() final  bool isLoaded;
 
 /// Create a copy of LibraryState
@@ -247,16 +257,16 @@ _$LibraryStateCopyWith<_LibraryState> get copyWith => __$LibraryStateCopyWithImp
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _LibraryState&&const DeepCollectionEquality().equals(other._favorites, _favorites)&&const DeepCollectionEquality().equals(other._playlists, _playlists)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.corsProxy, corsProxy) || other.corsProxy == corsProxy)&&(identical(other.apiBase, apiBase) || other.apiBase == apiBase)&&(identical(other.exportedBackupJson, exportedBackupJson) || other.exportedBackupJson == exportedBackupJson)&&(identical(other.lastImportSummary, lastImportSummary) || other.lastImportSummary == lastImportSummary)&&(identical(other.isLoaded, isLoaded) || other.isLoaded == isLoaded));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _LibraryState&&const DeepCollectionEquality().equals(other._favorites, _favorites)&&const DeepCollectionEquality().equals(other._playlists, _playlists)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.corsProxy, corsProxy) || other.corsProxy == corsProxy)&&(identical(other.apiBase, apiBase) || other.apiBase == apiBase)&&(identical(other.exportedBackupJson, exportedBackupJson) || other.exportedBackupJson == exportedBackupJson)&&(identical(other.lastImportSummary, lastImportSummary) || other.lastImportSummary == lastImportSummary)&&const DeepCollectionEquality().equals(other._downloads, _downloads)&&(identical(other.downloadFilter, downloadFilter) || other.downloadFilter == downloadFilter)&&(identical(other.isLoaded, isLoaded) || other.isLoaded == isLoaded));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_favorites),const DeepCollectionEquality().hash(_playlists),apiKey,corsProxy,apiBase,exportedBackupJson,lastImportSummary,isLoaded);
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_favorites),const DeepCollectionEquality().hash(_playlists),apiKey,corsProxy,apiBase,exportedBackupJson,lastImportSummary,const DeepCollectionEquality().hash(_downloads),downloadFilter,isLoaded);
 
 @override
 String toString() {
-  return 'LibraryState(favorites: $favorites, playlists: $playlists, apiKey: $apiKey, corsProxy: $corsProxy, apiBase: $apiBase, exportedBackupJson: $exportedBackupJson, lastImportSummary: $lastImportSummary, isLoaded: $isLoaded)';
+  return 'LibraryState(favorites: $favorites, playlists: $playlists, apiKey: $apiKey, corsProxy: $corsProxy, apiBase: $apiBase, exportedBackupJson: $exportedBackupJson, lastImportSummary: $lastImportSummary, downloads: $downloads, downloadFilter: $downloadFilter, isLoaded: $isLoaded)';
 }
 
 
@@ -267,7 +277,7 @@ abstract mixin class _$LibraryStateCopyWith<$Res> implements $LibraryStateCopyWi
   factory _$LibraryStateCopyWith(_LibraryState value, $Res Function(_LibraryState) _then) = __$LibraryStateCopyWithImpl;
 @override @useResult
 $Res call({
- List<Song> favorites, List<Playlist> playlists, String apiKey, String corsProxy, String apiBase, String? exportedBackupJson, String? lastImportSummary, bool isLoaded
+ List<Song> favorites, List<Playlist> playlists, String apiKey, String corsProxy, String apiBase, String? exportedBackupJson, String? lastImportSummary, List<DownloadedTrackItem> downloads, String downloadFilter, bool isLoaded
 });
 
 
@@ -284,7 +294,7 @@ class __$LibraryStateCopyWithImpl<$Res>
 
 /// Create a copy of LibraryState
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? favorites = null,Object? playlists = null,Object? apiKey = null,Object? corsProxy = null,Object? apiBase = null,Object? exportedBackupJson = freezed,Object? lastImportSummary = freezed,Object? isLoaded = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? favorites = null,Object? playlists = null,Object? apiKey = null,Object? corsProxy = null,Object? apiBase = null,Object? exportedBackupJson = freezed,Object? lastImportSummary = freezed,Object? downloads = null,Object? downloadFilter = null,Object? isLoaded = null,}) {
   return _then(_LibraryState(
 favorites: null == favorites ? _self._favorites : favorites // ignore: cast_nullable_to_non_nullable
 as List<Song>,playlists: null == playlists ? _self._playlists : playlists // ignore: cast_nullable_to_non_nullable
@@ -293,7 +303,9 @@ as String,corsProxy: null == corsProxy ? _self.corsProxy : corsProxy // ignore: 
 as String,apiBase: null == apiBase ? _self.apiBase : apiBase // ignore: cast_nullable_to_non_nullable
 as String,exportedBackupJson: freezed == exportedBackupJson ? _self.exportedBackupJson : exportedBackupJson // ignore: cast_nullable_to_non_nullable
 as String?,lastImportSummary: freezed == lastImportSummary ? _self.lastImportSummary : lastImportSummary // ignore: cast_nullable_to_non_nullable
-as String?,isLoaded: null == isLoaded ? _self.isLoaded : isLoaded // ignore: cast_nullable_to_non_nullable
+as String?,downloads: null == downloads ? _self._downloads : downloads // ignore: cast_nullable_to_non_nullable
+as List<DownloadedTrackItem>,downloadFilter: null == downloadFilter ? _self.downloadFilter : downloadFilter // ignore: cast_nullable_to_non_nullable
+as String,isLoaded: null == isLoaded ? _self.isLoaded : isLoaded // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
 }

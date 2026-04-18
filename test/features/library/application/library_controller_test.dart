@@ -6,6 +6,30 @@ import 'package:tunefree/core/models/playlist.dart';
 import 'package:tunefree/core/models/song.dart';
 import 'package:tunefree/features/library/application/library_controller.dart';
 import 'package:tunefree/features/library/data/library_storage.dart';
+import 'package:tunefree/features/player/data/download_library_repository.dart';
+
+final class InMemoryDownloadLibraryRepository implements DownloadLibraryRepository {
+  InMemoryDownloadLibraryRepository();
+
+  final List<DownloadedTrackItem> records = <DownloadedTrackItem>[];
+
+  @override
+  Future<void> deleteDownload({
+    required String songKey,
+    required String quality,
+    required String filePath,
+  }) async {
+    records.removeWhere(
+      (record) =>
+          record.songKey == songKey &&
+          record.quality == quality &&
+          record.filePath == filePath,
+    );
+  }
+
+  @override
+  Future<List<DownloadedTrackItem>> listDownloads() async => List<DownloadedTrackItem>.from(records);
+}
 
 final class InMemoryLibraryStorage implements LibraryStorage {
   InMemoryLibraryStorage({this.favoritesSaveCompleter});
@@ -78,7 +102,8 @@ final class InMemoryLibraryStorage implements LibraryStorage {
 void main() {
   test('setters persist loaded library config values', () async {
     final storage = InMemoryLibraryStorage();
-    final controller = LibraryController(storage: storage);
+    final repository = InMemoryDownloadLibraryRepository();
+    final controller = LibraryController(storage: storage, downloadLibraryRepository: repository);
     await controller.load();
 
     await controller.setApiKey('secret-key');
@@ -96,7 +121,11 @@ void main() {
   test('toggleFavorite awaits favorite persistence before updating state', () async {
     final completer = Completer<void>();
     final storage = InMemoryLibraryStorage(favoritesSaveCompleter: completer);
-    final controller = LibraryController(storage: storage);
+    final repository = InMemoryDownloadLibraryRepository();
+    final controller = LibraryController(
+      storage: storage,
+      downloadLibraryRepository: repository,
+    );
     await controller.load();
 
     const song = Song(
@@ -120,7 +149,11 @@ void main() {
 
   test('playlist CRUD mirrors legacy library behavior', () async {
     final storage = InMemoryLibraryStorage();
-    final controller = LibraryController(storage: storage);
+    final repository = InMemoryDownloadLibraryRepository();
+    final controller = LibraryController(
+      storage: storage,
+      downloadLibraryRepository: repository,
+    );
     await controller.load();
 
     const song = Song(
@@ -143,7 +176,11 @@ void main() {
 
   test('createPlaylist trims names before persisting them', () async {
     final storage = InMemoryLibraryStorage();
-    final controller = LibraryController(storage: storage);
+    final repository = InMemoryDownloadLibraryRepository();
+    final controller = LibraryController(
+      storage: storage,
+      downloadLibraryRepository: repository,
+    );
     await controller.load();
 
     await controller.createPlaylist('  我的歌单  ');
