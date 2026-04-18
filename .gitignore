@@ -1,26 +1,26 @@
+# Shared local artifacts
+.worktrees/
+.claude/settings.local.json
+
+# Local Android / test artifacts
+flutter/android/.kotlin/
+*.log
+flutter/test/**/failures/
+
 # Flutter / Dart
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.packages
-.pub/
-build/
-pubspec_overrides.yaml
+flutter/.dart_tool/
+flutter/.flutter-plugins
+flutter/.flutter-plugins-dependencies
+flutter/.packages
+flutter/.pub/
+flutter/build/
+flutter/pubspec_overrides.yaml
 
 # IDE / OS
 .idea/
 .vscode/
 .DS_Store
 
-# Legacy web reference artifacts
-legacy/react_app/node_modules/
-legacy/react_app/dist/
-
-# Local Claude files
-.worktrees/
-.claude/settings.local.json
-
-# Local Android / test artifacts
-android/.kotlin/
-*.log
-test/**/failures/
+# React artifacts
+react/node_modules/
+react/dist/
