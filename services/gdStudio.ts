@@ -32,6 +32,9 @@ const GD_STUDIO_SOURCES: readonly GdStudioSource[] = [
 
 const GD_STUDIO_ONLY_SOURCES = ["joox", "bilibili"] as const;
 
+const buildJooxCoverUrl = (picId: string, size: 300 | 500 = 500): string =>
+  `https://image.joox.com/JOOXcover/0/${picId}/${size}`;
+
 const trackMetaCache = new Map<string, CachedTrackMeta>();
 const lyricCache = new Map<string, string>();
 const picCache = new Map<string, string>();
@@ -185,7 +188,11 @@ export const searchGDStudio = async (
     const picId = String(item.pic_id || "").trim();
     const lyricId = String(item.lyric_id || id).trim();
     const urlId = String(item.url_id || id).trim();
-    const pic = picId.startsWith("http") || picId.startsWith("//") ? fixUrl(picId) : "";
+    const pic = picId.startsWith("http") || picId.startsWith("//")
+      ? fixUrl(picId)
+      : source === "joox" && picId
+        ? fixUrl(buildJooxCoverUrl(picId, 500))
+        : "";
 
     if (id) {
       rememberTrackMeta(id, source, {
@@ -285,6 +292,12 @@ export const getGDStudioPic = async (
   size: 300 | 500 = 500,
 ): Promise<string> => {
   if (!picId) return "";
+
+  if (source === "joox") {
+    const pic = fixUrl(buildJooxCoverUrl(picId, size));
+    picCache.set(`${source}:${picId}:${size}`, pic);
+    return pic;
+  }
 
   const directPic = fixUrl(picId);
   if (directPic && (picId.startsWith("http") || picId.startsWith("//"))) {
