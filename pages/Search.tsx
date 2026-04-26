@@ -4,6 +4,7 @@ import {
   searchAggregate,
   searchSongs,
   getImgReferrerPolicy,
+  getGDStudioPic,
   isGDStudioOnlySource,
 } from "../services/api";
 import { Song, isSameSong } from "../types";
@@ -42,18 +43,43 @@ const SearchResultItem = memo<{
   const songName = typeof song.name === "string" ? song.name : "未知歌曲";
   const songArtist = typeof song.artist === "string" ? song.artist : "未知歌手";
   const sourceLabel = getMusicSourceLabel(song.source);
+  const [coverUrl, setCoverUrl] = useState(song.pic || "");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setCoverUrl(song.pic || "");
+
+    if (song.pic || song.source !== "joox" || !song.picId) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    getGDStudioPic("joox", song.picId, 500)
+      .then((pic) => {
+        if (!cancelled && pic) {
+          setCoverUrl(pic);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [song.pic, song.picId, song.source]);
 
   return (
     <div
       className={`flex items-center space-x-3 p-3 rounded-xl transition cursor-pointer ${isCurrent ? "bg-white shadow-sm ring-1 ring-ios-red/20" : "hover:bg-white/50 active:bg-white"}`}
-      onClick={() => onPlay(song)}
+      onClick={() => onPlay({ ...song, pic: coverUrl || song.pic })}
     >
       <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
-        {song.pic ? (
+        {coverUrl ? (
           <img
-            src={song.pic}
+            src={coverUrl}
             alt={songName}
-            referrerPolicy={getImgReferrerPolicy(song.pic)}
+            referrerPolicy={getImgReferrerPolicy(coverUrl)}
             loading="lazy"
             className="w-full h-full object-cover"
           />
