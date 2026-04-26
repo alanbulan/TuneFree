@@ -26,6 +26,7 @@ const ALLOWED_HOSTS = [
     'musicpay.kuwo.cn',
     'm.kuwo.cn',
     'music-api.gdstudio.xyz',
+    'hdslb.com',
 ];
 
 export const onRequest = async (context: any) => {
@@ -73,6 +74,10 @@ export const onRequest = async (context: any) => {
         if (parsedTarget.hostname === 'music-api.gdstudio.xyz') {
             headers.set('Accept', 'application/json,text/plain,*/*');
             headers.set('Referer', 'https://music.gdstudio.xyz/');
+        }
+
+        if (parsedTarget.hostname === 'hdslb.com' || parsedTarget.hostname.endsWith('.hdslb.com')) {
+            headers.set('Referer', 'https://www.bilibili.com/');
         }
 
         const fetchOpts: RequestInit = {

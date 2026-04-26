@@ -459,7 +459,7 @@ const Library: React.FC = () => {
                   <div>
                     <p className="font-medium text-ios-text">多源聚合搜索</p>
                     <p className="text-xs text-gray-400">
-                      支持网易云、QQ音乐、酷我音乐，以及 JOOX、B站扩展音源
+                      支持网易云、QQ音乐、酷我音乐，以及 JOOX 扩展音源
                     </p>
                   </div>
                 </div>
@@ -535,7 +535,7 @@ const Library: React.FC = () => {
                 共同提供。
               </p>
               <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-                TuneHub 负责原有解析链路；JOOX、B站等扩展音源走 GD Studio 公开接口，建议控制频率：{GD_STUDIO_RATE_LIMIT_HINT}。
+                TuneHub 负责原有解析链路；JOOX 扩展音源走 GD Studio 公开接口，建议控制频率：{GD_STUDIO_RATE_LIMIT_HINT}。
               </p>
               <div className="mt-2 flex flex-wrap gap-3">
                 <a

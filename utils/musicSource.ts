@@ -1,5 +1,4 @@
-export const EXTENDED_AGGREGATE_SOURCES = ["joox", "bilibili"] as const;
-
+export const EXTENDED_AGGREGATE_SOURCES = ["joox"] as const;
 export const GD_STUDIO_ATTRIBUTION = "GD音乐台 (music.gdstudio.xyz)";
 export const GD_STUDIO_RATE_LIMIT_HINT = "5 分钟内不超过 50 次请求";
 
@@ -8,7 +7,6 @@ const SOURCE_LABELS: Record<string, { short: string; full: string }> = {
   qq: { short: "QQ", full: "QQ音乐" },
   kuwo: { short: "酷我", full: "酷我音乐" },
   joox: { short: "JOOX", full: "JOOX" },
-  bilibili: { short: "B站", full: "Bilibili" },
 };
 
 const SOURCE_BADGE_CLASSES: Record<string, string> = {
@@ -16,7 +14,6 @@ const SOURCE_BADGE_CLASSES: Record<string, string> = {
   qq: "bg-green-100 text-green-600",
   kuwo: "bg-yellow-100 text-yellow-700",
   joox: "bg-purple-100 text-purple-700",
-  bilibili: "bg-pink-100 text-pink-600",
 };
 
 export const getMusicSourceLabel = (

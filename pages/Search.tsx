@@ -344,7 +344,6 @@ const Search: React.FC = () => {
                 <option value="qq">{getMusicSourceLabel("qq", "full")}</option>
                 <option value="kuwo">{getMusicSourceLabel("kuwo", "full")}</option>
                 <option value="joox">{getMusicSourceLabel("joox", "full")}</option>
-                <option value="bilibili">{getMusicSourceLabel("bilibili", "full")}</option>
               </select>
             </>
           )}

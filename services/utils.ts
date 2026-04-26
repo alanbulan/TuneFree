@@ -27,6 +27,19 @@ export const fixUrl = (url: string | undefined): string => {
     fixed = `https:${fixed}`;
   }
 
+  const shouldProxyDirectly = (url: string): boolean => {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname === "hdslb.com" || parsed.hostname.endsWith(".hdslb.com");
+    } catch {
+      return url.includes("hdslb.com");
+    }
+  };
+
+  if (shouldProxyDirectly(fixed)) {
+    return `${SELF_HOSTED_PROXY}${encodeURIComponent(fixed)}`;
+  }
+
   // 强制 HTTPS（仅针对已知支持 HTTPS 的图床）
   if (fixed.startsWith("http://")) {
     if (

@@ -38,12 +38,18 @@ export const PRODUCTION_URL = "https://tunefree-mobile.pages.dev";
  */
 export const API_PREFIX = Capacitor.isNativePlatform() ? PRODUCTION_URL : "";
 
+const shouldUseAbsoluteProxy =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1");
+const proxyBase = shouldUseAbsoluteProxy ? PRODUCTION_URL : API_PREFIX;
+
 /**
  * 自建 CORS 代理（Cloudflare Pages Function）。
  * 国内外均可访问，延迟低、无速率限制，始终作为第一优先代理。
- * 该代理是同源请求，fetch 时不需要设置 mode: 'cors'。
+ * 本地 Vite 开发时改为直连线上 Pages Function，避免 /api 在 dev server 下 404。
  */
-export const SELF_HOSTED_PROXY = `${API_PREFIX}/api/cors-proxy?url=`;
+export const SELF_HOSTED_PROXY = `${proxyBase}/api/cors-proxy?url=`;
 
 /**
  * 默认代理列表：
