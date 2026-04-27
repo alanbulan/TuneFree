@@ -1,26 +1,38 @@
 # Shared local artifacts
 .worktrees/
 .claude/settings.local.json
-
-# Local Android / test artifacts
-flutter/android/.kotlin/
 *.log
-flutter/test/**/failures/
 
 # Flutter / Dart
-flutter/.dart_tool/
-flutter/.flutter-plugins
-flutter/.flutter-plugins-dependencies
-flutter/.packages
-flutter/.pub/
-flutter/build/
-flutter/pubspec_overrides.yaml
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+build/
+pubspec_overrides.yaml
+
+# Test artifacts
+test/**/failures/
+
+# Android / Gradle
+android/.gradle/
+android/.kotlin/
+android/local.properties
+
+# iOS / macOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/ephemeral/
+macos/Pods/
+macos/.symlinks/
+macos/Flutter/ephemeral/
+
+# Web / desktop generated
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
 
 # IDE / OS
 .idea/
 .vscode/
 .DS_Store
-
-# React artifacts
-react/node_modules/
-react/dist/
