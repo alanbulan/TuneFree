@@ -240,14 +240,6 @@ export const getPlaylistDetail = async (
 // 下载辅助
 // ==============================
 
-/**
- * 触发浏览器文件下载。
- * 通过创建隐藏 <a> 元素实现，兼容大多数现代浏览器。
- * 注意：在 Capacitor 原生环境中此方法可能不生效，需额外处理。
- *
- * @param url      下载地址
- * @param filename 保存文件名
- */
 export const triggerDownload = (url: string, filename: string): void => {
   if (!url) return;
   const a = document.createElement("a");

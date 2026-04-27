@@ -1,5 +1,3 @@
-import { Capacitor } from "@capacitor/core";
-
 /** TuneHub 后端默认地址（用户可在设置中覆盖） */
 export const DEFAULT_API_BASE = "https://tunehub.sayqz.com/api";
 
@@ -24,19 +22,11 @@ export const FORBIDDEN_HEADERS = [
   "content-length",
 ];
 
-/**
- * Cloudflare Pages 生产环境地址。
- * Capacitor 原生打包时（Android/iOS）无法使用相对路径，
- * 必须使用绝对地址指向已部署的 CF Pages 站点。
- */
+/** Cloudflare Pages 生产环境地址。 */
 export const PRODUCTION_URL = "https://tunefree-mobile.pages.dev";
 
-/**
- * API 前缀：
- * - 原生平台（Capacitor）→ 使用 PRODUCTION_URL 绝对路径
- * - Web 开发模式 → 使用相对路径（由 Vite 代理或 CF Pages 本地模拟处理）
- */
-export const API_PREFIX = Capacitor.isNativePlatform() ? PRODUCTION_URL : "";
+/** API 前缀：Web/PWA 使用相对路径。 */
+export const API_PREFIX = "";
 
 const shouldUseAbsoluteProxy =
   typeof window !== "undefined" &&
