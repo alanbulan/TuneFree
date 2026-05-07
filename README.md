@@ -34,6 +34,7 @@
     <a href="#-项目定位">项目定位</a> •
     <a href="#-功能特性">功能特性</a> •
     <a href="#-技术栈">技术栈</a> •
+    <a href="#-接口说明">接口说明</a> •
     <a href="#-本地运行">本地运行</a> •
     <a href="#-部署">部署</a>
   </p>
@@ -66,8 +67,8 @@
 
 ### 🎵 核心音乐功能
 
-- **多源聚合搜索**：支持网易云音乐、QQ 音乐、酷我音乐等平台资源检索。
-- **完整播放链路**：搜索、播放、队列、播放模式、进度控制和音质切换。
+- **多源聚合搜索**：支持网易云音乐、QQ 音乐、酷我音乐；可手动开启 JOOX 扩展源。
+- **播放解析链路**：网易/QQ/酷我优先走内置 `/api/url`，JOOX 和兼容源可走 GD 音乐台；已移除 TuneHub/TuneFree API 依赖。
 - **歌词体验**：支持滚动歌词、双语歌词展示和播放进度联动。
 - **封面与频谱**：保留移动端播放器封面动画、背景动效和可视化氛围。
 
@@ -81,6 +82,15 @@
 
 - **Cloudflare Pages**：通过 `wrangler.json` 部署静态产物和 Pages Functions。
 - **自建代理函数**：`functions/` 提供 CORS 代理，降低第三方公共代理不可用风险。
+
+## 🔌 接口说明
+
+当前版本不再依赖 TuneHub/TuneFree API，也不需要配置 API Key 或 API Base URL。
+
+- **搜索/榜单**：网易云音乐、QQ 音乐、酷我音乐使用各平台直连接口；JOOX 扩展源由 GD 音乐台提供。
+- **播放解析**：`functions/api/url.ts` 负责网易/QQ/酷我的原生播放地址解析；`services/resolver.ts` 统一调度原生解析、GD 音乐台解析和歌词/封面补全。
+- **CORS 代理**：`functions/api/cors-proxy.ts` 只代理白名单域名，并透传 `Range` 请求以支持音频流式加载。
+- **已移除能力**：TuneHub `/v1/parse`、`/v1/methods`、在线歌单导入、TuneHub API Key/Base 设置均已移除。
 
 ## 📸 截图展示
 
@@ -108,6 +118,13 @@ npm run dev
 ```
 
 默认开发地址：`http://localhost:3000/`。
+
+如果需要联调 Cloudflare Pages Functions（例如 `/api/url` 和 `/api/cors-proxy`），先构建再启动 Wrangler 本地环境：
+
+```bash
+npm run build
+npx wrangler pages dev dist
+```
 
 ## 📦 构建
 

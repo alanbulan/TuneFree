@@ -228,22 +228,8 @@ const kuwoCryptoAlgorithm = (function() {
 })();
 
 async function getKuwoUrl(songmid: string, quality: string) {
-    let bitrate, format;
-    switch (quality) {
-        case "128k": bitrate = "128kmp3"; format = "mp3"; break;
-        case "192k": bitrate = "192kmp3"; format = "mp3"; break;
-        case "320k": bitrate = "320kmp3"; format = "mp3"; break;
-        case "ape": bitrate = "2000kape"; format = "ape"; break;
-        case "flac": bitrate = "2000kflac"; format = "flac"; break;
-        default: bitrate = "128kmp3"; format = "mp3"; break;
-    }
-
-    const params = `type=convert_url&br=${bitrate}&format=${format}&sig=0&rid=${songmid}&network=wifi&response=url&prod=kwplayer_ar_10.3.3.0`;
-    const endpoint = Buffer.from("aHR0cDovL21vYmkua3V3by5jbi9tb2JpLnM/Zj1rdXdvJnE9", "base64").toString("utf-8");
-    
-    const encBytes = kuwoCryptoAlgorithm(params);
-    const qParams = Buffer.from(encBytes).toString("base64");
-    const apiUrl = endpoint + qParams;
+    const format = quality === "flac" || quality === "ape" ? "flac" : "mp3";
+    const apiUrl = `http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=MUSIC_${encodeURIComponent(songmid)}&format=${format}&response=url`;
 
     const resp = await fetch(apiUrl, {
         method: "GET",
@@ -253,12 +239,10 @@ async function getKuwoUrl(songmid: string, quality: string) {
         }
     });
 
-    const bodyStr = await resp.text();
-    if (bodyStr.includes("bitrate=1\r\n")) {
-        throw new Error("Kuwo returned empty bitrate (VIP / copyright)");
+    const playUrl = (await resp.text()).trim();
+    if (!playUrl || !playUrl.startsWith("http")) {
+        throw new Error("Kuwo returned empty URL (VIP / copyright)");
     }
-    
-    const match = bodyStr.match(/url=(.+)/);
-    if (!match) throw new Error("Kuwo parsing failed");
-    return match[1].split('?')[0];
+
+    return `/api/cors-proxy?url=${encodeURIComponent(playUrl)}`;
 }

@@ -49,19 +49,3 @@ export interface TopList {
   coverImgUrl?: string; // Netease often uses this
 }
 
-// TuneHub Method Configuration
-export interface TuneHubMethod {
-  type: 'http';
-  method: 'GET' | 'POST';
-  url: string;
-  params?: Record<string, string>;
-  body?: any;
-  headers?: Record<string, string>;
-  transform?: string;
-}
-
-export interface TuneHubResponse<T> {
-  code: number;
-  msg: string;
-  data: T;
-}

@@ -1,6 +1,6 @@
 import type { HTMLAttributeReferrerPolicy } from "react";
 import { Song } from "../types";
-import { SELF_HOSTED_PROXY } from "./config";
+import { IS_LOCAL_DEV, SELF_HOSTED_PROXY } from "./config";
 
 // ==============================
 // URL 修复与图片工具
@@ -36,7 +36,7 @@ export const fixUrl = (url: string | undefined): string => {
     }
   };
 
-  if (shouldProxyDirectly(fixed)) {
+  if (shouldProxyDirectly(fixed) && !IS_LOCAL_DEV) {
     return `${SELF_HOSTED_PROXY}${encodeURIComponent(fixed)}`;
   }
 
@@ -51,7 +51,7 @@ export const fixUrl = (url: string | undefined): string => {
     }
     // 酷我所有子域名均不支持 HTTPS（kwcdn / img1 / img4 等），
     // 通过自建代理绕过 Mixed Content 拦截
-    if (fixed.includes("kuwo.cn")) {
+    if (fixed.includes("kuwo.cn") && !IS_LOCAL_DEV) {
       fixed = `${SELF_HOSTED_PROXY}${encodeURIComponent(fixed)}`;
     }
   }
@@ -150,7 +150,7 @@ export const findImage = (item: any): string => {
 
 /**
  * 从平台 API 原始响应中提取歌曲原始数组。
- * 主要用于在 executeMethod transform 后，将已丢失的封面字段补回。
+ * 主要用于从平台原始响应中补回封面字段。
  */
 export const extractRawTracks = (data: any): any[] => {
   if (!data) return [];

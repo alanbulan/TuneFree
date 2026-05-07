@@ -7,21 +7,15 @@ import React, {
   useState,
 } from "react";
 import { Song, Playlist, getSongKey } from "../types";
-import { DEFAULT_API_BASE } from "../services/api";
 
 interface LibraryContextType {
   favorites: Song[];
   playlists: Playlist[];
-  apiKey: string;
   corsProxy: string;
-  apiBase: string;
-  setApiKey: (key: string) => void;
   setCorsProxy: (url: string) => void;
-  setApiBase: (url: string) => void;
   toggleFavorite: (song: Song) => void;
   isFavorite: (songId: number | string, source?: string) => boolean;
   createPlaylist: (name: string, initialSongs?: Song[]) => void;
-  importPlaylist: (name: string, songs: Song[]) => void;
   renamePlaylist: (id: string, name: string) => void;
   deletePlaylist: (id: string) => void;
   addToPlaylist: (playlistId: string, song: Song) => void;
@@ -45,14 +39,8 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [favorites, setFavorites] = useState<Song[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [apiKey, setApiKeyInternal] = useState<string>(
-    () => localStorage.getItem("tunefree_api_key") || "",
-  );
   const [corsProxy, setCorsProxyInternal] = useState<string>(
     () => localStorage.getItem("tunefree_cors_proxy") || DEFAULT_PROXY,
-  );
-  const [apiBase, setApiBaseInternal] = useState<string>(
-    () => localStorage.getItem("tunefree_api_base") || DEFAULT_API_BASE,
   );
 
   // Refs 用于 exportData，使其引用始终稳定（不随 favorites/playlists 变化重建）
@@ -90,21 +78,9 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
   // 设置项
   // ==============================
 
-  const setApiKey = useCallback((key: string) => {
-    setApiKeyInternal(key);
-    localStorage.setItem("tunefree_api_key", key);
-  }, []);
-
   const setCorsProxy = useCallback((url: string) => {
     setCorsProxyInternal(url);
     localStorage.setItem("tunefree_cors_proxy", url);
-  }, []);
-
-  const setApiBase = useCallback((url: string) => {
-    // 移除末尾斜杠
-    const cleanUrl = url.endsWith("/") ? url.slice(0, -1) : url;
-    setApiBaseInternal(cleanUrl);
-    localStorage.setItem("tunefree_api_base", cleanUrl);
   }, []);
 
   // ==============================
@@ -150,16 +126,6 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
     },
     [],
   );
-
-  const importPlaylist = useCallback((name: string, songs: Song[]) => {
-    const newPlaylist: Playlist = {
-      id: Date.now().toString(),
-      name: String(name),
-      createTime: Date.now(),
-      songs,
-    };
-    setPlaylists((prev) => [newPlaylist, ...prev]);
-  }, []);
 
   const renamePlaylist = useCallback((id: string, name: string) => {
     setPlaylists((prev) =>
@@ -241,16 +207,11 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
       value={{
         favorites,
         playlists,
-        apiKey,
         corsProxy,
-        apiBase,
-        setApiKey,
         setCorsProxy,
-        setApiBase,
         toggleFavorite,
         isFavorite,
         createPlaylist,
-        importPlaylist,
         renamePlaylist,
         deletePlaylist,
         addToPlaylist,
@@ -268,16 +229,11 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
 const LIBRARY_DEFAULTS: LibraryContextType = {
   favorites: [],
   playlists: [],
-  apiKey: "",
   corsProxy: "",
-  apiBase: DEFAULT_API_BASE,
-  setApiKey: () => {},
   setCorsProxy: () => {},
-  setApiBase: () => {},
   toggleFavorite: () => {},
   isFavorite: () => false,
   createPlaylist: () => {},
-  importPlaylist: () => {},
   renamePlaylist: () => {},
   deletePlaylist: () => {},
   addToPlaylist: () => {},

@@ -20,7 +20,9 @@ const ALLOWED_HOSTS = [
     'kuwo.cn',
     'artistpicserver.kuwo.cn',
     'kbangserver.kuwo.cn',
+    'antiserver.kuwo.cn',
     'kwcdn.kuwo.cn',
+    'sycdn.kuwo.cn',
     'mobi.kuwo.cn',
     'nmobi.kuwo.cn',
     'musicpay.kuwo.cn',
@@ -65,6 +67,8 @@ export const onRequest = async (context: any) => {
         // 透传 Content-Type
         const ct = request.headers.get('Content-Type');
         if (ct) headers.set('Content-Type', ct);
+        const range = request.headers.get('Range');
+        if (range) headers.set('Range', range);
         // 某些 API 需要 User-Agent
         headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36');
         // 某些 API 需要 Referer
@@ -114,7 +118,7 @@ function corsHeaders(request: Request): Record<string, string> {
     return {
         'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range',
         'Access-Control-Max-Age': '86400',
     };
 }

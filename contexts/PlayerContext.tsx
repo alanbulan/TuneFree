@@ -131,6 +131,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Track error retry to prevent loops
   const retryCountRef = useRef(0);
+  const playRequestIdRef = useRef(0);
 
   // Persistence Effects
   useEffect(() => {
@@ -424,18 +425,46 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           audioRef.current.src !== window.location.href
         ) {
           if (!audioRef.current.paused) {
+            playRequestIdRef.current += 1;
             audioRef.current.pause();
             setIsPlaying(false);
+            setIsLoading(false);
             updateMediaSession(currentSongRef.current, "paused");
           } else {
-            audioRef.current.play().catch(() => {});
-            setIsPlaying(true);
-            updateMediaSession(currentSongRef.current, "playing");
+            const resumeRequestId = playRequestIdRef.current;
+            const songAtStart = currentSongRef.current;
+            setIsLoading(true);
+            audioRef.current
+              .play()
+              .then(() => {
+                if (
+                  playRequestIdRef.current !== resumeRequestId ||
+                  !isSameSong(currentSongRef.current, songAtStart)
+                ) {
+                  return;
+                }
+                setIsPlaying(true);
+                setIsLoading(false);
+                updateMediaSession(songAtStart, "playing");
+              })
+              .catch((error) => {
+                if (
+                  playRequestIdRef.current !== resumeRequestId ||
+                  !isSameSong(currentSongRef.current, songAtStart)
+                ) {
+                  return;
+                }
+                console.error("Play resume failed:", error.name, error.message);
+                setIsPlaying(false);
+                setIsLoading(false);
+                updateMediaSession(songAtStart, "paused");
+              });
           }
           return;
         }
       }
 
+      const requestId = ++playRequestIdRef.current;
       setIsLoading(true);
       if (!forceQuality) {
         retryCountRef.current = 0; // Reset retry if user manually clicked a new song
@@ -451,6 +480,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       let fullSong = { ...song };
+      currentSongRef.current = fullSong;
       setCurrentSong(fullSong);
 
       // Queue management
@@ -469,7 +499,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         );
 
         // Race condition check
-        if (!isSameSong(currentSongRef.current, song)) {
+        if (
+          playRequestIdRef.current !== requestId ||
+          !isSameSong(currentSongRef.current, song)
+        ) {
           return;
         }
 
@@ -480,6 +513,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             if (parsed.pic && !fullSong.pic) patch.pic = parsed.pic;
             if (parsed.lrc) patch.lrc = parsed.lrc;
             fullSong = { ...fullSong, ...patch };
+            currentSongRef.current = fullSong;
             setCurrentSong((prev) => {
               if (!isSameSong(prev, song) || !prev) return prev;
               return { ...prev, ...patch };
@@ -499,84 +533,93 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           const resumeTime =
             isCurrentSong && isDifferentQuality ? audioRef.current.currentTime : 0;
 
-          // 酷我 CDN 不支持 CORS，crossOrigin="anonymous" 会导致请求失败
-          // createMediaElementSource 绑定后的 Audio 播放非 CORS 源也会静音
-          // 需要根据源切换 Audio 元素：CORS 源用带 crossOrigin 的 Audio + AudioContext，非 CORS 源用干净 Audio
-          const needsCors =
-            !url.includes("kuwo.cn") && !url.includes("sycdn.kuwo");
+          if (!isIOSRef.current) {
+            // 酷我 CDN 不支持 CORS，crossOrigin="anonymous" 会导致请求失败
+            // createMediaElementSource 绑定后的 Audio 播放非 CORS 源也会静音
+            const needsCors =
+              !url.includes("kuwo.cn") && !url.includes("sycdn.kuwo");
 
-          if (!needsCors) {
-            // 非 CORS 源（酷我）：需要无 crossOrigin 的干净 Audio
-            if (audioCtxConnectedRef.current || audioRef.current.crossOrigin) {
-              console.log(
-                "[Player] 切换到无 CORS Audio（酷我源），可视化使用模拟模式",
-              );
-              createAudioElement(false);
+            if (!needsCors) {
+              if (audioCtxConnectedRef.current || audioRef.current.crossOrigin) {
+                console.log(
+                  "[Player] 切换到无 CORS Audio（酷我源），可视化使用模拟模式",
+                );
+                createAudioElement(false);
+              }
+            } else {
+              if (!audioCtxConnectedRef.current) {
+                createAudioElement(true);
+              }
+              initAudioContext();
             }
-          } else {
-            // CORS 源：确保 AudioContext 已初始化
-            if (!audioCtxConnectedRef.current) {
-              createAudioElement(true);
-            }
-            initAudioContext();
           }
 
-          audioRef.current.src = url;
-          audioRef.current.load();
+          const activeAudio = audioRef.current;
+          activeAudio.src = url;
+          activeAudio.load();
 
           if (resumeTime > 0) {
-            audioRef.current.currentTime = resumeTime;
+            activeAudio.currentTime = resumeTime;
           }
 
           if (
             audioCtxRef.current &&
             audioCtxRef.current.state === "suspended"
           ) {
-            audioCtxRef.current.resume();
+            audioCtxRef.current.resume().catch(() => {});
           }
 
-          // 乐观更新：先设置播放状态，避免切换音质时 UI 闪烁到暂停
-          setIsPlaying(true);
-          setIsLoading(false);
+          setIsPlaying(false);
+          setIsLoading(true);
 
-          const playPromise = audioRef.current.play();
-          if (playPromise !== undefined) {
-            playPromise
-              .then(() => {
-                updateMediaSession(fullSong, "playing");
-              })
-              .catch((error) => {
-                // AbortError: play() 被新的 load() 中断（切换音质场景），忽略
-                if (error.name === "AbortError") {
-                  console.log(
-                    "[Player] play() 被中断（AbortError），等待新请求",
-                  );
-                  return;
-                }
+          try {
+            const playPromise = activeAudio.play();
+            if (playPromise !== undefined) {
+              await playPromise;
+            }
 
-                console.error("Play start failed:", error.name, error.message);
+            if (
+              playRequestIdRef.current !== requestId ||
+              !isSameSong(currentSongRef.current, song)
+            ) {
+              return;
+            }
 
-                // Handle "NotSupportedError" (Format not supported/Source invalid)
-                // Trigger fallback if we haven't already
-                if (
-                  (error.name === "NotSupportedError" ||
-                    error.message.includes("source")) &&
-                  retryCountRef.current === 0 &&
-                  targetQuality !== "128k"
-                ) {
-                  console.warn(
-                    "Play promise rejected with source error, triggering fallback to 128k",
-                  );
-                  retryCountRef.current = 1;
-                  playSongRef.current(song, "128k");
-                  return;
-                }
+            setIsPlaying(true);
+            setIsLoading(false);
+            updateMediaSession(fullSong, "playing");
+          } catch (error: any) {
+            if (
+              playRequestIdRef.current !== requestId ||
+              !isSameSong(currentSongRef.current, song)
+            ) {
+              return;
+            }
 
-                if (error.name === "NotAllowedError") {
-                  setIsPlaying(false);
-                  setIsLoading(false);
-                }
-              });
+            if (error.name === "AbortError") {
+              console.log("[Player] play() 被中断（AbortError），等待新请求");
+              return;
+            }
+
+            console.error("Play start failed:", error.name, error.message);
+
+            if (
+              (error.name === "NotSupportedError" ||
+                error.message?.includes("source")) &&
+              retryCountRef.current === 0 &&
+              targetQuality !== "128k"
+            ) {
+              console.warn(
+                "Play promise rejected with source error, triggering fallback to 128k",
+              );
+              retryCountRef.current = 1;
+              playSongRef.current(fullSong, "128k");
+              return;
+            }
+
+            setIsPlaying(false);
+            setIsLoading(false);
+            updateMediaSession(fullSong, "paused");
           }
         } else {
           // URL is null (Strict check failed in api.ts)
@@ -585,16 +628,25 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           if (targetQuality !== "128k" && retryCountRef.current === 0) {
             console.warn("Retrying with 128k...");
             retryCountRef.current = 1;
-            playSongRef.current(song, "128k");
+            playSongRef.current(fullSong, "128k");
             return;
           }
 
+          audioRef.current.pause();
+          audioRef.current.removeAttribute("src");
+          audioRef.current.load();
+          setCurrentTime(0);
+          setDuration(0);
           setIsLoading(false);
           setIsPlaying(false);
-          // alert('无法播放此歌曲'); // Optional: show toast
+          updateMediaSession(fullSong, "paused");
         }
       } catch (err) {
-        setIsLoading(false);
+        if (playRequestIdRef.current === requestId) {
+          setIsLoading(false);
+          setIsPlaying(false);
+          updateMediaSession(fullSong, "paused");
+        }
         console.error("Error in playSong", err);
       }
     },
@@ -616,20 +668,45 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     if (audioCtxRef.current && audioCtxRef.current.state === "suspended") {
-      audioCtxRef.current.resume();
+      audioCtxRef.current.resume().catch(() => {});
     }
 
     // 使用 audioRef.current.paused 代替 isPlaying state，避免 stale closure
     if (!audioRef.current.paused) {
+      playRequestIdRef.current += 1;
       audioRef.current.pause();
       setIsPlaying(false);
+      setIsLoading(false);
       updateMediaSession(currentSongRef.current, "paused");
     } else {
+      const requestId = playRequestIdRef.current;
+      const songAtStart = currentSongRef.current;
+      setIsLoading(true);
       audioRef.current
         .play()
-        .catch((e) => console.error("Toggle play error", e));
-      setIsPlaying(true);
-      updateMediaSession(currentSongRef.current, "playing");
+        .then(() => {
+          if (
+            playRequestIdRef.current !== requestId ||
+            !isSameSong(currentSongRef.current, songAtStart)
+          ) {
+            return;
+          }
+          setIsPlaying(true);
+          setIsLoading(false);
+          updateMediaSession(songAtStart, "playing");
+        })
+        .catch((e) => {
+          if (
+            playRequestIdRef.current !== requestId ||
+            !isSameSong(currentSongRef.current, songAtStart)
+          ) {
+            return;
+          }
+          console.error("Toggle play error", e);
+          setIsPlaying(false);
+          setIsLoading(false);
+          updateMediaSession(songAtStart, "paused");
+        });
     }
   }, [updateMediaSession]);
 
@@ -649,11 +726,35 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     if (q.length === 0) return;
 
     if (!force && mode === "loop") {
-      if (audioRef.current) {
+      if (audioRef.current && c) {
+        const requestId = playRequestIdRef.current;
         audioRef.current.currentTime = 0;
+        setIsLoading(true);
         audioRef.current
           .play()
-          .catch((e) => console.warn("单曲循环重播失败:", e));
+          .then(() => {
+            if (
+              playRequestIdRef.current !== requestId ||
+              !isSameSong(currentSongRef.current, c)
+            ) {
+              return;
+            }
+            setIsPlaying(true);
+            setIsLoading(false);
+            updateMediaSession(c, "playing");
+          })
+          .catch((e) => {
+            if (
+              playRequestIdRef.current !== requestId ||
+              !isSameSong(currentSongRef.current, c)
+            ) {
+              return;
+            }
+            console.warn("单曲循环重播失败:", e);
+            setIsPlaying(false);
+            setIsLoading(false);
+            updateMediaSession(c, "paused");
+          });
       }
       return;
     }
@@ -662,7 +763,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     if (nextIndex < 0) return;
 
     playSongRef.current(q[nextIndex]);
-  }, []);
+  }, [updateMediaSession]);
 
   const playPrev = useCallback(() => {
     const q = queueRef.current;

@@ -2,11 +2,7 @@ import React, { useState, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { usePlayerActions } from "../contexts/PlayerContext";
 import { useLibrary } from "../contexts/LibraryContext";
-import {
-  getPlaylistDetail,
-  DEFAULT_API_BASE,
-  getImgReferrerPolicy,
-} from "../services/api";
+import { getImgReferrerPolicy } from "../services/api";
 import { Song } from "../types";
 import {
   HeartFillIcon,
@@ -14,10 +10,8 @@ import {
   PlusIcon,
   TrashIcon,
   SettingsIcon,
-  DownloadIcon,
   UploadIcon,
   MusicIcon,
-  KeyIcon,
   InfoIcon,
   ExternalLinkIcon,
   GithubIcon,
@@ -25,7 +19,6 @@ import {
 import {
   GD_STUDIO_ATTRIBUTION,
   GD_STUDIO_RATE_LIMIT_HINT,
-  getMusicSourceLabel,
 } from "../utils/musicSource";
 
 type Tab = "favorites" | "playlists" | "manage" | "about";
@@ -56,14 +49,9 @@ const Library: React.FC = () => {
   const {
     favorites,
     playlists,
-    apiKey,
     corsProxy,
-    apiBase,
-    setApiKey,
     setCorsProxy,
-    setApiBase,
     createPlaylist,
-    importPlaylist,
     deletePlaylist,
     addToPlaylist,
     removeFromPlaylist,
@@ -76,17 +64,11 @@ const Library: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>("favorites");
   const [newPlaylistName, setNewPlaylistName] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [importId, setImportId] = useState("");
-  const [importSource, setImportSource] = useState("netease");
-  const [isImporting, setIsImporting] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
 
-  const [tempApiKey, setTempApiKey] = useState(apiKey);
   const [tempProxy, setTempProxy] = useState(corsProxy);
-  const [tempApiBase, setTempApiBase] = useState(apiBase);
 
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(
     null,
@@ -98,9 +80,7 @@ const Library: React.FC = () => {
   );
 
   const handleSaveSettings = () => {
-    setApiKey(tempApiKey);
     setCorsProxy(tempProxy);
-    setApiBase(tempApiBase);
     showToast("设置已保存");
   };
 
@@ -117,20 +97,6 @@ const Library: React.FC = () => {
       renamePlaylist(selectedPlaylist.id, renameValue);
       setShowRenameModal(false);
     }
-  };
-
-  const handleImportOnlinePlaylist = async () => {
-    if (!importId) return;
-    setIsImporting(true);
-    const result = await getPlaylistDetail(importId, importSource);
-    if (result) {
-      importPlaylist(result.name, result.songs);
-      showToast(`成功导入歌单「${result.name}」`);
-    } else {
-      showToast("导入失败，请检查 Key、ID 或音源");
-    }
-    setIsImporting(false);
-    setShowImportModal(false);
   };
 
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -254,13 +220,6 @@ const Library: React.FC = () => {
               <PlusIcon size={32} className="mb-2" />
               <span className="text-sm font-medium">新建歌单</span>
             </div>
-            <div
-              onClick={() => setShowImportModal(true)}
-              className="aspect-square bg-white rounded-2xl flex flex-col items-center justify-center border-2 border-dashed border-ios-red/30 text-ios-red active:bg-ios-red/5 cursor-pointer"
-            >
-              <DownloadIcon size={32} className="mb-2" />
-              <span className="text-sm font-medium">导入在线歌单</span>
-            </div>
             {playlists.map((p) => (
               <div
                 key={p.id}
@@ -343,39 +302,10 @@ const Library: React.FC = () => {
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-ios-red/10">
               <div className="flex items-center space-x-3 mb-4 text-ios-red">
                 <SettingsIcon size={20} />
-                <h3 className="font-bold text-lg">核心设置</h3>
+                <h3 className="font-bold text-lg">网络设置</h3>
               </div>
 
               <div className="space-y-4">
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">
-                    TuneHub API Key
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="th_xxxxxxxxxxxx"
-                    className="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ios-red/20"
-                    value={tempApiKey}
-                    onChange={(e) => setTempApiKey(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">
-                    API Base URL
-                  </label>
-                  <input
-                    type="text"
-                    placeholder={DEFAULT_API_BASE}
-                    className="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ios-red/20"
-                    value={tempApiBase}
-                    onChange={(e) => setTempApiBase(e.target.value)}
-                  />
-                  <p className="text-[10px] text-gray-400 mt-1 leading-tight">
-                    默认为 {DEFAULT_API_BASE}，如遇接口故障可尝试更换。
-                  </p>
-                </div>
-
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">
                     CORS 代理 (可选)
@@ -389,7 +319,7 @@ const Library: React.FC = () => {
                   />
                   <p className="text-[10px] text-gray-400 mt-1 leading-tight">
                     留空将自动使用内置 CF
-                    代理（最稳定）。仅在内置代理失效时填入自定义地址，如
+                    代理。仅在内置代理失效时填入自定义地址，如
                     https://corsproxy.io/?
                   </p>
                 </div>
@@ -507,7 +437,7 @@ const Library: React.FC = () => {
               <h3 className="font-bold text-lg mb-3 text-ios-text">技术栈</h3>
               <div className="flex flex-wrap gap-2">
                 {[
-                  "React 19",
+                  "React 18",
                   "TypeScript",
                   "Tailwind CSS",
                   "Vite",
@@ -529,24 +459,14 @@ const Library: React.FC = () => {
             <div className="bg-white p-5 rounded-2xl shadow-sm">
               <h3 className="font-bold text-lg mb-3 text-ios-text">后端 API</h3>
               <p className="text-sm text-gray-500 leading-relaxed">
-                音乐数据服务由{" "}
-                <span className="font-medium text-ios-text">TuneHub API</span>
-                与 <span className="font-medium text-ios-text">{GD_STUDIO_ATTRIBUTION}</span>{" "}
-                共同提供。
+                网易云、QQ音乐、酷我音乐使用直连接口；JOOX 扩展音源由{" "}
+                <span className="font-medium text-ios-text">{GD_STUDIO_ATTRIBUTION}</span>{" "}
+                提供。
               </p>
               <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-                TuneHub 负责原有解析链路；JOOX 扩展音源走 GD Studio 公开接口，建议控制频率：{GD_STUDIO_RATE_LIMIT_HINT}。
+                GD 音乐台为公开接口，建议控制请求频率：{GD_STUDIO_RATE_LIMIT_HINT}。
               </p>
               <div className="mt-2 flex flex-wrap gap-3">
-                <a
-                  href="https://linux.do/t/topic/1326425"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs text-ios-red font-medium"
-                >
-                  <ExternalLinkIcon size={12} />
-                  TuneHub 原帖
-                </a>
                 <a
                   href="https://music.gdstudio.xyz/"
                   target="_blank"
@@ -642,68 +562,6 @@ const Library: React.FC = () => {
                 className="flex-1 py-3 bg-ios-red text-white rounded-xl font-bold text-sm"
               >
                 创建
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ====== 导入在线歌单弹窗 ====== */}
-      {showImportModal && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4"
-          onClick={() => !isImporting && setShowImportModal(false)}
-        >
-          <div
-            className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl animate-fade-in"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-bold mb-4">导入在线歌单</h3>
-            <div className="mb-3">
-              <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">
-                音源
-              </label>
-              <div className="flex space-x-2">
-                {["netease", "qq", "kuwo"].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setImportSource(s)}
-                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${importSource === s ? "bg-ios-red text-white" : "bg-gray-100 text-gray-500"}`}
-                  >
-                    {getMusicSourceLabel(s)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="mb-4">
-              <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">
-                歌单 ID
-              </label>
-              <input
-                type="text"
-                placeholder="输入歌单 ID"
-                className="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ios-red/20"
-                value={importId}
-                onChange={(e) => setImportId(e.target.value)}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && handleImportOnlinePlaylist()
-                }
-              />
-            </div>
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowImportModal(false)}
-                disabled={isImporting}
-                className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-medium text-sm disabled:opacity-50"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleImportOnlinePlaylist}
-                disabled={isImporting}
-                className="flex-1 py-3 bg-ios-red text-white rounded-xl font-bold text-sm disabled:opacity-50"
-              >
-                {isImporting ? "导入中..." : "导入"}
               </button>
             </div>
           </div>
