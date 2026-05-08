@@ -36,7 +36,11 @@ export const getPrevQueueIndex = (
 
   const currentIndex = findCurrentSongIndex(queue, currentSong);
   if (playMode === "shuffle") {
-    return Math.floor(Math.random() * queue.length);
+    let prevIndex = 0;
+    do {
+      prevIndex = Math.floor(Math.random() * queue.length);
+    } while (queue.length > 1 && prevIndex === currentIndex);
+    return prevIndex;
   }
 
   return (currentIndex - 1 + queue.length) % queue.length;

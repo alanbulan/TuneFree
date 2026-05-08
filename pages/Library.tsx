@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useCallback } from "react";
-import { createPortal } from "react-dom";
+import React, { useState, useMemo } from "react";
 import { usePlayerActions } from "../contexts/PlayerContext";
-import { useLibrary } from "../contexts/LibraryContext";
+import { useLibrary, type LibraryImportMode, type LibraryImportPreview } from "../contexts/LibraryContext";
+import { useToast } from "../components/ToastHost";
 import { getImgReferrerPolicy } from "../services/api";
 import { Song } from "../types";
 import {
@@ -23,27 +23,6 @@ import {
 
 type Tab = "favorites" | "playlists" | "manage" | "about";
 
-// ====== 轻量级 Toast 提示（替代 alert 阻塞） ======
-const useToast = () => {
-  const [toast, setToast] = useState<string | null>(null);
-  const show = useCallback((msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2200);
-  }, []);
-  const ToastUI = useMemo(() => {
-    if (!toast) return null;
-    return createPortal(
-      <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[999] pointer-events-none">
-        <div className="bg-black/80 text-white text-sm px-5 py-2.5 rounded-xl shadow-lg whitespace-nowrap animate-[fadeInToast_0.3s_ease-out]">
-          {toast}
-        </div>
-      </div>,
-      document.body,
-    );
-  }, [toast]);
-  return { show, ToastUI };
-};
-
 const Library: React.FC = () => {
   const { playSong } = usePlayerActions();
   const {
@@ -57,9 +36,11 @@ const Library: React.FC = () => {
     removeFromPlaylist,
     renamePlaylist,
     exportData,
-    importData,
+    parseImportData,
+    applyImportData,
+    restoreData,
   } = useLibrary();
-  const { show: showToast, ToastUI } = useToast();
+  const { showToast } = useToast();
 
   const [activeTab, setActiveTab] = useState<Tab>("favorites");
   const [newPlaylistName, setNewPlaylistName] = useState("");
@@ -67,6 +48,7 @@ const Library: React.FC = () => {
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [isEditMode, setIsEditMode] = useState(false);
+  const [pendingImport, setPendingImport] = useState<LibraryImportPreview | null>(null);
 
   const [tempProxy, setTempProxy] = useState(corsProxy);
 
@@ -81,7 +63,7 @@ const Library: React.FC = () => {
 
   const handleSaveSettings = () => {
     setCorsProxy(tempProxy);
-    showToast("设置已保存");
+    showToast("设置已保存", "success");
   };
 
   const handleCreatePlaylist = () => {
@@ -99,18 +81,50 @@ const Library: React.FC = () => {
     }
   };
 
+  const handleExport = () => {
+    const result = exportData();
+    showToast(result.ok ? "已导出 JSON" : result.error, result.ok ? "success" : "error");
+  };
+
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          const success = importData(event.target.result as string);
-          showToast(success ? "数据导入成功" : "数据导入失败");
-        }
-      };
-      reader.readAsText(file);
+    const input = e.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = typeof event.target?.result === "string" ? event.target.result : "";
+      const result = parseImportData(text);
+      if (!result.ok) {
+        showToast(result.error, "error");
+      } else {
+        setPendingImport(result.data);
+        showToast("已读取导入文件，请确认", "info");
+      }
+      input.value = "";
+    };
+    reader.onerror = () => {
+      showToast("读取文件失败", "error");
+      input.value = "";
+    };
+    reader.readAsText(file);
+  };
+
+  const applyPendingImport = (mode: LibraryImportMode) => {
+    if (!pendingImport) return;
+    if (mode === "replace" && !window.confirm("覆盖导入会替换当前收藏和歌单，确定继续吗？")) return;
+
+    const result = applyImportData(pendingImport, mode);
+    if (!result.ok) {
+      showToast(result.error, "error");
+      return;
     }
+
+    setPendingImport(null);
+    showToast(mode === "merge" ? "已合并导入" : "已覆盖导入", "success", {
+      label: "撤销",
+      onClick: () => restoreData(result.backup),
+    });
   };
 
   const renderSongList = (
@@ -172,7 +186,6 @@ const Library: React.FC = () => {
 
   return (
     <>
-      {ToastUI}
       <div className="p-5 pt-safe min-h-screen bg-ios-bg">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold text-ios-text">我的资料库</h1>
@@ -340,7 +353,7 @@ const Library: React.FC = () => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <button
-                  onClick={exportData}
+                  onClick={handleExport}
                   className="py-3 bg-gray-100 text-ios-text rounded-xl font-medium text-xs"
                 >
                   导出 JSON
@@ -358,6 +371,38 @@ const Library: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {pendingImport && (
+              <div className="bg-white p-5 rounded-2xl shadow-sm border border-ios-red/10">
+                <h3 className="font-bold text-lg text-ios-text mb-2">确认导入数据</h3>
+                <p className="text-xs text-gray-500 leading-relaxed mb-4">
+                  文件包含 {pendingImport.favoriteCount} 首收藏、{pendingImport.playlistCount} 个歌单、{pendingImport.playlistSongCount} 首歌单歌曲。当前资料库有 {favorites.length} 首收藏、{playlists.length} 个歌单。
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => applyPendingImport("replace")}
+                    className="py-3 bg-ios-red text-white rounded-xl font-bold text-xs"
+                  >
+                    覆盖导入
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPendingImport("merge")}
+                    className="py-3 bg-gray-900 text-white rounded-xl font-bold text-xs"
+                  >
+                    合并导入
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPendingImport(null)}
+                    className="py-3 bg-gray-100 text-gray-600 rounded-xl font-bold text-xs"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

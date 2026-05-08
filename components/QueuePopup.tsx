@@ -7,6 +7,7 @@ import {
 import { getImgReferrerPolicy } from '../services/api';
 import { Song, getSongKey, isSameSong } from '../types';
 import { TrashIcon, MusicIcon } from './Icons';
+import { useToast } from './ToastHost';
 
 interface QueuePopupProps {
   isOpen: boolean;
@@ -60,8 +61,9 @@ const QueueItem = memo<{
 const QueuePopupContent: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { queue, playMode } = usePlayerQueueState();
   const { currentSong } = usePlayerNowPlaying();
-  const { playSong, removeFromQueue, clearQueue, togglePlayMode } =
+  const { playSong, removeFromQueue, clearQueue, restoreQueue, togglePlayMode } =
     usePlayerActions();
+  const { showToast } = useToast();
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -79,6 +81,15 @@ const QueuePopupContent: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       }
     }
   }, [currentSong]);
+
+  const handleClearQueue = () => {
+    const previousQueue = queue;
+    clearQueue();
+    showToast('已清空待播队列', 'success', {
+      label: '撤销',
+      onClick: () => restoreQueue(previousQueue),
+    });
+  };
 
   return (
     <>
@@ -102,8 +113,12 @@ const QueuePopupContent: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </div>
           </div>
           <button
-            onClick={clearQueue}
+            type="button"
+            onClick={handleClearQueue}
             className="p-2 text-gray-400 hover:text-ios-red transition"
+            aria-label="清空待播队列"
+            title="清空待播队列"
+            disabled={queue.length === 0}
           >
             <TrashIcon size={18} />
           </button>
@@ -129,15 +144,6 @@ const QueuePopupContent: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           )}
         </div>
       </div>
-      <style>{`
-        @keyframes slide-up {
-            from { transform: translateY(100%); }
-            to { transform: translateY(0); }
-        }
-        .animate-slide-up {
-            animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-      `}</style>
     </>
   );
 };

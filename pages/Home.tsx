@@ -76,12 +76,15 @@ const Home: React.FC = () => {
   const [songsLoading, setSongsLoading] = useState(true);    // 仅歌曲列表加载中
   const [error, setError] = useState(false);
   const [activeSource, setActiveSource] = useState('netease');
+  const [selectedTopListId, setSelectedTopListId] = useState<string | number | null>(null);
+  const [selectedTopListName, setSelectedTopListName] = useState('');
   const { playSong } = usePlayerActions();
-  // 防止竞态：切换音源时旧请求覆盖新请求
   const fetchIdRef = useRef(0);
+  const detailFetchIdRef = useRef(0);
 
   const fetchLists = useCallback(async (source: string) => {
     const thisId = ++fetchIdRef.current;
+    detailFetchIdRef.current += 1;
     setError(false);
 
     // 检查缓存
@@ -89,6 +92,8 @@ const Home: React.FC = () => {
     const cached = _topListCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
         setTopLists(cached.lists);
+        setSelectedTopListId(cached.lists[0]?.id ?? null);
+        setSelectedTopListName(String(cached.lists[0]?.name || ''));
         setListsLoading(false);
         // 榜单详情也检查缓存
         const detailKey = `${source}:${cached.lists[0]?.id}`;
@@ -108,6 +113,8 @@ const Home: React.FC = () => {
         if (thisId !== fetchIdRef.current) return; // 竞态检查
         if (lists && lists.length > 0) {
             setTopLists(lists);
+            setSelectedTopListId(lists[0].id);
+            setSelectedTopListName(String(lists[0].name || ''));
             setListsLoading(false);
             _topListCache.set(cacheKey, { lists, ts: Date.now() });
             try {
@@ -122,12 +129,16 @@ const Home: React.FC = () => {
         } else {
             setTopLists([]);
             setFeaturedSongs([]);
+            setSelectedTopListId(null);
+            setSelectedTopListName('');
             setError(true);
         }
     } catch (e) {
         if (thisId === fetchIdRef.current) {
             setTopLists([]);
             setFeaturedSongs([]);
+            setSelectedTopListId(null);
+            setSelectedTopListName('');
             setError(true);
         }
     } finally {
@@ -152,24 +163,31 @@ const Home: React.FC = () => {
   };
 
   const handleTopListClick = useCallback(async (list: TopList) => {
-      // 检查缓存
+      setSelectedTopListId(list.id);
+      setSelectedTopListName(String(list.name || ''));
+      const requestId = ++detailFetchIdRef.current;
       const detailKey = `${activeSource}:${list.id}`;
       const cached = _detailCache.get(detailKey);
       if (cached && Date.now() - cached.ts < CACHE_TTL) {
           setFeaturedSongs(cached.songs);
+          setSongsLoading(false);
           return;
       }
 
       setSongsLoading(true);
       try {
         const songs = await getTopListDetail(list.id, activeSource);
+        if (requestId !== detailFetchIdRef.current) return;
         const sliced = songs.slice(0, 20);
         setFeaturedSongs(sliced);
         _detailCache.set(detailKey, { songs: sliced, ts: Date.now() });
       } catch (e) {
+        if (requestId === detailFetchIdRef.current) {
+          setFeaturedSongs([]);
+        }
         console.error("Failed to load list details", e);
       } finally {
-        setSongsLoading(false);
+        if (requestId === detailFetchIdRef.current) setSongsLoading(false);
       }
   }, [activeSource]);
 
@@ -215,11 +233,13 @@ const Home: React.FC = () => {
               <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
                   {topLists.map((list) => {
                       const cover = list.coverImgUrl || list.picUrl;
+                      const active = String(selectedTopListId ?? '') === String(list.id);
                       return (
                           <button
                             key={list.id}
                             onClick={() => handleTopListClick(list)}
-                            className="flex-shrink-0 bg-white p-2 rounded-2xl shadow-sm border border-gray-100 min-w-[120px] max-w-[140px] text-left active:scale-95 transition"
+                            aria-pressed={active}
+                            className={`flex-shrink-0 bg-white p-2 rounded-2xl shadow-sm border min-w-[120px] max-w-[140px] text-left active:scale-95 transition ${active ? 'border-ios-red ring-2 ring-ios-red/10' : 'border-gray-100'}`}
                           >
                               <div className="w-full aspect-square mb-2 rounded-xl overflow-hidden bg-gray-100 relative">
                                     {cover ? (
@@ -242,11 +262,11 @@ const Home: React.FC = () => {
 
       <section>
         <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-ios-text tracking-tight">榜单热歌</h2>
+            <h2 className="text-xl font-bold text-ios-text tracking-tight">{selectedTopListName ? `${selectedTopListName} · 热歌` : '榜单热歌'}</h2>
             <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-1 rounded-full">{getMusicSourceLabel(activeSource)}</span>
         </div>
 
-        {songsLoading && featuredSongs.length === 0 ? (
+        {songsLoading ? (
              <div className="space-y-3 pb-24">
                 {[0,1,2,3,4].map(i => <SongSkeleton key={i} />)}
              </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback } from "react";
+import React, { useState, useEffect, memo, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   searchAggregate,
@@ -12,6 +12,7 @@ import {
   usePlayerNowPlaying,
 } from "../contexts/PlayerContext";
 import { SearchIcon, MusicIcon, TrashIcon } from "../components/Icons";
+import { useToast } from "../components/ToastHost";
 import {
   EXTENDED_AGGREGATE_SOURCES,
   GD_STUDIO_ATTRIBUTION,
@@ -108,6 +109,7 @@ const Search: React.FC = () => {
   const initialQuery = searchParams.get("q") || "";
 
   const [query, setQuery] = useState(initialQuery);
+  const [searchTerm, setSearchTerm] = useState(initialQuery.trim());
   const [results, setResults] = useState<Song[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchMode, setSearchMode] = useState<"aggregate" | "single">(
@@ -124,6 +126,9 @@ const Search: React.FC = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [searchError, setSearchError] = useState("");
+  const debounceRef = useRef<number | null>(null);
+  const searchRequestIdRef = useRef(0);
+  const { showToast } = useToast();
 
   const [history, setHistory] = useState<string[]>(() => {
     try {
@@ -138,10 +143,28 @@ const Search: React.FC = () => {
     const q = searchParams.get("q");
     if (q !== null && q !== query) {
       setQuery(q);
+      setSearchTerm(q.trim());
     }
   }, [searchParams]);
 
-  const debouncedQuery = useDebounce(query, 800);
+  useEffect(() => {
+    if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+    const term = query.trim();
+    if (!term) {
+      setSearchTerm("");
+      return;
+    }
+    debounceRef.current = window.setTimeout(() => {
+      setSearchTerm(term);
+      debounceRef.current = null;
+    }, 800);
+    return () => {
+      if (debounceRef.current !== null) {
+        window.clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+    };
+  }, [query]);
   const { playSong } = usePlayerActions();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
 
@@ -165,39 +188,43 @@ const Search: React.FC = () => {
   }, []);
 
   const clearHistory = useCallback(() => {
-    if (confirm("确定要清空搜索历史吗？")) {
-      setHistory([]);
-    }
-  }, []);
+    const previous = history;
+    setHistory([]);
+    showToast("已清空搜索历史", "success", {
+      label: "撤销",
+      onClick: () => setHistory(previous),
+    });
+  }, [history, showToast]);
 
   useEffect(() => {
     setResults([]);
     setPage(1);
     setHasMore(true);
     setSearchError("");
-  }, [debouncedQuery, searchMode, selectedSource, includeExtendedSources]);
+  }, [searchTerm, searchMode, selectedSource, includeExtendedSources]);
 
   useEffect(() => {
-    if (!debouncedQuery) return;
+    if (!searchTerm) return;
 
     const controller = new AbortController();
     const { signal } = controller;
 
     setIsSearching(true);
     setSearchError("");
+    const requestId = ++searchRequestIdRef.current;
 
     const run = async () => {
       try {
         let data: Song[] = [];
         if (searchMode === "aggregate") {
-          data = await searchAggregate(debouncedQuery, page, {
+          data = await searchAggregate(searchTerm, page, {
             includeExtendedSources,
           });
         } else {
-          data = await searchSongs(debouncedQuery, selectedSource, page);
+          data = await searchSongs(searchTerm, selectedSource, page);
         }
 
-        if (signal.aborted) return;
+        if (signal.aborted || requestId !== searchRequestIdRef.current) return;
 
         if (!data || data.length === 0) {
           setHasMore(false);
@@ -205,7 +232,7 @@ const Search: React.FC = () => {
           setResults((prev) => (page === 1 ? data : [...prev, ...data]));
         }
       } catch (e) {
-        if (signal.aborted) return;
+        if (signal.aborted || requestId !== searchRequestIdRef.current) return;
         console.error(e);
         if (page === 1) setResults([]);
         setHasMore(false);
@@ -215,14 +242,14 @@ const Search: React.FC = () => {
             : "搜索失败，请稍后重试。",
         );
       } finally {
-        if (!signal.aborted) setIsSearching(false);
+        if (!signal.aborted && requestId === searchRequestIdRef.current) setIsSearching(false);
       }
     };
 
     run();
     return () => controller.abort();
   }, [
-    debouncedQuery,
+    searchTerm,
     searchMode,
     selectedSource,
     page,
@@ -237,22 +264,35 @@ const Search: React.FC = () => {
 
   const handlePlaySong = useCallback(
     (song: Song) => {
-      addToHistory(query);
+      addToHistory(searchTerm || query.trim());
       playSong(song);
     },
-    [query, playSong, addToHistory],
+    [query, searchTerm, playSong, addToHistory],
   );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter") {
         e.preventDefault();
-        addToHistory(query);
-        setSearchParams({ q: query });
+        const term = query.trim();
+        if (!term) {
+          showToast("请输入关键词后再搜索", "warning");
+          return;
+        }
+        if (debounceRef.current !== null) {
+          window.clearTimeout(debounceRef.current);
+          debounceRef.current = null;
+        }
+        setSearchTerm(term);
+        setPage(1);
+        setHasMore(true);
+        setSearchError("");
+        addToHistory(term);
+        setSearchParams({ q: term });
         (e.target as HTMLInputElement).blur();
       }
     },
-    [query, addToHistory, setSearchParams],
+    [query, addToHistory, setSearchParams, showToast],
   );
 
   const handleQueryChange = useCallback(
@@ -404,11 +444,7 @@ const Search: React.FC = () => {
 
         {isSearching && results.length === 0 && <SearchSkeleton />}
 
-        {isSearching && results.length > 0 && (
-          <div className="flex justify-center py-4">
-            <div className="w-6 h-6 border-2 border-ios-red border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        )}
+        {isSearching && results.length > 0 && <SearchSkeleton />}
 
         {!isSearching && results.length > 0 && hasMore && (
           <button

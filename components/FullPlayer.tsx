@@ -29,6 +29,7 @@ import AudioVisualizer from "./AudioVisualizer";
 import QueuePopup from "./QueuePopup";
 import DownloadPopup from "./DownloadPopup";
 import PlayerMorePopup from "./PlayerMorePopup";
+import { useToast } from "./ToastHost";
 import { motion, PanInfo } from "framer-motion";
 
 interface FullPlayerProps {
@@ -49,12 +50,13 @@ const FullPlayer: React.FC<FullPlayerProps> = ({
   onClose,
   layoutId,
 }) => {
-  const { currentSong, isPlaying } = usePlayerNowPlaying();
+  const { currentSong, isPlaying, isLoading } = usePlayerNowPlaying();
   const { currentTime, duration } = usePlayerProgress();
   const { queue, playMode } = usePlayerQueueState();
   const { togglePlay, playNext, playPrev, seek, togglePlayMode } =
     usePlayerActions();
   const { isFavorite, toggleFavorite } = useLibrary();
+  const { showToast } = useToast();
   const [showLyrics, setShowLyrics] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [showDownload, setShowDownload] = useState(false);
@@ -275,7 +277,13 @@ const FullPlayer: React.FC<FullPlayerProps> = ({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (hasSong) toggleFavorite(currentSong);
+                  if (!hasSong) return;
+                  const wasFavorite = isFavorite(currentSong.id, currentSong.source);
+                  toggleFavorite(currentSong);
+                  showToast(wasFavorite ? "已取消收藏" : "已收藏歌曲", "success", {
+                    label: "撤销",
+                    onClick: () => toggleFavorite(currentSong),
+                  });
                 }}
                 className={`p-3 -m-1 rounded-full active:scale-90 transition-transform ${!hasSong ? "opacity-50" : ""}`}
                 disabled={!hasSong}
@@ -335,10 +343,13 @@ const FullPlayer: React.FC<FullPlayerProps> = ({
               </button>
               <button
                 onClick={togglePlay}
-                disabled={!hasSong}
+                disabled={!hasSong || isLoading}
+                aria-label={isLoading ? "加载中" : isPlaying ? "暂停" : "播放"}
                 className="w-20 h-20 bg-black text-white rounded-full flex items-center justify-center shadow-2xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
               >
-                {isPlaying ? (
+                {isLoading ? (
+                  <div className="w-8 h-8 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                ) : isPlaying ? (
                   <PauseIcon size={32} className="fill-current" />
                 ) : (
                   <PlayIcon size={32} className="fill-current ml-1" />

@@ -29,6 +29,12 @@ import { getNextQueueIndex, getPrevQueueIndex } from "./playerQueue";
 
 type ParsedSongData = NonNullable<Awaited<ReturnType<typeof parseSongFull>>>;
 
+export interface PlayerNotice {
+  id: number;
+  tone: "info" | "success" | "warning" | "error";
+  message: string;
+}
+
 const getFiniteAudioDuration = (audio: HTMLAudioElement): number =>
   Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
 
@@ -45,13 +51,17 @@ interface PlayerContextType {
   queue: Song[];
   analyser: AnalyserNode | null;
   audioQuality: AudioQuality;
+  playerNotice: PlayerNotice | null;
   playSong: (song: Song, forceQuality?: AudioQuality) => Promise<void>;
   togglePlay: () => void;
+  pausePlayback: () => void;
+  resumePlayback: () => Promise<void>;
   seek: (time: number) => void;
   playNext: (force?: boolean) => void;
   playPrev: () => void;
   addToQueue: (song: Song) => void;
   removeFromQueue: (songId: string | number, source?: string) => void;
+  restoreQueue: (songs: Song[]) => void;
   togglePlayMode: () => void;
   clearQueue: () => void;
   setAudioQuality: (quality: AudioQuality) => void;
@@ -62,11 +72,14 @@ type PlayerActionsType = Pick<
   PlayerContextType,
   | "playSong"
   | "togglePlay"
+  | "pausePlayback"
+  | "resumePlayback"
   | "seek"
   | "playNext"
   | "playPrev"
   | "addToQueue"
   | "removeFromQueue"
+  | "restoreQueue"
   | "togglePlayMode"
   | "clearQueue"
   | "setAudioQuality"
@@ -89,6 +102,8 @@ type PlayerProgressType = Pick<PlayerContextType, "currentTime" | "duration">;
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 const PlayerActionsContext =
   createContext<PlayerActionsType | undefined>(undefined);
+const PlayerNoticeContext =
+  createContext<PlayerNotice | null | undefined>(undefined);
 const PlayerNowPlayingContext =
   createContext<PlayerNowPlayingType | undefined>(undefined);
 const PlayerQueueStateContext =
@@ -117,6 +132,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [audioQuality, setAudioQualityState] = useState<AudioQuality>(() =>
     loadStoredAudioQuality(),
   );
+  const [playerNotice, setPlayerNotice] = useState<PlayerNotice | null>(null);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
 
@@ -145,6 +161,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     key: string;
     audio: HTMLAudioElement;
   } | null>(null);
+
+  const showPlayerNotice = useCallback((message: string, tone: PlayerNotice["tone"] = "info") => {
+    setPlayerNotice({ id: Date.now(), message, tone });
+  }, []);
 
   // Persistence Effects
   useEffect(() => {
@@ -299,11 +319,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           console.warn(
             `Triggering fallback to 128k for ${currentSongRef.current.name}`,
           );
+          showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
           retryCountRef.current = 1;
           playSongRef.current(currentSongRef.current, "128k");
           return;
         }
         console.error("Critical playback failure.", audio.error);
+        showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
         setIsLoading(false);
         setIsPlaying(false);
         retryCountRef.current = 0;
@@ -326,7 +348,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     handlersRef.current = handlers;
     audioRef.current = audio;
     return audio;
-  }, []);
+  }, [showPlayerNotice]);
 
   // --- Audio Element 初始化（不预设 crossOrigin，由 playSong 根据源动态决定） ---
   useEffect(() => {
@@ -568,6 +590,49 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [getParsedSongCacheKey, preloadAudioUrl, resolveParsedSong],
   );
 
+  const pausePlayback = useCallback(() => {
+    const song = currentSongRef.current;
+    if (!audioRef.current || !song) return;
+
+    playRequestIdRef.current += 1;
+    audioRef.current.pause();
+    setIsPlaying(false);
+    setIsLoading(false);
+    updateMediaSession(song, "paused");
+  }, [updateMediaSession]);
+
+  const resumePlayback = useCallback(async () => {
+    const song = currentSongRef.current;
+    if (!audioRef.current || !song) return;
+
+    if (!audioRef.current.src || audioRef.current.src === window.location.href) {
+      await playSongRef.current(song);
+      return;
+    }
+
+    if (audioCtxRef.current && audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+
+    const requestId = ++playRequestIdRef.current;
+    setIsLoading(true);
+
+    try {
+      await audioRef.current.play();
+      if (playRequestIdRef.current !== requestId || !isSameSong(currentSongRef.current, song)) return;
+      setIsPlaying(true);
+      setIsLoading(false);
+      updateMediaSession(song, "playing");
+    } catch (error: any) {
+      if (playRequestIdRef.current !== requestId || !isSameSong(currentSongRef.current, song)) return;
+      console.error("Resume playback failed:", error.name, error.message);
+      setIsPlaying(false);
+      setIsLoading(false);
+      updateMediaSession(song, "paused");
+      showPlayerNotice("播放被浏览器阻止，请再次点击播放", "warning");
+    }
+  }, [showPlayerNotice, updateMediaSession]);
+
   const playSong = useCallback(
     async (song: Song, forceQuality?: AudioQuality) => {
       if (!audioRef.current) return;
@@ -580,47 +645,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       const isDifferentQuality =
         forceQuality && forceQuality !== audioQualityRef.current;
 
-      // Logic: If same song, same quality, and audio has source -> toggle via audioRef directly
       if (isCurrentSong && !isDifferentQuality && !forceQuality) {
         if (
           audioRef.current.src &&
           audioRef.current.src !== window.location.href
         ) {
           if (!audioRef.current.paused) {
-            playRequestIdRef.current += 1;
-            audioRef.current.pause();
-            setIsPlaying(false);
+            setIsPlaying(true);
             setIsLoading(false);
-            updateMediaSession(currentSongRef.current, "paused");
+            updateMediaSession(currentSongRef.current, "playing");
           } else {
-            const resumeRequestId = playRequestIdRef.current;
-            const songAtStart = currentSongRef.current;
-            setIsLoading(true);
-            audioRef.current
-              .play()
-              .then(() => {
-                if (
-                  playRequestIdRef.current !== resumeRequestId ||
-                  !isSameSong(currentSongRef.current, songAtStart)
-                ) {
-                  return;
-                }
-                setIsPlaying(true);
-                setIsLoading(false);
-                updateMediaSession(songAtStart, "playing");
-              })
-              .catch((error) => {
-                if (
-                  playRequestIdRef.current !== resumeRequestId ||
-                  !isSameSong(currentSongRef.current, songAtStart)
-                ) {
-                  return;
-                }
-                console.error("Play resume failed:", error.name, error.message);
-                setIsPlaying(false);
-                setIsLoading(false);
-                updateMediaSession(songAtStart, "paused");
-              });
+            await resumePlayback();
           }
           return;
         }
@@ -781,6 +816,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               console.warn(
                 "Play promise rejected with source error, triggering fallback to 128k",
               );
+              showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
               retryCountRef.current = 1;
               playSongRef.current(fullSong, "128k");
               return;
@@ -789,6 +825,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             setIsPlaying(false);
             setIsLoading(false);
             updateMediaSession(fullSong, "paused");
+            showPlayerNotice("播放被浏览器阻止，请再次点击播放", "warning");
           }
         } else {
           // URL is null (Strict check failed in api.ts)
@@ -796,11 +833,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
           if (targetQuality !== "128k" && retryCountRef.current === 0) {
             console.warn("Retrying with 128k...");
+            showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
             retryCountRef.current = 1;
             playSongRef.current(fullSong, "128k");
             return;
           }
 
+          showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
           audioRef.current.pause();
           audioRef.current.removeAttribute("src");
           audioRef.current.load();
@@ -815,6 +854,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           setIsLoading(false);
           setIsPlaying(false);
           updateMediaSession(fullSong, "paused");
+          showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
         }
         console.error("Error in playSong", err);
       }
@@ -826,6 +866,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       initAudioContext,
       preloadNextSong,
       resolveParsedSong,
+      resumePlayback,
+      showPlayerNotice,
       updateMediaSession,
     ],
   );
@@ -840,57 +882,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const togglePlay = useCallback(() => {
     if (!audioRef.current || !currentSongRef.current) return;
-
-    if (
-      !audioRef.current.src ||
-      audioRef.current.src === window.location.href
-    ) {
-      playSongRef.current(currentSongRef.current);
-      return;
-    }
-
-    if (audioCtxRef.current && audioCtxRef.current.state === "suspended") {
-      audioCtxRef.current.resume().catch(() => {});
-    }
-
-    // 使用 audioRef.current.paused 代替 isPlaying state，避免 stale closure
     if (!audioRef.current.paused) {
-      playRequestIdRef.current += 1;
-      audioRef.current.pause();
-      setIsPlaying(false);
-      setIsLoading(false);
-      updateMediaSession(currentSongRef.current, "paused");
+      pausePlayback();
     } else {
-      const requestId = playRequestIdRef.current;
-      const songAtStart = currentSongRef.current;
-      setIsLoading(true);
-      audioRef.current
-        .play()
-        .then(() => {
-          if (
-            playRequestIdRef.current !== requestId ||
-            !isSameSong(currentSongRef.current, songAtStart)
-          ) {
-            return;
-          }
-          setIsPlaying(true);
-          setIsLoading(false);
-          updateMediaSession(songAtStart, "playing");
-        })
-        .catch((e) => {
-          if (
-            playRequestIdRef.current !== requestId ||
-            !isSameSong(currentSongRef.current, songAtStart)
-          ) {
-            return;
-          }
-          console.error("Toggle play error", e);
-          setIsPlaying(false);
-          setIsLoading(false);
-          updateMediaSession(songAtStart, "paused");
-        });
+      void resumePlayback();
     }
-  }, [updateMediaSession]);
+  }, [pausePlayback, resumePlayback]);
 
   const seek = useCallback((time: number) => {
     if (audioRef.current) {
@@ -898,7 +895,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       setCurrentTime(time);
       updatePositionState();
     }
-  }, []);
+  }, [updatePositionState]);
 
   const playNext = useCallback((force = true) => {
     const q = queueRef.current;
@@ -963,21 +960,27 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     if (q.length === 0) return;
 
+    if (audioRef.current && audioRef.current.currentTime > 3) {
+      audioRef.current.currentTime = 0;
+      setCurrentTime(0);
+      updatePositionState();
+      return;
+    }
+
     const prevIndex = getPrevQueueIndex(q, c, mode);
     if (prevIndex < 0) return;
 
     playSongRef.current(q[prevIndex]);
-  }, []);
+  }, [updatePositionState]);
 
   useEffect(() => {
     playNextRef.current = playNext;
   }, [playNext]);
 
-  // MediaSession action handlers — 所有 deps 现在都是稳定 useCallback，注册一次即可
   useEffect(() => {
     if ("mediaSession" in navigator) {
-      navigator.mediaSession.setActionHandler("play", () => togglePlay());
-      navigator.mediaSession.setActionHandler("pause", () => togglePlay());
+      navigator.mediaSession.setActionHandler("play", () => void resumePlayback());
+      navigator.mediaSession.setActionHandler("pause", () => pausePlayback());
       navigator.mediaSession.setActionHandler("previoustrack", () =>
         playPrev(),
       );
@@ -988,8 +991,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         if (details.seekTime !== undefined) seek(details.seekTime);
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [pausePlayback, playNext, playPrev, resumePlayback, seek]);
 
   useEffect(() => {
     if (currentSong) {
@@ -1006,19 +1008,57 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const removeFromQueue = useCallback(
     (songId: string | number, source?: string) => {
-      setQueue((prev) =>
-        prev.filter(
-          (s) => !(String(s.id) === String(songId) && (!source || s.source === source)),
-        ),
+      const current = currentSongRef.current;
+      const previousQueue = queueRef.current;
+      const removedIndex = previousQueue.findIndex(
+        (s) => String(s.id) === String(songId) && (!source || s.source === source),
       );
+      if (removedIndex < 0) return;
+
+      const removedSong = previousQueue[removedIndex];
+      const nextQueue = previousQueue.filter(
+        (s) => !(String(s.id) === String(songId) && (!source || s.source === source)),
+      );
+      queueRef.current = nextQueue;
+      setQueue(nextQueue);
+      clearPreloadedAudio();
+
+      if (!isSameSong(removedSong, current)) return;
+
+      if (nextQueue.length > 0) {
+        const nextSong = nextQueue[Math.min(removedIndex, nextQueue.length - 1)] || nextQueue[0];
+        void playSongRef.current(nextSong);
+        return;
+      }
+
+      playRequestIdRef.current += 1;
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.removeAttribute("src");
+        audioRef.current.load();
+      }
+      currentSongRef.current = null;
+      setCurrentSong(null);
+      setCurrentTime(0);
+      setDuration(0);
+      setIsPlaying(false);
+      setIsLoading(false);
     },
-    [],
+    [clearPreloadedAudio],
   );
 
   const clearQueue = useCallback(() => {
     clearPreloadedAudio();
-    setQueue([]);
+    const current = currentSongRef.current;
+    const nextQueue = current ? [current] : [];
+    queueRef.current = nextQueue;
+    setQueue(nextQueue);
   }, [clearPreloadedAudio]);
+
+  const restoreQueue = useCallback((songs: Song[]) => {
+    queueRef.current = songs;
+    setQueue(songs);
+  }, []);
 
   const togglePlayMode = useCallback(() => {
     setPlayMode((prev) => {
@@ -1044,11 +1084,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     () => ({
       playSong,
       togglePlay,
+      pausePlayback,
+      resumePlayback,
       seek,
       playNext,
       playPrev,
       addToQueue,
       removeFromQueue,
+      restoreQueue,
       togglePlayMode,
       clearQueue,
       setAudioQuality,
@@ -1057,11 +1100,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [
       playSong,
       togglePlay,
+      pausePlayback,
+      resumePlayback,
       seek,
       playNext,
       playPrev,
       addToQueue,
       removeFromQueue,
+      restoreQueue,
       togglePlayMode,
       clearQueue,
       setAudioQuality,
@@ -1122,6 +1168,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       queue,
       analyser,
       audioQuality,
+      playerNotice,
       ...actionsValue,
     }),
     [
@@ -1135,23 +1182,26 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       queue,
       analyser,
       audioQuality,
+      playerNotice,
       actionsValue,
     ],
   );
 
   return (
     <PlayerActionsContext.Provider value={actionsValue}>
-      <PlayerNowPlayingContext.Provider value={nowPlayingValue}>
-        <PlayerQueueStateContext.Provider value={queueStateValue}>
-          <PlayerSettingsContext.Provider value={settingsValue}>
-            <PlayerAnalyserContext.Provider value={analyserValue}>
-              <PlayerProgressContext.Provider value={progressValue}>
-                <PlayerContext.Provider value={contextValue}>{children}</PlayerContext.Provider>
-              </PlayerProgressContext.Provider>
-            </PlayerAnalyserContext.Provider>
-          </PlayerSettingsContext.Provider>
-        </PlayerQueueStateContext.Provider>
-      </PlayerNowPlayingContext.Provider>
+      <PlayerNoticeContext.Provider value={playerNotice}>
+        <PlayerNowPlayingContext.Provider value={nowPlayingValue}>
+          <PlayerQueueStateContext.Provider value={queueStateValue}>
+            <PlayerSettingsContext.Provider value={settingsValue}>
+              <PlayerAnalyserContext.Provider value={analyserValue}>
+                <PlayerProgressContext.Provider value={progressValue}>
+                  <PlayerContext.Provider value={contextValue}>{children}</PlayerContext.Provider>
+                </PlayerProgressContext.Provider>
+              </PlayerAnalyserContext.Provider>
+            </PlayerSettingsContext.Provider>
+          </PlayerQueueStateContext.Provider>
+        </PlayerNowPlayingContext.Provider>
+      </PlayerNoticeContext.Provider>
     </PlayerActionsContext.Provider>
   );
 };
@@ -1168,13 +1218,17 @@ const PLAYER_DEFAULTS: PlayerContextType = {
   queue: [],
   analyser: null,
   audioQuality: "320k",
+  playerNotice: null,
   playSong: async () => {},
   togglePlay: () => {},
+  pausePlayback: () => {},
+  resumePlayback: async () => {},
   seek: () => {},
   playNext: () => {},
   playPrev: () => {},
   addToQueue: () => {},
   removeFromQueue: () => {},
+  restoreQueue: () => {},
   togglePlayMode: () => {},
   clearQueue: () => {},
   setAudioQuality: () => {},
@@ -1190,6 +1244,11 @@ export const usePlayer = () => {
   return context;
 };
 
+export const usePlayerNotice = () => {
+  const context = useContext(PlayerNoticeContext);
+  return context ?? null;
+};
+
 export const usePlayerActions = () => {
   const context = useContext(PlayerActionsContext);
   if (!context) {
@@ -1199,11 +1258,14 @@ export const usePlayerActions = () => {
     return {
       playSong: PLAYER_DEFAULTS.playSong,
       togglePlay: PLAYER_DEFAULTS.togglePlay,
+      pausePlayback: PLAYER_DEFAULTS.pausePlayback,
+      resumePlayback: PLAYER_DEFAULTS.resumePlayback,
       seek: PLAYER_DEFAULTS.seek,
       playNext: PLAYER_DEFAULTS.playNext,
       playPrev: PLAYER_DEFAULTS.playPrev,
       addToQueue: PLAYER_DEFAULTS.addToQueue,
       removeFromQueue: PLAYER_DEFAULTS.removeFromQueue,
+      restoreQueue: PLAYER_DEFAULTS.restoreQueue,
       togglePlayMode: PLAYER_DEFAULTS.togglePlayMode,
       clearQueue: PLAYER_DEFAULTS.clearQueue,
       setAudioQuality: PLAYER_DEFAULTS.setAudioQuality,

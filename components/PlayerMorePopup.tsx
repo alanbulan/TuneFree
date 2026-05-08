@@ -9,6 +9,7 @@ import { getImgReferrerPolicy } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import { FolderIcon, PlusIcon, MusicIcon, SearchIcon, DownloadIcon, ShareIcon } from './Icons';
 import { getSongKey } from '../types';
+import { useToast } from './ToastHost';
 
 interface PlayerMorePopupProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ const PlayerMorePopupContent: React.FC<{
   const { audioQuality } = usePlayerSettings();
   const { setAudioQuality } = usePlayerActions();
   const { playlists, addToPlaylist, createPlaylist } = useLibrary();
+  const { showToast } = useToast();
   const [showPlaylistSelect, setShowPlaylistSelect] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -40,12 +42,14 @@ const PlayerMorePopupContent: React.FC<{
 
   const handleAddToPlaylist = (playlistId: string) => {
     addToPlaylist(playlistId, currentSong);
+    showToast('已添加到歌单', 'success');
     onClose();
   };
 
   const handleCreateAndAdd = () => {
     if (newPlaylistName.trim()) {
       createPlaylist(newPlaylistName, [currentSong]);
+      showToast('已创建歌单并添加歌曲', 'success');
       onClose();
     }
   };
@@ -75,14 +79,17 @@ const PlayerMorePopupContent: React.FC<{
     try {
       if (navigator.share) {
         await navigator.share(shareData);
+        showToast('已打开系统分享', 'success');
       } else {
         await navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
-        alert('分享信息已复制到剪贴板');
+        showToast('已复制分享文案', 'success');
       }
-    } catch {
-      // ignore share cancellation
+      onClose();
+    } catch (error: any) {
+      if (error?.name !== 'AbortError') {
+        showToast('分享失败，请稍后再试', 'error');
+      }
     }
-    onClose();
   };
 
   const qualities = [

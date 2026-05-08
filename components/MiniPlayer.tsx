@@ -14,7 +14,7 @@ interface MiniPlayerProps {
 }
 
 const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand, layoutId }) => {
-  const { currentSong, isPlaying } = usePlayerNowPlaying();
+  const { currentSong, isPlaying, isLoading } = usePlayerNowPlaying();
   const { togglePlay, playNext } = usePlayerActions();
   const { queue } = usePlayerQueueState();
   const [imgError, setImgError] = useState(false);
@@ -66,7 +66,7 @@ const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand, layoutId }) => {
                 {hasSong ? currentSong?.name : "TuneFree 音乐"}
             </p>
             <p className="text-ios-subtext text-xs truncate">
-              {hasSong ? currentSong?.artist : "听见世界的声音"}
+              {isLoading ? "加载中..." : hasSong ? currentSong?.artist : "听见世界的声音"}
             </p>
           </div>
 
@@ -74,12 +74,13 @@ const MiniPlayer: React.FC<MiniPlayerProps> = ({ onExpand, layoutId }) => {
             <button 
               onClick={(e) => { 
                   e.stopPropagation(); 
-                  if (hasSong) togglePlay(); 
+                  if (hasSong && !isLoading) togglePlay();
               }}
-              disabled={!hasSong}
-              className={`text-ios-text hover:text-gray-600 focus:outline-none transition-transform active:scale-90 ${!hasSong ? 'opacity-50' : ''}`}
+              disabled={!hasSong || isLoading}
+              aria-label={isLoading ? '加载中' : isPlaying ? '暂停' : '播放'}
+              className={`text-ios-text hover:text-gray-600 focus:outline-none transition-transform active:scale-90 ${!hasSong || isLoading ? 'opacity-50' : ''}`}
             >
-              {isPlaying ? <PauseIcon size={24} className="fill-current" /> : <PlayIcon size={24} className="fill-current" />}
+              {isLoading ? <div className="w-5 h-5 border-2 border-gray-300 border-t-ios-red rounded-full animate-spin" /> : isPlaying ? <PauseIcon size={24} className="fill-current" /> : <PlayIcon size={24} className="fill-current" />}
             </button>
             <button 
               onClick={(e) => { 

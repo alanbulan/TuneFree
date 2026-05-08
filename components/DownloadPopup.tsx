@@ -3,6 +3,7 @@ import { Song } from '../types';
 import { DownloadIcon, MusicIcon } from './Icons';
 // Changed getDownloadUrl to getSongUrl as it is the correct function name in api.ts
 import { getSongUrl, triggerDownload, getImgReferrerPolicy } from '../services/api';
+import { useToast } from './ToastHost';
 
 interface DownloadPopupProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ const QUALITY_MAP: Record<string, { label: string, desc: string, ext: string }> 
 
 const DownloadPopup: React.FC<DownloadPopupProps> = ({ isOpen, onClose, song }) => {
   const [downloadingType, setDownloadingType] = useState<string | null>(null);
+  const { showToast } = useToast();
 
   // 弹窗打开时锁定背景滚动
   useEffect(() => {
@@ -35,20 +37,22 @@ const DownloadPopup: React.FC<DownloadPopupProps> = ({ isOpen, onClose, song }) 
     ? song.types
     : ['128k', '320k', 'flac', 'flac24bit'];
 
-  // 异步获取下载 URL，防止重复点击
   const handleDownload = async (type: string) => {
-    if (downloadingType) return; // 防止重复点击
+    if (downloadingType) return;
     setDownloadingType(type);
     try {
       const url = await getSongUrl(song.id, song.source, type);
       if (!url) {
-          alert('获取下载链接失败');
-          return;
+        showToast('无法获取下载地址', 'error');
+        return;
       }
       const meta = QUALITY_MAP[type] || { ext: 'mp3' };
       const filename = `${song.artist} - ${song.name}.${meta.ext}`;
       triggerDownload(url, filename);
+      showToast('已开始下载', 'success');
       onClose();
+    } catch {
+      showToast('下载失败，请稍后再试', 'error');
     } finally {
       setDownloadingType(null);
     }

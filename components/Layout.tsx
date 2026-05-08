@@ -1,5 +1,5 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import MiniPlayer from './MiniPlayer';
 import FullPlayer from './FullPlayer';
@@ -7,14 +7,22 @@ import { HomeIcon, SearchIcon, LibraryIcon } from './Icons';
 import { AnimatePresence } from 'framer-motion';
 import { usePreventIosEdgeSwipe } from './usePreventIosEdgeSwipe';
 import { useIsIosStandalone } from './useIsIosStandalone';
+import { usePlayerNotice } from '../contexts/PlayerContext';
+import { useToast } from './ToastHost';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isFullPlayerOpen, setIsFullPlayerOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const isIosStandalone = useIsIosStandalone();
   const playerLayoutId = isIosStandalone ? undefined : 'player-container';
+  const playerNotice = usePlayerNotice();
+  const { showToast } = useToast();
 
   usePreventIosEdgeSwipe(containerRef);
+
+  useEffect(() => {
+    if (playerNotice) showToast(playerNotice.message, playerNotice.tone);
+  }, [playerNotice, showToast]);
 
   return (
     <div ref={containerRef} className="flex flex-col h-screen w-full bg-ios-bg relative overflow-hidden">
