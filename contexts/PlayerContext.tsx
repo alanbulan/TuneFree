@@ -53,6 +53,7 @@ interface PlayerContextType {
   audioQuality: AudioQuality;
   playerNotice: PlayerNotice | null;
   playSong: (song: Song, forceQuality?: AudioQuality) => Promise<void>;
+  playQueue: (songs: Song[], startSong?: Song) => Promise<void>;
   togglePlay: () => void;
   pausePlayback: () => void;
   resumePlayback: () => Promise<void>;
@@ -71,6 +72,7 @@ interface PlayerContextType {
 type PlayerActionsType = Pick<
   PlayerContextType,
   | "playSong"
+  | "playQueue"
   | "togglePlay"
   | "pausePlayback"
   | "resumePlayback"
@@ -872,6 +874,29 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     ],
   );
 
+  const playQueue = useCallback(
+    async (songs: Song[], startSong?: Song) => {
+      const seen = new Set<string>();
+      const nextQueue = songs.filter((song) => {
+        const key = getSongKey(song);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      const targetSong =
+        (startSong && nextQueue.find((song) => isSameSong(song, startSong))) ||
+        nextQueue[0];
+
+      if (!targetSong) return;
+
+      clearPreloadedAudio();
+      queueRef.current = nextQueue;
+      setQueue(nextQueue);
+      await playSongRef.current(targetSong);
+    },
+    [clearPreloadedAudio],
+  );
+
   // 始终保持 playSongRef 指向最新的 playSong，避免 stale closure
   playSongRef.current = playSong;
 
@@ -1083,6 +1108,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const actionsValue = useMemo(
     () => ({
       playSong,
+      playQueue,
       togglePlay,
       pausePlayback,
       resumePlayback,
@@ -1099,6 +1125,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }),
     [
       playSong,
+      playQueue,
       togglePlay,
       pausePlayback,
       resumePlayback,
@@ -1220,6 +1247,7 @@ const PLAYER_DEFAULTS: PlayerContextType = {
   audioQuality: "320k",
   playerNotice: null,
   playSong: async () => {},
+  playQueue: async () => {},
   togglePlay: () => {},
   pausePlayback: () => {},
   resumePlayback: async () => {},
@@ -1257,6 +1285,7 @@ export const usePlayerActions = () => {
     );
     return {
       playSong: PLAYER_DEFAULTS.playSong,
+      playQueue: PLAYER_DEFAULTS.playQueue,
       togglePlay: PLAYER_DEFAULTS.togglePlay,
       pausePlayback: PLAYER_DEFAULTS.pausePlayback,
       resumePlayback: PLAYER_DEFAULTS.resumePlayback,

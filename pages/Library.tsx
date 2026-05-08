@@ -15,6 +15,7 @@ import {
   InfoIcon,
   ExternalLinkIcon,
   GithubIcon,
+  PlayIcon,
 } from "../components/Icons";
 import {
   GD_STUDIO_ATTRIBUTION,
@@ -24,7 +25,7 @@ import {
 type Tab = "favorites" | "playlists" | "manage" | "about";
 
 const Library: React.FC = () => {
-  const { playSong } = usePlayerActions();
+  const { playSong, playQueue } = usePlayerActions();
   const {
     favorites,
     playlists,
@@ -131,6 +132,7 @@ const Library: React.FC = () => {
     songs: Song[],
     canRemove: boolean = false,
     playlistId?: string,
+    queueSongs?: Song[],
   ) => (
     <div className="space-y-3 pb-24">
       {songs.length === 0 ? (
@@ -145,7 +147,13 @@ const Library: React.FC = () => {
             <div
               key={`${song.id}-${idx}`}
               className="flex items-center space-x-3 bg-white p-2 rounded-xl shadow-sm active:scale-[0.98] transition cursor-pointer"
-              onClick={() => playSong(song)}
+              onClick={() => {
+                if (queueSongs) {
+                  playQueue(queueSongs, song);
+                } else {
+                  playSong(song);
+                }
+              }}
             >
               <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 flex items-center justify-center">
                 {song.pic ? (
@@ -265,7 +273,7 @@ const Library: React.FC = () => {
               &larr; 返回歌单列表
             </button>
             <div className="bg-white p-4 rounded-2xl shadow-sm mb-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <h2 className="text-2xl font-bold truncate">
                     {String(selectedPlaylist.name || "未命名歌单")}
@@ -274,12 +282,22 @@ const Library: React.FC = () => {
                     {selectedPlaylist.songs.length} 首歌曲
                   </p>
                 </div>
-                <button
-                  onClick={() => setIsEditMode(!isEditMode)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${isEditMode ? "bg-ios-red text-white" : "bg-gray-100 text-ios-red"}`}
-                >
-                  {isEditMode ? "完成" : "编辑"}
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={() => playQueue(selectedPlaylist.songs)}
+                    disabled={selectedPlaylist.songs.length === 0}
+                    className="flex items-center gap-1 rounded-lg bg-ios-red px-3 py-1.5 text-xs font-bold text-white transition disabled:bg-gray-200 disabled:text-gray-400"
+                  >
+                    <PlayIcon size={13} className="fill-current" />
+                    播放全部
+                  </button>
+                  <button
+                    onClick={() => setIsEditMode(!isEditMode)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${isEditMode ? "bg-ios-red text-white" : "bg-gray-100 text-ios-red"}`}
+                  >
+                    {isEditMode ? "完成" : "编辑"}
+                  </button>
+                </div>
               </div>
               {isEditMode && (
                 <div className="flex items-center space-x-3 mt-4 pt-4 border-t border-gray-100">
@@ -306,7 +324,7 @@ const Library: React.FC = () => {
                 </div>
               )}
             </div>
-            {renderSongList(selectedPlaylist.songs, true, selectedPlaylist.id)}
+            {renderSongList(selectedPlaylist.songs, true, selectedPlaylist.id, selectedPlaylist.songs)}
           </div>
         )}
 
