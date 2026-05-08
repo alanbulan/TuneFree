@@ -27,6 +27,13 @@ import {
 } from "./playerPersistence";
 import { getNextQueueIndex, getPrevQueueIndex } from "./playerQueue";
 
+type ParsedSongData = NonNullable<Awaited<ReturnType<typeof parseSongFull>>>;
+
+const getFiniteAudioDuration = (audio: HTMLAudioElement): number =>
+  Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+
+const IOS_AUTO_ADVANCE_LEAD_SECONDS = 1.25;
+
 interface PlayerContextType {
   currentSong: Song | null;
   isPlaying: boolean;
@@ -132,6 +139,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   // Track error retry to prevent loops
   const retryCountRef = useRef(0);
   const playRequestIdRef = useRef(0);
+  const autoAdvanceStartedRef = useRef(false);
+  const parsedSongCacheRef = useRef<Map<string, ParsedSongData>>(new Map());
+  const preloadedAudioRef = useRef<{
+    key: string;
+    audio: HTMLAudioElement;
+  } | null>(null);
 
   // Persistence Effects
   useEffect(() => {
@@ -158,6 +171,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const handlersRef = useRef<{
     timeupdate: () => void;
     loadedmetadata: () => void;
+    durationchange: () => void;
     ended: () => void;
     error: (e: any) => void;
     waiting: () => void;
@@ -179,6 +193,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         oldAudio.removeEventListener(
           "loadedmetadata",
           handlersRef.current.loadedmetadata,
+        );
+        oldAudio.removeEventListener(
+          "durationchange",
+          handlersRef.current.durationchange,
         );
         oldAudio.removeEventListener("ended", handlersRef.current.ended);
         oldAudio.removeEventListener("error", handlersRef.current.error);
@@ -204,25 +222,65 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       audio.crossOrigin = "anonymous";
     }
 
+    const syncDuration = () => {
+      const nextDuration = getFiniteAudioDuration(audio);
+      if (nextDuration > 0) setDuration(nextDuration);
+      return nextDuration;
+    };
+
+    const syncMediaPosition = () => {
+      const nextDuration = syncDuration();
+      if ("mediaSession" in navigator && nextDuration > 0) {
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: nextDuration,
+            playbackRate: audio.playbackRate,
+            position: audio.currentTime,
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+
     const handlers = {
-      timeupdate: () => setCurrentTime(audio.currentTime),
-      loadedmetadata: () => {
-        setDuration(audio.duration);
-        setIsLoading(false);
-        retryCountRef.current = 0;
-        if ("mediaSession" in navigator && !isNaN(audio.duration)) {
-          try {
-            navigator.mediaSession.setPositionState({
-              duration: audio.duration,
-              playbackRate: audio.playbackRate,
-              position: audio.currentTime,
-            });
-          } catch (e) {
-            /* ignore */
-          }
+      timeupdate: () => {
+        setCurrentTime(audio.currentTime);
+
+        const current = currentSongRef.current;
+        const nextDuration = getFiniteAudioDuration(audio);
+        const remaining = nextDuration - audio.currentTime;
+        const nextIndex = current
+          ? getNextQueueIndex(queueRef.current, current, playModeRef.current)
+          : -1;
+        const nextSong = nextIndex >= 0 ? queueRef.current[nextIndex] : null;
+        if (
+          isIOSRef.current &&
+          document.visibilityState !== "visible" &&
+          playModeRef.current !== "loop" &&
+          !autoAdvanceStartedRef.current &&
+          !audio.paused &&
+          remaining > 0 &&
+          remaining <= IOS_AUTO_ADVANCE_LEAD_SECONDS &&
+          current &&
+          nextSong &&
+          !isSameSong(nextSong, current)
+        ) {
+          autoAdvanceStartedRef.current = true;
+          playNextRef.current?.(false);
         }
       },
+      loadedmetadata: () => {
+        syncMediaPosition();
+        setIsLoading(false);
+        retryCountRef.current = 0;
+      },
+      durationchange: () => {
+        syncDuration();
+      },
       ended: () => {
+        if (autoAdvanceStartedRef.current) return;
+        autoAdvanceStartedRef.current = true;
         console.log("[Player] 歌曲播放结束，触发自动播放下一首");
         if (playNextRef.current) playNextRef.current(false);
       },
@@ -232,6 +290,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         console.warn(
           `Audio Element Error: Code=${errorCode}, Msg=${errorMessage}`,
         );
+        autoAdvanceStartedRef.current = false;
         if (
           currentSongRef.current &&
           audioQualityRef.current !== "128k" &&
@@ -250,11 +309,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         retryCountRef.current = 0;
       },
       waiting: () => setIsLoading(true),
-      canplay: () => setIsLoading(false),
+      canplay: () => {
+        syncDuration();
+        setIsLoading(false);
+      },
     };
 
     audio.addEventListener("timeupdate", handlers.timeupdate);
     audio.addEventListener("loadedmetadata", handlers.loadedmetadata);
+    audio.addEventListener("durationchange", handlers.durationchange);
     audio.addEventListener("ended", handlers.ended);
     audio.addEventListener("error", handlers.error);
     audio.addEventListener("waiting", handlers.waiting);
@@ -282,11 +345,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             "loadedmetadata",
             handlersRef.current.loadedmetadata,
           );
+          audio.removeEventListener(
+            "durationchange",
+            handlersRef.current.durationchange,
+          );
           audio.removeEventListener("ended", handlersRef.current.ended);
           audio.removeEventListener("error", handlersRef.current.error);
           audio.removeEventListener("waiting", handlersRef.current.waiting);
           audio.removeEventListener("canplay", handlersRef.current.canplay);
         }
+      }
+      if (preloadedAudioRef.current) {
+        preloadedAudioRef.current.audio.pause();
+        preloadedAudioRef.current.audio.removeAttribute("src");
+        preloadedAudioRef.current.audio.load();
+        preloadedAudioRef.current = null;
       }
       if (audioCtxRef.current) {
         audioCtxRef.current.close();
@@ -407,12 +480,101 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
+  const getParsedSongCacheKey = useCallback(
+    (song: Pick<Song, "id" | "source">, quality: AudioQuality) =>
+      `${getSongKey(song)}:${quality}`,
+    [],
+  );
+
+  const resolveParsedSong = useCallback(
+    async (song: Song, quality: AudioQuality): Promise<ParsedSongData | null> => {
+      const cacheKey = getParsedSongCacheKey(song, quality);
+      const cached = parsedSongCacheRef.current.get(cacheKey);
+      if (cached) return cached;
+
+      const parsed = await parseSongFull(song.id, song.source, quality, song);
+      if (parsed) {
+        parsedSongCacheRef.current.set(cacheKey, parsed);
+      }
+      return parsed;
+    },
+    [getParsedSongCacheKey],
+  );
+
+  const clearPreloadedAudio = useCallback((cacheKey?: string) => {
+    const preloaded = preloadedAudioRef.current;
+    if (!preloaded || (cacheKey && preloaded.key !== cacheKey)) return;
+
+    preloaded.audio.pause();
+    preloaded.audio.removeAttribute("src");
+    preloaded.audio.load();
+    preloadedAudioRef.current = null;
+  }, []);
+
+  const preloadAudioUrl = useCallback(
+    (cacheKey: string, url: string) => {
+      if (preloadedAudioRef.current?.key === cacheKey) return;
+
+      clearPreloadedAudio();
+      const audio = new Audio();
+      audio.preload = "auto";
+      (audio as any).playsInline = true;
+      audio.src = url;
+      audio.load();
+      preloadedAudioRef.current = { key: cacheKey, audio };
+    },
+    [clearPreloadedAudio],
+  );
+
+  const preloadNextSong = useCallback(
+    (song: Song) => {
+      const nextIndex = getNextQueueIndex(
+        queueRef.current,
+        song,
+        playModeRef.current,
+      );
+      if (nextIndex < 0) return;
+
+      const nextSong = queueRef.current[nextIndex];
+      if (!nextSong || isSameSong(nextSong, song)) return;
+
+      const quality = audioQualityRef.current;
+      const cacheKey = getParsedSongCacheKey(nextSong, quality);
+      if (preloadedAudioRef.current?.key === cacheKey) return;
+
+      void resolveParsedSong(nextSong, quality)
+        .then((parsed) => {
+          if (!parsed?.url) return;
+          if (getParsedSongCacheKey(nextSong, audioQualityRef.current) !== cacheKey) {
+            return;
+          }
+
+          preloadAudioUrl(cacheKey, parsed.url);
+          const patch: Partial<Song> = { url: parsed.url };
+          if (parsed.pic && !nextSong.pic) patch.pic = parsed.pic;
+          if (parsed.lrc) patch.lrc = parsed.lrc;
+          setQueue((prev) =>
+            prev.map((queuedSong) =>
+              isSameSong(queuedSong, nextSong)
+                ? { ...queuedSong, ...patch }
+                : queuedSong,
+            ),
+          );
+        })
+        .catch((error) => {
+          console.warn("Preload next song failed:", error);
+        });
+    },
+    [getParsedSongCacheKey, preloadAudioUrl, resolveParsedSong],
+  );
+
   const playSong = useCallback(
     async (song: Song, forceQuality?: AudioQuality) => {
       if (!audioRef.current) return;
 
       // Determine effective quality
       const targetQuality = forceQuality || audioQualityRef.current;
+      const cacheKey = getParsedSongCacheKey(song, targetQuality);
 
       const isCurrentSong = isSameSong(currentSongRef.current, song);
       const isDifferentQuality =
@@ -491,12 +653,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       try {
         // 单次 parse 获取 url / 歌词 / 封面，避免重复消耗积分
-        const parsed = await parseSongFull(
-          song.id,
-          song.source,
-          targetQuality,
-          song,
-        );
+        const parsed = await resolveParsedSong(song, targetQuality);
 
         // Race condition check
         if (
@@ -506,12 +663,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           return;
         }
 
-        // 用 parse 返回的完整数据补全封面和歌词
+        // 用 parse 返回的完整数据补全播放地址、封面和歌词
         if (parsed) {
-          if ((parsed.pic && !fullSong.pic) || parsed.lrc) {
-            const patch: Partial<Song> = {};
-            if (parsed.pic && !fullSong.pic) patch.pic = parsed.pic;
-            if (parsed.lrc) patch.lrc = parsed.lrc;
+          const patch: Partial<Song> = {};
+          if (parsed.url) patch.url = parsed.url;
+          if (parsed.pic && !fullSong.pic) patch.pic = parsed.pic;
+          if (parsed.lrc) patch.lrc = parsed.lrc;
+
+          if (Object.keys(patch).length > 0) {
             fullSong = { ...fullSong, ...patch };
             currentSongRef.current = fullSong;
             setCurrentSong((prev) => {
@@ -529,7 +688,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         const url = parsed?.url || null;
 
         if (url) {
-          fullSong.url = url;
           const resumeTime =
             isCurrentSong && isDifferentQuality ? audioRef.current.currentTime : 0;
 
@@ -555,8 +713,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           }
 
           const activeAudio = audioRef.current;
+          const preloadedCurrentAudio = preloadedAudioRef.current;
+          autoAdvanceStartedRef.current = false;
           activeAudio.src = url;
           activeAudio.load();
+
+          if (preloadedCurrentAudio?.key === cacheKey) {
+            const preloadedDuration = getFiniteAudioDuration(
+              preloadedCurrentAudio.audio,
+            );
+            if (preloadedDuration > 0) setDuration(preloadedDuration);
+            clearPreloadedAudio(cacheKey);
+          }
 
           if (resumeTime > 0) {
             activeAudio.currentTime = resumeTime;
@@ -588,6 +756,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             setIsPlaying(true);
             setIsLoading(false);
             updateMediaSession(fullSong, "playing");
+            preloadNextSong(fullSong);
           } catch (error: any) {
             if (
               playRequestIdRef.current !== requestId ||
@@ -650,11 +819,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         console.error("Error in playSong", err);
       }
     },
-    [createAudioElement, initAudioContext, updateMediaSession],
+    [
+      clearPreloadedAudio,
+      createAudioElement,
+      getParsedSongCacheKey,
+      initAudioContext,
+      preloadNextSong,
+      resolveParsedSong,
+      updateMediaSession,
+    ],
   );
 
   // 始终保持 playSongRef 指向最新的 playSong，避免 stale closure
   playSongRef.current = playSong;
+
+  useEffect(() => {
+    if (!currentSong || !isPlaying) return;
+    preloadNextSong(currentSong);
+  }, [audioQuality, currentSong, isPlaying, playMode, preloadNextSong, queue]);
 
   const togglePlay = useCallback(() => {
     if (!audioRef.current || !currentSongRef.current) return;
@@ -729,6 +911,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       if (audioRef.current && c) {
         const requestId = playRequestIdRef.current;
         audioRef.current.currentTime = 0;
+        autoAdvanceStartedRef.current = false;
         setIsLoading(true);
         audioRef.current
           .play()
@@ -762,7 +945,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     const nextIndex = getNextQueueIndex(q, c, mode);
     if (nextIndex < 0) return;
 
-    playSongRef.current(q[nextIndex]);
+    const nextSong = q[nextIndex];
+    if (!nextSong) return;
+
+    if (c && isSameSong(nextSong, c)) {
+      playSongRef.current(nextSong, audioQualityRef.current);
+      return;
+    }
+
+    playSongRef.current(nextSong);
   }, [updateMediaSession]);
 
   const playPrev = useCallback(() => {
@@ -825,8 +1016,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const clearQueue = useCallback(() => {
+    clearPreloadedAudio();
     setQueue([]);
-  }, []);
+  }, [clearPreloadedAudio]);
 
   const togglePlayMode = useCallback(() => {
     setPlayMode((prev) => {
