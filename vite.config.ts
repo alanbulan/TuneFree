@@ -68,6 +68,7 @@ const readRequestBody = async (req: any): Promise<ArrayBuffer | undefined> => {
 const sendJson = (res: any, statusCode: number, data: unknown) => {
   res.statusCode = statusCode;
   res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store');
   res.end(JSON.stringify(data));
 };
 
@@ -119,28 +120,8 @@ const getLocalKuwoMobiUrl = async (
   return fallbackUrl;
 };
 
-const getLocalKuwoAntiUrl = async (
-  id: string,
-  quality: string,
-): Promise<string | null> => {
-  const format = quality === 'flac' || quality === 'ape' ? 'flac' : 'mp3';
-  const apiUrl = `http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=MUSIC_${encodeURIComponent(id)}&format=${format}&response=url`;
-
-  const resp = await fetch(apiUrl, {
-    headers: {
-      'User-Agent': getRandomUserAgent(),
-      Referer: 'http://kuwo.cn/',
-    },
-  });
-
-  const playUrl = (await resp.text()).trim();
-  return playUrl && playUrl.startsWith('http') ? playUrl : null;
-};
-
 const getLocalKuwoUrl = async (id: string, quality: string): Promise<string> => {
-  const playUrl =
-    (await getLocalKuwoMobiUrl(id, quality)) ||
-    (await getLocalKuwoAntiUrl(id, quality));
+  const playUrl = await getLocalKuwoMobiUrl(id, quality);
 
   if (!playUrl) {
     throw new Error('Kuwo returned empty URL');

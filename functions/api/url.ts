@@ -51,6 +51,7 @@ function corsHeaders() {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
+        'Cache-Control': 'no-store',
         'Content-Type': 'application/json'
     };
 }
@@ -265,24 +266,8 @@ async function getKuwoMobiUrl(songmid: string, quality: string): Promise<string 
     return fallbackUrl;
 }
 
-async function getKuwoAntiUrl(songmid: string, quality: string): Promise<string | null> {
-    const format = quality === "flac" || quality === "ape" ? "flac" : "mp3";
-    const apiUrl = `http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=MUSIC_${encodeURIComponent(songmid)}&format=${format}&response=url`;
-
-    const resp = await fetch(apiUrl, {
-        method: "GET",
-        headers: {
-            'User-Agent': getRandomUserAgent(),
-            'Referer': "http://kuwo.cn/"
-        }
-    });
-
-    const playUrl = (await resp.text()).trim();
-    return playUrl && playUrl.startsWith("http") ? playUrl : null;
-}
-
 async function getKuwoUrl(songmid: string, quality: string) {
-    const playUrl = await getKuwoMobiUrl(songmid, quality) || await getKuwoAntiUrl(songmid, quality);
+    const playUrl = await getKuwoMobiUrl(songmid, quality);
     if (!playUrl) {
         throw new Error("Kuwo returned empty URL (VIP / copyright)");
     }
