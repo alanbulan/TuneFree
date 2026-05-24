@@ -35,7 +35,7 @@ export const usePlayerLyrics = (
       };
     }
 
-    getLyrics(currentSong.id, currentSong.source).then((rawLrc) => {
+    getLyrics(currentSong.id, currentSong.source, currentSong).then((rawLrc) => {
       if (!rawLrc) {
         if (!cancelled) setLyrics(EMPTY_LYRICS);
         return;

@@ -1,10 +1,9 @@
-import { DEFAULT_PROXIES, IS_LOCAL_DEV, SELF_HOSTED_PROXY } from "./config";
+import { DEFAULT_PROXIES, SELF_HOSTED_PROXY } from "./config";
 
 export const getProxies = (): string[] => {
   const stored = localStorage.getItem("tunefree_cors_proxy");
-  if (!stored) return DEFAULT_PROXIES;
-  if (stored === SELF_HOSTED_PROXY) return DEFAULT_PROXIES;
-  return IS_LOCAL_DEV ? [stored] : [SELF_HOSTED_PROXY, stored];
+  if (!stored || stored === SELF_HOSTED_PROXY) return DEFAULT_PROXIES;
+  return [SELF_HOSTED_PROXY, stored];
 };
 
 export const proxyFetchJson = async (

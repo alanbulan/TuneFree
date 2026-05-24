@@ -30,13 +30,18 @@ export const fixUrl = (url: string | undefined): string => {
   const shouldProxyDirectly = (url: string): boolean => {
     try {
       const parsed = new URL(url);
-      return parsed.hostname === "hdslb.com" || parsed.hostname.endsWith(".hdslb.com");
+      return (
+        parsed.hostname === "hdslb.com" ||
+        parsed.hostname.endsWith(".hdslb.com") ||
+        parsed.hostname === "biliimg.com" ||
+        parsed.hostname.endsWith(".biliimg.com")
+      );
     } catch {
-      return url.includes("hdslb.com");
+      return url.includes("hdslb.com") || url.includes("biliimg.com");
     }
   };
 
-  if (shouldProxyDirectly(fixed) && !IS_LOCAL_DEV) {
+  if (shouldProxyDirectly(fixed)) {
     return `${SELF_HOSTED_PROXY}${encodeURIComponent(fixed)}`;
   }
 

@@ -21,6 +21,4 @@ export const IS_LOCAL_DEV =
 export const API_PREFIX = "";
 export const SELF_HOSTED_PROXY = `${API_PREFIX}/api/cors-proxy?url=`;
 
-export const DEFAULT_PROXIES: string[] = IS_LOCAL_DEV
-  ? ["https://corsproxy.io/?"]
-  : [SELF_HOSTED_PROXY, "https://corsproxy.io/?"];
+export const DEFAULT_PROXIES: string[] = [SELF_HOSTED_PROXY, "https://corsproxy.io/?"];

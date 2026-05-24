@@ -1,20 +1,28 @@
 import { Song } from "../types";
+import {
+  isGDStudioOnlySource,
+  isGDStudioSource,
+  normalizeMusicSource,
+  toGDStudioApiSource,
+} from "../utils/musicSource";
 import { GD_STUDIO_API_BASE } from "./config";
 import { proxyFetch } from "./proxy";
 import { fixUrl } from "./utils";
 
+export { isGDStudioOnlySource, isGDStudioSource } from "../utils/musicSource";
+
+type GdStudioArtist = string | { name?: string } | null | undefined;
+
 type GdStudioTrack = {
   id?: string | number;
   name?: string;
-  artist?: string[] | string;
+  artist?: GdStudioArtist[] | string;
   album?: string;
-  pic_id?: string;
-  url_id?: string;
-  lyric_id?: string;
+  pic_id?: string | number;
+  url_id?: string | number;
+  lyric_id?: string | number;
   source?: string;
 };
-
-type GdStudioSource = "netease" | "kuwo" | "joox" | "bilibili";
 
 type CachedTrackMeta = {
   pic?: string;
@@ -23,14 +31,7 @@ type CachedTrackMeta = {
   urlId?: string;
 };
 
-const GD_STUDIO_SOURCES: readonly GdStudioSource[] = [
-  "netease",
-  "kuwo",
-  "joox",
-  "bilibili",
-];
-
-const GD_STUDIO_ONLY_SOURCES = ["joox", "bilibili"] as const;
+type SongMeta = Pick<Song, "pic" | "picId" | "urlId" | "lyricId">;
 
 const buildJooxCoverUrl = (picId: string, size: 300 | 500 = 500): string =>
   `https://image.joox.com/JOOXcover/0/${picId}/${size}`;
@@ -75,6 +76,25 @@ const looksLikeRateLimitResponse = (status: number, text: string): boolean => {
   return /频率|rate limit|too many requests/i.test(text);
 };
 
+const getGDStudioErrorText = (data: unknown, fallback: string): string => {
+  if (data && typeof data === "object") {
+    const record = data as Record<string, unknown>;
+    if (typeof record.detail === "string") return record.detail;
+    if (typeof record.error === "string") return record.error;
+    if (typeof record.message === "string") return record.message;
+  }
+  return fallback;
+};
+
+const looksLikeUnsupportedSourceResponse = (
+  status: number,
+  text: string,
+  data: unknown,
+): boolean => {
+  if (status !== 400) return false;
+  return /source.*not supported/i.test(getGDStudioErrorText(data, text));
+};
+
 const fetchGDStudioData = async <T = any>(
   params: Record<string, string | number>,
 ): Promise<T> => {
@@ -89,6 +109,9 @@ const fetchGDStudioData = async <T = any>(
   if (!response.ok) {
     if (looksLikeRateLimitResponse(response.status, text)) {
       throw new Error("GD_STUDIO_RATE_LIMIT");
+    }
+    if (looksLikeUnsupportedSourceResponse(response.status, text, data)) {
+      throw new Error("GD_STUDIO_UNSUPPORTED_SOURCE");
     }
     throw new Error("GD_STUDIO_UNAVAILABLE");
   }
@@ -110,14 +133,22 @@ const fetchGDStudioData = async <T = any>(
   return data as T;
 };
 
+const normalizeId = (value: unknown): string => {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+};
+
+const pickFirstId = (...values: unknown[]): string =>
+  values.map(normalizeId).find((value) => value.length > 0) || "";
+
 const getTrackKey = (id: string | number, source: string): string =>
-  `${source}:${String(id)}`;
+  `${normalizeMusicSource(source)}:${String(id)}`;
 
 const getUrlCacheKey = (
   id: string | number,
   source: string,
   quality: string,
-): string => `${source}:${String(id)}:${quality}`;
+): string => `${normalizeMusicSource(source)}:${String(id)}:${quality}`;
 
 const buildApiUrl = (params: Record<string, string | number>): string => {
   const search = new URLSearchParams();
@@ -129,17 +160,32 @@ const buildApiUrl = (params: Record<string, string | number>): string => {
   return `${GD_STUDIO_API_BASE}?${search.toString()}`;
 };
 
-const joinArtists = (artist: string[] | string | undefined): string => {
-  if (Array.isArray(artist)) return artist.join(", ");
+const joinArtists = (artist: GdStudioArtist[] | string | undefined): string => {
+  if (Array.isArray(artist)) {
+    return artist
+      .map((item) => (typeof item === "string" ? item : item?.name || ""))
+      .filter(Boolean)
+      .join(", ");
+  }
   return typeof artist === "string" ? artist : "";
 };
 
 const normalizeBitrate = (quality: string): string => {
   if (quality === "128k") return "128";
+  if (quality === "192k") return "192";
   if (quality === "320k") return "320";
   if (quality === "flac") return "740";
   if (quality === "flac24bit") return "999";
   return "320";
+};
+
+const extractTracks = (data: any): GdStudioTrack[] => {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.result)) return data.result;
+  if (Array.isArray(data?.results)) return data.results;
+  if (Array.isArray(data?.songs)) return data.songs;
+  return [];
 };
 
 const rememberTrackMeta = (
@@ -152,50 +198,77 @@ const rememberTrackMeta = (
   trackMetaCache.set(cacheKey, { ...previous, ...meta });
 };
 
+const seedTrackMeta = (
+  id: string | number,
+  source: string,
+  songMeta?: SongMeta,
+): void => {
+  if (!normalizeId(id) || !songMeta) return;
+
+  const meta: CachedTrackMeta = {};
+  const pic = fixUrl(songMeta.pic || "");
+  const picId = normalizeId(songMeta.picId);
+  const lyricId = normalizeId(songMeta.lyricId);
+  const urlId = normalizeId(songMeta.urlId);
+
+  if (pic) meta.pic = pic;
+  if (picId) meta.picId = picId;
+  if (lyricId) meta.lyricId = lyricId;
+  if (urlId) meta.urlId = urlId;
+
+  if (Object.keys(meta).length > 0) {
+    rememberTrackMeta(id, source, meta);
+  }
+};
+
 const resolveTrackMeta = (
   id: string | number,
   source: string,
 ): CachedTrackMeta => trackMetaCache.get(getTrackKey(id, source)) || {};
 
-export const isGDStudioSource = (source: string): source is GdStudioSource =>
-  GD_STUDIO_SOURCES.includes(source as GdStudioSource);
-
-export const isGDStudioOnlySource = (
-  source: string,
-): source is (typeof GD_STUDIO_ONLY_SOURCES)[number] =>
-  GD_STUDIO_ONLY_SOURCES.includes(
-    source as (typeof GD_STUDIO_ONLY_SOURCES)[number],
-  );
+const resolveSearchResultPic = (source: string, picId: string): string => {
+  if (!picId) return "";
+  if (picId.startsWith("http") || picId.startsWith("//")) return fixUrl(picId);
+  if (source === "joox") return fixUrl(buildJooxCoverUrl(picId, 500));
+  return "";
+};
 
 export const searchGDStudio = async (
   keyword: string,
-  source: GdStudioSource,
+  source: string,
   page: number,
   limit: number,
 ): Promise<Song[]> => {
-  const data = await fetchGDStudioData<GdStudioTrack[]>({
-    types: "search",
-    source,
-    name: keyword,
-    count: limit,
-    pages: page,
-  });
+  const normalizedSource = normalizeMusicSource(source);
+  if (!isGDStudioSource(normalizedSource)) return [];
 
-  if (!Array.isArray(data)) return [];
+  let data: unknown;
+  try {
+    data = await fetchGDStudioData<unknown>({
+      types: "search",
+      source: toGDStudioApiSource(normalizedSource),
+      name: keyword,
+      count: limit,
+      pages: page,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "GD_STUDIO_UNSUPPORTED_SOURCE") {
+      return [];
+    }
+    throw error;
+  }
 
-  return data.map((item: GdStudioTrack) => {
-    const id = String(item.id || item.url_id || item.lyric_id || "").trim();
-    const picId = String(item.pic_id || "").trim();
-    const lyricId = String(item.lyric_id || id).trim();
-    const urlId = String(item.url_id || id).trim();
-    const pic = picId.startsWith("http") || picId.startsWith("//")
-      ? fixUrl(picId)
-      : source === "joox" && picId
-        ? fixUrl(buildJooxCoverUrl(picId, 500))
-        : "";
+  return extractTracks(data).map((item: GdStudioTrack) => {
+    const itemSource = normalizeMusicSource(normalizeId(item.source) || normalizedSource);
+    const songSource = isGDStudioSource(itemSource) ? itemSource : normalizedSource;
+    const id = pickFirstId(item.id, item.url_id, item.lyric_id);
+    const picId = normalizeId(item.pic_id);
+    const lyricId = normalizeId(item.lyric_id) || id;
+    const urlId = normalizeId(item.url_id) || id;
+    const pic = resolveSearchResultPic(songSource, picId);
 
     if (id) {
-      rememberTrackMeta(id, source, {
+      rememberTrackMeta(id, songSource, {
         pic,
         picId,
         lyricId,
@@ -212,30 +285,36 @@ export const searchGDStudio = async (
       picId,
       lyricId,
       urlId,
-      source,
+      source: songSource,
     };
   });
 };
 
 export const getGDStudioSongUrl = async (
   id: string | number,
-  source: GdStudioSource,
+  source: string,
   quality: string = "320k",
+  songMeta?: SongMeta,
 ): Promise<string | null> => {
-  const cacheKey = getUrlCacheKey(id, source, quality);
+  const normalizedSource = normalizeMusicSource(source);
+  if (!isGDStudioSource(normalizedSource)) return null;
+
+  seedTrackMeta(id, normalizedSource, songMeta);
+  const trackMeta = resolveTrackMeta(id, normalizedSource);
+  const requestId = trackMeta.urlId || normalizeId(id);
+  if (!requestId) return null;
+
+  const cacheKey = getUrlCacheKey(requestId, normalizedSource, quality);
   const cached = urlCache.get(cacheKey);
 
   if (cached && cached.expiresAt > Date.now()) {
     return cached.url;
   }
 
-  const trackMeta = resolveTrackMeta(id, source);
-  const requestId = trackMeta.urlId || String(id);
-
   try {
     const data = await fetchGDStudioData<{ url?: string }>({
       types: "url",
-      source,
+      source: toGDStudioApiSource(normalizedSource),
       id: requestId,
       br: normalizeBitrate(quality),
     });
@@ -247,6 +326,7 @@ export const getGDStudioSongUrl = async (
       url,
       expiresAt: Date.now() + URL_CACHE_TTL,
     });
+    rememberTrackMeta(id, normalizedSource, { urlId: requestId });
 
     return url;
   } catch {
@@ -256,11 +336,18 @@ export const getGDStudioSongUrl = async (
 
 export const getGDStudioLyrics = async (
   id: string | number,
-  source: GdStudioSource,
+  source: string,
+  songMeta?: SongMeta,
 ): Promise<string> => {
-  const trackMeta = resolveTrackMeta(id, source);
-  const requestId = trackMeta.lyricId || String(id);
-  const cacheKey = getTrackKey(requestId, source);
+  const normalizedSource = normalizeMusicSource(source);
+  if (!isGDStudioSource(normalizedSource)) return "";
+
+  seedTrackMeta(id, normalizedSource, songMeta);
+  const trackMeta = resolveTrackMeta(id, normalizedSource);
+  const requestId = trackMeta.lyricId || normalizeId(id);
+  if (!requestId) return "";
+
+  const cacheKey = getTrackKey(requestId, normalizedSource);
 
   if (lyricCache.has(cacheKey)) {
     return lyricCache.get(cacheKey) || "";
@@ -269,7 +356,7 @@ export const getGDStudioLyrics = async (
   try {
     const data = await fetchGDStudioData<{ lyric?: string; tlyric?: string }>({
       types: "lyric",
-      source,
+      source: toGDStudioApiSource(normalizedSource),
       id: requestId,
     });
 
@@ -278,7 +365,7 @@ export const getGDStudioLyrics = async (
     const lrc = main && trans ? `${main}\n${trans}` : main;
 
     lyricCache.set(cacheKey, lrc);
-    rememberTrackMeta(id, source, { lyricId: requestId });
+    rememberTrackMeta(id, normalizedSource, { lyricId: requestId });
     return lrc;
   } catch {
     lyricCache.set(cacheKey, "");
@@ -287,25 +374,26 @@ export const getGDStudioLyrics = async (
 };
 
 export const getGDStudioPic = async (
-  source: GdStudioSource,
+  source: string,
   picId: string,
   size: 300 | 500 = 500,
 ): Promise<string> => {
-  if (!picId) return "";
+  const normalizedSource = normalizeMusicSource(source);
+  if (!picId || !isGDStudioSource(normalizedSource)) return "";
 
-  if (source === "joox") {
+  if (normalizedSource === "joox") {
     const pic = fixUrl(buildJooxCoverUrl(picId, size));
-    picCache.set(`${source}:${picId}:${size}`, pic);
+    picCache.set(`${normalizedSource}:${picId}:${size}`, pic);
     return pic;
   }
 
   const directPic = fixUrl(picId);
   if (directPic && (picId.startsWith("http") || picId.startsWith("//"))) {
-    picCache.set(`${source}:${picId}`, directPic);
+    picCache.set(`${normalizedSource}:${picId}`, directPic);
     return directPic;
   }
 
-  const cacheKey = `${source}:${picId}:${size}`;
+  const cacheKey = `${normalizedSource}:${picId}:${size}`;
   if (picCache.has(cacheKey)) {
     return picCache.get(cacheKey) || "";
   }
@@ -313,7 +401,7 @@ export const getGDStudioPic = async (
   try {
     const data = await fetchGDStudioData<{ url?: string }>({
       types: "pic",
-      source,
+      source: toGDStudioApiSource(normalizedSource),
       id: picId,
       size,
     });
@@ -330,19 +418,23 @@ export const getGDStudioPic = async (
 
 export const resolveGDStudioPic = async (
   id: string | number,
-  source: GdStudioSource,
-  songMeta?: Pick<Song, "pic" | "picId">,
+  source: string,
+  songMeta?: SongMeta,
 ): Promise<string> => {
-  if (songMeta?.pic) return fixUrl(songMeta.pic);
+  const normalizedSource = normalizeMusicSource(source);
+  if (!isGDStudioSource(normalizedSource)) return "";
 
-  const trackMeta = resolveTrackMeta(id, source);
-  const picId = songMeta?.picId || trackMeta.picId || "";
+  seedTrackMeta(id, normalizedSource, songMeta);
+  const trackMeta = resolveTrackMeta(id, normalizedSource);
+  const storedPic = fixUrl(trackMeta.pic || songMeta?.pic || "");
+  if (storedPic) return storedPic;
 
+  const picId = normalizeId(songMeta?.picId) || trackMeta.picId || "";
   if (!picId) return "";
 
-  const pic = await getGDStudioPic(source, picId, 500);
+  const pic = await getGDStudioPic(normalizedSource, picId, 500);
   if (pic) {
-    rememberTrackMeta(id, source, { pic, picId });
+    rememberTrackMeta(id, normalizedSource, { pic, picId });
   }
 
   return pic;
@@ -350,14 +442,18 @@ export const resolveGDStudioPic = async (
 
 export const parseGDStudioSongFull = async (
   id: string | number,
-  source: GdStudioSource,
+  source: string,
   quality: string = "320k",
-  songMeta?: Pick<Song, "pic" | "picId">,
+  songMeta?: SongMeta,
 ): Promise<{ url: string | null; lrc: string; pic: string } | null> => {
+  const normalizedSource = normalizeMusicSource(source);
+  if (!isGDStudioSource(normalizedSource)) return null;
+
+  seedTrackMeta(id, normalizedSource, songMeta);
   const [url, lrc, pic] = await Promise.all([
-    getGDStudioSongUrl(id, source, quality),
-    getGDStudioLyrics(id, source),
-    resolveGDStudioPic(id, source, songMeta),
+    getGDStudioSongUrl(id, normalizedSource, quality, songMeta),
+    getGDStudioLyrics(id, normalizedSource, songMeta),
+    resolveGDStudioPic(id, normalizedSource, songMeta),
   ]);
 
   if (!url && !lrc && !pic) return null;

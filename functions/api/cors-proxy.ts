@@ -29,6 +29,7 @@ const ALLOWED_HOSTS = [
     'm.kuwo.cn',
     'music-api.gdstudio.xyz',
     'hdslb.com',
+    'biliimg.com',
 ];
 
 export const onRequest = async (context: any) => {
@@ -80,7 +81,12 @@ export const onRequest = async (context: any) => {
             headers.set('Referer', 'https://music.gdstudio.xyz/');
         }
 
-        if (parsedTarget.hostname === 'hdslb.com' || parsedTarget.hostname.endsWith('.hdslb.com')) {
+        if (
+            parsedTarget.hostname === 'hdslb.com' ||
+            parsedTarget.hostname.endsWith('.hdslb.com') ||
+            parsedTarget.hostname === 'biliimg.com' ||
+            parsedTarget.hostname.endsWith('.biliimg.com')
+        ) {
             headers.set('Referer', 'https://www.bilibili.com/');
         }
 

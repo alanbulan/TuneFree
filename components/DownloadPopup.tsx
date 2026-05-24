@@ -41,7 +41,7 @@ const DownloadPopup: React.FC<DownloadPopupProps> = ({ isOpen, onClose, song }) 
     if (downloadingType) return;
     setDownloadingType(type);
     try {
-      const url = await getSongUrl(song.id, song.source, type);
+      const url = await getSongUrl(song.id, song.source, type, song);
       if (!url) {
         showToast('无法获取下载地址', 'error');
         return;

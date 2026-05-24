@@ -4,7 +4,6 @@ import {
   searchAggregate,
   searchSongs,
   getImgReferrerPolicy,
-  isGDStudioOnlySource,
 } from "../services/api";
 import { Song, isSameSong } from "../types";
 import {
@@ -14,15 +13,10 @@ import {
 import { SearchIcon, MusicIcon, TrashIcon } from "../components/Icons";
 import { useToast } from "../components/ToastHost";
 import {
-  EXTENDED_AGGREGATE_SOURCES,
-  GD_STUDIO_ATTRIBUTION,
-  GD_STUDIO_RATE_LIMIT_HINT,
+  SEARCH_SOURCE_OPTIONS,
   getMusicSourceBadgeClass,
   getMusicSourceLabel,
 } from "../utils/musicSource";
-
-const AGGREGATE_EXTENDED_SOURCES_KEY =
-  "tunefree_aggregate_extended_sources";
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -116,13 +110,6 @@ const Search: React.FC = () => {
     "aggregate",
   );
   const [selectedSource, setSelectedSource] = useState("netease");
-  const [includeExtendedSources, setIncludeExtendedSources] = useState(() => {
-    try {
-      return localStorage.getItem(AGGREGATE_EXTENDED_SOURCES_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [searchError, setSearchError] = useState("");
@@ -172,12 +159,6 @@ const Search: React.FC = () => {
     localStorage.setItem("tunefree_search_history", JSON.stringify(history));
   }, [history]);
 
-  useEffect(() => {
-    localStorage.setItem(
-      AGGREGATE_EXTENDED_SOURCES_KEY,
-      includeExtendedSources ? "1" : "0",
-    );
-  }, [includeExtendedSources]);
 
   const addToHistory = useCallback((term: string) => {
     if (!term || typeof term !== "string" || !term.trim()) return;
@@ -201,7 +182,7 @@ const Search: React.FC = () => {
     setPage(1);
     setHasMore(true);
     setSearchError("");
-  }, [searchTerm, searchMode, selectedSource, includeExtendedSources]);
+  }, [searchTerm, searchMode, selectedSource]);
 
   useEffect(() => {
     if (!searchTerm) return;
@@ -217,9 +198,7 @@ const Search: React.FC = () => {
       try {
         let data: Song[] = [];
         if (searchMode === "aggregate") {
-          data = await searchAggregate(searchTerm, page, {
-            includeExtendedSources,
-          });
+          data = await searchAggregate(searchTerm, page);
         } else {
           data = await searchSongs(searchTerm, selectedSource, page);
         }
@@ -236,11 +215,7 @@ const Search: React.FC = () => {
         console.error(e);
         if (page === 1) setResults([]);
         setHasMore(false);
-        setSearchError(
-          searchMode === "single" && isGDStudioOnlySource(selectedSource)
-            ? `${getMusicSourceLabel(selectedSource, "full")} 当前不可用，或可能触发了公开接口频控（${GD_STUDIO_RATE_LIMIT_HINT}）。`
-            : "搜索失败，请稍后重试。",
-        );
+        setSearchError("搜索失败，请稍后重试。");
       } finally {
         if (!signal.aborted && requestId === searchRequestIdRef.current) setIsSearching(false);
       }
@@ -253,7 +228,6 @@ const Search: React.FC = () => {
     searchMode,
     selectedSource,
     page,
-    includeExtendedSources,
   ]);
 
   const handleLoadMore = useCallback(() => {
@@ -302,17 +276,6 @@ const Search: React.FC = () => {
     [],
   );
 
-  const extendedSourceLabel = EXTENDED_AGGREGATE_SOURCES.map((source) =>
-    getMusicSourceLabel(source),
-  ).join(" / ");
-
-  const searchHint =
-    searchMode === "aggregate" && includeExtendedSources
-      ? `已启用扩展聚合：${extendedSourceLabel}。速度可能稍慢，并会占用 ${GD_STUDIO_ATTRIBUTION} 的公开接口频次。`
-      : searchMode === "single" && isGDStudioOnlySource(selectedSource)
-        ? `${getMusicSourceLabel(selectedSource, "full")} 使用 ${GD_STUDIO_ATTRIBUTION} 公开接口，建议控制频率：${GD_STUDIO_RATE_LIMIT_HINT}。`
-        : "";
-
   return (
     <div className="min-h-full p-5 pt-safe bg-ios-bg">
       <div className="sticky top-0 bg-ios-bg/95 backdrop-blur-md z-20 pb-2 transition-all">
@@ -359,18 +322,6 @@ const Search: React.FC = () => {
             指定源
           </button>
 
-          {searchMode === "aggregate" && (
-            <button
-              onClick={() => setIncludeExtendedSources((prev) => !prev)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
-                includeExtendedSources
-                  ? "bg-ios-red/10 text-ios-red border-ios-red/20"
-                  : "bg-white text-gray-600 border-gray-200"
-              }`}
-            >
-              扩展源 {includeExtendedSources ? "开" : "关"}
-            </button>
-          )}
 
           {searchMode === "single" && (
             <>
@@ -380,20 +331,20 @@ const Search: React.FC = () => {
                 onChange={(e) => setSelectedSource(e.target.value)}
                 className="bg-white border border-gray-200 text-xs font-medium px-3 py-1.5 rounded-full outline-none text-gray-700"
               >
-                <option value="netease">{getMusicSourceLabel("netease", "full")}</option>
-                <option value="qq">{getMusicSourceLabel("qq", "full")}</option>
-                <option value="kuwo">{getMusicSourceLabel("kuwo", "full")}</option>
-                <option value="joox">{getMusicSourceLabel("joox", "full")}</option>
+                {SEARCH_SOURCE_OPTIONS.map((source) => (
+                  <option
+                    key={source.value}
+                    value={source.value}
+                    disabled={source.disabled}
+                  >
+                    {source.label}
+                  </option>
+                ))}
               </select>
             </>
           )}
         </div>
 
-        {searchHint && (
-          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-700">
-            {searchHint}
-          </div>
-        )}
 
         {searchError && (
           <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] leading-relaxed text-red-600">
