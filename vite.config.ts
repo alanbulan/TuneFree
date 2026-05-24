@@ -37,13 +37,32 @@ const isBilibiliImageHost = (hostname: string) =>
   hostname === 'biliimg.com' ||
   hostname.endsWith('.biliimg.com');
 
-const readRequestBody = async (req: any) => {
+const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+};
+
+const readRequestBody = async (req: any): Promise<ArrayBuffer | undefined> => {
   if (req.method === 'GET' || req.method === 'HEAD') return undefined;
-  const chunks = [];
+
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+
   for await (const chunk of req) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    chunks.push(typeof chunk === 'string' ? encoder.encode(chunk) : new Uint8Array(chunk));
   }
-  return chunks.length > 0 ? Buffer.concat(chunks) : undefined;
+
+  if (chunks.length === 0) return undefined;
+  if (chunks.length === 1) return toArrayBuffer(chunks[0]);
+
+  const body = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return body.buffer;
 };
 
 const localCorsProxyPlugin = () => ({
