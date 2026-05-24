@@ -71,10 +71,10 @@ const isLikelySameSong = (candidate: Song, songMeta?: SongMeta): boolean => {
   const candidateName = normalizeComparableText(candidate.name);
   if (!targetName || !candidateName) return false;
 
-  if (candidateName === targetName) return true;
-
   const nameMatches =
-    candidateName.includes(targetName) || targetName.includes(candidateName);
+    candidateName === targetName ||
+    candidateName.includes(targetName) ||
+    targetName.includes(candidateName);
   if (!nameMatches) return false;
 
   const targetArtists = splitArtistTokens(songMeta.artist);

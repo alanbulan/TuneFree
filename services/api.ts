@@ -70,7 +70,12 @@ export const searchSongs = async (
   if (!isSearchableMusicSource(source)) return [];
   if (source === "netease") return searchNetease(keyword, page, limit);
   if (source === "qq") return searchQQ(keyword, page, limit);
-  if (source === "kuwo") return searchKuwo(keyword, page, limit);
+  if (source === "kuwo") {
+    const gdResults = await searchGDStudio(keyword, source, page, limit).catch(
+      () => [] as Song[],
+    );
+    return gdResults.length > 0 ? gdResults : searchKuwo(keyword, page, limit);
+  }
   if (isGDStudioOnlySource(source)) return searchGDStudio(keyword, source, page, limit);
 
   return [];
