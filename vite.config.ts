@@ -65,6 +65,82 @@ const readRequestBody = async (req: any): Promise<ArrayBuffer | undefined> => {
   return body.buffer;
 };
 
+const sendJson = (res: any, statusCode: number, data: unknown) => {
+  res.statusCode = statusCode;
+  res.setHeader('Content-Type', 'application/json');
+  res.end(JSON.stringify(data));
+};
+
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+];
+
+const getRandomUserAgent = () =>
+  USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+
+const getLocalKuwoUrl = async (id: string, quality: string): Promise<string> => {
+  const format = quality === 'flac' || quality === 'ape' ? 'flac' : 'mp3';
+  const apiUrl = `http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=MUSIC_${encodeURIComponent(id)}&format=${format}&response=url`;
+
+  const resp = await fetch(apiUrl, {
+    headers: {
+      'User-Agent': getRandomUserAgent(),
+      Referer: 'http://kuwo.cn/',
+    },
+  });
+
+  const playUrl = (await resp.text()).trim();
+  if (!playUrl || !playUrl.startsWith('http')) {
+    throw new Error('Kuwo returned empty URL');
+  }
+
+  return `/api/cors-proxy?url=${encodeURIComponent(playUrl)}`;
+};
+
+const localNativeUrlPlugin = () => ({
+  name: 'local-native-url',
+  configureServer(server: any) {
+    server.middlewares.use(async (req: any, res: any, next: any) => {
+      const requestUrl = new URL(req.url || '/', 'http://localhost');
+      if (requestUrl.pathname !== '/api/url') {
+        next();
+        return;
+      }
+
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+      if (req.method === 'OPTIONS') {
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+
+      const platform = requestUrl.searchParams.get('platform');
+      const id = requestUrl.searchParams.get('id');
+      const quality = requestUrl.searchParams.get('quality') || '128k';
+
+      if (!platform || !id) {
+        sendJson(res, 400, { error: 'Missing platform or id' });
+        return;
+      }
+
+      try {
+        if (platform !== 'kuwo') {
+          sendJson(res, 400, { error: `Platform ${platform} not supported locally` });
+          return;
+        }
+
+        sendJson(res, 200, { url: await getLocalKuwoUrl(id, quality) });
+      } catch (error: any) {
+        sendJson(res, 500, { error: error?.message || 'Failed to fetch url' });
+      }
+    });
+  },
+});
+
 const localCorsProxyPlugin = () => ({
   name: 'local-cors-proxy',
   configureServer(server: any) {
@@ -149,7 +225,7 @@ const localCorsProxyPlugin = () => ({
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react(), localCorsProxyPlugin()],
+  plugins: [react(), localNativeUrlPlugin(), localCorsProxyPlugin()],
   optimizeDeps: {
     entries: ['index.html'],
   },
