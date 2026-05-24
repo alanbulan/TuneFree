@@ -79,7 +79,50 @@ const USER_AGENTS = [
 const getRandomUserAgent = () =>
   USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
-const getLocalKuwoUrl = async (id: string, quality: string): Promise<string> => {
+const getLocalKuwoQualityCandidates = (quality: string): string[] => {
+  if (quality === 'flac' || quality === 'ape') {
+    return ['2000kflac', '320kmp3', '192kmp3', '128kmp3', '48kaac'];
+  }
+  if (quality === '320k') return ['320kmp3', '192kmp3', '128kmp3', '48kaac'];
+  if (quality === '192k') return ['192kmp3', '128kmp3', '48kaac'];
+  return ['128kmp3', '48kaac'];
+};
+
+const getLocalKuwoMobiUrl = async (
+  id: string,
+  quality: string,
+): Promise<string | null> => {
+  let fallbackUrl: string | null = null;
+
+  for (const br of getLocalKuwoQualityCandidates(quality)) {
+    try {
+      const apiUrl = `http://mobi.kuwo.cn/mobi.s?f=web&type=convert_url_with_sign&source=jiakong&rid=${encodeURIComponent(id)}&br=${br}`;
+      const resp = await fetch(apiUrl, {
+        headers: {
+          'User-Agent': getRandomUserAgent(),
+          Referer: 'http://kuwo.cn/',
+        },
+      });
+
+      const data = await resp.json();
+      const playUrl = data?.data?.url;
+      const format = String(data?.data?.format || '').toLowerCase();
+      if (!playUrl || !playUrl.startsWith('http')) continue;
+
+      fallbackUrl ||= playUrl;
+      if (format === 'mp3' || format === 'flac') return playUrl;
+    } catch {
+      // try next bitrate
+    }
+  }
+
+  return fallbackUrl;
+};
+
+const getLocalKuwoAntiUrl = async (
+  id: string,
+  quality: string,
+): Promise<string | null> => {
   const format = quality === 'flac' || quality === 'ape' ? 'flac' : 'mp3';
   const apiUrl = `http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=MUSIC_${encodeURIComponent(id)}&format=${format}&response=url`;
 
@@ -91,7 +134,15 @@ const getLocalKuwoUrl = async (id: string, quality: string): Promise<string> => 
   });
 
   const playUrl = (await resp.text()).trim();
-  if (!playUrl || !playUrl.startsWith('http')) {
+  return playUrl && playUrl.startsWith('http') ? playUrl : null;
+};
+
+const getLocalKuwoUrl = async (id: string, quality: string): Promise<string> => {
+  const playUrl =
+    (await getLocalKuwoMobiUrl(id, quality)) ||
+    (await getLocalKuwoAntiUrl(id, quality));
+
+  if (!playUrl) {
     throw new Error('Kuwo returned empty URL');
   }
 
@@ -210,8 +261,16 @@ const localCorsProxyPlugin = () => ({
           body: await readRequestBody(req),
           redirect: 'follow',
         });
-        const responseContentType = upstream.headers.get('content-type');
-        if (responseContentType) res.setHeader('Content-Type', responseContentType);
+        for (const headerName of [
+          'content-type',
+          'content-length',
+          'content-range',
+          'accept-ranges',
+          'cache-control',
+        ]) {
+          const value = upstream.headers.get(headerName);
+          if (value) res.setHeader(headerName, value);
+        }
         res.statusCode = upstream.status;
         res.end(new Uint8Array(await upstream.arrayBuffer()));
       } catch (error: any) {

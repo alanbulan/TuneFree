@@ -227,7 +227,45 @@ const kuwoCryptoAlgorithm = (function() {
     };
 })();
 
-async function getKuwoUrl(songmid: string, quality: string) {
+function getKuwoQualityCandidates(quality: string): string[] {
+    if (quality === "flac" || quality === "ape") {
+        return ["2000kflac", "320kmp3", "192kmp3", "128kmp3", "48kaac"];
+    }
+    if (quality === "320k") return ["320kmp3", "192kmp3", "128kmp3", "48kaac"];
+    if (quality === "192k") return ["192kmp3", "128kmp3", "48kaac"];
+    return ["128kmp3", "48kaac"];
+}
+
+async function getKuwoMobiUrl(songmid: string, quality: string): Promise<string | null> {
+    let fallbackUrl: string | null = null;
+
+    for (const br of getKuwoQualityCandidates(quality)) {
+        try {
+            const apiUrl = `http://mobi.kuwo.cn/mobi.s?f=web&type=convert_url_with_sign&source=jiakong&rid=${encodeURIComponent(songmid)}&br=${br}`;
+            const resp = await fetch(apiUrl, {
+                method: "GET",
+                headers: {
+                    'User-Agent': getRandomUserAgent(),
+                    'Referer': "http://kuwo.cn/"
+                }
+            });
+
+            const data: any = await resp.json();
+            const playUrl = data?.data?.url;
+            const format = String(data?.data?.format || "").toLowerCase();
+            if (!playUrl || !playUrl.startsWith("http")) continue;
+
+            fallbackUrl ||= playUrl;
+            if (format === "mp3" || format === "flac") return playUrl;
+        } catch {
+            // try next bitrate
+        }
+    }
+
+    return fallbackUrl;
+}
+
+async function getKuwoAntiUrl(songmid: string, quality: string): Promise<string | null> {
     const format = quality === "flac" || quality === "ape" ? "flac" : "mp3";
     const apiUrl = `http://antiserver.kuwo.cn/anti.s?type=convert_url&rid=MUSIC_${encodeURIComponent(songmid)}&format=${format}&response=url`;
 
@@ -240,7 +278,12 @@ async function getKuwoUrl(songmid: string, quality: string) {
     });
 
     const playUrl = (await resp.text()).trim();
-    if (!playUrl || !playUrl.startsWith("http")) {
+    return playUrl && playUrl.startsWith("http") ? playUrl : null;
+}
+
+async function getKuwoUrl(songmid: string, quality: string) {
+    const playUrl = await getKuwoMobiUrl(songmid, quality) || await getKuwoAntiUrl(songmid, quality);
+    if (!playUrl) {
         throw new Error("Kuwo returned empty URL (VIP / copyright)");
     }
 
