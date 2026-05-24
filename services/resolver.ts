@@ -25,6 +25,7 @@ const _lyricsCache = new Map<string, string>();
 const _lyricsPending = new Map<string, Promise<string>>();
 const FALLBACK_SEARCH_LIMIT = 6;
 const FALLBACK_CANDIDATE_LIMIT = 3;
+const KUWO_FALLBACK_SOURCES = ["qq", "netease", "joox", "bilibili"] as const;
 
 const normalizeCacheId = (value: unknown): string => {
   if (value === null || value === undefined) return "";
@@ -217,6 +218,15 @@ const resolveDirectSongFull = async (
   return { url, lrc, pic };
 };
 
+const getFallbackSources = (originalSource: string): readonly string[] => {
+  const normalizedOriginalSource = normalizeMusicSource(originalSource);
+  if (normalizedOriginalSource === "kuwo") return KUWO_FALLBACK_SOURCES;
+
+  return SEARCHABLE_MUSIC_SOURCES.filter(
+    (source) => normalizeMusicSource(source) !== normalizedOriginalSource,
+  );
+};
+
 const resolveFallbackSongFull = async (
   originalSource: string,
   quality: string,
@@ -226,9 +236,7 @@ const resolveFallbackSongFull = async (
   if (!query) return null;
 
   const normalizedOriginalSource = normalizeMusicSource(originalSource);
-  const fallbackSources = SEARCHABLE_MUSIC_SOURCES.filter(
-    (source) => normalizeMusicSource(source) !== normalizedOriginalSource,
-  );
+  const fallbackSources = getFallbackSources(normalizedOriginalSource);
 
   for (const source of fallbackSources) {
     try {
