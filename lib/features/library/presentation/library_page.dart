@@ -1,17 +1,20 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/network/tune_free_http_client.dart';
 import '../../../core/models/playlist.dart';
 import '../../../core/models/song.dart';
+import '../../../shared/theme/tune_free_spacing.dart';
 import '../../player/application/player_controller.dart';
 import '../application/library_controller.dart';
 import '../application/library_state.dart';
 import '../data/playlist_import_repository.dart';
-import 'widgets/downloads_management_section.dart';
+import 'downloads_page.dart';
 import 'widgets/library_backup_transfer.dart';
 import 'widgets/library_playlist_grid.dart';
 import 'widgets/library_song_tile.dart';
@@ -36,12 +39,7 @@ final aboutLinkLauncherProvider = Provider<AboutLinkLauncher>((ref) {
 });
 
 final playlistImportClientProvider = Provider<PlaylistImportClient>((ref) {
-  final httpClient = TuneFreeHttpClient();
-  final controller = ref.watch(libraryControllerProvider);
-  return TunehubPlaylistImportClient(
-    httpClient: httpClient,
-    apiBaseProvider: () => controller.state.apiBase,
-  );
+  return TunehubPlaylistImportClient(httpClient: TuneFreeHttpClient());
 });
 
 final playlistImportRepositoryProvider = Provider<PlaylistImportRepository>((
@@ -65,6 +63,7 @@ class LibraryPage extends ConsumerStatefulWidget {
 
 class _LibraryPageState extends ConsumerState<LibraryPage> {
   String _activeTab = 'favorites';
+  String? _previousTab;
   String? _selectedPlaylistId;
   bool _isEditMode = false;
 
@@ -85,7 +84,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       backgroundColor: const Color(0xFFF5F7FA),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+          padding: const EdgeInsets.fromLTRB(
+            20,
+            8,
+            20,
+            TuneFreeSpacing.shellContentBottomPadding,
+          ),
           children: [
             const Text(
               '我的资料库',
@@ -96,6 +100,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               activeTab: _activeTab,
               onChanged: (tab) {
                 setState(() {
+                  _previousTab = _activeTab;
                   _activeTab = tab;
                   _selectedPlaylistId = null;
                   _isEditMode = false;
@@ -103,60 +108,74 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               },
             ),
             const SizedBox(height: 24),
-            if (_activeTab == 'favorites')
-              _FavoritesTab(
-                state: state,
-                onSongTap: (song) =>
-                    _playSongQueue(song: song, queueSongs: state.favorites),
-              ),
-            if (_activeTab == 'playlists' && selectedPlaylist == null)
-              _PlaylistsTab(
-                playlists: state.playlists,
-                onCreatePlaylist: _handleCreatePlaylist,
-                onImportPlaylist: _handleImportPlaylist,
-                onOpenPlaylist: (playlist) {
-                  setState(() {
-                    _selectedPlaylistId = playlist.id;
-                    _isEditMode = false;
-                  });
-                },
-              ),
-            if (_activeTab == 'playlists' && selectedPlaylist != null)
-              _PlaylistDetailTab(
-                playlist: selectedPlaylist,
-                isEditMode: _isEditMode,
-                onBack: () {
-                  setState(() {
-                    _selectedPlaylistId = null;
-                    _isEditMode = false;
-                  });
-                },
-                onToggleEditMode: () {
-                  setState(() {
-                    _isEditMode = !_isEditMode;
-                  });
-                },
-                onRenamePlaylist: () => _handleRenamePlaylist(selectedPlaylist),
-                onDeletePlaylist: () => _handleDeletePlaylist(selectedPlaylist),
-                onRemoveSong: (song) =>
-                    _handleRemoveFromPlaylist(selectedPlaylist, song),
-                onSongTap: (song) => _playSongQueue(
-                  song: song,
-                  queueSongs: selectedPlaylist.songs,
-                ),
-              ),
-            if (_activeTab == 'manage')
-              _ManageTab(
-                state: state,
-                controller: controller,
-                backupTransfer: ref.watch(libraryBackupTransferProvider),
-              ),
-            if (_activeTab == 'about')
-              _AboutTab(linkLauncher: ref.watch(aboutLinkLauncherProvider)),
+            _LibraryTabContentTransition(
+              activeTab: _activeTab,
+              previousTab: _previousTab,
+              child: _buildActiveTab(state, selectedPlaylist, controller),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildActiveTab(
+    LibraryState state,
+    Playlist? selectedPlaylist,
+    LibraryController controller,
+  ) {
+    return switch (_activeTab) {
+      'playlists' when selectedPlaylist == null => _PlaylistsTab(
+        key: const ValueKey<String>('library-tab-playlists'),
+        playlists: state.playlists,
+        onCreatePlaylist: _handleCreatePlaylist,
+        onImportPlaylist: _handleImportPlaylist,
+        onOpenPlaylist: (playlist) {
+          setState(() {
+            _selectedPlaylistId = playlist.id;
+            _isEditMode = false;
+          });
+        },
+      ),
+      'playlists' => _PlaylistDetailTab(
+        key: const ValueKey<String>('library-tab-playlist-detail'),
+        playlist: selectedPlaylist!,
+        isEditMode: _isEditMode,
+        onBack: () {
+          setState(() {
+            _selectedPlaylistId = null;
+            _isEditMode = false;
+          });
+        },
+        onToggleEditMode: () {
+          setState(() {
+            _isEditMode = !_isEditMode;
+          });
+        },
+        onRenamePlaylist: () => _handleRenamePlaylist(selectedPlaylist),
+        onDeletePlaylist: () => _handleDeletePlaylist(selectedPlaylist),
+        onRemoveSong: (song) =>
+            _handleRemoveFromPlaylist(selectedPlaylist, song),
+        onSongTap: (song) =>
+            _playSongQueue(song: song, queueSongs: selectedPlaylist.songs),
+      ),
+      'manage' => _ManageTab(
+        key: const ValueKey<String>('library-tab-manage'),
+        state: state,
+        controller: controller,
+        backupTransfer: ref.watch(libraryBackupTransferProvider),
+      ),
+      'about' => _AboutTab(
+        key: const ValueKey<String>('library-tab-about'),
+        linkLauncher: ref.watch(aboutLinkLauncherProvider),
+      ),
+      _ => _FavoritesTab(
+        key: const ValueKey<String>('library-tab-favorites'),
+        state: state,
+        onSongTap: (song) =>
+            _playSongQueue(song: song, queueSongs: state.favorites),
+      ),
+    };
   }
 
   Playlist? _selectedPlaylist(List<Playlist> playlists) {
@@ -436,8 +455,80 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   }
 }
 
+class _LibraryTabContentTransition extends StatelessWidget {
+  const _LibraryTabContentTransition({
+    required this.activeTab,
+    required this.previousTab,
+    required this.child,
+  });
+
+  final String activeTab;
+  final String? previousTab;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final previousIndex = _tabIndex(previousTab ?? activeTab);
+    final activeIndex = _tabIndex(activeTab);
+    final direction = activeIndex >= previousIndex ? 1.0 : -1.0;
+
+    return ClipRect(
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        reverseDuration: const Duration(milliseconds: 220),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        layoutBuilder: (currentChild, previousChildren) {
+          return Stack(
+            alignment: Alignment.topCenter,
+            children: [...previousChildren, ?currentChild],
+          );
+        },
+        transitionBuilder: (child, animation) {
+          final curvedAnimation = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          final offset = Tween<Offset>(
+            begin: Offset(0.055 * direction, 0),
+            end: Offset.zero,
+          ).animate(curvedAnimation);
+          final scale = Tween<double>(
+            begin: 0.985,
+            end: 1,
+          ).animate(curvedAnimation);
+          return IgnorePointer(
+            ignoring: animation.status == AnimationStatus.reverse,
+            child: FadeTransition(
+              opacity: curvedAnimation,
+              child: SlideTransition(
+                position: offset,
+                child: ScaleTransition(
+                  scale: scale,
+                  child: RepaintBoundary(child: child),
+                ),
+              ),
+            ),
+          );
+        },
+        child: child,
+      ),
+    );
+  }
+
+  static int _tabIndex(String tab) {
+    final index = LibraryTabSwitcher.tabs.indexOf(tab);
+    return index < 0 ? 0 : index;
+  }
+}
+
 class _FavoritesTab extends StatelessWidget {
-  const _FavoritesTab({required this.state, required this.onSongTap});
+  const _FavoritesTab({
+    super.key,
+    required this.state,
+    required this.onSongTap,
+  });
 
   final LibraryState state;
   final ValueChanged<Song> onSongTap;
@@ -486,6 +577,7 @@ class _FavoritesTab extends StatelessWidget {
 
 class _PlaylistsTab extends StatelessWidget {
   const _PlaylistsTab({
+    super.key,
     required this.playlists,
     required this.onCreatePlaylist,
     required this.onImportPlaylist,
@@ -586,6 +678,7 @@ class _ActionPlaylistCard extends StatelessWidget {
 
 class _PlaylistDetailTab extends StatelessWidget {
   const _PlaylistDetailTab({
+    super.key,
     required this.playlist,
     required this.isEditMode,
     required this.onBack,
@@ -737,6 +830,7 @@ class _PlaylistDetailTab extends StatelessWidget {
 
 class _ManageTab extends StatefulWidget {
   const _ManageTab({
+    super.key,
     required this.state,
     required this.controller,
     required this.backupTransfer,
@@ -751,36 +845,39 @@ class _ManageTab extends StatefulWidget {
 }
 
 class _ManageTabState extends State<_ManageTab> {
-  late final TextEditingController _apiKeyController;
-  late final TextEditingController _apiBaseController;
   late final TextEditingController _proxyController;
 
   @override
   void initState() {
     super.initState();
-    _apiKeyController = TextEditingController(text: widget.state.apiKey);
-    _apiBaseController = TextEditingController(text: widget.state.apiBase);
     _proxyController = TextEditingController(text: widget.state.corsProxy);
   }
 
   @override
   void didUpdateWidget(covariant _ManageTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.state.apiKey != widget.state.apiKey) {
-      _apiKeyController.text = widget.state.apiKey;
-    }
-    if (oldWidget.state.apiBase != widget.state.apiBase) {
-      _apiBaseController.text = widget.state.apiBase;
-    }
     if (oldWidget.state.corsProxy != widget.state.corsProxy) {
       _proxyController.text = widget.state.corsProxy;
     }
   }
 
+  void _openDownloadsPage() {
+    try {
+      unawaited(context.push('/library/downloads'));
+    } catch (_) {
+      unawaited(
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            settings: const RouteSettings(name: '/library/downloads'),
+            builder: (_) => const LibraryDownloadsPage(),
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
-    _apiKeyController.dispose();
-    _apiBaseController.dispose();
     _proxyController.dispose();
     super.dispose();
   }
@@ -896,24 +993,11 @@ class _ManageTabState extends State<_ManageTab> {
     return Column(
       children: [
         SettingsCard(
-          title: '核心设置',
+          title: '网络设置',
           icon: Icons.settings_rounded,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _SettingsField(
-                label: 'TuneHub API Key',
-                controller: _apiKeyController,
-                hintText: 'th_xxxxxxxxxxxx',
-                obscureText: true,
-              ),
-              const SizedBox(height: 16),
-              _SettingsField(
-                label: 'API Base URL',
-                controller: _apiBaseController,
-                hintText: 'https://api.tune-free.example',
-              ),
-              const SizedBox(height: 16),
               _SettingsField(
                 label: 'CORS 代理 (可选)',
                 controller: _proxyController,
@@ -922,8 +1006,6 @@ class _ManageTabState extends State<_ManageTab> {
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: () async {
-                  await widget.controller.setApiKey(_apiKeyController.text);
-                  await widget.controller.setApiBase(_apiBaseController.text);
                   await widget.controller.setCorsProxy(_proxyController.text);
                   if (!context.mounted) {
                     return;
@@ -942,26 +1024,43 @@ class _ManageTabState extends State<_ManageTab> {
           ),
         ),
         const SizedBox(height: 16),
-        DownloadsManagementSection(
-          downloads: widget.state.downloads,
-          onDelete: (item) async {
-            try {
-              await widget.controller.deleteDownload(item);
-              if (!context.mounted) {
-                return;
-              }
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(SnackBar(content: Text('已删除 ${item.songName}')));
-            } catch (_) {
-              if (!context.mounted) {
-                return;
-              }
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('删除失败，请稍后重试')));
-            }
-          },
+        SettingsCard(
+          title: '下载管理',
+          icon: Icons.download_done_rounded,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.state.downloads.isEmpty
+                    ? '暂无离线条目，下载后会自动出现在独立页面。'
+                    : '当前保存了 ${widget.state.downloads.length} 个离线条目。',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF6B7280),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                '播放时会优先使用本地文件。',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF9CA3AF),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                key: const Key('library-downloads-management-button'),
+                onPressed: _openDownloadsPage,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFE94B5B),
+                  minimumSize: const Size(double.infinity, 48),
+                ),
+                child: const Text('打开下载管理'),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 16),
         SettingsCard(
@@ -1017,13 +1116,11 @@ class _SettingsField extends StatelessWidget {
     required this.label,
     required this.controller,
     required this.hintText,
-    this.obscureText = false,
   });
 
   final String label;
   final TextEditingController controller;
   final String hintText;
-  final bool obscureText;
 
   @override
   Widget build(BuildContext context) {
@@ -1041,7 +1138,6 @@ class _SettingsField extends StatelessWidget {
         const SizedBox(height: 6),
         TextField(
           controller: controller,
-          obscureText: obscureText,
           decoration: InputDecoration(
             hintText: hintText,
             filled: true,
@@ -1138,7 +1234,7 @@ class _BackupPreviewCard extends StatelessWidget {
 }
 
 class _AboutTab extends StatelessWidget {
-  const _AboutTab({required this.linkLauncher});
+  const _AboutTab({super.key, required this.linkLauncher});
 
   final AboutLinkLauncher linkLauncher;
 
@@ -1148,38 +1244,30 @@ class _AboutTab extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const _AboutCard(
+          padding: EdgeInsets.all(22),
           child: Column(
             children: [
-              SizedBox(height: 8),
-              CircleAvatar(
-                radius: 32,
-                backgroundColor: Color(0x1AE94B5B),
-                child: Icon(
-                  Icons.music_note_rounded,
-                  size: 32,
-                  color: Color(0xFFE94B5B),
-                ),
-              ),
+              _AboutAppIcon(),
               SizedBox(height: 12),
               Text(
                 'TuneFree Mobile',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
               ),
               SizedBox(height: 4),
               Text(
-                '一个高颜值的现代化 PWA 音乐播放器',
-                style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
+                '一个高颜值的 Flutter Android 音乐播放器',
+                style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
                 textAlign: TextAlign.center,
               ),
-              SizedBox(height: 4),
+              SizedBox(height: 3),
               Text(
-                'v1.2.0',
-                style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+                'v1.0.0',
+                style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         const _AboutCard(
           title: '功能特性',
           child: Column(
@@ -1187,89 +1275,72 @@ class _AboutTab extends StatelessWidget {
               _FeatureRow(
                 index: '1',
                 title: '多源聚合搜索',
-                subtitle: '支持网易云、QQ音乐、酷我音乐，以及 JOOX、B站扩展音源',
+                subtitle: '支持网易云、QQ音乐、酷我音乐，以及 JOOX 扩展音源',
               ),
-              SizedBox(height: 12),
+              SizedBox(height: 10),
               _FeatureRow(
                 index: '2',
                 title: '无损音质播放',
                 subtitle: '支持 128k / 320k / FLAC / Hi-Res',
               ),
-              SizedBox(height: 12),
+              SizedBox(height: 10),
               _FeatureRow(
                 index: '3',
                 title: '实时音频可视化',
-                subtitle: 'Canvas 绘制频谱动画 + 峰值指示器',
+                subtitle: 'Android 原生频谱数据驱动 Flutter 播放动效',
               ),
-              SizedBox(height: 12),
+              SizedBox(height: 10),
               _FeatureRow(index: '4', title: '逐行滚动歌词', subtitle: '支持双语歌词翻译显示'),
-              SizedBox(height: 12),
+              SizedBox(height: 10),
               _FeatureRow(
                 index: '5',
-                title: 'PWA 离线体验',
-                subtitle: '添加到主屏幕，享受原生 App 体验',
+                title: 'Android 离线体验',
+                subtitle: '下载到本地，优先使用离线音频播放',
               ),
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         const _AboutCard(
           title: '技术栈',
           child: Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              _TechChip(label: 'React 19'),
-              _TechChip(label: 'TypeScript'),
-              _TechChip(label: 'Tailwind CSS'),
-              _TechChip(label: 'Vite'),
-              _TechChip(label: 'Framer Motion'),
-              _TechChip(label: 'Web Audio API'),
-              _TechChip(label: 'Canvas'),
+              _TechChip(label: 'Flutter'),
+              _TechChip(label: 'Dart'),
+              _TechChip(label: 'Riverpod'),
+              _TechChip(label: 'go_router'),
+              _TechChip(label: 'just_audio'),
+              _TechChip(label: 'audio_service'),
+              _TechChip(label: 'Dio'),
+              _TechChip(label: 'shared_preferences'),
+              _TechChip(label: 'path_provider'),
             ],
           ),
         ),
-        const SizedBox(height: 16),
-        _AboutCard(
+        const SizedBox(height: 14),
+        const _AboutCard(
           title: '后端 API',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '音乐数据服务由 TuneHub API 与 GD音乐台 (music.gdstudio.xyz) 共同提供。',
+              Text(
+                '网易云、QQ音乐、酷我音乐使用直连接口；JOOX 扩展音源与播放解析由 GD音乐台 (music.gdstudio.xyz) 提供。',
                 style: TextStyle(
                   fontSize: 14,
                   color: Color(0xFF6B7280),
                   height: 1.5,
                 ),
               ),
-              const SizedBox(height: 8),
-              const Text(
-                'TuneHub 负责原有解析链路；JOOX、B站等扩展音源走 GD Studio 公开接口，建议控制频率：5 分钟内不超过 50 次请求。',
+              SizedBox(height: 8),
+              Text(
+                '播放地址、歌词和封面通过 music-api.gdstudio.xyz/api.php 解析。GD 音乐台为公开接口，建议控制请求频率：5 分钟内不超过 50 次请求。',
                 style: TextStyle(
                   fontSize: 12,
                   color: Color(0xFF9CA3AF),
                   height: 1.5,
                 ),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  _InlineAboutLink(
-                    title: 'TuneHub 原帖',
-                    subtitle: 'linux.do/t/topic/1326425',
-                    uri: Uri.parse('https://linux.do/t/topic/1326425'),
-                    linkLauncher: linkLauncher,
-                  ),
-                  _InlineAboutLink(
-                    title: 'GD音乐台',
-                    subtitle: 'music.gdstudio.xyz',
-                    uri: Uri.parse('https://music.gdstudio.xyz/'),
-                    linkLauncher: linkLauncher,
-                  ),
-                ],
               ),
             ],
           ),
@@ -1280,9 +1351,16 @@ class _AboutTab extends StatelessWidget {
           child: Column(
             children: [
               _LinkRow(
+                title: 'GD音乐台',
+                subtitle: 'music.gdstudio.xyz',
+                uri: Uri.parse('https://music.gdstudio.xyz/'),
+                linkLauncher: linkLauncher,
+              ),
+              const SizedBox(height: 12),
+              _LinkRow(
                 title: '在线演示',
-                subtitle: 'xilan.ccwu.cc',
-                uri: Uri.parse('https://xilan.ccwu.cc/'),
+                subtitle: 'music.alanbulan.space',
+                uri: Uri.parse('https://music.alanbulan.space'),
                 linkLauncher: linkLauncher,
               ),
               const SizedBox(height: 12),
@@ -1303,32 +1381,54 @@ class _AboutTab extends StatelessWidget {
 }
 
 class _AboutCard extends StatelessWidget {
-  const _AboutCard({this.title, required this.child});
+  const _AboutCard({this.title, required this.child, this.padding});
 
   final String? title;
   final Widget child;
+  final EdgeInsetsGeometry? padding;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: padding ?? const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (title != null) ...[
             Text(
               title!,
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
           ],
           child,
         ],
+      ),
+    );
+  }
+}
+
+class _AboutAppIcon extends StatelessWidget {
+  const _AboutAppIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        color: const Color(0x1AE94B5B),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Icon(
+        Icons.music_note_rounded,
+        size: 30,
+        color: Color(0xFFE94B5B),
       ),
     );
   }
@@ -1353,7 +1453,7 @@ class _FeatureRow extends StatelessWidget {
         Text(
           index,
           style: const TextStyle(
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: FontWeight.w700,
             color: Color(0xFFE94B5B),
           ),
@@ -1366,17 +1466,17 @@ class _FeatureRow extends StatelessWidget {
               Text(
                 title,
                 style: const TextStyle(
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               Text(
                 subtitle,
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   color: Color(0xFF9CA3AF),
-                  height: 1.4,
+                  height: 1.35,
                 ),
               ),
             ],
@@ -1464,63 +1564,6 @@ class _LinkRow extends StatelessWidget {
   }
 }
 
-class _InlineAboutLink extends StatelessWidget {
-  const _InlineAboutLink({
-    required this.title,
-    required this.subtitle,
-    required this.uri,
-    required this.linkLauncher,
-  });
-
-  final String title;
-  final String subtitle;
-  final Uri uri;
-  final AboutLinkLauncher linkLauncher;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        key: Key('about-inline-link-$title'),
-        borderRadius: BorderRadius.circular(999),
-        onTap: () => linkLauncher.launch(uri),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF9FAFB),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.open_in_new_rounded,
-                size: 14,
-                color: Color(0xFFE94B5B),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFFE94B5B),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                subtitle,
-                style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _DisclaimerCard extends StatelessWidget {
   const _DisclaimerCard();
 
@@ -1536,7 +1579,7 @@ class _DisclaimerCard extends StatelessWidget {
       child: const Column(
         children: [
           Text(
-            '本项目仅供学习 React 及现代前端技术栈使用。音乐资源来源于第三方 API，本项目不存储任何音频文件。请支持正版音乐。',
+            '本项目仅供学习 Flutter 与移动端音乐播放器实现使用。音乐资源来源于第三方 API，请支持正版音乐。',
             style: TextStyle(
               fontSize: 11,
               color: Color(0xFF9CA3AF),

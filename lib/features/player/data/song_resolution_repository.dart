@@ -5,101 +5,101 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/song.dart';
 import '../../../core/network/tune_free_http_client.dart';
-import '../../../core/source_clients/tunehub_client.dart';
-import '../../library/application/library_controller.dart';
-import '../../library/data/playlist_import_repository.dart';
 
 typedef SongResolver = Future<Song> Function(Song song, String quality);
 
-final tunehubClientProvider = Provider<TunehubClient>((ref) {
-  final httpClient = TuneFreeHttpClient();
-  return TunehubSongResolutionClient(
-    httpClient: httpClient,
-    apiBaseProvider: () => ref.read(libraryControllerProvider).state.apiBase,
-    apiKeyProvider: () => ref.read(libraryControllerProvider).state.apiKey,
+const defaultGdStudioApiBase = 'https://music-api.gdstudio.xyz/api.php';
+
+final songResolutionClientProvider = Provider<SongResolutionClient>((ref) {
+  return GdStudioSongResolutionClient(httpClient: TuneFreeHttpClient());
+});
+
+final songResolutionRepositoryProvider = Provider<SongResolutionRepository>((
+  ref,
+) {
+  return SongResolutionRepository(
+    client: ref.watch(songResolutionClientProvider),
   );
 });
 
-final songResolutionRepositoryProvider = Provider<SongResolutionRepository>((ref) {
-  return SongResolutionRepository(tunehubClient: ref.watch(tunehubClientProvider));
-});
+abstract interface class SongResolutionClient {
+  Future<Song> resolveSong(Song song, String quality);
+}
 
 final class SongResolutionRepository {
-  SongResolutionRepository({required TunehubClient tunehubClient})
-    : this.test(resolveSongValue: tunehubClient.resolveSong);
+  SongResolutionRepository({required SongResolutionClient client})
+    : this.test(resolveSongValue: client.resolveSong);
 
   SongResolutionRepository.test({required SongResolver resolveSongValue})
     : _resolveSongValue = resolveSongValue;
 
   final SongResolver _resolveSongValue;
+  final Map<String, Future<Song>> _pendingResolutions =
+      <String, Future<Song>>{};
 
   Future<Song> resolveSong(Song song, {required String quality}) {
-    return _resolveSongValue(song, quality);
+    final cacheKey = _resolutionCacheKey(song, quality);
+    final pendingResolution = _pendingResolutions[cacheKey];
+    if (pendingResolution != null) {
+      return pendingResolution;
+    }
+
+    final resolution = _resolveSongValue(song, quality).whenComplete(() {
+      _pendingResolutions.remove(cacheKey);
+    });
+    _pendingResolutions[cacheKey] = resolution;
+    return resolution;
   }
 }
 
-final class TunehubSongResolutionClient implements TunehubClient {
-  TunehubSongResolutionClient({
+final class GdStudioSongResolutionClient implements SongResolutionClient {
+  GdStudioSongResolutionClient({
     required TuneFreeHttpClient httpClient,
-    required String Function() apiBaseProvider,
-    required String Function() apiKeyProvider,
-  }) : _httpClient = httpClient,
-       _apiBaseProvider = apiBaseProvider,
-       _apiKeyProvider = apiKeyProvider,
-       _playlistImportClient = TunehubPlaylistImportClient(
-         httpClient: httpClient,
-         apiBaseProvider: apiBaseProvider,
-       );
+    String apiBase = defaultGdStudioApiBase,
+  }) : _dio = httpClient.dio,
+       _apiBase = apiBase;
 
-  final TuneFreeHttpClient _httpClient;
-  final String Function() _apiBaseProvider;
-  final String Function() _apiKeyProvider;
-  final TunehubPlaylistImportClient _playlistImportClient;
+  static const _urlCacheTtl = Duration(minutes: 5);
+  static const _maxCacheEntries = 80;
 
-  @override
-  Future<List<Song>> importPlaylist(String source, String id) async {
-    final payload = await _playlistImportClient.importPlaylist(source, id);
-    return payload?.songs ?? const <Song>[];
+  final Dio _dio;
+  final String _apiBase;
+  final Map<String, _CachedResolution<String>> _urlCache =
+      <String, _CachedResolution<String>>{};
+  final Map<String, String> _lyricsCache = <String, String>{};
+  final Map<String, String> _pictureCache = <String, String>{};
+
+  void _cacheUrl(String cacheKey, String value) {
+    _urlCache[cacheKey] = _CachedResolution(value, DateTime.now());
+    _trimCache(_urlCache);
+  }
+
+  void _cacheString(Map<String, String> cache, String cacheKey, String value) {
+    cache[cacheKey] = value;
+    _trimCache(cache);
   }
 
   @override
   Future<Song> resolveSong(Song song, String quality) async {
-    final apiBase = _normalizeResolutionApiBase(_apiBaseProvider());
-    final apiKey = _apiKeyProvider().trim();
-    final response = await _httpClient.dio.post<Map<String, dynamic>>(
-      '$apiBase/v1/parse',
-      data: <String, dynamic>{
-        'platform': song.source.wireValue,
-        'ids': song.id,
-        'quality': quality,
-      },
-      options: Options(
-        headers: <String, String>{
-          if (apiKey.isNotEmpty) 'X-API-Key': apiKey,
-        },
-      ),
+    final source = song.source.wireValue;
+    final urlFuture = _loadUrl(
+      source: source,
+      id: _requestId(song.urlId, song.id),
+      quality: quality,
     );
+    final lyricsFuture = _loadLyrics(
+      source: source,
+      id: _requestId(song.lyricId, song.id),
+    );
+    final pictureFuture = _loadPicture(song);
 
-    final payload = _unwrapJsonLike(response.data);
-    final items = _extractList(_readMap(payload)?['data'] ?? payload);
-    final resolvedItem = items.isEmpty ? null : _readMap(items.first);
-    final actualItem = resolvedItem == null ? null : _readMap(resolvedItem['data']) ?? resolvedItem;
-    if (actualItem == null) {
-      throw StateError('TuneHub parse returned no song data for ${song.key}.');
+    final resolvedUrl = await urlFuture;
+    if (resolvedUrl == null) {
+      throw StateError('GD Studio returned no playable URL for ${song.key}.');
     }
 
-    final resolvedUrl = _readString(actualItem['url']);
-    if (resolvedUrl == null || resolvedUrl.isEmpty) {
-      throw StateError('TuneHub parse returned no playable URL for ${song.key}.');
-    }
-
-    final resolvedLyrics = _readString(actualItem['lyrics']) ??
-        _readString(actualItem['lrc']) ??
-        _readString(actualItem['lyric']);
-    final resolvedPicture = _readString(actualItem['pic']) ??
-        _readString(actualItem['picUrl']) ??
-        _readString(_readMap(actualItem['al'])?['picUrl']) ??
-        _readString(_readMap(actualItem['album'])?['picUrl']);
+    final resolvedLyrics = await lyricsFuture;
+    final resolvedPicture = await pictureFuture;
 
     return song.copyWith(
       url: resolvedUrl,
@@ -107,6 +107,306 @@ final class TunehubSongResolutionClient implements TunehubClient {
       pic: resolvedPicture ?? song.pic,
     );
   }
+
+  Future<String?> _loadUrl({
+    required String source,
+    required String id,
+    required String quality,
+  }) async {
+    final cacheKey = '$source:$id:$quality';
+    final cachedUrl = _freshCachedValue(_urlCache[cacheKey]);
+    if (cachedUrl != null) {
+      return cachedUrl;
+    }
+
+    try {
+      final payload = await _getGdStudioData(<String, String>{
+        'types': 'url',
+        'source': source,
+        'id': id,
+        'br': _normalizeBitrate(quality),
+      });
+      final resolvedUrl = _fixUrl(_readString(payload?['url']));
+      if (resolvedUrl != null) {
+        if (source != 'kuwo') {
+          _cacheUrl(cacheKey, resolvedUrl);
+        }
+        return resolvedUrl;
+      }
+    } catch (_) {}
+
+    if (source == 'kuwo') {
+      return _loadKuwoUrl(id);
+    }
+
+    return null;
+  }
+
+  Future<String?> _loadLyrics({
+    required String source,
+    required String id,
+  }) async {
+    final cacheKey = '$source:$id';
+    final cachedLyrics = _lyricsCache[cacheKey];
+    if (cachedLyrics != null) {
+      return cachedLyrics.isEmpty ? null : cachedLyrics;
+    }
+
+    try {
+      final payload = await _getGdStudioData(<String, String>{
+        'types': 'lyric',
+        'source': source,
+        'id': id,
+      });
+      final main = _readString(payload?['lyric']);
+      final translated = _readString(payload?['tlyric']);
+      final lines = <String>[?main, ?translated];
+      final resolvedLyrics = lines.join('\n');
+      if (resolvedLyrics.isNotEmpty) {
+        _cacheString(_lyricsCache, cacheKey, resolvedLyrics);
+        return resolvedLyrics;
+      }
+    } catch (_) {}
+
+    if (source == 'kuwo') {
+      final resolvedLyrics = await _loadKuwoLyrics(id);
+      if (resolvedLyrics != null && resolvedLyrics.isNotEmpty) {
+        _cacheString(_lyricsCache, cacheKey, resolvedLyrics);
+        return resolvedLyrics;
+      }
+    }
+
+    _cacheString(_lyricsCache, cacheKey, '');
+    return null;
+  }
+
+  Future<String?> _loadKuwoUrl(String id) async {
+    final normalizedId = id.startsWith('MUSIC_') ? id : 'MUSIC_$id';
+    try {
+      final response = await _dio.getUri<dynamic>(
+        Uri.https('antiserver.kuwo.cn', '/anti.s', <String, String>{
+          'type': 'convert_url3',
+          'rid': normalizedId,
+          'format': 'mp3',
+          'response': 'url',
+        }),
+        options: Options(responseType: ResponseType.plain),
+      );
+      final payload = _readMap(_unwrapJsonLike(response.data));
+      return _fixUrl(_readString(payload?['url']));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _loadKuwoLyrics(String id) async {
+    final lyrics = await _loadKuwoLyricsFrom(
+      Uri.https('kuwo.cn', '/openapi/v1/www/lyric/getlyric', <String, String>{
+        'musicId': id,
+      }),
+    );
+    if (lyrics != null && lyrics.isNotEmpty) {
+      return lyrics;
+    }
+
+    return _loadKuwoLyricsFrom(
+      Uri.http('m.kuwo.cn', '/newh5/singles/songinfoandlrc', <String, String>{
+        'musicId': id,
+        'httpsStatus': '1',
+      }),
+    );
+  }
+
+  Future<String?> _loadKuwoLyricsFrom(Uri uri) async {
+    try {
+      final response = await _dio.getUri<dynamic>(
+        uri,
+        options: Options(responseType: ResponseType.plain),
+      );
+      final payload = _readMap(_unwrapJsonLike(response.data));
+      final data = _readMap(payload?['data']);
+      final lyricItems = _readList(data?['lrclist']);
+      if (lyricItems.isEmpty) {
+        return null;
+      }
+      final lines = lyricItems
+          .map(_kuwoLyricLine)
+          .whereType<String>()
+          .toList(growable: false);
+      return lines.isEmpty ? null : lines.join('\n');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _kuwoLyricLine(dynamic value) {
+    final item = _readMap(value);
+    if (item == null) {
+      return null;
+    }
+    final text = _readString(item['lineLyric']) ?? '';
+    final seconds = double.tryParse(_readString(item['time']) ?? '');
+    if (seconds == null) {
+      return null;
+    }
+    final totalCentiseconds = (seconds * 100).round();
+    final minutes = totalCentiseconds ~/ 6000;
+    final wholeSeconds = (totalCentiseconds % 6000) ~/ 100;
+    final centiseconds = totalCentiseconds % 100;
+    return '[${minutes.toString().padLeft(2, '0')}:${wholeSeconds.toString().padLeft(2, '0')}.${centiseconds.toString().padLeft(2, '0')}]$text';
+  }
+
+  Future<String?> _loadPicture(Song song) async {
+    final existingPicture = _fixUrl(song.pic);
+    if (existingPicture != null) {
+      return existingPicture;
+    }
+
+    final picId = song.picId?.trim();
+    if (picId == null || picId.isEmpty) {
+      return null;
+    }
+
+    final source = song.source.wireValue;
+    final cacheKey = '$source:$picId:500';
+    final cachedPicture = _pictureCache[cacheKey];
+    if (cachedPicture != null) {
+      return cachedPicture;
+    }
+
+    if (source == 'joox') {
+      final jooxPicture = _fixUrl(
+        'https://image.joox.com/JOOXcover/0/$picId/500',
+      );
+      if (jooxPicture != null) {
+        _cacheString(_pictureCache, cacheKey, jooxPicture);
+      }
+      return jooxPicture;
+    }
+
+    try {
+      final payload = await _getGdStudioData(<String, String>{
+        'types': 'pic',
+        'source': source,
+        'id': picId,
+        'size': '500',
+      });
+      final resolvedPicture = _fixUrl(_readString(payload?['url']));
+      if (resolvedPicture != null) {
+        _cacheString(_pictureCache, cacheKey, resolvedPicture);
+      }
+      return resolvedPicture;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _getGdStudioData(
+    Map<String, String> queryParameters,
+  ) async {
+    final response = await _dio.getUri<dynamic>(
+      _buildGdStudioUri(apiBase: _apiBase, queryParameters: queryParameters),
+      options: Options(responseType: ResponseType.plain),
+    );
+    final rawPayload = response.data;
+    if (rawPayload is String && _looksLikeRateLimitResponse(rawPayload)) {
+      throw StateError('GD Studio rate limit response.');
+    }
+    final payload = _readMap(_unwrapJsonLike(rawPayload));
+    if (_readString(payload?['error']) != null) {
+      throw StateError('GD Studio returned an error response.');
+    }
+    return payload;
+  }
+}
+
+String _resolutionCacheKey(Song song, String quality) {
+  return '${song.source.wireValue}:${song.id}:${song.urlId ?? ''}:${song.lyricId ?? ''}:${song.picId ?? ''}:$quality';
+}
+
+Uri _buildGdStudioUri({
+  required String apiBase,
+  required Map<String, String> queryParameters,
+}) {
+  final baseUri = Uri.parse(_normalizeApiBase(apiBase));
+  return baseUri.replace(
+    queryParameters: <String, String>{
+      ...baseUri.queryParameters,
+      ...queryParameters,
+    },
+  );
+}
+
+String _normalizeApiBase(String value) {
+  final trimmedValue = value.trim();
+  return trimmedValue.isEmpty ? defaultGdStudioApiBase : trimmedValue;
+}
+
+String _requestId(String? preferredId, String fallbackId) {
+  final trimmedId = preferredId?.trim();
+  if (trimmedId != null && trimmedId.isNotEmpty) {
+    return trimmedId;
+  }
+  return fallbackId;
+}
+
+void _trimCache<K, V>(Map<K, V> cache) {
+  while (cache.length > GdStudioSongResolutionClient._maxCacheEntries) {
+    cache.remove(cache.keys.first);
+  }
+}
+
+T? _freshCachedValue<T>(_CachedResolution<T>? cachedValue) {
+  if (cachedValue == null) {
+    return null;
+  }
+  if (DateTime.now().difference(cachedValue.storedAt) >
+      GdStudioSongResolutionClient._urlCacheTtl) {
+    return null;
+  }
+  return cachedValue.value;
+}
+
+bool _looksLikeRateLimitResponse(String value) {
+  final normalized = value.toLowerCase();
+  return normalized.contains('rate limit') ||
+      normalized.contains('too many requests') ||
+      normalized.contains('频率') ||
+      normalized.contains('cloudflare');
+}
+
+String _normalizeBitrate(String quality) {
+  return switch (quality) {
+    '128k' => '128',
+    '320k' => '320',
+    'flac' => '740',
+    'flac24bit' => '999',
+    _ => '320',
+  };
+}
+
+String? _fixUrl(String? value) {
+  if (value == null) {
+    return null;
+  }
+
+  var fixedValue = value.trim().replaceAll('&amp;', '&');
+  if (fixedValue.isEmpty) {
+    return null;
+  }
+  if (fixedValue.startsWith('//')) {
+    fixedValue = 'https:$fixedValue';
+  }
+  if (fixedValue.startsWith('http://') &&
+      (fixedValue.contains('music.126.net') ||
+          fixedValue.contains('y.gtimg.cn') ||
+          fixedValue.contains('qpic.cn'))) {
+    fixedValue = fixedValue.replaceFirst('http://', 'https://');
+  }
+  if (fixedValue.contains('300x300')) {
+    fixedValue = fixedValue.replaceAll('300x300', '500x500');
+  }
+  return fixedValue;
 }
 
 dynamic _unwrapJsonLike(dynamic value) {
@@ -122,7 +422,10 @@ dynamic _unwrapJsonLike(dynamic value) {
   try {
     return jsonDecode(trimmedValue);
   } catch (_) {
-    final match = RegExp(r'^\s*[\w.]+\s*\((.*)\)\s*;?\s*$', dotAll: true).firstMatch(trimmedValue);
+    final match = RegExp(
+      r'^\s*[\w.]+\s*\((.*)\)\s*;?\s*$',
+      dotAll: true,
+    ).firstMatch(trimmedValue);
     if (match == null) {
       return value;
     }
@@ -132,58 +435,6 @@ dynamic _unwrapJsonLike(dynamic value) {
       return value;
     }
   }
-}
-
-List<dynamic> _extractList(dynamic payload) {
-  if (payload is List<dynamic>) {
-    return payload;
-  }
-
-  final payloadMap = _readMap(payload);
-  if (payloadMap == null) {
-    return const <dynamic>[];
-  }
-
-  final directMatches = <dynamic>[
-    payloadMap['tracks'],
-    payloadMap['songs'],
-    payloadMap['list'],
-    payloadMap['songlist'],
-    _readMap(payloadMap['playlist'])?['tracks'],
-    _readMap(payloadMap['result'])?['tracks'],
-    _readMap(payloadMap['result'])?['songs'],
-    _readMap(payloadMap['data'])?['songlist'],
-    _readMap(_readMap(payloadMap['data'])?['song'])?['list'],
-    _readMap(_readMap(payloadMap['toplist'])?['data'])?['songInfoList'],
-    payloadMap['musiclist'],
-    payloadMap['abslist'],
-  ];
-
-  for (final match in directMatches) {
-    if (match is List<dynamic>) {
-      return match;
-    }
-  }
-
-  if (payloadMap['data'] case final List<dynamic> dataList) {
-    return dataList;
-  }
-
-  if (payloadMap['id'] != null && payloadMap['name'] != null) {
-    return <dynamic>[payloadMap];
-  }
-
-  return const <dynamic>[];
-}
-
-String _normalizeResolutionApiBase(String value) {
-  final trimmedValue = value.trim();
-  if (trimmedValue.isEmpty || trimmedValue == 'https://api.tune-free.example') {
-    return defaultTunehubApiBase;
-  }
-  return trimmedValue.endsWith('/')
-      ? trimmedValue.substring(0, trimmedValue.length - 1)
-      : trimmedValue;
 }
 
 Map<String, dynamic>? _readMap(dynamic value) {
@@ -196,6 +447,13 @@ Map<String, dynamic>? _readMap(dynamic value) {
   return null;
 }
 
+List<dynamic> _readList(dynamic value) {
+  if (value is List) {
+    return value;
+  }
+  return const <dynamic>[];
+}
+
 String? _readString(dynamic value) {
   if (value == null) {
     return null;
@@ -205,4 +463,11 @@ String? _readString(dynamic value) {
     return trimmedValue.isEmpty ? null : trimmedValue;
   }
   return value.toString();
+}
+
+final class _CachedResolution<T> {
+  const _CachedResolution(this.value, this.storedAt);
+
+  final T value;
+  final DateTime storedAt;
 }

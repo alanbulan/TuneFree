@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/audio_quality.dart';
 import '../../../core/models/music_source.dart';
 import '../../../core/models/song.dart';
+import '../../search/application/search_providers.dart';
 import '../data/player_download_service.dart';
 import '../data/local_playback_resolver.dart';
 import '../data/player_preferences_store.dart';
@@ -31,13 +32,32 @@ final mediaSessionAdapterProvider = Provider<MediaSessionAdapter>((ref) {
   return AudioServiceMediaSessionAdapter();
 });
 
-const Set<String> _tunehubResolvableSources = <String>{
+const List<String> _playbackFallbackSources = <String>[
+  'netease',
+  'qq',
+  'kuwo',
+  'joox',
+  'bilibili',
+];
+
+const Set<String> _gdStudioResolvableSources = <String>{
   'netease',
   'qq',
   'kuwo',
   'joox',
   'bilibili',
 };
+
+const Map<String, String> _playbackSourceLabels = <String, String>{
+  'netease': '网易云',
+  'qq': 'QQ音乐',
+  'kuwo': '酷我音乐',
+  'joox': 'JOOX',
+  'bilibili': 'Bilibili',
+};
+
+const _fallbackSearchLimit = 6;
+const _fallbackCandidateLimit = 3;
 
 final localPlaybackResolverProvider = Provider<LocalPlaybackResolver>((ref) {
   final recordStore = ref.watch(downloadRecordStoreProvider);
@@ -64,6 +84,7 @@ final class PlayerController extends ChangeNotifier
     MediaSessionAdapter? mediaSessionAdapter,
     PlaybackLifecycleEventSource? lifecycleEventSource,
     LocalPlaybackResolver? localPlaybackResolver,
+    PlayerFallbackSongSearch? fallbackSongSearch,
   }) {
     initializeRuntime(
       engine: engine,
@@ -78,6 +99,7 @@ final class PlayerController extends ChangeNotifier
               quality: quality.wireValue,
             ),
       localPlaybackResolver: localPlaybackResolver,
+      fallbackSongSearch: fallbackSongSearch,
     );
   }
 
@@ -113,6 +135,9 @@ final class PlayerControllerNotifier extends Notifier<PlayerState>
             .read(songResolutionRepositoryProvider)
             .resolveSong(song, quality: quality.wireValue),
         localPlaybackResolver: ref.read(localPlaybackResolverProvider),
+        fallbackSongSearch: (keyword, source) => ref
+            .read(remoteSearchRepositoryProvider)
+            .searchSingle(keyword, source: source, page: 1),
       );
       ref.onDispose(() {
         unawaited(disposeController(disposeEngine: false));
@@ -125,12 +150,15 @@ final class PlayerControllerNotifier extends Notifier<PlayerState>
 
 typedef PlayerSongResolver =
     Future<Song> Function(Song song, AudioQuality quality);
+typedef PlayerFallbackSongSearch =
+    Future<List<Song>> Function(String keyword, String source);
 
 mixin _PlayerControllerRuntimeApi {
   late final PlayerEngine _engine;
   late final PlayerPreferencesStore _preferencesStore;
   PlaybackLifecycleCoordinator? _playbackLifecycleCoordinator;
   PlayerSongResolver? _resolveSongOverride;
+  PlayerFallbackSongSearch? _fallbackSongSearch;
   LocalPlaybackResolver? _localPlaybackResolver;
   StreamSubscription<PlayerEngineSnapshot>? _subscription;
   int _playbackMutationRevision = 0;
@@ -140,8 +168,10 @@ mixin _PlayerControllerRuntimeApi {
   PlayerEngineProcessingState _lastProcessingState =
       PlayerEngineProcessingState.idle;
   bool _handlingCompletion = false;
+  int _playbackNoticeRevision = 0;
   String? _lastStoppedSongKey;
   String? _ignoredSnapshotSongKey;
+  String? _lastPreloadCacheKey;
 
   PlayerState get state;
   set state(PlayerState value);
@@ -154,10 +184,12 @@ mixin _PlayerControllerRuntimeApi {
     required PlaybackLifecycleEventSource lifecycleEventSource,
     PlayerSongResolver? resolveSongOverride,
     LocalPlaybackResolver? localPlaybackResolver,
+    PlayerFallbackSongSearch? fallbackSongSearch,
   }) {
     _engine = engine;
     _preferencesStore = preferencesStore;
     _resolveSongOverride = resolveSongOverride;
+    _fallbackSongSearch = fallbackSongSearch;
     _localPlaybackResolver = localPlaybackResolver;
     _subscription = _engine.snapshots.listen(_applySnapshot);
     _playbackLifecycleCoordinator = PlaybackLifecycleCoordinator(
@@ -287,6 +319,7 @@ mixin _PlayerControllerRuntimeApi {
       isLoading: false,
       position: Duration.zero,
       duration: Duration.zero,
+      playbackNotice: null,
     );
     await _preferencesStore.saveCurrentSong(null);
     await _preferencesStore.saveQueue(state.queue);
@@ -339,6 +372,11 @@ mixin _PlayerControllerRuntimeApi {
   Future<void> playPrev() async {
     final queue = state.queue;
     if (queue.isEmpty) {
+      return;
+    }
+
+    if (state.position > const Duration(seconds: 3)) {
+      await seek(Duration.zero);
       return;
     }
 
@@ -435,6 +473,7 @@ mixin _PlayerControllerRuntimeApi {
       showQueue: true,
       showDownload: false,
       showMore: false,
+      playbackNotice: null,
     );
     await _preferencesStore.saveCurrentSong(null);
     await _preferencesStore.saveQueue(const <Song>[]);
@@ -493,12 +532,117 @@ mixin _PlayerControllerRuntimeApi {
     AudioQuality? forceQuality,
     required bool autoPlay,
   }) async {
-    _playbackMutationRevision += 1;
+    final playbackRevision = _playbackMutationRevision + 1;
+    _playbackMutationRevision = playbackRevision;
     _ignoredSnapshotSongKey = null;
     final quality = forceQuality ?? state.audioQuality;
     final nextQueue = List<Song>.unmodifiable(
       _resolveQueue(song: song, queue: queue),
     );
+    List<Song>? fallbackCandidates;
+
+    bool isCurrentRequest() => playbackRevision == _playbackMutationRevision;
+
+    Future<bool> commitPlayableSong(
+      Song playableSong,
+      List<Song> playableQueue,
+      AudioQuality playableQuality,
+    ) async {
+      if (!isCurrentRequest()) {
+        return false;
+      }
+      state = state.copyWith(
+        currentSong: playableSong,
+        queue: playableQueue,
+        audioQuality: playableQuality,
+        playbackNotice: null,
+      );
+
+      await _preferencesStore.saveCurrentSong(playableSong);
+      if (!isCurrentRequest()) {
+        return false;
+      }
+      await _preferencesStore.saveQueue(playableQueue);
+      if (!isCurrentRequest()) {
+        return false;
+      }
+      await _preferencesStore.saveAudioQuality(playableQuality);
+      if (!isCurrentRequest()) {
+        return false;
+      }
+      await _engine.loadSong(playableSong, quality: playableQuality);
+      if (!isCurrentRequest()) {
+        return false;
+      }
+      if (autoPlay) {
+        await _engine.play();
+      }
+      if (!isCurrentRequest()) {
+        return false;
+      }
+      _preloadNextSong(playableSong, playableQueue, playableQuality);
+      return true;
+    }
+
+    Future<bool> tryPlayableSong(
+      Song candidate,
+      AudioQuality candidateQuality, {
+      required Song queueAnchor,
+    }) async {
+      try {
+        final playableSong = await _resolveSongIfNeeded(
+          candidate,
+          candidateQuality,
+        );
+        if (!isCurrentRequest()) {
+          return false;
+        }
+        final playableQueue = List<Song>.unmodifiable(
+          _replaceQueueSong(nextQueue, queueAnchor, playableSong),
+        );
+        return commitPlayableSong(
+          playableSong,
+          playableQueue,
+          candidateQuality,
+        );
+      } catch (_) {
+        if (!isCurrentRequest()) {
+          return false;
+        }
+        return false;
+      }
+    }
+
+    Future<List<Song>> loadFallbackCandidates() async {
+      final cachedCandidates = fallbackCandidates;
+      if (cachedCandidates != null) {
+        return cachedCandidates;
+      }
+      final loadedCandidates = await _loadFallbackCandidates(song);
+      fallbackCandidates = loadedCandidates;
+      return loadedCandidates;
+    }
+
+    Future<Song?> tryFallbackSources(AudioQuality fallbackQuality) async {
+      final candidates = await loadFallbackCandidates();
+      if (!isCurrentRequest()) {
+        return null;
+      }
+      for (final candidate in candidates) {
+        final didCommit = await tryPlayableSong(
+          candidate,
+          fallbackQuality,
+          queueAnchor: song,
+        );
+        if (!isCurrentRequest()) {
+          return null;
+        }
+        if (didCommit) {
+          return candidate;
+        }
+      }
+      return null;
+    }
 
     state = state.copyWith(
       currentSong: song,
@@ -511,58 +655,105 @@ mixin _PlayerControllerRuntimeApi {
       showQueue: false,
       showDownload: false,
       showMore: false,
+      playbackNotice: null,
     );
 
-    final attemptedResolution = _canResolveSong(song);
-
     final localMatch = await _resolveLocalPlaybackIfAvailable(song, quality);
+    if (!isCurrentRequest()) {
+      return;
+    }
     if (localMatch != null) {
       final localSong = localMatch.song;
       final localQueue = List<Song>.unmodifiable(
-        nextQueue
-            .map((item) => item.key == localSong.key ? localSong : item)
-            .toList(growable: false),
+        _replaceQueueSong(nextQueue, song, localSong),
       );
-      state = state.copyWith(currentSong: localSong, queue: localQueue);
 
       try {
-        await _preferencesStore.saveCurrentSong(localSong);
-        await _preferencesStore.saveQueue(localQueue);
-        await _preferencesStore.saveAudioQuality(quality);
-        await _engine.loadSong(localSong, quality: quality);
-        if (autoPlay) {
-          await _engine.play();
+        final didCommit = await commitPlayableSong(
+          localSong,
+          localQueue,
+          localMatch.quality,
+        );
+        if (!didCommit) {
+          return;
         }
         return;
       } catch (_) {
+        if (!isCurrentRequest()) {
+          return;
+        }
         await _removeLocalPlaybackRecord(song, quality);
-        state = state.copyWith(currentSong: song, queue: nextQueue);
+        if (!isCurrentRequest()) {
+          return;
+        }
+        state = state.copyWith(
+          currentSong: song,
+          queue: nextQueue,
+          isLoading: true,
+          isPlaying: false,
+          playbackNotice: '本地文件失效，正在尝试在线播放',
+        );
       }
     }
 
-    try {
-      final playableSong = await _resolveSongIfNeeded(song, quality);
-      final playableQueue = List<Song>.unmodifiable(
-        nextQueue
-            .map((item) => item.key == playableSong.key ? playableSong : item)
-            .toList(growable: false),
+    if (await tryPlayableSong(song, quality, queueAnchor: song)) {
+      return;
+    }
+    if (!isCurrentRequest()) {
+      return;
+    }
+
+    final fallbackSong = await tryFallbackSources(quality);
+    if (!isCurrentRequest()) {
+      return;
+    }
+    if (fallbackSong != null) {
+      _showPlaybackNotice(
+        '当前音源不可用，已切换 ${_sourceFullLabel(fallbackSong.source.wireValue)}',
       );
+      return;
+    }
 
-      state = state.copyWith(currentSong: playableSong, queue: playableQueue);
-
-      await _preferencesStore.saveCurrentSong(playableSong);
-      await _preferencesStore.saveQueue(playableQueue);
-      await _preferencesStore.saveAudioQuality(quality);
-      await _engine.loadSong(playableSong, quality: quality);
-      if (autoPlay) {
-        await _engine.play();
+    if (quality != AudioQuality.k128) {
+      const fallbackQuality = AudioQuality.k128;
+      if (await tryPlayableSong(song, fallbackQuality, queueAnchor: song)) {
+        if (!isCurrentRequest()) {
+          return;
+        }
+        _showPlaybackNotice('原音质不可用，已切换 128k');
+        return;
       }
-    } catch (_) {
-      state = state.copyWith(isLoading: false, isPlaying: false);
-      if (!attemptedResolution) {
-        rethrow;
+      if (!isCurrentRequest()) {
+        return;
+      }
+
+      final fallbackQualitySong = await tryFallbackSources(fallbackQuality);
+      if (!isCurrentRequest()) {
+        return;
+      }
+      if (fallbackQualitySong != null) {
+        _showPlaybackNotice(
+          '当前音源不可用，已切换 ${_sourceFullLabel(fallbackQualitySong.source.wireValue)} · 128k',
+        );
+        return;
       }
     }
+
+    state = state.copyWith(
+      currentSong: song,
+      queue: nextQueue,
+      isLoading: false,
+      isPlaying: false,
+    );
+    await _preferencesStore.saveCurrentSong(song);
+    if (!isCurrentRequest()) {
+      return;
+    }
+    await _preferencesStore.saveQueue(nextQueue);
+    if (!isCurrentRequest()) {
+      return;
+    }
+    _showPlaybackNotice('所有音源暂时不可用，请稍后重试');
   }
 
   void _applySnapshot(PlayerEngineSnapshot snapshot) {
@@ -583,6 +774,13 @@ mixin _PlayerControllerRuntimeApi {
         ignoredSnapshotSongKey != null &&
         currentSong.key != ignoredSnapshotSongKey) {
       _ignoredSnapshotSongKey = null;
+    }
+
+    final expectedSong = state.currentSong;
+    if (currentSong != null &&
+        expectedSong != null &&
+        currentSong.key != expectedSong.key) {
+      return;
     }
 
     final nextQueue = currentSong == null
@@ -611,6 +809,165 @@ mixin _PlayerControllerRuntimeApi {
     unawaited(_preferencesStore.saveCurrentSong(currentSong));
     unawaited(_preferencesStore.saveQueue(state.queue));
     unawaited(_preferencesStore.saveAudioQuality(snapshot.audioQuality));
+  }
+
+  void _showPlaybackNotice(String message) {
+    final noticeRevision = _playbackNoticeRevision + 1;
+    _playbackNoticeRevision = noticeRevision;
+    state = state.copyWith(playbackNotice: message);
+    unawaited(
+      Future<void>.delayed(const Duration(seconds: 3), () {
+        if (_playbackNoticeRevision == noticeRevision) {
+          state = state.copyWith(playbackNotice: null);
+        }
+      }),
+    );
+  }
+
+  void _preloadNextSong(
+    Song currentSong,
+    List<Song> queue,
+    AudioQuality quality,
+  ) {
+    if (queue.length < 2 || state.playMode == shufflePlayMode) {
+      return;
+    }
+
+    final nextIndex = getNextQueueIndex(queue, currentSong, state.playMode);
+    if (nextIndex < 0) {
+      return;
+    }
+
+    final nextSong = queue[nextIndex];
+    if (nextSong.key == currentSong.key ||
+        nextSong.source == MusicSource.kuwo ||
+        !_canResolveSong(nextSong)) {
+      return;
+    }
+
+    final preloadCacheKey = '${nextSong.key}:${quality.wireValue}';
+    if (_lastPreloadCacheKey == preloadCacheKey) {
+      return;
+    }
+    _lastPreloadCacheKey = preloadCacheKey;
+
+    unawaited(() async {
+      try {
+        await _resolveSongIfNeeded(nextSong, quality);
+      } catch (_) {
+        if (_lastPreloadCacheKey == preloadCacheKey) {
+          _lastPreloadCacheKey = null;
+        }
+      }
+    }());
+  }
+
+  Future<List<Song>> _loadFallbackCandidates(Song song) async {
+    final search = _fallbackSongSearch;
+    if (search == null) {
+      return const <Song>[];
+    }
+
+    final query = _fallbackSearchQuery(song);
+    if (query.isEmpty) {
+      return const <Song>[];
+    }
+
+    final candidates = <Song>[];
+    final originalSource = song.source.wireValue;
+    for (final source in _playbackFallbackSources) {
+      if (source == originalSource) {
+        continue;
+      }
+      try {
+        final results = await search(query, source);
+        var addedForSource = 0;
+        for (final candidate in results.take(_fallbackSearchLimit)) {
+          if (addedForSource >= _fallbackCandidateLimit) {
+            break;
+          }
+          if (!_isFallbackCandidate(candidate, song)) {
+            continue;
+          }
+          candidates.add(candidate);
+          addedForSource += 1;
+        }
+      } catch (_) {}
+    }
+    return candidates;
+  }
+
+  bool _isFallbackCandidate(Song candidate, Song originalSong) {
+    if (candidate.source == originalSong.source) {
+      return false;
+    }
+    if (!_hasPlayableId(candidate) || !_canAttemptPlayback(candidate)) {
+      return false;
+    }
+    return _isLikelySameSong(candidate, originalSong);
+  }
+
+  bool _canAttemptPlayback(Song song) {
+    final url = song.url?.trim();
+    return (url != null && url.isNotEmpty) || _canResolveSong(song);
+  }
+
+  bool _hasPlayableId(Song song) {
+    final id = song.id.trim();
+    return id.isNotEmpty && !id.startsWith('temp-') && !id.startsWith('temp_');
+  }
+
+  bool _isLikelySameSong(Song candidate, Song originalSong) {
+    final candidateName = _normalizeMatchText(candidate.name);
+    final originalName = _normalizeMatchText(originalSong.name);
+    if (candidateName.isEmpty || originalName.isEmpty) {
+      return false;
+    }
+    final nameMatches =
+        candidateName == originalName ||
+        candidateName.contains(originalName) ||
+        originalName.contains(candidateName);
+    if (!nameMatches) {
+      return false;
+    }
+
+    final originalArtists = _normalizedArtistParts(originalSong.artist);
+    if (originalArtists.isEmpty) {
+      return true;
+    }
+    final candidateArtist = _normalizeMatchText(candidate.artist);
+    if (candidateArtist.isEmpty) {
+      return false;
+    }
+    return originalArtists.any(
+      (artist) =>
+          candidateArtist.contains(artist) || artist.contains(candidateArtist),
+    );
+  }
+
+  String _fallbackSearchQuery(Song song) {
+    final name = song.name.trim();
+    final artist = song.artist.trim();
+    return <String>[name, artist].where((value) => value.isNotEmpty).join(' ');
+  }
+
+  List<String> _normalizedArtistParts(String artist) {
+    return artist
+        .split(RegExp(r'[,，、/&|;；]+'))
+        .map(_normalizeMatchText)
+        .where((value) => value.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  String _normalizeMatchText(String value) {
+    return value.toLowerCase().replaceAll(
+      RegExp(r'[\s\-_.,，、/\\|&+()（）【】\[\]{}<>《》:：;；!！?？·・]+'),
+      '',
+    );
+  }
+
+  String _sourceFullLabel(String source) {
+    return _playbackSourceLabels[source] ?? source.toUpperCase();
   }
 
   Future<void> _handlePlaybackCompleted() async {
@@ -697,7 +1054,7 @@ mixin _PlayerControllerRuntimeApi {
       return false;
     }
 
-    return _tunehubResolvableSources.contains(song.source.wireValue);
+    return _gdStudioResolvableSources.contains(song.source.wireValue);
   }
 
   List<Song> _resolveQueue({required Song song, List<Song>? queue}) {
@@ -715,6 +1072,31 @@ mixin _PlayerControllerRuntimeApi {
     }
 
     return List<Song>.from(<Song>[...queue, song], growable: false);
+  }
+
+  List<Song> _replaceQueueSong(
+    List<Song> queue,
+    Song anchorSong,
+    Song replacementSong,
+  ) {
+    var didReplace = false;
+    final replacedQueue = <Song>[];
+    final seenKeys = <String>{};
+    for (final item in queue) {
+      final nextItem = !didReplace && item.key == anchorSong.key
+          ? replacementSong
+          : item.key == replacementSong.key
+          ? replacementSong
+          : item;
+      didReplace = didReplace || item.key == anchorSong.key;
+      if (seenKeys.add(nextItem.key)) {
+        replacedQueue.add(nextItem);
+      }
+    }
+    if (!didReplace && seenKeys.add(replacementSong.key)) {
+      replacedQueue.add(replacementSong);
+    }
+    return replacedQueue;
   }
 
   Duration _clampSeekPosition(Duration position) {

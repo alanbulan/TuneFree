@@ -7,7 +7,7 @@ import 'package:tunefree/features/player/data/local_playback_resolver.dart';
 
 void main() {
   test(
-    'local playback resolver returns an exact-quality local hit only',
+    'local playback resolver prefers exact-quality local hits and falls back to downloads',
     () async {
       final resolver = LocalPlaybackResolver(
         recordsForSong: (songKey) async => <DownloadRecord>[
@@ -35,9 +35,11 @@ void main() {
 
       final flacHit = await resolver.resolve(song, AudioQuality.flac);
       expect(flacHit?.filePath, '/downloads/song.flac');
+      expect(flacHit?.quality, AudioQuality.flac);
 
-      final mp3Miss = await resolver.resolve(song, AudioQuality.k320);
-      expect(mp3Miss, isNull);
+      final mp3Fallback = await resolver.resolve(song, AudioQuality.k320);
+      expect(mp3Fallback?.filePath, '/downloads/song.flac');
+      expect(mp3Fallback?.quality, AudioQuality.flac);
     },
   );
 

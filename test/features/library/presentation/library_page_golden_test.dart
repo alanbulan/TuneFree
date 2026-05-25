@@ -19,6 +19,8 @@ import 'package:tunefree/features/library/presentation/library_page.dart';
 import 'package:tunefree/features/library/presentation/widgets/library_backup_transfer.dart';
 import 'package:tunefree/features/player/data/download_library_repository.dart';
 import 'package:tunefree/features/player/application/just_audio_player_engine.dart';
+import 'package:tunefree/features/player/data/download_record.dart';
+import 'package:tunefree/features/player/data/local_playback_resolver.dart';
 import 'package:tunefree/features/player/application/media_session_adapter.dart';
 import 'package:tunefree/features/player/application/player_controller.dart';
 import 'package:tunefree/features/player/data/player_preferences_store.dart';
@@ -36,12 +38,6 @@ final class TestLibraryStorage implements LibraryStorage {
   List<Playlist> _playlists;
 
   @override
-  Future<String> loadApiBase() async => 'https://api.tune-free.example';
-
-  @override
-  Future<String> loadApiKey() async => '';
-
-  @override
   Future<String> loadCorsProxy() async => '';
 
   @override
@@ -51,12 +47,6 @@ final class TestLibraryStorage implements LibraryStorage {
   Future<List<Playlist>> loadPlaylists() async => _playlists;
 
   @override
-  Future<void> saveApiBase(String value) async {}
-
-  @override
-  Future<void> saveApiKey(String value) async {}
-
-  @override
   Future<void> saveCorsProxy(String value) async {}
 
   @override
@@ -64,9 +54,7 @@ final class TestLibraryStorage implements LibraryStorage {
     return LibraryBackupData(
       favorites: _favorites,
       playlists: _playlists,
-      apiKey: '',
       corsProxy: '',
-      apiBase: 'https://api.tune-free.example',
     );
   }
 
@@ -449,6 +437,7 @@ void main() {
     filePath: '/downloads/mayiye-flac.mp3',
     downloadedAt: DateTime.utc(2026, 4, 17, 10, 0),
     exists: true,
+    artworkUrl: 'https://example.com/download-mayiye.jpg',
   );
 
   final downloadedSongSecond = DownloadedTrackItem(
@@ -527,7 +516,7 @@ void main() {
   );
 
   testWidgets(
-    'library page shows legacy about links and artwork fallbacks across library/player surfaces',
+    'library page shows Android about links and artwork fallbacks across library/player surfaces',
     (tester) async {
       final storage = TestLibraryStorage(
         favorites: const <Song>[favoriteSongWithArtwork, queuedSong],
@@ -619,23 +608,35 @@ void main() {
       await tester.tap(find.text('关于'));
       await tester.pumpAndSettle();
 
-      expect(find.text('TuneHub 原帖'), findsOneWidget);
-      expect(find.text('GD音乐台'), findsWidgets);
-
-      await tester.ensureVisible(
-        find.byKey(const Key('about-inline-link-TuneHub 原帖')),
+      expect(find.text('后端 API'), findsOneWidget);
+      expect(find.textContaining('GD音乐台'), findsWidgets);
+      expect(find.textContaining('music.gdstudio.xyz'), findsWidgets);
+      expect(
+        find.textContaining('music-api.gdstudio.xyz/api.php'),
+        findsOneWidget,
       );
+      expect(find.textContaining('5 分钟内不超过 50 次请求'), findsOneWidget);
+      expect(find.textContaining('JOOX'), findsWidgets);
+      expect(find.text('Android 离线体验'), findsOneWidget);
+      expect(find.text('实时音频可视化'), findsOneWidget);
+      expect(find.text('Flutter'), findsOneWidget);
+      expect(find.text('Riverpod'), findsOneWidget);
+      expect(find.text('just_audio'), findsOneWidget);
+      expect(find.textContaining('TuneHub /v1/parse'), findsNothing);
+
+      await tester.ensureVisible(find.byKey(const Key('about-link-GD音乐台')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('about-inline-link-TuneHub 原帖')));
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const Key('about-link-在线演示')));
+      await tester.tap(find.byKey(const Key('about-link-GD音乐台')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('about-link-在线演示')));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('about-link-GitHub 仓库')));
+      await tester.pumpAndSettle();
 
       expect(linkLauncher.launchedUris, <Uri>[
-        Uri.parse('https://linux.do/t/topic/1326425'),
-        Uri.parse('https://xilan.ccwu.cc/'),
+        Uri.parse('https://music.gdstudio.xyz/'),
+        Uri.parse('https://music.alanbulan.space'),
+        Uri.parse('https://github.com/alanbulan/musicxilan'),
       ]);
     },
   );
@@ -759,41 +760,11 @@ void main() {
     },
   );
 
-  testWidgets('library manage tab shows empty downloaded state', (
-    tester,
-  ) async {
-    final storage = TestLibraryStorage();
-    final downloadRepository = TestDownloadLibraryRepository();
-    final container = ProviderContainer(
-      overrides: [
-        libraryStorageProvider.overrideWithValue(storage),
-        downloadLibraryRepositoryProvider.overrideWithValue(downloadRepository),
-      ],
-    );
-    addTearDown(container.dispose);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const MaterialApp(home: LibraryPage()),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('管理'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('已下载歌曲'), findsOneWidget);
-    expect(find.text('暂无已下载歌曲'), findsOneWidget);
-  });
-
   testWidgets(
-    'library manage tab shows downloaded tracks and allows deleting one',
+    'library manage tab opens a dedicated downloads page with empty state',
     (tester) async {
       final storage = TestLibraryStorage();
-      final downloadRepository = TestDownloadLibraryRepository(
-        downloads: <DownloadedTrackItem>[downloadedSong, downloadedSongSecond],
-      );
+      final downloadRepository = TestDownloadLibraryRepository();
       final container = ProviderContainer(
         overrides: [
           libraryStorageProvider.overrideWithValue(storage),
@@ -814,28 +785,137 @@ void main() {
 
       await tester.tap(find.text('管理'));
       await tester.pumpAndSettle();
-
-      expect(find.text('已下载歌曲'), findsOneWidget);
-      expect(find.text('离线海与你'), findsOneWidget);
-      expect(find.text('离线晴天'), findsOneWidget);
-
       await tester.ensureVisible(
-        find.byKey(const Key('delete-downloaded-track-netease:dl-1-flac')),
+        find.byKey(const Key('library-downloads-management-button')),
       );
       await tester.pumpAndSettle();
       await tester.tap(
-        find.byKey(const Key('delete-downloaded-track-netease:dl-1-flac')),
+        find.byKey(const Key('library-downloads-management-button')),
       );
       await tester.pumpAndSettle();
 
-      expect(downloadRepository.deleteCallCount, 1);
-      expect(find.text('离线海与你'), findsNothing);
-      expect(find.text('已删除 离线海与你'), findsOneWidget);
+      expect(find.byKey(const Key('library-downloads-page')), findsOneWidget);
+      expect(find.text('下载管理'), findsWidgets);
+      expect(find.text('离线播放'), findsNothing);
+      expect(find.text('已下载歌曲'), findsNothing);
+      expect(find.text('暂无下载歌曲'), findsOneWidget);
     },
   );
 
   testWidgets(
-    'library manage tab shows delete failure message for downloaded tracks',
+    'library downloads page shows full downloaded track metadata, plays rows, and deletes selections',
+    (tester) async {
+      final storage = TestLibraryStorage();
+      final downloadRepository = TestDownloadLibraryRepository(
+        downloads: <DownloadedTrackItem>[downloadedSong, downloadedSongSecond],
+      );
+      final engine = JustAudioPlayerEngine.test();
+      addTearDown(engine.dispose);
+      final container = ProviderContainer(
+        overrides: [
+          libraryStorageProvider.overrideWithValue(storage),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            downloadRepository,
+          ),
+          playerEngineProvider.overrideWithValue(engine),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
+          playerPreferencesStoreProvider.overrideWithValue(
+            TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            LocalPlaybackResolver(
+              recordsForSong: (songKey) async => const <DownloadRecord>[],
+              fileExists: (path) async => false,
+              removeRecord: ({required songKey, required quality}) async {},
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: LibraryPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('管理'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('library-downloads-management-button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('library-downloads-management-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('library-downloads-page')), findsOneWidget);
+      expect(find.text('离线播放'), findsNothing);
+      expect(find.text('已下载歌曲'), findsNothing);
+      expect(find.text('离线海与你'), findsOneWidget);
+      expect(find.text('离线晴天'), findsOneWidget);
+      expect(find.text('无损'), findsOneWidget);
+      expect(find.text('高品'), findsOneWidget);
+      expect(find.text('maiye-flac.mp3'), findsNothing);
+      expect(
+        find.byKey(
+          const Key('downloaded-track-artwork-image-netease:dl-1-flac'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const Key('downloaded-track-netease:dl-1-flac')),
+      );
+      await tester.pumpAndSettle();
+
+      final playerState = container.read(playerControllerProvider);
+      expect(playerState.currentSong?.name, '离线海与你');
+      expect(
+        playerState.currentSong?.url,
+        contains('/downloads/mayiye-flac.mp3'),
+      );
+      expect(
+        playerState.currentSong?.pic,
+        'https://example.com/download-mayiye.jpg',
+      );
+      expect(playerState.queue.map((song) => song.name).toList(), <String>[
+        '离线海与你',
+        '离线晴天',
+      ]);
+      expect(playerState.audioQuality, AudioQuality.flac);
+      expect(playerState.isPlaying, isTrue);
+
+      await tester.tap(find.byKey(const Key('library-downloads-edit-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('downloaded-track-netease:dl-1-flac')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('downloaded-track-qq:dl-2-320k')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('已选择 2 / 2 首'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const Key('library-downloads-delete-selected-button')),
+      );
+      await tester.pump();
+
+      expect(downloadRepository.deleteCallCount, 2);
+      expect(find.text('离线海与你'), findsNothing);
+      expect(find.text('离线晴天'), findsNothing);
+      expect(find.text('暂无下载歌曲'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'library downloads page shows delete failure message for downloaded tracks',
     (tester) async {
       final storage = TestLibraryStorage();
       final downloadRepository = TestDownloadLibraryRepository(
@@ -862,18 +942,29 @@ void main() {
 
       await tester.tap(find.text('管理'));
       await tester.pumpAndSettle();
-
-      expect(find.text('已下载歌曲'), findsOneWidget);
-      expect(find.text('离线海与你'), findsOneWidget);
-
       await tester.ensureVisible(
-        find.byKey(const Key('delete-downloaded-track-netease:dl-1-flac')),
+        find.byKey(const Key('library-downloads-management-button')),
       );
       await tester.pumpAndSettle();
       await tester.tap(
-        find.byKey(const Key('delete-downloaded-track-netease:dl-1-flac')),
+        find.byKey(const Key('library-downloads-management-button')),
       );
       await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('library-downloads-page')), findsOneWidget);
+      expect(find.text('已下载歌曲'), findsNothing);
+      expect(find.text('离线海与你'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('library-downloads-edit-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('downloaded-track-netease:dl-1-flac')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('library-downloads-delete-selected-button')),
+      );
+      await tester.pump();
 
       expect(downloadRepository.deleteCallCount, 1);
       expect(find.text('删除失败，请稍后重试'), findsOneWidget);
@@ -961,9 +1052,7 @@ void main() {
             ],
           },
         ],
-        'apiKey': 'backup-key',
         'corsProxy': 'https://proxy.example',
-        'apiBase': 'https://backup-api.example',
       });
       final transfer = TestLibraryBackupTransfer(
         importBytes: Uint8List.fromList(utf8.encode(importJson)),
@@ -1046,8 +1135,8 @@ void main() {
         ['导入备份歌单'],
       );
       expect(
-        container.read(libraryControllerProvider).state.apiKey,
-        'backup-key',
+        container.read(libraryControllerProvider).state.corsProxy,
+        'https://proxy.example',
       );
       expect(find.text('已导入 1 首收藏和 1 个歌单'), findsOneWidget);
       expect(find.textContaining('导入收藏曲'), findsWidgets);

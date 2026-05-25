@@ -26,6 +26,7 @@ abstract class PlayerState with _$PlayerState {
     @Default(false) bool showQueue,
     @Default(false) bool showDownload,
     @Default(false) bool showMore,
+    String? playbackNotice,
   }) = _PlayerState;
 
   PlayerTrack? get currentTrack {

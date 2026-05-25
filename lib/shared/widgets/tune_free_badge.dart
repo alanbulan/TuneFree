@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 
 class TuneFreeBadge extends StatelessWidget {
-  const TuneFreeBadge({super.key, required this.text, required this.background, required this.foreground});
+  const TuneFreeBadge({
+    super.key,
+    required this.text,
+    required this.background,
+    required this.foreground,
+  });
 
   final String text;
   final Color background;
@@ -15,7 +20,14 @@ class TuneFreeBadge extends StatelessWidget {
         color: background,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(text, style: TextStyle(fontSize: 10, color: foreground, fontWeight: FontWeight.w600)),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          color: foreground,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 }

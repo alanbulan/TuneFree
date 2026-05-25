@@ -79,6 +79,9 @@ final class AudioServiceMediaSessionAdapter implements MediaSessionAdapter {
   MediaItem? _mediaItem;
   PlaybackState _playbackState = PlaybackState();
   Duration _duration = Duration.zero;
+  Duration? _lastProgressStatePosition;
+
+  static const _progressStateSyncInterval = Duration(seconds: 5);
 
   @override
   Stream<MediaSessionRemoteCommand> get remoteCommands =>
@@ -103,6 +106,7 @@ final class AudioServiceMediaSessionAdapter implements MediaSessionAdapter {
   Future<void> clear() async {
     _mediaItem = null;
     _duration = Duration.zero;
+    _lastProgressStatePosition = null;
     _playbackState = PlaybackState();
 
     final clientFuture = _sharePlatformSession
@@ -143,6 +147,7 @@ final class AudioServiceMediaSessionAdapter implements MediaSessionAdapter {
     try {
       await client.setMediaItem(_mediaItem);
       await client.setPlaybackState(_playbackState);
+      _lastProgressStatePosition = _playbackState.updatePosition;
     } catch (error) {
       _logPlatformSyncFailure('updateMetadata', error);
       rethrow;
@@ -158,30 +163,54 @@ final class AudioServiceMediaSessionAdapter implements MediaSessionAdapter {
     _duration = duration;
 
     if (_mediaItem case final mediaItem?) {
-      _mediaItem = mediaItem.copyWith(
-        duration: duration > Duration.zero ? duration : mediaItem.duration,
-      );
-      try {
-        await client.setMediaItem(_mediaItem);
-      } catch (error) {
-        _logPlatformSyncFailure('updateProgress', error);
-        rethrow;
+      final nextDuration = duration > Duration.zero
+          ? duration
+          : mediaItem.duration;
+      if (nextDuration != mediaItem.duration) {
+        _mediaItem = mediaItem.copyWith(duration: nextDuration);
+        try {
+          await client.setMediaItem(_mediaItem);
+        } catch (error) {
+          _logPlatformSyncFailure('updateProgress', error);
+          rethrow;
+        }
       }
+    }
+
+    final nextProcessingState = _mediaItem == null
+        ? AudioProcessingState.idle
+        : AudioProcessingState.ready;
+    if (!_shouldSyncProgressState(position, nextProcessingState)) {
+      return;
     }
 
     _playbackState = _buildPlaybackState(
       isPlaying: _playbackState.playing,
-      processingState: _mediaItem == null
-          ? AudioProcessingState.idle
-          : AudioProcessingState.ready,
+      processingState: nextProcessingState,
       position: position,
     );
     try {
       await client.setPlaybackState(_playbackState);
+      _lastProgressStatePosition = position;
     } catch (error) {
       _logPlatformSyncFailure('updateProgress', error);
       rethrow;
     }
+  }
+
+  bool _shouldSyncProgressState(
+    Duration position,
+    AudioProcessingState processingState,
+  ) {
+    final lastPosition = _lastProgressStatePosition;
+    if (lastPosition == null ||
+        _playbackState.processingState != processingState) {
+      return true;
+    }
+    if (!_playbackState.playing) {
+      return true;
+    }
+    return (position - lastPosition).abs() >= _progressStateSyncInterval;
   }
 
   Future<MediaSessionClient> _ensureClient() async {
@@ -309,6 +338,7 @@ final class AudioServiceMediaSessionAdapter implements MediaSessionAdapter {
         androidNotificationChannelId: 'com.alanbulan.tunefree.playback',
         androidNotificationChannelName: 'TuneFree Playback',
         androidNotificationOngoing: true,
+        androidNotificationIcon: 'drawable/ic_stat_tunefree',
       ),
     );
     return _AudioHandlerMediaSessionClient(handler);

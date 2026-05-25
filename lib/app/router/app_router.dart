@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import '../../features/home/presentation/home_page.dart';
+import '../../features/library/presentation/downloads_page.dart';
 import '../../features/library/presentation/library_page.dart';
 import '../../features/search/presentation/search_page.dart';
 import '../shell/tune_free_shell.dart';
@@ -11,10 +12,7 @@ final appRouter = GoRouter(
     ShellRoute(
       builder: (context, state, child) => TuneFreeShell(child: child),
       routes: [
-        GoRoute(
-          path: '/',
-          builder: (context, state) => const HomePage(),
-        ),
+        GoRoute(path: '/', builder: (context, state) => const HomePage()),
         GoRoute(
           path: '/search',
           builder: (context, state) => const SearchPage(),
@@ -22,6 +20,10 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/library',
           builder: (context, state) => const LibraryPage(),
+        ),
+        GoRoute(
+          path: '/library/downloads',
+          builder: (context, state) => const LibraryDownloadsPage(),
         ),
       ],
     ),

@@ -21,9 +21,15 @@ abstract class Song with _$Song {
     String? urlId,
     String? lrc,
     String? lyricId,
-    @JsonKey(fromJson: _sourceFromJson, toJson: _sourceToJson) required MusicSource source,
-    @JsonKey(name: 'types', fromJson: _audioQualitiesFromJson, toJson: _audioQualitiesToJson)
-    @Default(<AudioQuality>[]) List<AudioQuality> audioQualities,
+    @JsonKey(fromJson: _sourceFromJson, toJson: _sourceToJson)
+    required MusicSource source,
+    @JsonKey(
+      name: 'types',
+      fromJson: _audioQualitiesFromJson,
+      toJson: _audioQualitiesToJson,
+    )
+    @Default(<AudioQuality>[])
+    List<AudioQuality> audioQualities,
   }) = _Song;
 
   factory Song.fromJson(Map<String, dynamic> json) => _$SongFromJson(json);

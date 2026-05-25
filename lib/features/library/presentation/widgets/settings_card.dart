@@ -29,7 +29,13 @@ class SettingsCard extends StatelessWidget {
                 Icon(icon, color: const Color(0xFFE94B5B), size: 20),
                 const SizedBox(width: 12),
               ],
-              Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),

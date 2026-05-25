@@ -8,7 +8,10 @@ import 'download_record.dart';
 typedef DownloadFileExists = Future<bool> Function(String path);
 
 abstract class DownloadRecordStore {
-  Future<DownloadRecord?> load({required String songKey, required String quality});
+  Future<DownloadRecord?> load({
+    required String songKey,
+    required String quality,
+  });
   Future<List<DownloadRecord>> listAll();
   Future<List<DownloadRecord>> listBySongKey(String songKey);
   Future<void> save(DownloadRecord record);
@@ -18,11 +21,15 @@ abstract class DownloadRecordStore {
 class SharedPreferencesDownloadRecordStore implements DownloadRecordStore {
   const SharedPreferencesDownloadRecordStore._({required this.fileExists});
 
-  factory SharedPreferencesDownloadRecordStore.real({required DownloadFileExists fileExists}) {
+  factory SharedPreferencesDownloadRecordStore.real({
+    required DownloadFileExists fileExists,
+  }) {
     return SharedPreferencesDownloadRecordStore._(fileExists: fileExists);
   }
 
-  factory SharedPreferencesDownloadRecordStore.test({required DownloadFileExists fileExists}) {
+  factory SharedPreferencesDownloadRecordStore.test({
+    required DownloadFileExists fileExists,
+  }) {
     return SharedPreferencesDownloadRecordStore._(fileExists: fileExists);
   }
 
@@ -31,7 +38,10 @@ class SharedPreferencesDownloadRecordStore implements DownloadRecordStore {
   final DownloadFileExists fileExists;
 
   @override
-  Future<DownloadRecord?> load({required String songKey, required String quality}) async {
+  Future<DownloadRecord?> load({
+    required String songKey,
+    required String quality,
+  }) async {
     final preferences = await SharedPreferences.getInstance();
     final records = await _loadRecordMap(preferences);
     final recordKey = _recordKey(songKey, quality);
@@ -41,7 +51,8 @@ class SharedPreferencesDownloadRecordStore implements DownloadRecordStore {
     }
 
     final record = DownloadRecord.fromJson(json);
-    if (_isInvalidRecord(record) || !(await _isDownloadFileAvailable(record.filePath))) {
+    if (_isInvalidRecord(record) ||
+        !(await _isDownloadFileAvailable(record.filePath))) {
       records.remove(recordKey);
       await _persistRecordMap(preferences, records);
       return null;
@@ -65,7 +76,8 @@ class SharedPreferencesDownloadRecordStore implements DownloadRecordStore {
         continue;
       }
       final record = DownloadRecord.fromJson(json);
-      if (_isInvalidRecord(record) || !(await _isDownloadFileAvailable(record.filePath))) {
+      if (_isInvalidRecord(record) ||
+          !(await _isDownloadFileAvailable(record.filePath))) {
         records.remove(entry.key);
         changed = true;
         continue;
@@ -77,14 +89,18 @@ class SharedPreferencesDownloadRecordStore implements DownloadRecordStore {
       await _persistRecordMap(preferences, records);
     }
 
-    entries.sort((a, b) => b.downloadedAtIso8601.compareTo(a.downloadedAtIso8601));
+    entries.sort(
+      (a, b) => b.downloadedAtIso8601.compareTo(a.downloadedAtIso8601),
+    );
     return entries;
   }
 
   @override
   Future<List<DownloadRecord>> listBySongKey(String songKey) async {
     final records = await listAll();
-    return records.where((record) => record.songKey == songKey).toList(growable: false);
+    return records
+        .where((record) => record.songKey == songKey)
+        .toList(growable: false);
   }
 
   @override
@@ -96,14 +112,19 @@ class SharedPreferencesDownloadRecordStore implements DownloadRecordStore {
   }
 
   @override
-  Future<void> remove({required String songKey, required String quality}) async {
+  Future<void> remove({
+    required String songKey,
+    required String quality,
+  }) async {
     final preferences = await SharedPreferences.getInstance();
     final records = await _loadRecordMap(preferences);
     records.remove(_recordKey(songKey, quality));
     await _persistRecordMap(preferences, records);
   }
 
-  Future<Map<String, dynamic>> _loadRecordMap(SharedPreferences preferences) async {
+  Future<Map<String, dynamic>> _loadRecordMap(
+    SharedPreferences preferences,
+  ) async {
     final rawValue = preferences.getString(_storageKey);
     if (rawValue == null || rawValue.isEmpty) {
       return <String, dynamic>{};

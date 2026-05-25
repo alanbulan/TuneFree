@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/models/song.dart';
+import '../../../../core/network/music_url_normalizer.dart';
 import '../../../../shared/widgets/tune_free_card.dart';
 
 class LibrarySongTile extends StatelessWidget {
@@ -33,13 +34,19 @@ class LibrarySongTile extends StatelessWidget {
                     song.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                   Text(
                     song.artist,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF8B8B95)),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF8B8B95),
+                    ),
                   ),
                 ],
               ),
@@ -83,13 +90,17 @@ class _LibrarySongArtwork extends StatelessWidget {
         width: 48,
         height: 48,
         fit: BoxFit.cover,
+        headers: musicImageRequestHeaders(imageUrl),
         errorBuilder: (context, error, stackTrace) {
           return Container(
             key: Key('library-song-placeholder-${song.key}'),
             width: 48,
             height: 48,
             decoration: decoration,
-            child: const Icon(Icons.music_note_rounded, color: Color(0xFFB6B8BF)),
+            child: const Icon(
+              Icons.music_note_rounded,
+              color: Color(0xFFB6B8BF),
+            ),
           );
         },
       ),

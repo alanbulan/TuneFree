@@ -12,7 +12,9 @@ abstract class AudioPlayerAdapter {
   Stream<PlayerState> get playerStateStream;
   Stream<Duration> get positionStream;
   Stream<Duration?> get durationStream;
+  Stream<int?> get androidAudioSessionIdStream;
   Duration? get duration;
+  int? get androidAudioSessionId;
   Future<Duration?> setUrl(String url);
   Future<void> play();
   Future<void> pause();
@@ -36,7 +38,14 @@ final class JustAudioPlayerAdapter implements AudioPlayerAdapter {
   Stream<Duration?> get durationStream => _audioPlayer.durationStream;
 
   @override
+  Stream<int?> get androidAudioSessionIdStream =>
+      _audioPlayer.androidAudioSessionIdStream;
+
+  @override
   Duration? get duration => _audioPlayer.duration;
+
+  @override
+  int? get androidAudioSessionId => _audioPlayer.androidAudioSessionId;
 
   @override
   Future<Duration?> setUrl(String url) => _audioPlayer.setUrl(url);
@@ -111,7 +120,14 @@ final class JustAudioPlayerEngine implements PlayerEngine {
   Stream<PlayerEngineSnapshot> get snapshots => _controller.stream;
 
   @override
+  Stream<int?> get androidAudioSessionIdStream =>
+      _audioPlayer?.androidAudioSessionIdStream ?? const Stream<int?>.empty();
+
+  @override
   PlayerEngineSnapshot get latestSnapshot => _latestSnapshot;
+
+  @override
+  int? get androidAudioSessionId => _audioPlayer?.androidAudioSessionId;
 
   @override
   Future<void> loadSong(Song song, {required AudioQuality quality}) async {

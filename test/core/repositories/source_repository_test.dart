@@ -7,30 +7,92 @@ import 'package:tunefree/features/library/data/playlist_import_repository.dart';
 import 'package:tunefree/features/search/data/search_repository.dart';
 
 void main() {
-  test('aggregate search interleaves source results and tolerates failures', () async {
+  test(
+    'aggregate search interleaves source results and tolerates failures',
+    () async {
+      final repository = SearchRepository.test(
+        neteaseSearch: (_, page) async => [
+          Song(
+            id: 'n1',
+            name: '网易歌曲',
+            artist: '歌手A',
+            source: MusicSource.netease,
+          ),
+        ],
+        qqSearch: (_, page) async => [
+          Song(id: 'q1', name: 'QQ歌曲', artist: '歌手B', source: MusicSource.qq),
+        ],
+        kuwoSearch: (_, page) async => throw Exception('offline'),
+      );
+
+      final result = await repository.searchAggregate('test', page: 1);
+
+      expect(result.map((song) => song.key).toList(), ['netease:n1', 'qq:q1']);
+    },
+  );
+
+  test('search repository treats GD-backed sources as default peers', () async {
     final repository = SearchRepository.test(
       neteaseSearch: (_, page) async => [
         Song(
-          id: 'n1',
+          id: 'n$page',
           name: '网易歌曲',
           artist: '歌手A',
           source: MusicSource.netease,
         ),
       ],
       qqSearch: (_, page) async => [
+        Song(id: 'q$page', name: 'QQ歌曲', artist: '歌手B', source: MusicSource.qq),
+      ],
+      kuwoSearch: (_, page) async => [
         Song(
-          id: 'q1',
-          name: 'QQ歌曲',
-          artist: '歌手B',
-          source: MusicSource.qq,
+          id: 'k$page',
+          name: '酷我歌曲',
+          artist: '歌手C',
+          source: MusicSource.kuwo,
         ),
       ],
-      kuwoSearch: (_, page) async => throw Exception('offline'),
+      jooxSearch: (_, page) async => [
+        Song(
+          id: 'j$page',
+          name: 'JOOX歌曲',
+          artist: 'JOOX',
+          source: MusicSource.joox,
+        ),
+      ],
+      bilibiliSearch: (_, page) async => [
+        Song(
+          id: 'b$page',
+          name: 'Bilibili歌曲',
+          artist: 'Bilibili',
+          source: MusicSource.bilibili,
+        ),
+      ],
     );
 
-    final result = await repository.searchAggregate('test', page: 1);
+    final defaultResult = await repository.searchAggregate('test', page: 1);
+    final repeatedResult = await repository.searchAggregate('test', page: 1);
+    final singleResult = await repository.searchSingle(
+      'test',
+      source: 'joox',
+      page: 2,
+    );
 
-    expect(result.map((song) => song.key).toList(), ['netease:n1', 'qq:q1']);
+    expect(defaultResult.map((song) => song.key).toList(), [
+      'netease:n1',
+      'qq:q1',
+      'kuwo:k1',
+      'joox:j1',
+      'bilibili:b1',
+    ]);
+    expect(repeatedResult.map((song) => song.key).toList(), [
+      'netease:n1',
+      'qq:q1',
+      'kuwo:k1',
+      'joox:j1',
+      'bilibili:b1',
+    ]);
+    expect(singleResult.map((song) => song.key).toList(), ['joox:j2']);
   });
 
   test('top list repository delegates to the matching source client', () async {
@@ -91,27 +153,33 @@ void main() {
     expect(calls, ['qq:getTopLists', 'kuwo:getTopListDetail:88']);
   });
 
-  test('playlist import repository returns imported songs with stable fallback name', () async {
-    final calls = <String>[];
-    final repository = PlaylistImportRepository.test(
-      importPlaylistSongs: (source, id) async {
-        calls.add('$source:$id');
-        return [
-          Song(
-            id: 'song-1',
-            name: 'Imported Track',
-            artist: 'Guest Artist',
-            source: MusicSource('migu'),
-          ),
-        ];
-      },
-    );
+  test(
+    'playlist import repository returns imported songs with stable fallback name',
+    () async {
+      final calls = <String>[];
+      final repository = PlaylistImportRepository.test(
+        importPlaylistSongs: (source, id) async {
+          calls.add('$source:$id');
+          return [
+            Song(
+              id: 'song-1',
+              name: 'Imported Track',
+              artist: 'Guest Artist',
+              source: MusicSource('migu'),
+            ),
+          ];
+        },
+      );
 
-    final result = await repository.importPlaylist(source: 'qq', id: 'playlist-42');
+      final result = await repository.importPlaylist(
+        source: 'qq',
+        id: 'playlist-42',
+      );
 
-    expect(result, isNotNull);
-    expect(result!.$1, 'playlist-42');
-    expect(result.$2.map((song) => song.key).toList(), ['migu:song-1']);
-    expect(calls, ['qq:playlist-42']);
-  });
+      expect(result, isNotNull);
+      expect(result!.$1, 'playlist-42');
+      expect(result.$2.map((song) => song.key).toList(), ['migu:song-1']);
+      expect(calls, ['qq:playlist-42']);
+    },
+  );
 }

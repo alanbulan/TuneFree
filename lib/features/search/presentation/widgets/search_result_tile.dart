@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/models/song.dart';
+import '../../../../core/network/music_url_normalizer.dart';
 import 'search_source_selector.dart';
 
 class SearchResultTile extends StatelessWidget {
@@ -41,7 +42,9 @@ class SearchResultTile extends StatelessWidget {
                     ),
                   ]
                 : null,
-            border: isCurrent ? Border.all(color: const Color(0x33E94B5B)) : null,
+            border: isCurrent
+                ? Border.all(color: const Color(0x33E94B5B))
+                : null,
           ),
           child: Row(
             children: [
@@ -84,14 +87,19 @@ class SearchResultTile extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w500,
-                        color: isCurrent ? const Color(0xFFE94B5B) : const Color(0xFF111111),
+                        color: isCurrent
+                            ? const Color(0xFFE94B5B)
+                            : const Color(0xFF111111),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: badgeColors.background,
                             borderRadius: BorderRadius.circular(999),
@@ -112,7 +120,10 @@ class SearchResultTile extends StatelessWidget {
                             song.artist,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF8B8B95)),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF8B8B95),
+                            ),
                           ),
                         ),
                       ],
@@ -143,7 +154,9 @@ class _SearchResultArtwork extends StatelessWidget {
         width: 48,
         height: 48,
         fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => _FallbackArtwork(song: song),
+        headers: musicImageRequestHeaders(imageUrl),
+        errorBuilder: (context, error, stackTrace) =>
+            _FallbackArtwork(song: song),
       );
     }
     return _FallbackArtwork(song: song);
@@ -165,7 +178,11 @@ class _FallbackArtwork extends StatelessWidget {
         color: const Color(0xFFF3F4F6),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Icon(Icons.music_note_rounded, size: 24, color: Color(0xFFB6B8BF)),
+      child: const Icon(
+        Icons.music_note_rounded,
+        size: 24,
+        color: Color(0xFFB6B8BF),
+      ),
     );
   }
 }

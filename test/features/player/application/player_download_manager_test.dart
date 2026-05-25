@@ -54,51 +54,54 @@ void main() {
     },
   );
 
-  test('stale records do not block a fresh download when the file is missing', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
-    final rootDirectory = await Directory.systemTemp.createTemp(
-      'tf-stale-download-',
-    );
-    final fileStore = DownloadFileStore.test(rootDirectory: rootDirectory);
-    final recordStore = SharedPreferencesDownloadRecordStore.test(
-      fileExists: (path) async => File(path).exists(),
-    );
-    final manager = PlayerDownloadManager(
-      httpBytes: (url) async => utf8.encode('fresh-bytes'),
-      fileStore: fileStore,
-      recordStore: recordStore,
-      songResolutionRepository: SongResolutionRepository.test(
-        resolveSongValue: (song, quality) async =>
-            song.copyWith(url: 'https://example.com/song.flac'),
-      ),
-    );
-    addTearDown(() async {
-      await fileStore.deleteTestRoot();
-    });
+  test(
+    'stale records do not block a fresh download when the file is missing',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final rootDirectory = await Directory.systemTemp.createTemp(
+        'tf-stale-download-',
+      );
+      final fileStore = DownloadFileStore.test(rootDirectory: rootDirectory);
+      final recordStore = SharedPreferencesDownloadRecordStore.test(
+        fileExists: (path) async => File(path).exists(),
+      );
+      final manager = PlayerDownloadManager(
+        httpBytes: (url) async => utf8.encode('fresh-bytes'),
+        fileStore: fileStore,
+        recordStore: recordStore,
+        songResolutionRepository: SongResolutionRepository.test(
+          resolveSongValue: (song, quality) async =>
+              song.copyWith(url: 'https://example.com/song.flac'),
+        ),
+      );
+      addTearDown(() async {
+        await fileStore.deleteTestRoot();
+      });
 
-    await recordStore.save(
-      const DownloadRecord(
-        songKey: 'netease:stale-song',
-        songId: 'stale-song',
-        songName: '旧记录',
+      await recordStore.save(
+        const DownloadRecord(
+          songKey: 'netease:stale-song',
+          songId: 'stale-song',
+          songName: '旧记录',
+          artist: 'TuneFree',
+          quality: 'flac',
+          filePath: '/missing/file.flac',
+          fileName: 'missing.flac',
+          downloadedAtIso8601: '2026-04-17T10:00:00.000Z',
+        ),
+      );
+
+      const song = Song(
+        id: 'stale-song',
+        name: '旧记录',
         artist: 'TuneFree',
-        quality: 'flac',
-        filePath: '/missing/file.flac',
-        fileName: 'missing.flac',
-        downloadedAtIso8601: '2026-04-17T10:00:00.000Z',
-      ),
-    );
+        source: MusicSource.netease,
+      );
 
-    const song = Song(
-      id: 'stale-song',
-      name: '旧记录',
-      artist: 'TuneFree',
-      source: MusicSource.netease,
-    );
+      final result = await manager.downloadSong(song, AudioQuality.flac);
 
-    final result = await manager.downloadSong(song, AudioQuality.flac);
-
-    expect(result.alreadyExisted, isFalse);
-    expect(await File(result.filePath).exists(), isTrue);
-  });
+      expect(result.alreadyExisted, isFalse);
+      expect(await File(result.filePath).exists(), isTrue);
+    },
+  );
 }

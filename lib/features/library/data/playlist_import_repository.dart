@@ -8,11 +8,10 @@ import '../../../core/network/tune_free_http_client.dart';
 import '../../../core/source_clients/tunehub_client.dart';
 
 typedef PlaylistImportPayload = ({String name, List<Song> songs});
-typedef PlaylistImportLoader = Future<List<Song>> Function(String source, String id);
-typedef PlaylistImportPayloadLoader = Future<PlaylistImportPayload?> Function(
-  String source,
-  String id,
-);
+typedef PlaylistImportLoader =
+    Future<List<Song>> Function(String source, String id);
+typedef PlaylistImportPayloadLoader =
+    Future<PlaylistImportPayload?> Function(String source, String id);
 
 const defaultTunehubApiBase = 'https://tunehub.sayqz.com/api';
 const _placeholderTuneFreeApiBase = 'https://api.tune-free.example';
@@ -36,15 +35,18 @@ abstract class PlaylistImportClient {
 final class TunehubPlaylistImportClient implements PlaylistImportClient {
   TunehubPlaylistImportClient({
     required TuneFreeHttpClient httpClient,
-    required String Function() apiBaseProvider,
+    String Function()? apiBaseProvider,
   }) : _httpClient = httpClient,
-       _apiBaseProvider = apiBaseProvider;
+       _apiBaseProvider = apiBaseProvider ?? (() => '');
 
   final TuneFreeHttpClient _httpClient;
   final String Function() _apiBaseProvider;
 
   @override
-  Future<PlaylistImportPayload?> importPlaylist(String source, String id) async {
+  Future<PlaylistImportPayload?> importPlaylist(
+    String source,
+    String id,
+  ) async {
     final apiBase = _normalizeApiBase(_apiBaseProvider());
     final methodResponse = await _httpClient.dio.get<Map<String, dynamic>>(
       '$apiBase/v1/methods/$source/playlist',
@@ -60,7 +62,8 @@ final class TunehubPlaylistImportClient implements PlaylistImportClient {
       rawParams: _readMap(methodData['params']),
       variables: variables,
     );
-    final requestMethod = (methodData['method'] as String? ?? 'GET').toUpperCase();
+    final requestMethod = (methodData['method'] as String? ?? 'GET')
+        .toUpperCase();
     final requestBody = _resolveTemplateValue(methodData['body'], variables);
     final requestHeaders = _buildHeaders(
       rawHeaders: _readMap(methodData['headers']),
@@ -75,15 +78,14 @@ final class TunehubPlaylistImportClient implements PlaylistImportClient {
     );
 
     final payload = _unwrapJsonLike(response.data);
-    final songs = List<Song>.unmodifiable(_normalizeSongs(_extractList(payload), source));
+    final songs = List<Song>.unmodifiable(
+      _normalizeSongs(_extractList(payload), source),
+    );
     if (songs.isEmpty) {
       return null;
     }
 
-    return (
-      name: _extractPlaylistName(payload) ?? id,
-      songs: songs,
-    );
+    return (name: _extractPlaylistName(payload) ?? id, songs: songs);
   }
 }
 
@@ -102,22 +104,25 @@ final class PlaylistImportRepository {
         },
       );
 
-  PlaylistImportRepository.loader({required PlaylistImportLoader importPlaylistSongs})
-    : this.payloadLoader(
-        importPlaylist: (source, id) async {
-          final songs = await importPlaylistSongs(source, id);
-          return (name: id, songs: List<Song>.unmodifiable(songs));
-        },
-      );
+  PlaylistImportRepository.loader({
+    required PlaylistImportLoader importPlaylistSongs,
+  }) : this.payloadLoader(
+         importPlaylist: (source, id) async {
+           final songs = await importPlaylistSongs(source, id);
+           return (name: id, songs: List<Song>.unmodifiable(songs));
+         },
+       );
 
-  PlaylistImportRepository.payloadLoader({required PlaylistImportPayloadLoader importPlaylist})
-    : _importPlaylist = importPlaylist;
+  PlaylistImportRepository.payloadLoader({
+    required PlaylistImportPayloadLoader importPlaylist,
+  }) : _importPlaylist = importPlaylist;
 
   PlaylistImportRepository.test({
     PlaylistImportPayloadLoader? importPlaylist,
     PlaylistImportLoader? importPlaylistSongs,
   }) : this.payloadLoader(
-         importPlaylist: importPlaylist ??
+         importPlaylist:
+             importPlaylist ??
              (source, id) async {
                if (importPlaylistSongs == null) {
                  return null;
@@ -165,7 +170,8 @@ Uri _buildRequestUri({
   final queryParameters = <String, String>{
     ...baseUri.queryParameters,
     for (final entry in rawParams.entries)
-      if (_resolveTemplateValue(entry.value, variables) case final value?) entry.key: value.toString(),
+      if (_resolveTemplateValue(entry.value, variables) case final value?)
+        entry.key: value.toString(),
   };
   return baseUri.replace(queryParameters: queryParameters);
 }
@@ -185,7 +191,9 @@ Map<String, String> _buildHeaders({
     }
   }
 
-  final hasContentType = headers.keys.any((key) => key.toLowerCase() == 'content-type');
+  final hasContentType = headers.keys.any(
+    (key) => key.toLowerCase() == 'content-type',
+  );
   if (includeJsonContentType && !hasContentType) {
     headers['Content-Type'] = 'application/json';
   }
@@ -201,11 +209,14 @@ dynamic _resolveTemplateValue(dynamic value, Map<String, String> variables) {
     return _replaceTemplates(value, variables);
   }
   if (value is List) {
-    return value.map((item) => _resolveTemplateValue(item, variables)).toList(growable: false);
+    return value
+        .map((item) => _resolveTemplateValue(item, variables))
+        .toList(growable: false);
   }
   if (value is Map) {
     return value.map(
-      (key, entryValue) => MapEntry(key, _resolveTemplateValue(entryValue, variables)),
+      (key, entryValue) =>
+          MapEntry(key, _resolveTemplateValue(entryValue, variables)),
     );
   }
   return value;
@@ -218,16 +229,24 @@ String _replaceTemplates(String template, Map<String, String> variables) {
   });
 }
 
-dynamic _evaluateTemplateExpression(String expression, Map<String, String> variables) {
+dynamic _evaluateTemplateExpression(
+  String expression,
+  Map<String, String> variables,
+) {
   final trimmedExpression = expression.trim();
 
-  if (trimmedExpression.startsWith('parseInt(') && trimmedExpression.endsWith(')')) {
-    final key = trimmedExpression.substring('parseInt('.length, trimmedExpression.length - 1).trim();
+  if (trimmedExpression.startsWith('parseInt(') &&
+      trimmedExpression.endsWith(')')) {
+    final key = trimmedExpression
+        .substring('parseInt('.length, trimmedExpression.length - 1)
+        .trim();
     return int.tryParse(variables[key] ?? '') ?? 0;
   }
 
   if (trimmedExpression.contains('||')) {
-    final segments = trimmedExpression.split('||').map((segment) => segment.trim());
+    final segments = trimmedExpression
+        .split('||')
+        .map((segment) => segment.trim());
     for (final segment in segments) {
       final variableValue = variables[segment];
       if (variableValue != null && variableValue.isNotEmpty) {
@@ -266,7 +285,10 @@ dynamic _unwrapJsonLike(dynamic value) {
   try {
     return jsonDecode(trimmedValue);
   } catch (_) {
-    final match = RegExp(r'^\s*[\w.]+\s*\((.*)\)\s*;?\s*$', dotAll: true).firstMatch(trimmedValue);
+    final match = RegExp(
+      r'^\s*[\w.]+\s*\((.*)\)\s*;?\s*$',
+      dotAll: true,
+    ).firstMatch(trimmedValue);
     if (match == null) {
       return value;
     }
@@ -347,7 +369,8 @@ Song? _normalizeSong(dynamic rawItem, String source, int index) {
 
   final actualItem = _readMap(item['data']) ?? item;
   final songId = _findSongId(actualItem, source) ?? 'temp-$source-${index + 1}';
-  final songName = _readString(actualItem['name']) ??
+  final songName =
+      _readString(actualItem['name']) ??
       _readString(actualItem['title']) ??
       _readString(actualItem['songname']) ??
       'Unknown Song';
@@ -375,7 +398,9 @@ String? _findSongId(Map<String, dynamic> item, String source) {
   }
 
   if (source == 'kuwo') {
-    return _readString(item['rid']) ?? _readString(item['musicrid']) ?? _readString(item['id']);
+    return _readString(item['rid']) ??
+        _readString(item['musicrid']) ??
+        _readString(item['id']);
   }
 
   return _readString(item['id']) ?? _readString(item['ID']);
@@ -431,14 +456,16 @@ String _findImage(Map<String, dynamic> item) {
     }
   }
 
-  final nestedImage = _readString(_readMap(item['al'])?['picUrl']) ??
+  final nestedImage =
+      _readString(_readMap(item['al'])?['picUrl']) ??
       _readString(_readMap(item['album'])?['picUrl']) ??
       _readString(_readMap(item['mac_detail'])?['pic_v12']);
   if (nestedImage != null && nestedImage.isNotEmpty) {
     return nestedImage;
   }
 
-  final albumMid = _readString(item['albummid']) ??
+  final albumMid =
+      _readString(item['albummid']) ??
       _readString(_readMap(item['album'])?['mid']) ??
       _readString(item['album_mid']);
   if (albumMid != null && albumMid.isNotEmpty) {

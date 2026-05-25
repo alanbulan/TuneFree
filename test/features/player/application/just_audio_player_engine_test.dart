@@ -37,7 +37,13 @@ class FakeAudioPlayerAdapter implements AudioPlayerAdapter {
   Stream<Duration?> get durationStream => _durationController.stream;
 
   @override
+  Stream<int?> get androidAudioSessionIdStream => const Stream<int?>.empty();
+
+  @override
   Duration? get duration => _duration;
+
+  @override
+  int? get androidAudioSessionId => null;
 
   void emitPlayerState(ja.PlayerState state) {
     _playerStateController.add(state);

@@ -2,61 +2,54 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/models/music_source.dart';
-import '../../../core/models/song.dart';
-import '../../../core/models/top_list.dart';
+import '../../../core/network/source_http_client.dart';
+import '../../../core/network/tune_free_http_client.dart';
+import '../../../core/source_clients/kuwo_client.dart';
+import '../../../core/source_clients/netease_client.dart';
+import '../../../core/source_clients/qq_client.dart';
+import '../../library/application/library_controller.dart';
 import '../data/remote_top_list_repository.dart';
+import '../data/top_list_repository.dart';
 import 'home_controller.dart';
 
-final class LegacyTopListRepository implements RemoteTopListRepository {
-  const LegacyTopListRepository();
+final _sourceHttpClientProvider = Provider<SourceHttpClient>((ref) {
+  final libraryController = ref.watch(libraryControllerProvider);
+  return SourceHttpClient(
+    httpClient: TuneFreeHttpClient(),
+    corsProxyProvider: () => libraryController.state.corsProxy,
+  );
+});
 
-  @override
-  Future<List<TopList>> getTopLists(String source) async {
-    if (source == 'netease') {
-      return const <TopList>[
-        TopList(id: '1', name: '飙升榜', updateFrequency: '热度更新'),
-        TopList(id: '2', name: '新歌榜', updateFrequency: '榜单更新'),
-        TopList(id: '3', name: '原创榜', updateFrequency: '每周四更新'),
-      ];
-    }
-    if (source == 'qq') {
-      return const <TopList>[
-        TopList(id: '11', name: 'QQ热歌榜', updateFrequency: '每日更新'),
-        TopList(id: '12', name: 'QQ新歌榜', updateFrequency: '每日更新'),
-      ];
-    }
-    return const <TopList>[
-      TopList(id: '21', name: '酷我热歌榜', updateFrequency: '每日更新'),
-      TopList(id: '22', name: '酷我飙升榜', updateFrequency: '每日更新'),
-    ];
-  }
+final _neteaseClientProvider = Provider<NeteaseClient>((ref) {
+  return ReactNeteaseClient(httpClient: ref.watch(_sourceHttpClientProvider));
+});
 
-  @override
-  Future<List<Song>> getTopListDetail(String source, String id) async {
-    return List<Song>.generate(
-      5,
-      (index) => Song(
-        id: '$source-$id-$index',
-        name: index == 0 ? '海与你' : '$source 榜单歌曲 ${index + 1}',
-        artist: index == 0 ? '马也_Crabbit' : 'TuneFree',
-        source: switch (source) {
-          'netease' => MusicSource.netease,
-          'qq' => MusicSource.qq,
-          _ => MusicSource.kuwo,
-        },
-      ),
-      growable: false,
-    );
-  }
-}
+final _qqClientProvider = Provider<QqClient>((ref) {
+  return ReactQqClient(httpClient: ref.watch(_sourceHttpClientProvider));
+});
 
-final remoteTopListRepositoryProvider = Provider<RemoteTopListRepository>((ref) {
-  return const LegacyTopListRepository();
+final _kuwoClientProvider = Provider<KuwoClient>((ref) {
+  final libraryController = ref.watch(libraryControllerProvider);
+  return ReactKuwoClient(
+    httpClient: ref.watch(_sourceHttpClientProvider),
+    corsProxyProvider: () => libraryController.state.corsProxy,
+  );
+});
+
+final remoteTopListRepositoryProvider = Provider<RemoteTopListRepository>((
+  ref,
+) {
+  return TopListRepository(
+    neteaseClient: ref.watch(_neteaseClientProvider),
+    qqClient: ref.watch(_qqClientProvider),
+    kuwoClient: ref.watch(_kuwoClientProvider),
+  );
 });
 
 final homeControllerProvider = ChangeNotifierProvider<HomeController>((ref) {
-  final controller = HomeController(repository: ref.watch(remoteTopListRepositoryProvider));
+  final controller = HomeController(
+    repository: ref.watch(remoteTopListRepositoryProvider),
+  );
   unawaited(controller.loadSource('netease'));
   return controller;
 });

@@ -11,6 +11,8 @@ abstract class HomeState with _$HomeState {
     @Default('netease') String activeSource,
     @Default(<TopList>[]) List<TopList> topLists,
     @Default(<Song>[]) List<Song> featuredSongs,
+    String? selectedTopListId,
+    String? selectedTopListName,
     @Default(false) bool listsLoading,
     @Default(false) bool songsLoading,
     @Default(false) bool hasError,

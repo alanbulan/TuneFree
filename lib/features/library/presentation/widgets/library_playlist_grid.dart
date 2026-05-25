@@ -38,7 +38,11 @@ class LibraryPlaylistGrid extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Icon(Icons.folder_rounded, color: Color(0xFFE94B5B), size: 28),
+                const Icon(
+                  Icons.folder_rounded,
+                  color: Color(0xFFE94B5B),
+                  size: 28,
+                ),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -46,11 +50,17 @@ class LibraryPlaylistGrid extends StatelessWidget {
                       playlist.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     Text(
                       '${playlist.songs.length} 首歌曲',
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF8B8B95)),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF8B8B95),
+                      ),
                     ),
                   ],
                 ),

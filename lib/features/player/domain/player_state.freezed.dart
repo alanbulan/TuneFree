@@ -14,7 +14,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$PlayerState {
 
- Song? get currentSong; List<Song> get queue; bool get isPlaying; bool get isLoading; Duration get position; Duration get duration; String get playMode; AudioQuality get audioQuality; AudioQuality get downloadQuality; bool get isExpanded; bool get showLyrics; bool get showQueue; bool get showDownload; bool get showMore;
+ Song? get currentSong; List<Song> get queue; bool get isPlaying; bool get isLoading; Duration get position; Duration get duration; String get playMode; AudioQuality get audioQuality; AudioQuality get downloadQuality; bool get isExpanded; bool get showLyrics; bool get showQueue; bool get showDownload; bool get showMore; String? get playbackNotice;
 /// Create a copy of PlayerState
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -25,16 +25,16 @@ $PlayerStateCopyWith<PlayerState> get copyWith => _$PlayerStateCopyWithImpl<Play
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlayerState&&(identical(other.currentSong, currentSong) || other.currentSong == currentSong)&&const DeepCollectionEquality().equals(other.queue, queue)&&(identical(other.isPlaying, isPlaying) || other.isPlaying == isPlaying)&&(identical(other.isLoading, isLoading) || other.isLoading == isLoading)&&(identical(other.position, position) || other.position == position)&&(identical(other.duration, duration) || other.duration == duration)&&(identical(other.playMode, playMode) || other.playMode == playMode)&&(identical(other.audioQuality, audioQuality) || other.audioQuality == audioQuality)&&(identical(other.downloadQuality, downloadQuality) || other.downloadQuality == downloadQuality)&&(identical(other.isExpanded, isExpanded) || other.isExpanded == isExpanded)&&(identical(other.showLyrics, showLyrics) || other.showLyrics == showLyrics)&&(identical(other.showQueue, showQueue) || other.showQueue == showQueue)&&(identical(other.showDownload, showDownload) || other.showDownload == showDownload)&&(identical(other.showMore, showMore) || other.showMore == showMore));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlayerState&&(identical(other.currentSong, currentSong) || other.currentSong == currentSong)&&const DeepCollectionEquality().equals(other.queue, queue)&&(identical(other.isPlaying, isPlaying) || other.isPlaying == isPlaying)&&(identical(other.isLoading, isLoading) || other.isLoading == isLoading)&&(identical(other.position, position) || other.position == position)&&(identical(other.duration, duration) || other.duration == duration)&&(identical(other.playMode, playMode) || other.playMode == playMode)&&(identical(other.audioQuality, audioQuality) || other.audioQuality == audioQuality)&&(identical(other.downloadQuality, downloadQuality) || other.downloadQuality == downloadQuality)&&(identical(other.isExpanded, isExpanded) || other.isExpanded == isExpanded)&&(identical(other.showLyrics, showLyrics) || other.showLyrics == showLyrics)&&(identical(other.showQueue, showQueue) || other.showQueue == showQueue)&&(identical(other.showDownload, showDownload) || other.showDownload == showDownload)&&(identical(other.showMore, showMore) || other.showMore == showMore)&&(identical(other.playbackNotice, playbackNotice) || other.playbackNotice == playbackNotice));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,currentSong,const DeepCollectionEquality().hash(queue),isPlaying,isLoading,position,duration,playMode,audioQuality,downloadQuality,isExpanded,showLyrics,showQueue,showDownload,showMore);
+int get hashCode => Object.hash(runtimeType,currentSong,const DeepCollectionEquality().hash(queue),isPlaying,isLoading,position,duration,playMode,audioQuality,downloadQuality,isExpanded,showLyrics,showQueue,showDownload,showMore,playbackNotice);
 
 @override
 String toString() {
-  return 'PlayerState(currentSong: $currentSong, queue: $queue, isPlaying: $isPlaying, isLoading: $isLoading, position: $position, duration: $duration, playMode: $playMode, audioQuality: $audioQuality, downloadQuality: $downloadQuality, isExpanded: $isExpanded, showLyrics: $showLyrics, showQueue: $showQueue, showDownload: $showDownload, showMore: $showMore)';
+  return 'PlayerState(currentSong: $currentSong, queue: $queue, isPlaying: $isPlaying, isLoading: $isLoading, position: $position, duration: $duration, playMode: $playMode, audioQuality: $audioQuality, downloadQuality: $downloadQuality, isExpanded: $isExpanded, showLyrics: $showLyrics, showQueue: $showQueue, showDownload: $showDownload, showMore: $showMore, playbackNotice: $playbackNotice)';
 }
 
 
@@ -45,7 +45,7 @@ abstract mixin class $PlayerStateCopyWith<$Res>  {
   factory $PlayerStateCopyWith(PlayerState value, $Res Function(PlayerState) _then) = _$PlayerStateCopyWithImpl;
 @useResult
 $Res call({
- Song? currentSong, List<Song> queue, bool isPlaying, bool isLoading, Duration position, Duration duration, String playMode, AudioQuality audioQuality, AudioQuality downloadQuality, bool isExpanded, bool showLyrics, bool showQueue, bool showDownload, bool showMore
+ Song? currentSong, List<Song> queue, bool isPlaying, bool isLoading, Duration position, Duration duration, String playMode, AudioQuality audioQuality, AudioQuality downloadQuality, bool isExpanded, bool showLyrics, bool showQueue, bool showDownload, bool showMore, String? playbackNotice
 });
 
 
@@ -62,7 +62,7 @@ class _$PlayerStateCopyWithImpl<$Res>
 
 /// Create a copy of PlayerState
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? currentSong = freezed,Object? queue = null,Object? isPlaying = null,Object? isLoading = null,Object? position = null,Object? duration = null,Object? playMode = null,Object? audioQuality = null,Object? downloadQuality = null,Object? isExpanded = null,Object? showLyrics = null,Object? showQueue = null,Object? showDownload = null,Object? showMore = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? currentSong = freezed,Object? queue = null,Object? isPlaying = null,Object? isLoading = null,Object? position = null,Object? duration = null,Object? playMode = null,Object? audioQuality = null,Object? downloadQuality = null,Object? isExpanded = null,Object? showLyrics = null,Object? showQueue = null,Object? showDownload = null,Object? showMore = null,Object? playbackNotice = freezed,}) {
   return _then(_self.copyWith(
 currentSong: freezed == currentSong ? _self.currentSong : currentSong // ignore: cast_nullable_to_non_nullable
 as Song?,queue: null == queue ? _self.queue : queue // ignore: cast_nullable_to_non_nullable
@@ -78,7 +78,8 @@ as bool,showLyrics: null == showLyrics ? _self.showLyrics : showLyrics // ignore
 as bool,showQueue: null == showQueue ? _self.showQueue : showQueue // ignore: cast_nullable_to_non_nullable
 as bool,showDownload: null == showDownload ? _self.showDownload : showDownload // ignore: cast_nullable_to_non_nullable
 as bool,showMore: null == showMore ? _self.showMore : showMore // ignore: cast_nullable_to_non_nullable
-as bool,
+as bool,playbackNotice: freezed == playbackNotice ? _self.playbackNotice : playbackNotice // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 /// Create a copy of PlayerState
@@ -175,10 +176,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( Song? currentSong,  List<Song> queue,  bool isPlaying,  bool isLoading,  Duration position,  Duration duration,  String playMode,  AudioQuality audioQuality,  AudioQuality downloadQuality,  bool isExpanded,  bool showLyrics,  bool showQueue,  bool showDownload,  bool showMore)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( Song? currentSong,  List<Song> queue,  bool isPlaying,  bool isLoading,  Duration position,  Duration duration,  String playMode,  AudioQuality audioQuality,  AudioQuality downloadQuality,  bool isExpanded,  bool showLyrics,  bool showQueue,  bool showDownload,  bool showMore,  String? playbackNotice)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlayerState() when $default != null:
-return $default(_that.currentSong,_that.queue,_that.isPlaying,_that.isLoading,_that.position,_that.duration,_that.playMode,_that.audioQuality,_that.downloadQuality,_that.isExpanded,_that.showLyrics,_that.showQueue,_that.showDownload,_that.showMore);case _:
+return $default(_that.currentSong,_that.queue,_that.isPlaying,_that.isLoading,_that.position,_that.duration,_that.playMode,_that.audioQuality,_that.downloadQuality,_that.isExpanded,_that.showLyrics,_that.showQueue,_that.showDownload,_that.showMore,_that.playbackNotice);case _:
   return orElse();
 
 }
@@ -196,10 +197,10 @@ return $default(_that.currentSong,_that.queue,_that.isPlaying,_that.isLoading,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( Song? currentSong,  List<Song> queue,  bool isPlaying,  bool isLoading,  Duration position,  Duration duration,  String playMode,  AudioQuality audioQuality,  AudioQuality downloadQuality,  bool isExpanded,  bool showLyrics,  bool showQueue,  bool showDownload,  bool showMore)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( Song? currentSong,  List<Song> queue,  bool isPlaying,  bool isLoading,  Duration position,  Duration duration,  String playMode,  AudioQuality audioQuality,  AudioQuality downloadQuality,  bool isExpanded,  bool showLyrics,  bool showQueue,  bool showDownload,  bool showMore,  String? playbackNotice)  $default,) {final _that = this;
 switch (_that) {
 case _PlayerState():
-return $default(_that.currentSong,_that.queue,_that.isPlaying,_that.isLoading,_that.position,_that.duration,_that.playMode,_that.audioQuality,_that.downloadQuality,_that.isExpanded,_that.showLyrics,_that.showQueue,_that.showDownload,_that.showMore);case _:
+return $default(_that.currentSong,_that.queue,_that.isPlaying,_that.isLoading,_that.position,_that.duration,_that.playMode,_that.audioQuality,_that.downloadQuality,_that.isExpanded,_that.showLyrics,_that.showQueue,_that.showDownload,_that.showMore,_that.playbackNotice);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -216,10 +217,10 @@ return $default(_that.currentSong,_that.queue,_that.isPlaying,_that.isLoading,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( Song? currentSong,  List<Song> queue,  bool isPlaying,  bool isLoading,  Duration position,  Duration duration,  String playMode,  AudioQuality audioQuality,  AudioQuality downloadQuality,  bool isExpanded,  bool showLyrics,  bool showQueue,  bool showDownload,  bool showMore)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( Song? currentSong,  List<Song> queue,  bool isPlaying,  bool isLoading,  Duration position,  Duration duration,  String playMode,  AudioQuality audioQuality,  AudioQuality downloadQuality,  bool isExpanded,  bool showLyrics,  bool showQueue,  bool showDownload,  bool showMore,  String? playbackNotice)?  $default,) {final _that = this;
 switch (_that) {
 case _PlayerState() when $default != null:
-return $default(_that.currentSong,_that.queue,_that.isPlaying,_that.isLoading,_that.position,_that.duration,_that.playMode,_that.audioQuality,_that.downloadQuality,_that.isExpanded,_that.showLyrics,_that.showQueue,_that.showDownload,_that.showMore);case _:
+return $default(_that.currentSong,_that.queue,_that.isPlaying,_that.isLoading,_that.position,_that.duration,_that.playMode,_that.audioQuality,_that.downloadQuality,_that.isExpanded,_that.showLyrics,_that.showQueue,_that.showDownload,_that.showMore,_that.playbackNotice);case _:
   return null;
 
 }
@@ -231,7 +232,7 @@ return $default(_that.currentSong,_that.queue,_that.isPlaying,_that.isLoading,_t
 
 
 class _PlayerState extends PlayerState {
-  const _PlayerState({this.currentSong, final  List<Song> queue = const <Song>[], this.isPlaying = false, this.isLoading = false, this.position = Duration.zero, this.duration = Duration.zero, this.playMode = 'sequence', this.audioQuality = AudioQuality.k320, this.downloadQuality = AudioQuality.k320, this.isExpanded = false, this.showLyrics = false, this.showQueue = false, this.showDownload = false, this.showMore = false}): _queue = queue,super._();
+  const _PlayerState({this.currentSong, final  List<Song> queue = const <Song>[], this.isPlaying = false, this.isLoading = false, this.position = Duration.zero, this.duration = Duration.zero, this.playMode = 'sequence', this.audioQuality = AudioQuality.k320, this.downloadQuality = AudioQuality.k320, this.isExpanded = false, this.showLyrics = false, this.showQueue = false, this.showDownload = false, this.showMore = false, this.playbackNotice}): _queue = queue,super._();
   
 
 @override final  Song? currentSong;
@@ -254,6 +255,7 @@ class _PlayerState extends PlayerState {
 @override@JsonKey() final  bool showQueue;
 @override@JsonKey() final  bool showDownload;
 @override@JsonKey() final  bool showMore;
+@override final  String? playbackNotice;
 
 /// Create a copy of PlayerState
 /// with the given fields replaced by the non-null parameter values.
@@ -265,16 +267,16 @@ _$PlayerStateCopyWith<_PlayerState> get copyWith => __$PlayerStateCopyWithImpl<_
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlayerState&&(identical(other.currentSong, currentSong) || other.currentSong == currentSong)&&const DeepCollectionEquality().equals(other._queue, _queue)&&(identical(other.isPlaying, isPlaying) || other.isPlaying == isPlaying)&&(identical(other.isLoading, isLoading) || other.isLoading == isLoading)&&(identical(other.position, position) || other.position == position)&&(identical(other.duration, duration) || other.duration == duration)&&(identical(other.playMode, playMode) || other.playMode == playMode)&&(identical(other.audioQuality, audioQuality) || other.audioQuality == audioQuality)&&(identical(other.downloadQuality, downloadQuality) || other.downloadQuality == downloadQuality)&&(identical(other.isExpanded, isExpanded) || other.isExpanded == isExpanded)&&(identical(other.showLyrics, showLyrics) || other.showLyrics == showLyrics)&&(identical(other.showQueue, showQueue) || other.showQueue == showQueue)&&(identical(other.showDownload, showDownload) || other.showDownload == showDownload)&&(identical(other.showMore, showMore) || other.showMore == showMore));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlayerState&&(identical(other.currentSong, currentSong) || other.currentSong == currentSong)&&const DeepCollectionEquality().equals(other._queue, _queue)&&(identical(other.isPlaying, isPlaying) || other.isPlaying == isPlaying)&&(identical(other.isLoading, isLoading) || other.isLoading == isLoading)&&(identical(other.position, position) || other.position == position)&&(identical(other.duration, duration) || other.duration == duration)&&(identical(other.playMode, playMode) || other.playMode == playMode)&&(identical(other.audioQuality, audioQuality) || other.audioQuality == audioQuality)&&(identical(other.downloadQuality, downloadQuality) || other.downloadQuality == downloadQuality)&&(identical(other.isExpanded, isExpanded) || other.isExpanded == isExpanded)&&(identical(other.showLyrics, showLyrics) || other.showLyrics == showLyrics)&&(identical(other.showQueue, showQueue) || other.showQueue == showQueue)&&(identical(other.showDownload, showDownload) || other.showDownload == showDownload)&&(identical(other.showMore, showMore) || other.showMore == showMore)&&(identical(other.playbackNotice, playbackNotice) || other.playbackNotice == playbackNotice));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,currentSong,const DeepCollectionEquality().hash(_queue),isPlaying,isLoading,position,duration,playMode,audioQuality,downloadQuality,isExpanded,showLyrics,showQueue,showDownload,showMore);
+int get hashCode => Object.hash(runtimeType,currentSong,const DeepCollectionEquality().hash(_queue),isPlaying,isLoading,position,duration,playMode,audioQuality,downloadQuality,isExpanded,showLyrics,showQueue,showDownload,showMore,playbackNotice);
 
 @override
 String toString() {
-  return 'PlayerState(currentSong: $currentSong, queue: $queue, isPlaying: $isPlaying, isLoading: $isLoading, position: $position, duration: $duration, playMode: $playMode, audioQuality: $audioQuality, downloadQuality: $downloadQuality, isExpanded: $isExpanded, showLyrics: $showLyrics, showQueue: $showQueue, showDownload: $showDownload, showMore: $showMore)';
+  return 'PlayerState(currentSong: $currentSong, queue: $queue, isPlaying: $isPlaying, isLoading: $isLoading, position: $position, duration: $duration, playMode: $playMode, audioQuality: $audioQuality, downloadQuality: $downloadQuality, isExpanded: $isExpanded, showLyrics: $showLyrics, showQueue: $showQueue, showDownload: $showDownload, showMore: $showMore, playbackNotice: $playbackNotice)';
 }
 
 
@@ -285,7 +287,7 @@ abstract mixin class _$PlayerStateCopyWith<$Res> implements $PlayerStateCopyWith
   factory _$PlayerStateCopyWith(_PlayerState value, $Res Function(_PlayerState) _then) = __$PlayerStateCopyWithImpl;
 @override @useResult
 $Res call({
- Song? currentSong, List<Song> queue, bool isPlaying, bool isLoading, Duration position, Duration duration, String playMode, AudioQuality audioQuality, AudioQuality downloadQuality, bool isExpanded, bool showLyrics, bool showQueue, bool showDownload, bool showMore
+ Song? currentSong, List<Song> queue, bool isPlaying, bool isLoading, Duration position, Duration duration, String playMode, AudioQuality audioQuality, AudioQuality downloadQuality, bool isExpanded, bool showLyrics, bool showQueue, bool showDownload, bool showMore, String? playbackNotice
 });
 
 
@@ -302,7 +304,7 @@ class __$PlayerStateCopyWithImpl<$Res>
 
 /// Create a copy of PlayerState
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? currentSong = freezed,Object? queue = null,Object? isPlaying = null,Object? isLoading = null,Object? position = null,Object? duration = null,Object? playMode = null,Object? audioQuality = null,Object? downloadQuality = null,Object? isExpanded = null,Object? showLyrics = null,Object? showQueue = null,Object? showDownload = null,Object? showMore = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? currentSong = freezed,Object? queue = null,Object? isPlaying = null,Object? isLoading = null,Object? position = null,Object? duration = null,Object? playMode = null,Object? audioQuality = null,Object? downloadQuality = null,Object? isExpanded = null,Object? showLyrics = null,Object? showQueue = null,Object? showDownload = null,Object? showMore = null,Object? playbackNotice = freezed,}) {
   return _then(_PlayerState(
 currentSong: freezed == currentSong ? _self.currentSong : currentSong // ignore: cast_nullable_to_non_nullable
 as Song?,queue: null == queue ? _self._queue : queue // ignore: cast_nullable_to_non_nullable
@@ -318,7 +320,8 @@ as bool,showLyrics: null == showLyrics ? _self.showLyrics : showLyrics // ignore
 as bool,showQueue: null == showQueue ? _self.showQueue : showQueue // ignore: cast_nullable_to_non_nullable
 as bool,showDownload: null == showDownload ? _self.showDownload : showDownload // ignore: cast_nullable_to_non_nullable
 as bool,showMore: null == showMore ? _self.showMore : showMore // ignore: cast_nullable_to_non_nullable
-as bool,
+as bool,playbackNotice: freezed == playbackNotice ? _self.playbackNotice : playbackNotice // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 

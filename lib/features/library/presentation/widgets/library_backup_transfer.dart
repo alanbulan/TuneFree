@@ -4,4 +4,5 @@ import 'library_backup_transfer_types.dart';
 
 export 'library_backup_transfer_types.dart';
 
-final LibraryBackupTransfer defaultLibraryBackupTransfer = createLibraryBackupTransfer();
+final LibraryBackupTransfer defaultLibraryBackupTransfer =
+    createLibraryBackupTransfer();

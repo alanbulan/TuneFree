@@ -19,7 +19,7 @@ const _querySettleDelay = Duration(milliseconds: 800);
 
 final class SearchController extends ChangeNotifier {
   SearchController({required RemoteSearchRepository repository})
-      : _repository = repository;
+    : _repository = repository;
 
   final RemoteSearchRepository _repository;
 
@@ -31,7 +31,8 @@ final class SearchController extends ChangeNotifier {
   SearchState _state = const SearchState();
   SearchState get state => _state;
   bool get hasSearchAttemptForCurrentQuery =>
-      _state.query.trim().isNotEmpty && _lastSearchAttemptRevision == _queryRevision;
+      _state.query.trim().isNotEmpty &&
+      _lastSearchAttemptRevision == _queryRevision;
 
   @override
   void dispose() {
@@ -78,16 +79,6 @@ final class SearchController extends ChangeNotifier {
     _cancelQuerySettleTimer();
     _invalidateActiveRequest();
     _state = _resetVisibleResults(_state.copyWith(selectedSource: source));
-    notifyListeners();
-    _retrySettledQueryIfPresent();
-  }
-
-  void toggleExtendedSources() {
-    _cancelQuerySettleTimer();
-    _invalidateActiveRequest();
-    _state = _resetVisibleResults(
-      _state.copyWith(includeExtendedSources: !_state.includeExtendedSources),
-    );
     notifyListeners();
     _retrySettledQueryIfPresent();
   }
@@ -139,7 +130,6 @@ final class SearchController extends ChangeNotifier {
   }) async {
     final requestToken = _nextRequestToken();
     final searchMode = _state.searchMode;
-    final includeExtendedSources = _state.includeExtendedSources;
     final selectedSource = _state.selectedSource;
     final previousResults = _state.results;
     final previousPage = _state.page;
@@ -159,7 +149,6 @@ final class SearchController extends ChangeNotifier {
         normalizedQuery,
         page: page,
         searchMode: searchMode,
-        includeExtendedSources: includeExtendedSources,
         selectedSource: selectedSource,
       );
       if (!_isLatestRequest(requestToken)) {
@@ -169,7 +158,9 @@ final class SearchController extends ChangeNotifier {
       _state = _state.copyWith(
         isSearching: false,
         page: page,
-        results: appendResults ? <Song>[...previousResults, ...results] : results,
+        results: appendResults
+            ? <Song>[...previousResults, ...results]
+            : results,
         hasMore: results.isNotEmpty,
       );
       notifyListeners();
@@ -196,15 +187,10 @@ final class SearchController extends ChangeNotifier {
     String normalizedQuery, {
     required int page,
     required String searchMode,
-    required bool includeExtendedSources,
     required String selectedSource,
   }) {
     return searchMode == 'aggregate'
-        ? _repository.searchAggregate(
-            normalizedQuery,
-            page: page,
-            includeExtendedSources: includeExtendedSources,
-          )
+        ? _repository.searchAggregate(normalizedQuery, page: page)
         : _repository.searchSingle(
             normalizedQuery,
             source: selectedSource,
@@ -243,7 +229,8 @@ final class SearchController extends ChangeNotifier {
     required String searchMode,
     required String selectedSource,
   }) {
-    if (searchMode == 'single' && _gdStudioOnlySources.contains(selectedSource)) {
+    if (searchMode == 'single' &&
+        _gdStudioOnlySources.contains(selectedSource)) {
       return '${_searchSourceFullLabels[selectedSource] ?? selectedSource} 当前不可用，或可能触发了公开接口频控（$_gdStudioRateLimitHint）。';
     }
     return '搜索失败，请稍后重试。';

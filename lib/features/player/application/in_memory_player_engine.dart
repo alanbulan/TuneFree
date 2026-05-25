@@ -17,7 +17,13 @@ class InMemoryPlayerEngine implements PlayerEngine {
   Stream<PlayerEngineSnapshot> get snapshots => _controller.stream;
 
   @override
+  Stream<int?> get androidAudioSessionIdStream => const Stream<int?>.empty();
+
+  @override
   PlayerEngineSnapshot get latestSnapshot => _snapshot;
+
+  @override
+  int? get androidAudioSessionId => null;
 
   @override
   Future<void> loadSong(Song song, {required AudioQuality quality}) async {

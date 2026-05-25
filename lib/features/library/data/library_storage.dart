@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../core/models/music_source.dart';
 import '../../../core/models/playlist.dart';
 import '../../../core/models/song.dart';
@@ -6,24 +10,22 @@ final class LibraryBackupData {
   const LibraryBackupData({
     required this.favorites,
     required this.playlists,
-    required this.apiKey,
     required this.corsProxy,
-    required this.apiBase,
   });
 
   final List<Song> favorites;
   final List<Playlist> playlists;
-  final String apiKey;
   final String corsProxy;
-  final String apiBase;
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
-      'favorites': favorites.map((song) => song.toJson()).toList(growable: false),
-      'playlists': playlists.map((playlist) => playlist.toJson()).toList(growable: false),
-      'apiKey': apiKey,
+      'favorites': favorites
+          .map((song) => song.toJson())
+          .toList(growable: false),
+      'playlists': playlists
+          .map((playlist) => playlist.toJson())
+          .toList(growable: false),
       'corsProxy': corsProxy,
-      'apiBase': apiBase,
     };
   }
 
@@ -39,18 +41,14 @@ final class LibraryBackupData {
 
     return LibraryBackupData(
       favorites: favoritesJson
-          .map(
-            (item) => Song.fromJson(Map<String, dynamic>.from(item as Map)),
-          )
+          .map((item) => Song.fromJson(Map<String, dynamic>.from(item as Map)))
           .toList(growable: false),
       playlists: playlistsJson
           .map(
             (item) => Playlist.fromJson(Map<String, dynamic>.from(item as Map)),
           )
           .toList(growable: false),
-      apiKey: json['apiKey'] as String? ?? '',
       corsProxy: json['corsProxy'] as String? ?? '',
-      apiBase: json['apiBase'] as String? ?? '',
     );
   }
 }
@@ -60,12 +58,8 @@ abstract class LibraryStorage {
   Future<void> saveFavorites(List<Song> values);
   Future<List<Playlist>> loadPlaylists();
   Future<void> savePlaylists(List<Playlist> values);
-  Future<String> loadApiKey();
-  Future<void> saveApiKey(String value);
   Future<String> loadCorsProxy();
   Future<void> saveCorsProxy(String value);
-  Future<String> loadApiBase();
-  Future<void> saveApiBase(String value);
   Future<LibraryBackupData> loadBackupData();
   Future<void> saveBackupData(LibraryBackupData value);
 }
@@ -82,12 +76,7 @@ final class LegacyLibraryStorage implements LibraryStorage {
       artist: '马也_Crabbit',
       source: MusicSource.netease,
     ),
-    Song(
-      id: 'fav-2',
-      name: '晴天',
-      artist: '周杰伦',
-      source: MusicSource.qq,
-    ),
+    Song(id: 'fav-2', name: '晴天', artist: '周杰伦', source: MusicSource.qq),
   ];
 
   static const _defaultPlaylists = <Playlist>[
@@ -101,42 +90,24 @@ final class LegacyLibraryStorage implements LibraryStorage {
 
   List<Song> _favorites;
   List<Playlist> _playlists;
-  String _apiKey = '';
   String _corsProxy = '';
-  String _apiBase = 'https://api.tune-free.example';
-
-  @override
-  Future<String> loadApiBase() async => _apiBase;
-
-  @override
-  Future<String> loadApiKey() async => _apiKey;
 
   @override
   Future<String> loadCorsProxy() async => _corsProxy;
 
   @override
-  Future<List<Song>> loadFavorites() async => List<Song>.unmodifiable(_favorites);
+  Future<List<Song>> loadFavorites() async =>
+      List<Song>.unmodifiable(_favorites);
 
   @override
-  Future<List<Playlist>> loadPlaylists() async => List<Playlist>.unmodifiable(_playlists);
-
-  @override
-  Future<void> saveApiBase(String value) async {
-    _apiBase = value;
-  }
-
-  @override
-  Future<void> saveApiKey(String value) async {
-    _apiKey = value;
-  }
+  Future<List<Playlist>> loadPlaylists() async =>
+      List<Playlist>.unmodifiable(_playlists);
 
   @override
   Future<void> saveBackupData(LibraryBackupData value) async {
     _favorites = List<Song>.unmodifiable(value.favorites);
     _playlists = List<Playlist>.unmodifiable(value.playlists);
-    _apiKey = value.apiKey;
     _corsProxy = value.corsProxy;
-    _apiBase = value.apiBase;
   }
 
   @override
@@ -159,9 +130,103 @@ final class LegacyLibraryStorage implements LibraryStorage {
     return LibraryBackupData(
       favorites: List<Song>.unmodifiable(_favorites),
       playlists: List<Playlist>.unmodifiable(_playlists),
-      apiKey: _apiKey,
       corsProxy: _corsProxy,
-      apiBase: _apiBase,
     );
+  }
+}
+
+final class SharedPreferencesLibraryStorage implements LibraryStorage {
+  SharedPreferencesLibraryStorage({
+    Future<SharedPreferences> Function()? preferencesProvider,
+  }) : _preferencesProvider =
+           preferencesProvider ?? SharedPreferences.getInstance;
+
+  static const _favoritesKey = 'tunefree_favorites';
+  static const _playlistsKey = 'tunefree_playlists';
+  static const _corsProxyKey = 'tunefree_cors_proxy';
+
+  final Future<SharedPreferences> Function() _preferencesProvider;
+
+  @override
+  Future<String> loadCorsProxy() async {
+    return (await _preferencesProvider()).getString(_corsProxyKey) ?? '';
+  }
+
+  @override
+  Future<List<Song>> loadFavorites() async {
+    final rawValue = (await _preferencesProvider()).getString(_favoritesKey);
+    return _decodeList(rawValue, Song.fromJson);
+  }
+
+  @override
+  Future<List<Playlist>> loadPlaylists() async {
+    final rawValue = (await _preferencesProvider()).getString(_playlistsKey);
+    return _decodeList(rawValue, Playlist.fromJson);
+  }
+
+  @override
+  Future<void> saveCorsProxy(String value) async {
+    await (await _preferencesProvider()).setString(_corsProxyKey, value);
+  }
+
+  @override
+  Future<void> saveFavorites(List<Song> values) async {
+    await _saveList(_favoritesKey, values.map((song) => song.toJson()));
+  }
+
+  @override
+  Future<void> savePlaylists(List<Playlist> values) async {
+    await _saveList(_playlistsKey, values.map((playlist) => playlist.toJson()));
+  }
+
+  @override
+  Future<LibraryBackupData> loadBackupData() async {
+    return LibraryBackupData(
+      favorites: await loadFavorites(),
+      playlists: await loadPlaylists(),
+      corsProxy: await loadCorsProxy(),
+    );
+  }
+
+  @override
+  Future<void> saveBackupData(LibraryBackupData value) async {
+    await saveFavorites(value.favorites);
+    await savePlaylists(value.playlists);
+    await saveCorsProxy(value.corsProxy);
+  }
+
+  Future<void> _saveList(
+    String key,
+    Iterable<Map<String, dynamic>> values,
+  ) async {
+    final encodedValue = jsonEncode(values.toList(growable: false));
+    await (await _preferencesProvider()).setString(key, encodedValue);
+  }
+
+  List<T> _decodeList<T>(
+    String? rawValue,
+    T Function(Map<String, dynamic>) decode,
+  ) {
+    if (rawValue == null || rawValue.trim().isEmpty) {
+      return List<T>.empty(growable: false);
+    }
+
+    try {
+      final decodedValue = jsonDecode(rawValue);
+      if (decodedValue is! List<dynamic>) {
+        return List<T>.empty(growable: false);
+      }
+
+      final values = <T>[];
+      for (final item in decodedValue) {
+        if (item is! Map) {
+          return List<T>.empty(growable: false);
+        }
+        values.add(decode(Map<String, dynamic>.from(item)));
+      }
+      return List<T>.unmodifiable(values);
+    } catch (_) {
+      return List<T>.empty(growable: false);
+    }
   }
 }

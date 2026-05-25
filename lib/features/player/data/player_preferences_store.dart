@@ -23,14 +23,17 @@ final playerPreferencesStoreProvider = Provider<PlayerPreferencesStore>((ref) {
   return SharedPreferencesPlayerPreferencesStore();
 });
 
-final class SharedPreferencesPlayerPreferencesStore implements PlayerPreferencesStore {
+final class SharedPreferencesPlayerPreferencesStore
+    implements PlayerPreferencesStore {
   static const String _currentSongKey = 'player.currentSong';
   static const String _queueKey = 'player.queue';
   static const String _playModeKey = 'player.playMode';
   static const String _audioQualityKey = 'player.audioQuality';
 
-  SharedPreferencesPlayerPreferencesStore({Future<SharedPreferences>? sharedPreferences})
-    : _sharedPreferences = sharedPreferences ?? SharedPreferences.getInstance();
+  SharedPreferencesPlayerPreferencesStore({
+    Future<SharedPreferences>? sharedPreferences,
+  }) : _sharedPreferences =
+           sharedPreferences ?? SharedPreferences.getInstance();
 
   final Future<SharedPreferences> _sharedPreferences;
 
@@ -105,7 +108,9 @@ final class SharedPreferencesPlayerPreferencesStore implements PlayerPreferences
   @override
   Future<void> saveQueue(List<Song> value) async {
     final preferences = await _sharedPreferences;
-    final encodedQueue = value.map((song) => jsonEncode(song.toJson())).toList(growable: false);
+    final encodedQueue = value
+        .map((song) => jsonEncode(song.toJson()))
+        .toList(growable: false);
     await preferences.setStringList(_queueKey, encodedQueue);
   }
 

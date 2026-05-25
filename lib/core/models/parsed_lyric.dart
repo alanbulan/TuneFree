@@ -11,5 +11,6 @@ abstract class ParsedLyric with _$ParsedLyric {
     String? translation,
   }) = _ParsedLyric;
 
-  factory ParsedLyric.fromJson(Map<String, dynamic> json) => _$ParsedLyricFromJson(json);
+  factory ParsedLyric.fromJson(Map<String, dynamic> json) =>
+      _$ParsedLyricFromJson(json);
 }

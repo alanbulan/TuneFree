@@ -49,7 +49,9 @@ class PlayerEngineSnapshot {
 
 abstract class PlayerEngine {
   Stream<PlayerEngineSnapshot> get snapshots;
+  Stream<int?> get androidAudioSessionIdStream;
   PlayerEngineSnapshot get latestSnapshot;
+  int? get androidAudioSessionId;
   Future<void> loadSong(Song song, {required AudioQuality quality});
   Future<void> play();
   Future<void> pause();

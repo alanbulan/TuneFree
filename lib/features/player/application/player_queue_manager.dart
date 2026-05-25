@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../../../core/models/song.dart';
 
 const String sequencePlayMode = 'sequence';
@@ -23,13 +25,17 @@ int getNextQueueIndex(List<Song> queue, Song? currentSong, String playMode) {
   }
 
   return switch (normalizePlayMode(playMode)) {
-    shufflePlayMode => (currentIndex + 1) % queue.length,
+    shufflePlayMode => _randomQueueIndex(queue.length, currentIndex),
     _ when currentIndex + 1 >= queue.length => 0,
     _ => currentIndex + 1,
   };
 }
 
-int getPreviousQueueIndex(List<Song> queue, Song? currentSong, String playMode) {
+int getPreviousQueueIndex(
+  List<Song> queue,
+  Song? currentSong,
+  String playMode,
+) {
   if (queue.isEmpty) {
     return -1;
   }
@@ -40,9 +46,21 @@ int getPreviousQueueIndex(List<Song> queue, Song? currentSong, String playMode) 
   }
 
   return switch (normalizePlayMode(playMode)) {
-    shufflePlayMode => currentIndex == 0 ? queue.length - 1 : currentIndex - 1,
+    shufflePlayMode => _randomQueueIndex(queue.length, currentIndex),
     _ => currentIndex == 0 ? queue.length - 1 : currentIndex - 1,
   };
+}
+
+int _randomQueueIndex(int queueLength, int currentIndex) {
+  if (queueLength <= 1) {
+    return currentIndex;
+  }
+
+  var nextIndex = currentIndex;
+  while (nextIndex == currentIndex) {
+    nextIndex = math.Random().nextInt(queueLength);
+  }
+  return nextIndex;
 }
 
 int _findCurrentIndex(List<Song> queue, Song? currentSong) {

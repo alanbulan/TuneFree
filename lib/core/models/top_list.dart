@@ -13,5 +13,6 @@ abstract class TopList with _$TopList {
     String? coverImgUrl,
   }) = _TopList;
 
-  factory TopList.fromJson(Map<String, dynamic> json) => _$TopListFromJson(json);
+  factory TopList.fromJson(Map<String, dynamic> json) =>
+      _$TopListFromJson(json);
 }
