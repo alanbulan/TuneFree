@@ -11,9 +11,7 @@ abstract class LibraryState with _$LibraryState {
   const factory LibraryState({
     @Default(<Song>[]) List<Song> favorites,
     @Default(<Playlist>[]) List<Playlist> playlists,
-    @Default('') String apiKey,
     @Default('') String corsProxy,
-    @Default('') String apiBase,
     String? exportedBackupJson,
     String? lastImportSummary,
     @Default(<DownloadedTrackItem>[]) List<DownloadedTrackItem> downloads,

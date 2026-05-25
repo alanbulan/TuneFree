@@ -14,7 +14,8 @@ final class MusicSource {
 
   @override
   bool operator ==(Object other) =>
-      identical(this, other) || other is MusicSource && other.wireValue == wireValue;
+      identical(this, other) ||
+      other is MusicSource && other.wireValue == wireValue;
 
   @override
   int get hashCode => wireValue.hashCode;
@@ -24,14 +25,16 @@ final class MusicSource {
 }
 
 extension MusicSourceWire on MusicSource {
-  static const Map<String, MusicSource> _knownByWireValue = <String, MusicSource>{
-    'netease': MusicSource.netease,
-    'qq': MusicSource.qq,
-    'kuwo': MusicSource.kuwo,
-    'joox': MusicSource.joox,
-    'bilibili': MusicSource.bilibili,
-    'unknown': MusicSource.unknown,
-  };
+  static const Map<String, MusicSource> _knownByWireValue =
+      <String, MusicSource>{
+        'netease': MusicSource.netease,
+        'qq': MusicSource.qq,
+        'kuwo': MusicSource.kuwo,
+        'joox': MusicSource.joox,
+        'bilibili': MusicSource.bilibili,
+        'unknown': MusicSource.unknown,
+      };
 
-  static MusicSource fromWire(String value) => _knownByWireValue[value] ?? MusicSource._(value);
+  static MusicSource fromWire(String value) =>
+      _knownByWireValue[value] ?? MusicSource._(value);
 }

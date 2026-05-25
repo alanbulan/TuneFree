@@ -11,6 +11,9 @@ import 'package:tunefree/core/models/audio_quality.dart';
 import 'package:tunefree/core/models/music_source.dart';
 import 'package:tunefree/core/models/playlist.dart';
 import 'package:tunefree/core/models/song.dart';
+import 'package:tunefree/core/models/top_list.dart';
+import 'package:tunefree/features/home/application/home_providers.dart';
+import 'package:tunefree/features/home/data/remote_top_list_repository.dart';
 import 'package:tunefree/features/library/application/library_controller.dart';
 import 'package:tunefree/features/library/data/library_storage.dart';
 import 'package:tunefree/features/player/application/just_audio_player_engine.dart';
@@ -27,6 +30,7 @@ import 'package:tunefree/features/player/data/song_resolution_repository.dart';
 import 'package:tunefree/features/player/domain/play_mode.dart';
 import 'package:tunefree/features/player/domain/player_track.dart';
 import 'package:tunefree/features/player/presentation/widgets/full_player_sheet.dart';
+import 'package:tunefree/features/player/presentation/widgets/player_queue_sheet.dart';
 
 import '../../../shared/goldens/tune_free_golden_test_app.dart';
 
@@ -117,6 +121,27 @@ const MethodChannel _platformChannel = MethodChannel(
   'flutter/platform',
   _platformCodec,
 );
+
+final class _FakeTopListRepository implements RemoteTopListRepository {
+  const _FakeTopListRepository();
+
+  @override
+  Future<List<TopList>> getTopLists(String source) async {
+    return const <TopList>[TopList(id: '1', name: '飙升榜')];
+  }
+
+  @override
+  Future<List<Song>> getTopListDetail(String source, String id) async {
+    return const <Song>[
+      Song(
+        id: 'n1',
+        name: '海与你',
+        artist: '马也_Crabbit',
+        source: MusicSource.netease,
+      ),
+    ];
+  }
+}
 
 Future<void> _setClipboardMockHandler({
   required Future<void> Function(String text) onCopy,
@@ -268,12 +293,6 @@ final class TestPlayerLibraryStorage implements LibraryStorage {
   List<Playlist> _playlists;
 
   @override
-  Future<String> loadApiBase() async => 'https://api.tune-free.example';
-
-  @override
-  Future<String> loadApiKey() async => '';
-
-  @override
   Future<String> loadCorsProxy() async => '';
 
   @override
@@ -283,12 +302,6 @@ final class TestPlayerLibraryStorage implements LibraryStorage {
   Future<List<Playlist>> loadPlaylists() async => _playlists;
 
   @override
-  Future<void> saveApiBase(String value) async {}
-
-  @override
-  Future<void> saveApiKey(String value) async {}
-
-  @override
   Future<void> saveCorsProxy(String value) async {}
 
   @override
@@ -296,9 +309,7 @@ final class TestPlayerLibraryStorage implements LibraryStorage {
     return LibraryBackupData(
       favorites: _favorites,
       playlists: _playlists,
-      apiKey: '',
       corsProxy: '',
-      apiBase: 'https://api.tune-free.example',
     );
   }
 
@@ -405,6 +416,55 @@ void main() {
     HttpOverrides.global = null;
   });
 
+  testWidgets('queue sheet shows artwork metadata and plays selected row', (
+    tester,
+  ) async {
+    Song? selectedSong;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: [
+              PlayerQueueSheet(
+                isOpen: true,
+                queue: const <Song>[
+                  Song(
+                    id: 'kuwo-1',
+                    name: '完整队列歌曲',
+                    artist: '酷我歌手',
+                    album: '酷我专辑',
+                    pic: 'https://example.com/kuwo-cover.png',
+                    source: MusicSource.kuwo,
+                  ),
+                ],
+                currentSong: null,
+                playMode: 'sequence',
+                onClose: () {},
+                onPlaySong: (song) => selectedSong = song,
+                onClearQueue: () {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('player-queue-sheet')), findsOneWidget);
+    expect(find.text('完整队列歌曲'), findsOneWidget);
+    expect(find.text('酷我歌手'), findsOneWidget);
+    expect(find.text('专辑：酷我专辑'), findsOneWidget);
+    expect(find.text('酷我'), findsOneWidget);
+    expect(
+      find.byKey(const Key('player-queue-artwork-kuwo:kuwo-1')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('player-queue-track-kuwo:kuwo-1')));
+
+    expect(selectedSong?.id, 'kuwo-1');
+  });
+
   testWidgets(
     'full player favorite button reacts immediately to library changes',
     (tester) async {
@@ -417,6 +477,9 @@ void main() {
           playerEngineProvider.overrideWithValue(engine),
           mediaSessionAdapterProvider.overrideWithValue(
             NoopMediaSessionAdapter(),
+          ),
+          remoteTopListRepositoryProvider.overrideWithValue(
+            const _FakeTopListRepository(),
           ),
           libraryStorageProvider.overrideWithValue(storage),
           downloadLibraryRepositoryProvider.overrideWithValue(
@@ -520,6 +583,9 @@ void main() {
           mediaSessionAdapterProvider.overrideWithValue(
             NoopMediaSessionAdapter(),
           ),
+          remoteTopListRepositoryProvider.overrideWithValue(
+            const _FakeTopListRepository(),
+          ),
           libraryStorageProvider.overrideWithValue(storage),
           downloadLibraryRepositoryProvider.overrideWithValue(
             _noopDownloadLibraryRepository(),
@@ -566,12 +632,14 @@ void main() {
         source: 'netease',
         title: '第一首',
         artist: '歌手甲',
+        artworkUrl: 'https://example.com/track-1.png',
       );
       const secondTrack = PlayerTrack(
         id: 'track-2',
         source: 'qq',
         title: '第二首',
         artist: '歌手乙',
+        artworkUrl: 'https://example.com/track-2.png',
       );
       await controller.openTrack(
         firstTrack,
@@ -594,7 +662,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.descendant(of: queueSheet, matching: find.text('列表循环')),
+        find.descendant(of: queueSheet, matching: find.text('2 首 · 列表循环')),
         findsOneWidget,
       );
       expect(
@@ -605,9 +673,51 @@ void main() {
         find.descendant(of: queueSheet, matching: find.text('第二首')),
         findsOneWidget,
       );
+      expect(
+        find.descendant(of: queueSheet, matching: find.text('歌手乙')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: queueSheet, matching: find.text('网易云')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: queueSheet, matching: find.text('QQ')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: queueSheet,
+          matching: find.byKey(
+            const Key('player-queue-artwork-netease:track-1'),
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: queueSheet, matching: find.text('NETEASE')),
+        findsNothing,
+      );
+
+      await tester.tap(find.byKey(const Key('player-queue-track-qq:track-2')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(
+        container.read(playerControllerProvider).currentTrack?.id,
+        'track-2',
+      );
+      expect(find.byKey(const Key('player-queue-sheet')), findsNothing);
+
+      await tester.ensureVisible(find.byKey(const Key('player-queue-button')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('player-queue-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
 
       await tester.tap(find.byKey(const Key('player-queue-clear-button')));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
 
       expect(container.read(playerControllerProvider).queue, isEmpty);
       expect(container.read(playerControllerProvider).currentTrack, isNull);
@@ -745,6 +855,13 @@ void main() {
           mediaSessionAdapterProvider.overrideWithValue(
             NoopMediaSessionAdapter(),
           ),
+          remoteTopListRepositoryProvider.overrideWithValue(
+            const _FakeTopListRepository(),
+          ),
+          libraryStorageProvider.overrideWithValue(TestPlayerLibraryStorage()),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            _noopDownloadLibraryRepository(),
+          ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
           ),
@@ -817,6 +934,13 @@ void main() {
           playerEngineProvider.overrideWithValue(engine),
           mediaSessionAdapterProvider.overrideWithValue(
             NoopMediaSessionAdapter(),
+          ),
+          remoteTopListRepositoryProvider.overrideWithValue(
+            const _FakeTopListRepository(),
+          ),
+          libraryStorageProvider.overrideWithValue(TestPlayerLibraryStorage()),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            _noopDownloadLibraryRepository(),
           ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
@@ -982,6 +1106,9 @@ void main() {
           mediaSessionAdapterProvider.overrideWithValue(
             NoopMediaSessionAdapter(),
           ),
+          remoteTopListRepositoryProvider.overrideWithValue(
+            const _FakeTopListRepository(),
+          ),
           libraryStorageProvider.overrideWithValue(storage),
           downloadLibraryRepositoryProvider.overrideWithValue(
             _noopDownloadLibraryRepository(),
@@ -1054,7 +1181,7 @@ void main() {
       expect(activeLine.style?.fontSize, 24);
       expect(activeLine.style?.color, const Color(0xFF111111));
       expect(inactiveLine.style?.fontSize, 20);
-      expect(inactiveLine.style?.color, const Color(0xFF8B8B95));
+      expect(inactiveLine.style?.color, const Color(0xFF8E8E93));
 
       await container
           .read(playerControllerProvider.notifier)
@@ -1080,6 +1207,9 @@ void main() {
           playerEngineProvider.overrideWithValue(engine),
           mediaSessionAdapterProvider.overrideWithValue(
             NoopMediaSessionAdapter(),
+          ),
+          remoteTopListRepositoryProvider.overrideWithValue(
+            const _FakeTopListRepository(),
           ),
           libraryStorageProvider.overrideWithValue(storage),
           downloadLibraryRepositoryProvider.overrideWithValue(
@@ -1184,6 +1314,9 @@ void main() {
           playerEngineProvider.overrideWithValue(engine),
           mediaSessionAdapterProvider.overrideWithValue(
             NoopMediaSessionAdapter(),
+          ),
+          remoteTopListRepositoryProvider.overrideWithValue(
+            const _FakeTopListRepository(),
           ),
           libraryStorageProvider.overrideWithValue(storage),
           downloadLibraryRepositoryProvider.overrideWithValue(
@@ -1367,6 +1500,9 @@ void main() {
           mediaSessionAdapterProvider.overrideWithValue(
             NoopMediaSessionAdapter(),
           ),
+          remoteTopListRepositoryProvider.overrideWithValue(
+            const _FakeTopListRepository(),
+          ),
           libraryStorageProvider.overrideWithValue(storage),
           downloadLibraryRepositoryProvider.overrideWithValue(
             _noopDownloadLibraryRepository(),
@@ -1421,6 +1557,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('mini-player')));
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
       expect(
         container.read(playerControllerProvider).playModeEnum,

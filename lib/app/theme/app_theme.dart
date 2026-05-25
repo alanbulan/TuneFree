@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/theme/tune_free_palette.dart';
+
 ThemeData buildTuneFreeTheme() {
-  const brand = Color(0xFFE94B5B);
+  const brand = TuneFreePalette.accent;
   final scheme = ColorScheme.fromSeed(
     seedColor: brand,
     brightness: Brightness.light,
@@ -9,8 +11,12 @@ ThemeData buildTuneFreeTheme() {
 
   return ThemeData(
     useMaterial3: true,
-    colorScheme: scheme,
-    scaffoldBackgroundColor: const Color(0xFFF5F7FA),
+    colorScheme: scheme.copyWith(
+      primary: TuneFreePalette.accent,
+      surface: TuneFreePalette.surface,
+      onSurface: TuneFreePalette.textPrimary,
+    ),
+    scaffoldBackgroundColor: TuneFreePalette.background,
     appBarTheme: const AppBarTheme(
       centerTitle: false,
       surfaceTintColor: Colors.transparent,

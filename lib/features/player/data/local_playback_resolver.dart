@@ -5,10 +5,15 @@ import '../../../core/models/song.dart';
 import 'download_record.dart';
 
 class LocalPlaybackMatch {
-  const LocalPlaybackMatch({required this.song, required this.filePath});
+  const LocalPlaybackMatch({
+    required this.song,
+    required this.filePath,
+    required this.quality,
+  });
 
   final Song song;
   final String filePath;
+  final AudioQuality quality;
 }
 
 class LocalPlaybackResolver {
@@ -35,27 +40,35 @@ class LocalPlaybackResolver {
 
   Future<LocalPlaybackMatch?> resolve(Song song, AudioQuality quality) async {
     final records = await _recordsForSong(song.key);
+    DownloadRecord? exactRecord;
+    DownloadRecord? fallbackRecord;
+
     for (final record in records) {
-      if (record.quality != quality.wireValue) {
+      if (!await _fileExists(record.filePath)) {
+        await _removeRecord(songKey: record.songKey, quality: record.quality);
         continue;
       }
 
-      if (!await _fileExists(record.filePath)) {
-        await _removeRecord(songKey: record.songKey, quality: record.quality);
-        return null;
+      if (record.quality == quality.wireValue) {
+        exactRecord = record;
+        break;
       }
-
-      return LocalPlaybackMatch(
-        song: song.copyWith(
-          url: Uri.file(
-            record.filePath,
-            windows: Platform.isWindows,
-          ).toString(),
-        ),
-        filePath: record.filePath,
-      );
+      fallbackRecord ??= record;
     }
-    return null;
+
+    final record = exactRecord ?? fallbackRecord;
+    if (record == null) {
+      return null;
+    }
+
+    return LocalPlaybackMatch(
+      song: song.copyWith(
+        pic: song.pic ?? record.artworkUrl,
+        url: Uri.file(record.filePath, windows: Platform.isWindows).toString(),
+      ),
+      filePath: record.filePath,
+      quality: AudioQualityWire.fromWire(record.quality),
+    );
   }
 
   Future<void> remove(Song song, AudioQuality quality) {

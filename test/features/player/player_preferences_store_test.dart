@@ -29,7 +29,8 @@ void main() {
     expect(
       messages.any(
         (message) =>
-            message.contains('player.currentSong') && message.contains('failed to decode'),
+            message.contains('player.currentSong') &&
+            message.contains('failed to decode'),
       ),
       isTrue,
     );

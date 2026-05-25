@@ -34,11 +34,7 @@ const _fallbackSong = Song(
 
 final class FakeSearchRepository implements RemoteSearchRepository {
   FakeSearchRepository({
-    Future<List<Song>> Function(
-      String keyword, {
-      required int page,
-      required bool includeExtendedSources,
-    })?
+    Future<List<Song>> Function(String keyword, {required int page})?
     aggregateSearch,
     Future<List<Song>> Function(
       String keyword, {
@@ -49,11 +45,7 @@ final class FakeSearchRepository implements RemoteSearchRepository {
   }) : _aggregateSearch = aggregateSearch,
        _singleSearch = singleSearch;
 
-  final Future<List<Song>> Function(
-    String keyword, {
-    required int page,
-    required bool includeExtendedSources,
-  })?
+  final Future<List<Song>> Function(String keyword, {required int page})?
   _aggregateSearch;
   final Future<List<Song>> Function(
     String keyword, {
@@ -63,7 +55,6 @@ final class FakeSearchRepository implements RemoteSearchRepository {
   _singleSearch;
 
   final List<String> aggregateKeywords = <String>[];
-  final List<bool> aggregateExtendedFlags = <bool>[];
   final List<int> aggregatePages = <int>[];
   final List<String> singleKeywords = <String>[];
   final List<String> singleSources = <String>[];
@@ -73,17 +64,11 @@ final class FakeSearchRepository implements RemoteSearchRepository {
   Future<List<Song>> searchAggregate(
     String keyword, {
     required int page,
-    required bool includeExtendedSources,
   }) async {
     aggregateKeywords.add(keyword);
-    aggregateExtendedFlags.add(includeExtendedSources);
     aggregatePages.add(page);
     if (_aggregateSearch != null) {
-      return _aggregateSearch(
-        keyword,
-        page: page,
-        includeExtendedSources: includeExtendedSources,
-      );
+      return _aggregateSearch(keyword, page: page);
     }
     return const <Song>[_artworkSong, _fallbackSong];
   }
@@ -151,7 +136,13 @@ final class FakePlayerEngine implements PlayerEngine {
   Stream<PlayerEngineSnapshot> get snapshots => _controller.stream;
 
   @override
+  Stream<int?> get androidAudioSessionIdStream => const Stream<int?>.empty();
+
+  @override
   PlayerEngineSnapshot get latestSnapshot => _snapshot;
+
+  @override
+  int? get androidAudioSessionId => null;
 
   @override
   Future<void> loadSong(Song song, {required AudioQuality quality}) async {
@@ -282,7 +273,6 @@ void main() {
       expect(find.text('搜索历史'), findsNothing);
 
       repository.aggregateKeywords.clear();
-      repository.aggregateExtendedFlags.clear();
       repository.aggregatePages.clear();
 
       await tester.pump(const Duration(milliseconds: 850));
@@ -318,12 +308,8 @@ void main() {
     (tester) async {
       final pending = Completer<List<Song>>();
       final repository = FakeSearchRepository(
-        aggregateSearch:
-            (
-              String keyword, {
-              required int page,
-              required bool includeExtendedSources,
-            }) => pending.future,
+        aggregateSearch: (String keyword, {required int page}) =>
+            pending.future,
       );
       final engine = FakePlayerEngine();
       final container = ProviderContainer(
@@ -367,12 +353,8 @@ void main() {
     'search page only shows the empty state after a real search attempt and keeps content below the measured sticky header',
     (tester) async {
       final emptyRepository = FakeSearchRepository(
-        aggregateSearch:
-            (
-              String keyword, {
-              required int page,
-              required bool includeExtendedSources,
-            }) async => const <Song>[],
+        aggregateSearch: (String keyword, {required int page}) async =>
+            const <Song>[],
       );
       final emptyEngine = FakePlayerEngine();
       final emptyContainer = ProviderContainer(
@@ -413,19 +395,6 @@ void main() {
         greaterThanOrEqualTo(headerBottomWithoutBanner),
       );
 
-      emptyController.toggleExtendedSources();
-      await tester.pump();
-
-      final contentTopWithBanner = tester.getTopLeft(historyText).dy;
-      final headerBottomWithBanner = tester
-          .getBottomLeft(find.byKey(const Key('search-header-surface')))
-          .dy;
-      expect(
-        contentTopWithBanner,
-        greaterThanOrEqualTo(headerBottomWithBanner),
-      );
-      expect(headerBottomWithBanner, greaterThan(headerBottomWithoutBanner));
-
       emptyController.updateQuery('missing');
       await emptyController.submitSearch();
       await tester.pump();
@@ -433,14 +402,9 @@ void main() {
       expect(find.text('未找到相关歌曲，请尝试简化关键词'), findsOneWidget);
 
       final errorRepository = FakeSearchRepository(
-        aggregateSearch:
-            (
-              String keyword, {
-              required int page,
-              required bool includeExtendedSources,
-            }) async {
-              throw StateError('boom');
-            },
+        aggregateSearch: (String keyword, {required int page}) async {
+          throw StateError('boom');
+        },
       );
       final errorEngine = FakePlayerEngine();
       final errorContainer = ProviderContainer(
@@ -466,88 +430,61 @@ void main() {
     },
   );
 
-  testWidgets(
-    'search page shows the legacy advisory banners for extended aggregate and GD-only single-source states',
-    (tester) async {
-      final repository = FakeSearchRepository(
-        singleSearch:
-            (
-              String keyword, {
-              required String source,
-              required int page,
-            }) async {
-              throw StateError('gd-only failure');
-            },
-      );
-      final engine = FakePlayerEngine();
-      final container = ProviderContainer(
-        overrides: [
-          remoteSearchRepositoryProvider.overrideWithValue(repository),
-          playerEngineProvider.overrideWithValue(engine),
-          mediaSessionAdapterProvider.overrideWithValue(
-            NoopMediaSessionAdapter(),
-          ),
-          playerPreferencesStoreProvider.overrideWithValue(
-            TestPlayerPreferencesStore(),
-          ),
-          localPlaybackResolverProvider.overrideWithValue(
-            _noopLocalPlaybackResolver(),
-          ),
-          songResolutionRepositoryProvider.overrideWithValue(
-            _testResolutionRepository(),
-          ),
-        ],
-      );
-      addTearDown(() async {
-        container.dispose();
-        await engine.dispose();
-      });
-
-      final controller = container.read(searchControllerProvider);
-      controller.toggleExtendedSources();
-
-      await _pumpSearchPage(tester, container);
-      final extendedChip = tester.widget<Container>(
-        find
-            .descendant(
-              of: find.byKey(const Key('search-extended-sources-chip')),
-              matching: find.byType(Container),
-            )
-            .first,
-      );
-      final extendedDecoration = extendedChip.decoration! as BoxDecoration;
-      final extendedBorder = extendedDecoration.border! as Border;
-
-      expect(extendedDecoration.color, const Color(0x1AE94B5B));
-      expect(extendedBorder.top.color, const Color(0x33E94B5B));
-      expect(
-        find.text(
-          '已启用扩展聚合：JOOX / Bilibili。速度可能稍慢，并会占用 GD音乐台 (music.gdstudio.xyz) 的公开接口频次。',
+  testWidgets('search page shows GD-backed single-source advisory banners', (
+    tester,
+  ) async {
+    final repository = FakeSearchRepository(
+      singleSearch:
+          (String keyword, {required String source, required int page}) async {
+            throw StateError('gd-backed failure');
+          },
+    );
+    final engine = FakePlayerEngine();
+    final container = ProviderContainer(
+      overrides: [
+        remoteSearchRepositoryProvider.overrideWithValue(repository),
+        playerEngineProvider.overrideWithValue(engine),
+        mediaSessionAdapterProvider.overrideWithValue(
+          NoopMediaSessionAdapter(),
         ),
-        findsOneWidget,
-      );
-
-      controller.setSearchMode('single');
-      controller.setSelectedSource('joox');
-      await tester.pump();
-
-      expect(
-        find.text(
-          'JOOX 使用 GD音乐台 (music.gdstudio.xyz) 公开接口，建议控制频率：5 分钟内不超过 50 次请求。',
+        playerPreferencesStoreProvider.overrideWithValue(
+          TestPlayerPreferencesStore(),
         ),
-        findsOneWidget,
-      );
+        localPlaybackResolverProvider.overrideWithValue(
+          _noopLocalPlaybackResolver(),
+        ),
+        songResolutionRepositoryProvider.overrideWithValue(
+          _testResolutionRepository(),
+        ),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await engine.dispose();
+    });
 
-      controller.updateQuery('gd');
-      await controller.submitSearch();
-      await tester.pump();
+    final controller = container.read(searchControllerProvider);
+    controller.setSearchMode('single');
+    controller.setSelectedSource('joox');
 
-      expect(
-        find.text('JOOX 当前不可用，或可能触发了公开接口频控（5 分钟内不超过 50 次请求）。'),
-        findsOneWidget,
-      );
-    },
-  );
+    await _pumpSearchPage(tester, container);
+
+    expect(
+      find.text(
+        'JOOX 使用 GD音乐台 (music.gdstudio.xyz) 公开接口，建议控制频率：5 分钟内不超过 50 次请求。',
+      ),
+      findsOneWidget,
+    );
+
+    controller.updateQuery('gd');
+    await controller.submitSearch();
+    await tester.pump();
+
+    expect(
+      find.text('JOOX 当前不可用，或可能触发了公开接口频控（5 分钟内不超过 50 次请求）。'),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('search page confirms before clearing history', (tester) async {
     final repository = FakeSearchRepository();
@@ -606,21 +543,16 @@ void main() {
     'search results support load more and reset to history-only when the query is cleared',
     (tester) async {
       final repository = FakeSearchRepository(
-        aggregateSearch:
-            (
-              String keyword, {
-              required int page,
-              required bool includeExtendedSources,
-            }) async {
-              return <Song>[
-                Song(
-                  id: 'page-$page',
-                  name: '$keyword 第$page页',
-                  artist: 'Artist $page',
-                  source: MusicSource.netease,
-                ),
-              ];
-            },
+        aggregateSearch: (String keyword, {required int page}) async {
+          return <Song>[
+            Song(
+              id: 'page-$page',
+              name: '$keyword 第$page页',
+              artist: 'Artist $page',
+              source: MusicSource.netease,
+            ),
+          ];
+        },
       );
       final engine = FakePlayerEngine();
       final container = ProviderContainer(

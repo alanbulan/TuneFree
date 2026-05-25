@@ -79,6 +79,7 @@ class PlayerDownloadManager {
         filePath: target.finalFile.path,
         fileName: target.fileName,
         downloadedAtIso8601: DateTime.now().toUtc().toIso8601String(),
+        artworkUrl: resolvedSong.pic,
       );
       try {
         await _recordStore.save(record);

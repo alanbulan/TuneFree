@@ -12,7 +12,6 @@ abstract class SearchState with _$SearchState {
     @Default(false) bool isSearching,
     @Default('aggregate') String searchMode,
     @Default('netease') String selectedSource,
-    @Default(false) bool includeExtendedSources,
     @Default(<String>[]) List<String> history,
     @Default(1) int page,
     @Default(true) bool hasMore,

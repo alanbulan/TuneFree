@@ -8,6 +8,7 @@ class DownloadRecord {
     required this.filePath,
     required this.fileName,
     required this.downloadedAtIso8601,
+    this.artworkUrl,
   });
 
   final String songKey;
@@ -18,6 +19,7 @@ class DownloadRecord {
   final String filePath;
   final String fileName;
   final String downloadedAtIso8601;
+  final String? artworkUrl;
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
@@ -29,6 +31,8 @@ class DownloadRecord {
       'filePath': filePath,
       'fileName': fileName,
       'downloadedAtIso8601': downloadedAtIso8601,
+      if (artworkUrl != null && artworkUrl!.isNotEmpty)
+        'artworkUrl': artworkUrl,
     };
   }
 
@@ -42,6 +46,7 @@ class DownloadRecord {
       filePath: json['filePath'] as String? ?? '',
       fileName: json['fileName'] as String? ?? '',
       downloadedAtIso8601: json['downloadedAtIso8601'] as String? ?? '',
+      artworkUrl: json['artworkUrl'] as String?,
     );
   }
 }

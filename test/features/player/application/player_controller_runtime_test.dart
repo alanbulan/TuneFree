@@ -102,7 +102,13 @@ final class FakeRuntimePlayerEngine implements PlayerEngine {
   Stream<PlayerEngineSnapshot> get snapshots => _controller.stream;
 
   @override
+  Stream<int?> get androidAudioSessionIdStream => const Stream<int?>.empty();
+
+  @override
   PlayerEngineSnapshot get latestSnapshot => _snapshot;
+
+  @override
+  int? get androidAudioSessionId => null;
 
   @override
   Future<void> loadSong(Song song, {required AudioQuality quality}) async {
@@ -313,44 +319,47 @@ void main() {
     expect(engine.playCalls, greaterThanOrEqualTo(2));
   });
 
-  test('stop leaves the queue intact so system play can recover later', () async {
-    final engine = FakeRuntimePlayerEngine();
-    final store = InMemoryPlayerPreferencesStore();
-    final controller = PlayerController.runtime(
-      engine: engine,
-      preferencesStore: store,
-      mediaSessionAdapter: NoopMediaSessionAdapter(),
-      lifecycleEventSource: const NoopPlaybackLifecycleEventSource(),
-    );
-    addTearDown(controller.disposeController);
+  test(
+    'stop leaves the queue intact so system play can recover later',
+    () async {
+      final engine = FakeRuntimePlayerEngine();
+      final store = InMemoryPlayerPreferencesStore();
+      final controller = PlayerController.runtime(
+        engine: engine,
+        preferencesStore: store,
+        mediaSessionAdapter: NoopMediaSessionAdapter(),
+        lifecycleEventSource: const NoopPlaybackLifecycleEventSource(),
+      );
+      addTearDown(controller.disposeController);
 
-    const firstSong = Song(
-      id: 'first',
-      name: 'First Song',
-      artist: 'TuneFree',
-      source: MusicSource.netease,
-      url: 'https://example.com/first.mp3',
-    );
-    const secondSong = Song(
-      id: 'second',
-      name: 'Second Song',
-      artist: 'TuneFree',
-      source: MusicSource.netease,
-      url: 'https://example.com/second.mp3',
-    );
+      const firstSong = Song(
+        id: 'first',
+        name: 'First Song',
+        artist: 'TuneFree',
+        source: MusicSource.netease,
+        url: 'https://example.com/first.mp3',
+      );
+      const secondSong = Song(
+        id: 'second',
+        name: 'Second Song',
+        artist: 'TuneFree',
+        source: MusicSource.netease,
+        url: 'https://example.com/second.mp3',
+      );
 
-    await controller.playSong(
-      firstSong,
-      queue: const <Song>[firstSong, secondSong],
-    );
-    await controller.stop();
+      await controller.playSong(
+        firstSong,
+        queue: const <Song>[firstSong, secondSong],
+      );
+      await controller.stop();
 
-    expect(controller.state.currentSong, isNull);
-    expect(
-      controller.state.queue.map((song) => song.key),
-      <String>['netease:first', 'netease:second'],
-    );
-  });
+      expect(controller.state.currentSong, isNull);
+      expect(controller.state.queue.map((song) => song.key), <String>[
+        'netease:first',
+        'netease:second',
+      ]);
+    },
+  );
 
   test(
     'stop preserves local stopped state when media session clearing fails',
@@ -384,39 +393,44 @@ void main() {
       expect(controller.state.isLoading, isFalse);
       expect(controller.state.position, Duration.zero);
       expect(controller.state.duration, Duration.zero);
-      expect(controller.state.queue.map((item) => item.key), <String>[song.key]);
+      expect(controller.state.queue.map((item) => item.key), <String>[
+        song.key,
+      ]);
       expect(store.currentSong, isNull);
       expect(store.queue.map((item) => item.key), <String>[song.key]);
     },
   );
 
-  test('seek clamps positions to known playback bounds in runtime mode', () async {
-    final engine = FakeRuntimePlayerEngine();
-    final store = InMemoryPlayerPreferencesStore();
-    final controller = PlayerController.runtime(
-      engine: engine,
-      preferencesStore: store,
-      mediaSessionAdapter: NoopMediaSessionAdapter(),
-      lifecycleEventSource: const NoopPlaybackLifecycleEventSource(),
-    );
-    addTearDown(controller.disposeController);
+  test(
+    'seek clamps positions to known playback bounds in runtime mode',
+    () async {
+      final engine = FakeRuntimePlayerEngine();
+      final store = InMemoryPlayerPreferencesStore();
+      final controller = PlayerController.runtime(
+        engine: engine,
+        preferencesStore: store,
+        mediaSessionAdapter: NoopMediaSessionAdapter(),
+        lifecycleEventSource: const NoopPlaybackLifecycleEventSource(),
+      );
+      addTearDown(controller.disposeController);
 
-    const song = Song(
-      id: 'bounded-seek',
-      name: 'Bounded Seek',
-      artist: 'TuneFree',
-      source: MusicSource.netease,
-      url: 'https://example.com/bounded.mp3',
-    );
+      const song = Song(
+        id: 'bounded-seek',
+        name: 'Bounded Seek',
+        artist: 'TuneFree',
+        source: MusicSource.netease,
+        url: 'https://example.com/bounded.mp3',
+      );
 
-    await controller.playSong(song, queue: const <Song>[song]);
+      await controller.playSong(song, queue: const <Song>[song]);
 
-    await controller.seek(const Duration(seconds: -5));
-    expect(engine.lastSeekPosition, Duration.zero);
-    expect(controller.state.position, Duration.zero);
+      await controller.seek(const Duration(seconds: -5));
+      expect(engine.lastSeekPosition, Duration.zero);
+      expect(controller.state.position, Duration.zero);
 
-    await controller.seek(const Duration(minutes: 6));
-    expect(engine.lastSeekPosition, const Duration(minutes: 4));
-    expect(controller.state.position, const Duration(minutes: 4));
-  });
+      await controller.seek(const Duration(minutes: 6));
+      expect(engine.lastSeekPosition, const Duration(minutes: 4));
+      expect(controller.state.position, const Duration(minutes: 4));
+    },
+  );
 }

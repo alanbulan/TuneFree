@@ -26,7 +26,10 @@ class SearchHistorySection extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('搜索历史', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+            const Text(
+              '搜索历史',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
             IconButton(
               onPressed: () async {
                 final shouldClear = await onClearRequested?.call() ?? true;
@@ -42,25 +45,33 @@ class SearchHistorySection extends StatelessWidget {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: history.map((term) {
-            return GestureDetector(
-              onTap: () => onSelect(term),
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFF0F1F5)),
-                ),
-                child: Text(
-                  term,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF666666)),
-                ),
-              ),
-            );
-          }).toList(growable: false),
+          children: history
+              .map((term) {
+                return GestureDetector(
+                  onTap: () => onSelect(term),
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 150),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFF0F1F5)),
+                    ),
+                    child: Text(
+                      term,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF666666),
+                      ),
+                    ),
+                  ),
+                );
+              })
+              .toList(growable: false),
         ),
       ],
     );

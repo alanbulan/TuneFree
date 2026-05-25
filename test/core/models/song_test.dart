@@ -22,7 +22,11 @@ void main() {
     });
 
     expect(song.key, 'netease:123');
-    expect(song.audioQualities, [AudioQuality.k128, AudioQuality.k320, AudioQuality.flac]);
+    expect(song.audioQualities, [
+      AudioQuality.k128,
+      AudioQuality.k320,
+      AudioQuality.flac,
+    ]);
     expect(song.source, MusicSource.netease);
     expect(song.toJson()['artist'], '马也_Crabbit');
   });
@@ -74,7 +78,8 @@ void main() {
       ],
     });
 
-    final json = jsonDecode(jsonEncode(playlist.toJson())) as Map<String, dynamic>;
+    final json =
+        jsonDecode(jsonEncode(playlist.toJson())) as Map<String, dynamic>;
 
     expect(json['createTime'], 1710000000);
     expect((json['songs'] as List).single['source'], 'migu');

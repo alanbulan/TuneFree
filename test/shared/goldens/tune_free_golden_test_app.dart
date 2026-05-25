@@ -9,10 +9,7 @@ class TuneFreeGoldenTestApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: ColoredBox(
-        color: TuneFreePalette.background,
-        child: child,
-      ),
+      home: ColoredBox(color: TuneFreePalette.background, child: child),
     );
   }
 }

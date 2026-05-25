@@ -7,7 +7,8 @@ import 'dart:html' as html;
 
 import 'library_backup_transfer_types.dart';
 
-LibraryBackupTransfer createLibraryBackupTransfer() => const _WebLibraryBackupTransfer();
+LibraryBackupTransfer createLibraryBackupTransfer() =>
+    const _WebLibraryBackupTransfer();
 
 final class _WebLibraryBackupTransfer extends LibraryBackupTransfer {
   const _WebLibraryBackupTransfer();

@@ -3,11 +3,12 @@ import '../../../core/models/top_list.dart';
 import '../../../core/source_clients/kuwo_client.dart';
 import '../../../core/source_clients/netease_client.dart';
 import '../../../core/source_clients/qq_client.dart';
+import 'remote_top_list_repository.dart';
 
 typedef TopListsLoader = Future<List<TopList>> Function();
 typedef TopListDetailLoader = Future<List<Song>> Function(String id);
 
-final class TopListRepository {
+final class TopListRepository implements RemoteTopListRepository {
   TopListRepository({
     required NeteaseClient neteaseClient,
     required QqClient qqClient,
@@ -42,6 +43,7 @@ final class TopListRepository {
   final Map<String, TopListsLoader> _topListsBySource;
   final Map<String, TopListDetailLoader> _topListDetailBySource;
 
+  @override
   Future<List<TopList>> getTopLists(String source) async {
     final loader = _topListsBySource[source];
     if (loader == null) {
@@ -50,6 +52,7 @@ final class TopListRepository {
     return loader();
   }
 
+  @override
   Future<List<Song>> getTopListDetail(String source, String id) async {
     final loader = _topListDetailBySource[source];
     if (loader == null) {

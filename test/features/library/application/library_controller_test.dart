@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tunefree/core/models/music_source.dart';
 import 'package:tunefree/core/models/playlist.dart';
 import 'package:tunefree/core/models/song.dart';
@@ -8,7 +9,8 @@ import 'package:tunefree/features/library/application/library_controller.dart';
 import 'package:tunefree/features/library/data/library_storage.dart';
 import 'package:tunefree/features/player/data/download_library_repository.dart';
 
-final class InMemoryDownloadLibraryRepository implements DownloadLibraryRepository {
+final class InMemoryDownloadLibraryRepository
+    implements DownloadLibraryRepository {
   InMemoryDownloadLibraryRepository();
 
   final List<DownloadedTrackItem> records = <DownloadedTrackItem>[];
@@ -28,7 +30,8 @@ final class InMemoryDownloadLibraryRepository implements DownloadLibraryReposito
   }
 
   @override
-  Future<List<DownloadedTrackItem>> listDownloads() async => List<DownloadedTrackItem>.from(records);
+  Future<List<DownloadedTrackItem>> listDownloads() async =>
+      List<DownloadedTrackItem>.from(records);
 }
 
 final class InMemoryLibraryStorage implements LibraryStorage {
@@ -36,17 +39,9 @@ final class InMemoryLibraryStorage implements LibraryStorage {
 
   final Completer<void>? favoritesSaveCompleter;
 
-  String apiKey = '';
   String corsProxy = '';
-  String apiBase = 'https://example.com';
   List<Song> favorites = <Song>[];
   List<Playlist> playlists = <Playlist>[];
-
-  @override
-  Future<String> loadApiBase() async => apiBase;
-
-  @override
-  Future<String> loadApiKey() async => apiKey;
 
   @override
   Future<String> loadCorsProxy() async => corsProxy;
@@ -58,12 +53,6 @@ final class InMemoryLibraryStorage implements LibraryStorage {
   Future<List<Playlist>> loadPlaylists() async => playlists;
 
   @override
-  Future<void> saveApiBase(String value) async => apiBase = value;
-
-  @override
-  Future<void> saveApiKey(String value) async => apiKey = value;
-
-  @override
   Future<void> saveCorsProxy(String value) async => corsProxy = value;
 
   @override
@@ -71,9 +60,7 @@ final class InMemoryLibraryStorage implements LibraryStorage {
     return LibraryBackupData(
       favorites: favorites,
       playlists: playlists,
-      apiKey: apiKey,
       corsProxy: corsProxy,
-      apiBase: apiBase,
     );
   }
 
@@ -81,9 +68,7 @@ final class InMemoryLibraryStorage implements LibraryStorage {
   Future<void> saveBackupData(LibraryBackupData value) async {
     favorites = value.favorites;
     playlists = value.playlists;
-    apiKey = value.apiKey;
     corsProxy = value.corsProxy;
-    apiBase = value.apiBase;
   }
 
   @override
@@ -100,27 +85,57 @@ final class InMemoryLibraryStorage implements LibraryStorage {
 }
 
 void main() {
-  test('setters persist loaded library config values', () async {
-    final storage = InMemoryLibraryStorage();
-    final repository = InMemoryDownloadLibraryRepository();
-    final controller = LibraryController(storage: storage, downloadLibraryRepository: repository);
-    await controller.load();
+  test('shared preferences storage starts empty on first load', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final storage = SharedPreferencesLibraryStorage();
 
-    await controller.setApiKey('secret-key');
-    await controller.setCorsProxy('https://proxy.example.com');
-    await controller.setApiBase('https://api.example.com');
-
-    expect(controller.state.apiKey, 'secret-key');
-    expect(controller.state.corsProxy, 'https://proxy.example.com');
-    expect(controller.state.apiBase, 'https://api.example.com');
-    expect(storage.apiKey, 'secret-key');
-    expect(storage.corsProxy, 'https://proxy.example.com');
-    expect(storage.apiBase, 'https://api.example.com');
+    expect(await storage.loadFavorites(), isEmpty);
+    expect(await storage.loadPlaylists(), isEmpty);
+    expect(await storage.loadCorsProxy(), isEmpty);
   });
 
-  test('toggleFavorite awaits favorite persistence before updating state', () async {
-    final completer = Completer<void>();
-    final storage = InMemoryLibraryStorage(favoritesSaveCompleter: completer);
+  test(
+    'shared preferences storage persists library data across instances',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      const song = Song(
+        id: 'fav-1',
+        name: '海与你',
+        artist: '马也_Crabbit',
+        source: MusicSource.netease,
+      );
+      const playlist = Playlist(
+        id: 'playlist-1',
+        name: '收藏歌单',
+        createTime: 1713200000000,
+        songs: <Song>[song],
+      );
+
+      final firstStorage = SharedPreferencesLibraryStorage();
+      await firstStorage.saveFavorites(<Song>[song]);
+      await firstStorage.savePlaylists(<Playlist>[playlist]);
+      await firstStorage.saveCorsProxy('https://proxy.example.com');
+
+      final secondStorage = SharedPreferencesLibraryStorage();
+      expect((await secondStorage.loadFavorites()).single.key, 'netease:fav-1');
+      expect((await secondStorage.loadPlaylists()).single.name, '收藏歌单');
+      expect(await secondStorage.loadCorsProxy(), 'https://proxy.example.com');
+    },
+  );
+
+  test('shared preferences storage ignores corrupt JSON', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tunefree_favorites': 'not-json',
+      'tunefree_playlists': '[{"missingRequiredFields": true}]',
+    });
+    final storage = SharedPreferencesLibraryStorage();
+
+    expect(await storage.loadFavorites(), isEmpty);
+    expect(await storage.loadPlaylists(), isEmpty);
+  });
+
+  test('setters persist loaded library config values', () async {
+    final storage = InMemoryLibraryStorage();
     final repository = InMemoryDownloadLibraryRepository();
     final controller = LibraryController(
       storage: storage,
@@ -128,24 +143,43 @@ void main() {
     );
     await controller.load();
 
-    const song = Song(
-      id: 'fav-1',
-      name: '海与你',
-      artist: '马也_Crabbit',
-      source: MusicSource.netease,
-    );
+    await controller.setCorsProxy('https://proxy.example.com');
 
-    final future = controller.toggleFavorite(song);
-
-    expect(controller.state.favorites, isEmpty);
-    expect(storage.favorites, isEmpty);
-
-    completer.complete();
-    await future;
-
-    expect(controller.state.favorites.single.key, 'netease:fav-1');
-    expect(storage.favorites.single.key, 'netease:fav-1');
+    expect(controller.state.corsProxy, 'https://proxy.example.com');
+    expect(storage.corsProxy, 'https://proxy.example.com');
   });
+
+  test(
+    'toggleFavorite awaits favorite persistence before updating state',
+    () async {
+      final completer = Completer<void>();
+      final storage = InMemoryLibraryStorage(favoritesSaveCompleter: completer);
+      final repository = InMemoryDownloadLibraryRepository();
+      final controller = LibraryController(
+        storage: storage,
+        downloadLibraryRepository: repository,
+      );
+      await controller.load();
+
+      const song = Song(
+        id: 'fav-1',
+        name: '海与你',
+        artist: '马也_Crabbit',
+        source: MusicSource.netease,
+      );
+
+      final future = controller.toggleFavorite(song);
+
+      expect(controller.state.favorites, isEmpty);
+      expect(storage.favorites, isEmpty);
+
+      completer.complete();
+      await future;
+
+      expect(controller.state.favorites.single.key, 'netease:fav-1');
+      expect(storage.favorites.single.key, 'netease:fav-1');
+    },
+  );
 
   test('playlist CRUD mirrors legacy library behavior', () async {
     final storage = InMemoryLibraryStorage();

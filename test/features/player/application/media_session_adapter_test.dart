@@ -131,6 +131,55 @@ void main() {
     },
   );
 
+  test('adds NetEase artwork headers for media session covers', () async {
+    final client = FakeMediaSessionClient();
+    final adapter = AudioServiceMediaSessionAdapter(
+      clientFactory: () async => client,
+      configureAudioSession: () async {},
+    );
+
+    const neteaseCoverSong = Song(
+      id: 'netease-cover-song',
+      name: 'NetEase Cover Song',
+      artist: 'TuneFree',
+      pic: 'https://p2.music.126.net/cover.jpg',
+      source: MusicSource.netease,
+    );
+
+    await adapter.updateMetadata(neteaseCoverSong, isPlaying: false);
+
+    expect(
+      client.mediaItem?.artHeaders,
+      containsPair('Referer', 'https://music.163.com/'),
+    );
+    expect(
+      client.mediaItem?.artHeaders?['User-Agent'],
+      contains('Mozilla/5.0'),
+    );
+  });
+
+  test('uses app artwork fallback when a song has no cover', () async {
+    final client = FakeMediaSessionClient();
+    final adapter = AudioServiceMediaSessionAdapter(
+      clientFactory: () async => client,
+      configureAudioSession: () async {},
+    );
+
+    const fallbackSong = Song(
+      id: 'session-song-no-cover',
+      name: 'No Cover',
+      artist: 'TuneFree',
+      source: MusicSource.netease,
+    );
+
+    await adapter.updateMetadata(fallbackSong, isPlaying: false);
+
+    expect(
+      client.mediaItem?.artUri,
+      Uri.parse('android.resource://com.alanbulan.tunefree/mipmap/ic_launcher'),
+    );
+  });
+
   test(
     'new metadata resets stale duration and position for each media item',
     () async {

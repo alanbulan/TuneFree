@@ -14,10 +14,18 @@ import 'package:tunefree/shared/widgets/tune_free_loading_tile.dart';
 import 'tune_free_golden_test_app.dart';
 
 void main() {
-  testGoldens('shared parity harness matches the reference golden', (tester) async {
-    final homeReferenceBytes = File('test/shared/reference/home_reference.png').readAsBytesSync();
-    final searchReferenceBytes = File('test/shared/reference/search_reference.png').readAsBytesSync();
-    final playerReferenceBytes = File('test/shared/reference/player_reference.png').readAsBytesSync();
+  testGoldens('shared parity harness matches the reference golden', (
+    tester,
+  ) async {
+    final homeReferenceBytes = File(
+      'test/shared/reference/home_reference.png',
+    ).readAsBytesSync();
+    final searchReferenceBytes = File(
+      'test/shared/reference/search_reference.png',
+    ).readAsBytesSync();
+    final playerReferenceBytes = File(
+      'test/shared/reference/player_reference.png',
+    ).readAsBytesSync();
 
     await tester.pumpWidgetBuilder(
       TuneFreeGoldenTestApp(
@@ -35,33 +43,54 @@ void main() {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text('Shared theme parity', style: TuneFreeTextStyles.pageTitle),
+                      const Text(
+                        'Shared theme parity',
+                        style: TuneFreeTextStyles.pageTitle,
+                      ),
                       const SizedBox(height: 8),
                       const Text(
                         'Legacy UI references and shared foundation widgets render together in one deterministic harness.',
                         style: TuneFreeTextStyles.body,
                       ),
                       const SizedBox(height: TuneFreeSpacing.section),
-                      const Text('Legacy references', style: TuneFreeTextStyles.sectionTitle),
+                      const Text(
+                        'Legacy references',
+                        style: TuneFreeTextStyles.sectionTitle,
+                      ),
                       const SizedBox(height: 12),
                       Wrap(
                         spacing: 12,
                         runSpacing: 12,
                         children: [
-                          _ReferenceThumbnail(label: 'Home', bytes: homeReferenceBytes),
-                          _ReferenceThumbnail(label: 'Search', bytes: searchReferenceBytes),
-                          _ReferenceThumbnail(label: 'Player', bytes: playerReferenceBytes),
+                          _ReferenceThumbnail(
+                            label: 'Home',
+                            bytes: homeReferenceBytes,
+                          ),
+                          _ReferenceThumbnail(
+                            label: 'Search',
+                            bytes: searchReferenceBytes,
+                          ),
+                          _ReferenceThumbnail(
+                            label: 'Player',
+                            bytes: playerReferenceBytes,
+                          ),
                         ],
                       ),
                       const SizedBox(height: TuneFreeSpacing.section),
-                      const Text('Shared foundation sample', style: TuneFreeTextStyles.sectionTitle),
+                      const Text(
+                        'Shared foundation sample',
+                        style: TuneFreeTextStyles.sectionTitle,
+                      ),
                       const SizedBox(height: 12),
                       TuneFreeCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Text('排行榜', style: TuneFreeTextStyles.sectionTitle),
+                            const Text(
+                              '排行榜',
+                              style: TuneFreeTextStyles.sectionTitle,
+                            ),
                             const SizedBox(height: 8),
                             Row(
                               children: const [

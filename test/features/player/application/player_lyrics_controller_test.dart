@@ -27,7 +27,11 @@ void main() {
       );
 
       expect(lyrics, const [
-        ParsedLyric(time: 10.0, text: 'Original line', translation: 'Translated line'),
+        ParsedLyric(
+          time: 10.0,
+          text: 'Original line',
+          translation: 'Translated line',
+        ),
         ParsedLyric(time: 12.0, text: 'Next line'),
       ]);
     });
@@ -56,24 +60,31 @@ void main() {
       );
 
       expect(lyrics, const [
-        ParsedLyric(time: 10.0, text: 'Original line', translation: 'Translated line'),
+        ParsedLyric(
+          time: 10.0,
+          text: 'Original line',
+          translation: 'Translated line',
+        ),
         ParsedLyric(time: 12.0, text: 'Next line'),
       ]);
     });
 
-    test('skips empty and malformed rows and falls back when nothing valid remains', () {
-      final controller = PlayerLyricsController();
+    test(
+      'skips empty and malformed rows and falls back when nothing valid remains',
+      () {
+        final controller = PlayerLyricsController();
 
-      expect(
-        controller.parseRawLyrics(
-          '[ti:Song Title]\n'
-          '[00:01.00]   \n'
-          'plain text\n'
-          '[00:ab.cd]broken',
-        ),
-        const [ParsedLyric(time: 0, text: '暂无歌词')],
-      );
-    });
+        expect(
+          controller.parseRawLyrics(
+            '[ti:Song Title]\n'
+            '[00:01.00]   \n'
+            'plain text\n'
+            '[00:ab.cd]broken',
+          ),
+          const [ParsedLyric(time: 0, text: '暂无歌词')],
+        );
+      },
+    );
   });
 
   test('findActiveIndex matches the legacy hook behavior', () {

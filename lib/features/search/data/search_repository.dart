@@ -1,19 +1,20 @@
 import '../../../core/models/song.dart';
+import 'remote_search_repository.dart';
 
 typedef SearchFunction = Future<List<Song>> Function(String keyword, int page);
 
-final class SearchRepository {
+final class SearchRepository implements RemoteSearchRepository {
   SearchRepository({
     required SearchFunction neteaseSearch,
     required SearchFunction qqSearch,
     required SearchFunction kuwoSearch,
     SearchFunction? jooxSearch,
     SearchFunction? bilibiliSearch,
-  })  : _neteaseSearch = neteaseSearch,
-        _qqSearch = qqSearch,
-        _kuwoSearch = kuwoSearch,
-        _jooxSearch = jooxSearch,
-        _bilibiliSearch = bilibiliSearch;
+  }) : _neteaseSearch = neteaseSearch,
+       _qqSearch = qqSearch,
+       _kuwoSearch = kuwoSearch,
+       _jooxSearch = jooxSearch,
+       _bilibiliSearch = bilibiliSearch;
 
   SearchRepository.test({
     required SearchFunction neteaseSearch,
@@ -35,17 +36,17 @@ final class SearchRepository {
   final SearchFunction? _jooxSearch;
   final SearchFunction? _bilibiliSearch;
 
+  @override
   Future<List<Song>> searchAggregate(
     String keyword, {
     required int page,
-    bool includeExtendedSources = false,
   }) async {
     final functions = <SearchFunction>[
       _neteaseSearch,
       _qqSearch,
       _kuwoSearch,
-      if (includeExtendedSources && _jooxSearch != null) _jooxSearch,
-      if (includeExtendedSources && _bilibiliSearch != null) _bilibiliSearch,
+      if (_jooxSearch != null) _jooxSearch,
+      if (_bilibiliSearch != null) _bilibiliSearch,
     ];
 
     final results = await Future.wait(
@@ -71,5 +72,25 @@ final class SearchRepository {
       }
     }
     return merged;
+  }
+
+  @override
+  Future<List<Song>> searchSingle(
+    String keyword, {
+    required String source,
+    required int page,
+  }) {
+    final search = switch (source) {
+      'netease' => _neteaseSearch,
+      'qq' => _qqSearch,
+      'kuwo' => _kuwoSearch,
+      'joox' => _jooxSearch,
+      'bilibili' => _bilibiliSearch,
+      _ => null,
+    };
+    if (search == null) {
+      return Future<List<Song>>.value(const <Song>[]);
+    }
+    return search(keyword, page);
   }
 }

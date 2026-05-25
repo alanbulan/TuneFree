@@ -10,6 +10,7 @@ class DownloadedTrackItem {
     required this.filePath,
     required this.downloadedAt,
     required this.exists,
+    this.artworkUrl,
   });
 
   final String songKey;
@@ -20,6 +21,7 @@ class DownloadedTrackItem {
   final String filePath;
   final DateTime downloadedAt;
   final bool exists;
+  final String? artworkUrl;
 }
 
 class DownloadLibraryRepository {
@@ -27,9 +29,9 @@ class DownloadLibraryRepository {
     required DownloadRecordStore recordStore,
     required Future<bool> Function(String path) fileExists,
     required Future<void> Function(String path) deleteFile,
-  })  : _recordStore = recordStore,
-        _fileExists = fileExists,
-        _deleteFile = deleteFile;
+  }) : _recordStore = recordStore,
+       _fileExists = fileExists,
+       _deleteFile = deleteFile;
 
   final DownloadRecordStore _recordStore;
   final Future<bool> Function(String path) _fileExists;
@@ -42,13 +44,19 @@ class DownloadLibraryRepository {
     for (final record in records) {
       final downloadedAt = DateTime.tryParse(record.downloadedAtIso8601);
       if (downloadedAt == null) {
-        await _recordStore.remove(songKey: record.songKey, quality: record.quality);
+        await _recordStore.remove(
+          songKey: record.songKey,
+          quality: record.quality,
+        );
         continue;
       }
 
       final exists = await _safeFileExists(record.filePath);
       if (!exists) {
-        await _recordStore.remove(songKey: record.songKey, quality: record.quality);
+        await _recordStore.remove(
+          songKey: record.songKey,
+          quality: record.quality,
+        );
         continue;
       }
 
@@ -62,6 +70,7 @@ class DownloadLibraryRepository {
           filePath: record.filePath,
           downloadedAt: downloadedAt,
           exists: true,
+          artworkUrl: record.artworkUrl,
         ),
       );
     }

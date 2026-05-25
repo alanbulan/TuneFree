@@ -13,6 +13,8 @@ import 'package:tunefree/features/player/data/local_playback_resolver.dart';
 import 'package:tunefree/features/player/data/player_preferences_store.dart';
 import 'package:tunefree/features/player/data/song_resolution_repository.dart';
 import 'package:tunefree/features/player/domain/player_track.dart';
+import 'package:tunefree/features/search/application/search_providers.dart';
+import 'package:tunefree/features/search/data/remote_search_repository.dart';
 
 class FakePlayerEngine implements PlayerEngine {
   FakePlayerEngine({Completer<void>? loadCompleter, int? delayedLoadCall})
@@ -39,7 +41,13 @@ class FakePlayerEngine implements PlayerEngine {
   Stream<PlayerEngineSnapshot> get snapshots => _controller.stream;
 
   @override
+  Stream<int?> get androidAudioSessionIdStream => const Stream<int?>.empty();
+
+  @override
   PlayerEngineSnapshot get latestSnapshot => _snapshot;
+
+  @override
+  int? get androidAudioSessionId => null;
 
   @override
   Future<void> loadSong(Song song, {required AudioQuality quality}) async {
@@ -161,6 +169,31 @@ final class TestPlayerPreferencesStore implements PlayerPreferencesStore {
 
   @override
   Future<void> saveQueue(List<Song> value) async => queue = value;
+}
+
+final class FakeRemoteSearchRepository implements RemoteSearchRepository {
+  FakeRemoteSearchRepository({required this.singleResultsBySource});
+
+  final Map<String, List<Song>> singleResultsBySource;
+  final searchedSources = <String>[];
+
+  @override
+  Future<List<Song>> searchAggregate(
+    String keyword, {
+    required int page,
+  }) async {
+    return const <Song>[];
+  }
+
+  @override
+  Future<List<Song>> searchSingle(
+    String keyword, {
+    required String source,
+    required int page,
+  }) async {
+    searchedSources.add(source);
+    return singleResultsBySource[source] ?? const <Song>[];
+  }
 }
 
 void main() {
@@ -621,6 +654,206 @@ void main() {
   });
 
   test(
+    'playSong falls back to peer sources before reporting failure',
+    () async {
+      final fakeEngine = FakePlayerEngine();
+      final resolvedAttempts = <String>[];
+      final resolutionRepository = SongResolutionRepository.test(
+        resolveSongValue: (song, quality) async {
+          resolvedAttempts.add('${song.source.wireValue}:${song.id}:$quality');
+          if (song.source == MusicSource.kuwo) {
+            return song.copyWith(
+              url: 'https://resolved.example/${song.id}.mp3',
+            );
+          }
+          throw StateError('source unavailable');
+        },
+      );
+      final searchRepository = FakeRemoteSearchRepository(
+        singleResultsBySource: const <String, List<Song>>{
+          'qq': <Song>[
+            Song(
+              id: 'qq-fallback',
+              name: 'Fallback Song',
+              artist: 'TuneFree',
+              source: MusicSource.qq,
+            ),
+          ],
+          'kuwo': <Song>[
+            Song(
+              id: 'kuwo-fallback',
+              name: 'Fallback Song',
+              artist: 'TuneFree',
+              source: MusicSource.kuwo,
+            ),
+          ],
+        },
+      );
+      final container = ProviderContainer(
+        overrides: [
+          playerEngineProvider.overrideWithValue(fakeEngine),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
+          playerPreferencesStoreProvider.overrideWithValue(
+            TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            LocalPlaybackResolver(
+              recordsForSong: (songKey) async => const <DownloadRecord>[],
+              fileExists: (path) async => false,
+              removeRecord: ({required songKey, required quality}) async {},
+            ),
+          ),
+          songResolutionRepositoryProvider.overrideWithValue(
+            resolutionRepository,
+          ),
+          remoteSearchRepositoryProvider.overrideWithValue(searchRepository),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      const song = Song(
+        id: 'netease-original',
+        name: 'Fallback Song',
+        artist: 'TuneFree',
+        source: MusicSource.netease,
+      );
+
+      await container.read(playerControllerProvider.notifier).playSong(song);
+      await Future<void>.delayed(Duration.zero);
+
+      final state = container.read(playerControllerProvider);
+      expect(state.currentSong?.source, MusicSource.kuwo);
+      expect(
+        state.currentSong?.url,
+        'https://resolved.example/kuwo-fallback.mp3',
+      );
+      expect(state.queue.single.key, 'kuwo:kuwo-fallback');
+      expect(state.playbackNotice, '当前音源不可用，已切换 酷我音乐');
+      expect(
+        searchRepository.searchedSources,
+        containsAllInOrder(['qq', 'kuwo']),
+      );
+      expect(resolvedAttempts, <String>[
+        'netease:netease-original:320k',
+        'qq:qq-fallback:320k',
+        'kuwo:kuwo-fallback:320k',
+      ]);
+      expect(fakeEngine.loadCalls, 1);
+    },
+  );
+
+  test('playSong preloads the next resolvable queue item', () async {
+    final fakeEngine = FakePlayerEngine();
+    final resolvedIds = <String>[];
+    final resolutionRepository = SongResolutionRepository.test(
+      resolveSongValue: (song, quality) async {
+        resolvedIds.add('${song.id}:$quality');
+        return song.copyWith(url: 'https://resolved.example/${song.id}.mp3');
+      },
+    );
+    final container = ProviderContainer(
+      overrides: [
+        playerEngineProvider.overrideWithValue(fakeEngine),
+        mediaSessionAdapterProvider.overrideWithValue(
+          NoopMediaSessionAdapter(),
+        ),
+        playerPreferencesStoreProvider.overrideWithValue(
+          TestPlayerPreferencesStore(),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
+        ),
+        songResolutionRepositoryProvider.overrideWithValue(
+          resolutionRepository,
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    const firstSong = Song(
+      id: 'preload-first',
+      name: 'Preload First',
+      artist: 'TuneFree',
+      source: MusicSource.netease,
+    );
+    const secondSong = Song(
+      id: 'preload-second',
+      name: 'Preload Second',
+      artist: 'TuneFree',
+      source: MusicSource.netease,
+    );
+
+    final controller = container.read(playerControllerProvider.notifier);
+
+    await controller.playSong(
+      firstSong,
+      queue: const <Song>[firstSong, secondSong],
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(resolvedIds, <String>['preload-first:320k', 'preload-second:320k']);
+  });
+
+  test('playSong skips preloading Kuwo temporary CDN URLs', () async {
+    final fakeEngine = FakePlayerEngine();
+    final resolvedIds = <String>[];
+    final resolutionRepository = SongResolutionRepository.test(
+      resolveSongValue: (song, quality) async {
+        resolvedIds.add('${song.source.wireValue}:${song.id}:$quality');
+        return song.copyWith(url: 'https://resolved.example/${song.id}.mp3');
+      },
+    );
+    final container = ProviderContainer(
+      overrides: [
+        playerEngineProvider.overrideWithValue(fakeEngine),
+        mediaSessionAdapterProvider.overrideWithValue(
+          NoopMediaSessionAdapter(),
+        ),
+        playerPreferencesStoreProvider.overrideWithValue(
+          TestPlayerPreferencesStore(),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
+        ),
+        songResolutionRepositoryProvider.overrideWithValue(
+          resolutionRepository,
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    const firstSong = Song(
+      id: 'preload-first',
+      name: 'Preload First',
+      artist: 'TuneFree',
+      source: MusicSource.netease,
+    );
+    const kuwoSong = Song(
+      id: 'kuwo-next',
+      name: 'Kuwo Next',
+      artist: 'TuneFree',
+      source: MusicSource.kuwo,
+    );
+
+    await container
+        .read(playerControllerProvider.notifier)
+        .playSong(firstSong, queue: const <Song>[firstSong, kuwoSong]);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(resolvedIds, <String>['netease:preload-first:320k']);
+  });
+
+  test(
     'playSong keeps queue state and stops playback when resolution fails',
     () async {
       final fakeEngine = FakePlayerEngine();
@@ -647,6 +880,11 @@ void main() {
               },
             ),
           ),
+          remoteSearchRepositoryProvider.overrideWithValue(
+            FakeRemoteSearchRepository(
+              singleResultsBySource: const <String, List<Song>>{},
+            ),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -668,6 +906,7 @@ void main() {
       expect(state.queueTracks, const [track]);
       expect(state.isLoading, isFalse);
       expect(state.isPlaying, isFalse);
+      expect(state.playbackNotice, '所有音源暂时不可用，请稍后重试');
       expect(fakeEngine.loadCalls, 0);
     },
   );
@@ -744,6 +983,70 @@ void main() {
       expect(container.read(playerControllerProvider).isPlaying, isFalse);
     },
   );
+
+  test('ignores stale delayed loads after a newer song is selected', () async {
+    final loadCompleter = Completer<void>();
+    final fakeEngine = FakePlayerEngine(
+      loadCompleter: loadCompleter,
+      delayedLoadCall: 1,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        playerEngineProvider.overrideWithValue(fakeEngine),
+        mediaSessionAdapterProvider.overrideWithValue(
+          NoopMediaSessionAdapter(),
+        ),
+        playerPreferencesStoreProvider.overrideWithValue(
+          TestPlayerPreferencesStore(),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    const firstSong = Song(
+      id: 'first-stale-load',
+      name: 'First Stale Load',
+      artist: 'TuneFree',
+      source: MusicSource.netease,
+      url: 'https://example.com/first.mp3',
+    );
+    const secondSong = Song(
+      id: 'second-current-load',
+      name: 'Second Current Load',
+      artist: 'TuneFree',
+      source: MusicSource.netease,
+      url: 'https://example.com/second.mp3',
+    );
+
+    final controller = container.read(playerControllerProvider.notifier);
+    final firstOpen = controller.playSong(
+      firstSong,
+      queue: const <Song>[firstSong, secondSong],
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    final secondOpen = controller.playSong(
+      secondSong,
+      queue: const <Song>[firstSong, secondSong],
+    );
+    await secondOpen;
+
+    expect(container.read(playerControllerProvider).currentSong, secondSong);
+
+    loadCompleter.complete();
+    await firstOpen;
+    await Future<void>.delayed(Duration.zero);
+
+    expect(container.read(playerControllerProvider).currentSong, secondSong);
+    expect(container.read(playerControllerProvider).isLoading, isFalse);
+  });
 
   test('seek clamps positions to the current known duration', () async {
     final fakeEngine = FakePlayerEngine();

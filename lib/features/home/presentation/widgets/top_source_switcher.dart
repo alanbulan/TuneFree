@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../../../shared/music_source_display.dart';
+
 class TopSourceSwitcher extends StatelessWidget {
-  const TopSourceSwitcher({super.key, required this.activeSource, required this.onChanged});
+  const TopSourceSwitcher({
+    super.key,
+    required this.activeSource,
+    required this.onChanged,
+  });
 
   final String activeSource;
   final ValueChanged<String> onChanged;
@@ -19,27 +25,34 @@ class TopSourceSwitcher extends StatelessWidget {
         padding: const EdgeInsets.all(2),
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          children: sources.map((source) {
-            final isActive = source == activeSource;
-            return GestureDetector(
-              onTap: () => onChanged(source),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: isActive ? Colors.white : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  source.toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: isActive ? Colors.black : const Color(0xFF8C8F97),
+          children: sources
+              .map((source) {
+                final isActive = source == activeSource;
+                return GestureDetector(
+                  onTap: () => onChanged(source),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isActive ? Colors.white : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      musicSourceBadgeLabel(source),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: isActive
+                            ? Colors.black
+                            : const Color(0xFF8C8F97),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            );
-          }).toList(growable: false),
+                );
+              })
+              .toList(growable: false),
         ),
       ),
     );
