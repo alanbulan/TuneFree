@@ -5,6 +5,9 @@ import 'package:dio/dio.dart';
 import '../../../core/models/music_source.dart';
 import '../../../core/models/song.dart';
 import '../../../core/network/tune_free_http_client.dart';
+import '../../../core/source_clients/kuwo_client.dart';
+import '../../../core/source_clients/netease_client.dart';
+import '../../../core/source_clients/qq_client.dart';
 import '../../../core/source_clients/tunehub_client.dart';
 
 typedef PlaylistImportPayload = ({String name, List<Song> songs});
@@ -30,6 +33,108 @@ const Set<String> _forbiddenRequestHeaders = <String>{
 
 abstract class PlaylistImportClient {
   Future<PlaylistImportPayload?> importPlaylist(String source, String id);
+}
+
+enum PlaylistImportErrorCode {
+  invalidInput,
+  sourceMismatch,
+  unsupportedSource,
+  emptyPlaylist,
+  network,
+  remoteFormat,
+}
+
+final class PlaylistImportException implements Exception {
+  const PlaylistImportException(this.code, this.message, [this.cause]);
+
+  final PlaylistImportErrorCode code;
+  final String message;
+  final Object? cause;
+
+  @override
+  String toString() => 'PlaylistImportException($code, $message)';
+}
+
+final class PlaylistImportInput {
+  const PlaylistImportInput({
+    required this.source,
+    required this.id,
+    required this.originalInput,
+  });
+
+  final String source;
+  final String id;
+  final String originalInput;
+}
+
+final class DirectPlaylistImportClient implements PlaylistImportClient {
+  const DirectPlaylistImportClient({
+    required NeteaseClient neteaseClient,
+    required QqClient qqClient,
+    required KuwoClient kuwoClient,
+  }) : _neteaseClient = neteaseClient,
+       _qqClient = qqClient,
+       _kuwoClient = kuwoClient;
+
+  final NeteaseClient _neteaseClient;
+  final QqClient _qqClient;
+  final KuwoClient _kuwoClient;
+
+  @override
+  Future<PlaylistImportPayload?> importPlaylist(String source, String id) {
+    return switch (source) {
+      'netease' => _neteaseClient.getPlaylist(id),
+      'qq' => _qqClient.getPlaylist(id),
+      'kuwo' => _kuwoClient.getPlaylist(id),
+      _ => throw PlaylistImportException(
+        PlaylistImportErrorCode.unsupportedSource,
+        'Unsupported playlist source: $source',
+      ),
+    };
+  }
+}
+
+final class CompositePlaylistImportClient implements PlaylistImportClient {
+  const CompositePlaylistImportClient({
+    required PlaylistImportClient primary,
+    required PlaylistImportClient fallback,
+  }) : _primary = primary,
+       _fallback = fallback;
+
+  final PlaylistImportClient _primary;
+  final PlaylistImportClient _fallback;
+
+  @override
+  Future<PlaylistImportPayload?> importPlaylist(
+    String source,
+    String id,
+  ) async {
+    Object? primaryError;
+    try {
+      final payload = await _primary.importPlaylist(source, id);
+      if (payload != null && payload.songs.isNotEmpty) {
+        return payload;
+      }
+    } catch (error) {
+      primaryError = error;
+    }
+
+    try {
+      final payload = await _fallback.importPlaylist(source, id);
+      if (payload != null && payload.songs.isNotEmpty) {
+        return payload;
+      }
+      return null;
+    } on PlaylistImportException {
+      rethrow;
+    } catch (error) {
+      throw PlaylistImportException(
+        PlaylistImportErrorCode.network,
+        'Playlist import failed.',
+        primaryError ?? error,
+      );
+    }
+  }
 }
 
 final class TunehubPlaylistImportClient implements PlaylistImportClient {
@@ -134,16 +239,65 @@ final class PlaylistImportRepository {
 
   final PlaylistImportPayloadLoader _importPlaylist;
 
-  Future<(String name, List<Song> songs)?> importPlaylist({
+  Future<(String name, List<Song> songs)> importPlaylist({
     required String source,
     required String id,
   }) async {
-    final payload = await _importPlaylist(source, id);
-    if (payload == null) {
-      return null;
+    final input = parsePlaylistImportInput(source: source, input: id);
+    final payload = await _importPlaylist(input.source, input.id);
+    if (payload == null || payload.songs.isEmpty) {
+      throw const PlaylistImportException(
+        PlaylistImportErrorCode.emptyPlaylist,
+        'Playlist is empty or unavailable.',
+      );
     }
     return (payload.name, payload.songs);
   }
+}
+
+PlaylistImportInput parsePlaylistImportInput({
+  required String source,
+  required String input,
+}) {
+  final normalizedSource = source.trim();
+  final trimmedInput = input.trim();
+  if (trimmedInput.isEmpty) {
+    throw const PlaylistImportException(
+      PlaylistImportErrorCode.invalidInput,
+      'Playlist input is empty.',
+    );
+  }
+
+  final detectedSource = _detectSource(trimmedInput);
+  if (detectedSource != null && detectedSource != normalizedSource) {
+    throw PlaylistImportException(
+      PlaylistImportErrorCode.sourceMismatch,
+      'Playlist link belongs to $detectedSource, not $normalizedSource.',
+    );
+  }
+
+  final id = switch (normalizedSource) {
+    'netease' => _extractNeteasePlaylistId(trimmedInput),
+    'qq' => _extractQqPlaylistId(trimmedInput),
+    'kuwo' => _extractKuwoPlaylistId(trimmedInput),
+    _ => throw PlaylistImportException(
+      PlaylistImportErrorCode.unsupportedSource,
+      'Unsupported playlist source: $normalizedSource',
+    ),
+  };
+
+  if (id == null || id.isEmpty) {
+    throw const PlaylistImportException(
+      PlaylistImportErrorCode.invalidInput,
+      'Playlist id cannot be recognized.',
+    );
+  }
+
+  return PlaylistImportInput(
+    source: normalizedSource,
+    id: id,
+    originalInput: trimmedInput,
+  );
 }
 
 String _normalizeApiBase(String value) {
@@ -332,9 +486,11 @@ List<dynamic> _extractList(dynamic payload) {
     _readMap(payloadMap['result'])?['tracks'],
     _readMap(payloadMap['result'])?['songs'],
     _readMap(payloadMap['data'])?['songlist'],
+    _readMap(payloadMap['data'])?['songList'],
     _readMap(_readMap(payloadMap['data'])?['song'])?['list'],
     _readMap(_readMap(payloadMap['toplist'])?['data'])?['songInfoList'],
     payloadMap['musiclist'],
+    payloadMap['musicList'],
     payloadMap['abslist'],
   ];
 
@@ -400,6 +556,7 @@ String? _findSongId(Map<String, dynamic> item, String source) {
   if (source == 'kuwo') {
     return _readString(item['rid']) ??
         _readString(item['musicrid']) ??
+        _readString(item['MUSICRID']) ??
         _readString(item['id']);
   }
 
@@ -407,7 +564,7 @@ String? _findSongId(Map<String, dynamic> item, String source) {
 }
 
 String? _extractArtistName(Map<String, dynamic> item) {
-  final artist = _readString(item['artist']);
+  final artist = _readString(item['artist']) ?? _readString(item['ARTIST']);
   if (artist != null && artist.isNotEmpty) {
     return artist;
   }
@@ -431,7 +588,8 @@ String? _extractAlbumName(Map<String, dynamic> item) {
     }
   }
 
-  return _readString(item['album_name']) ??
+  return _readString(item['ALBUM']) ??
+      _readString(item['album_name']) ??
       _readString(item['albumname']) ??
       _readString(item['albumName']);
 }
@@ -512,6 +670,52 @@ String? _joinNamedEntries(dynamic rawEntries) {
   return names.join('/');
 }
 
+String? _detectSource(String input) {
+  final lowerInput = input.toLowerCase();
+  if (lowerInput.contains('music.163.com') ||
+      lowerInput.contains('y.music.163.com')) {
+    return 'netease';
+  }
+  if (lowerInput.contains('y.qq.com') || lowerInput.contains('i.y.qq.com')) {
+    return 'qq';
+  }
+  if (lowerInput.contains('kuwo.cn')) {
+    return 'kuwo';
+  }
+  return null;
+}
+
+String? _extractNeteasePlaylistId(String input) {
+  return _firstRegexGroup(input, RegExp(r'(?:[?&#]|/)id=(\d+)')) ??
+      _firstRegexGroup(input, RegExp(r'playlist\?id=(\d+)')) ??
+      _firstRegexGroup(input, RegExp(r'/playlist/(\d+)')) ??
+      _rawInputId(input);
+}
+
+String? _extractQqPlaylistId(String input) {
+  return _firstRegexGroup(
+        input,
+        RegExp(r'(?:[?&#])(?:dissid|id|dirid)=([A-Za-z0-9_-]+)'),
+      ) ??
+      _firstRegexGroup(input, RegExp(r'/playlist/([A-Za-z0-9_-]+)')) ??
+      _rawInputId(input);
+}
+
+String? _extractKuwoPlaylistId(String input) {
+  return _firstRegexGroup(input, RegExp(r'(?:[?&#])pid=([A-Za-z0-9_-]+)')) ??
+      _firstRegexGroup(input, RegExp(r'/playlist_detail/(\d+)')) ??
+      _firstRegexGroup(input, RegExp(r'/playlist/(\d+)')) ??
+      _rawInputId(input);
+}
+
+String? _rawInputId(String input) {
+  return RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(input) ? input : null;
+}
+
+String? _firstRegexGroup(String input, RegExp pattern) {
+  return pattern.firstMatch(input)?.group(1);
+}
+
 Map<String, dynamic>? _readMap(dynamic value) {
   if (value is Map<String, dynamic>) {
     return value;
@@ -527,7 +731,7 @@ String? _readString(dynamic value) {
     return null;
   }
   if (value is String) {
-    final trimmedValue = value.trim();
+    final trimmedValue = value.trim().replaceAll('&nbsp;', ' ');
     return trimmedValue.isEmpty ? null : trimmedValue;
   }
   return value.toString();

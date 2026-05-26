@@ -7,7 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/parsed_lyric.dart';
-import '../../../../core/network/music_url_normalizer.dart';
+import '../../../../shared/widgets/music_network_image.dart';
 import '../../../../shared/music_source_display.dart';
 import '../../../../shared/theme/tune_free_palette.dart';
 import '../../../library/application/library_controller.dart';
@@ -299,10 +299,9 @@ class _AmbientArtworkBackground extends StatelessWidget {
                     imageFilter: ImageFilter.blur(sigmaX: 34, sigmaY: 34),
                     child: Transform.scale(
                       scale: 1.45,
-                      child: Image.network(
+                      child: MusicNetworkImage(
                         resolvedUrl,
                         fit: BoxFit.cover,
-                        headers: musicImageRequestHeaders(resolvedUrl),
                         errorBuilder: (context, error, stackTrace) =>
                             const SizedBox.shrink(),
                       ),
@@ -598,13 +597,12 @@ class _PlayerCoverArtwork extends StatelessWidget {
             )
           : SizedBox.expand(
               key: ValueKey<String>('full-player-cover-$resolvedUrl'),
-              child: Image.network(
+              child: MusicNetworkImage(
                 resolvedUrl,
                 key: const Key('full-player-cover-artwork'),
                 width: double.infinity,
                 height: double.infinity,
                 fit: BoxFit.cover,
-                headers: musicImageRequestHeaders(resolvedUrl),
                 errorBuilder: (context, error, stackTrace) {
                   return const _PlayerCoverPlaceholder();
                 },

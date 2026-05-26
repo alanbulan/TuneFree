@@ -6,9 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/network/tune_free_http_client.dart';
 import '../../../core/models/playlist.dart';
 import '../../../core/models/song.dart';
+import '../../../core/network/source_http_client.dart';
+import '../../../core/network/tune_free_http_client.dart';
+import '../../../core/source_clients/kuwo_client.dart';
+import '../../../core/source_clients/netease_client.dart';
+import '../../../core/source_clients/qq_client.dart';
+import '../../../core/update/app_update_service.dart';
 import '../../../shared/theme/tune_free_spacing.dart';
 import '../../player/application/player_controller.dart';
 import '../application/library_controller.dart';
@@ -38,8 +43,34 @@ final aboutLinkLauncherProvider = Provider<AboutLinkLauncher>((ref) {
   return const UrlLauncherAboutLinkLauncher();
 });
 
+final appUpdateServiceProvider = Provider<AppUpdateService>((ref) {
+  return AppUpdateService(httpClient: TuneFreeHttpClient());
+});
+
+final _playlistImportSourceHttpClientProvider = Provider<SourceHttpClient>((
+  ref,
+) {
+  final libraryController = ref.watch(libraryControllerProvider);
+  return SourceHttpClient(
+    httpClient: TuneFreeHttpClient(),
+    corsProxyProvider: () => libraryController.state.corsProxy,
+  );
+});
+
 final playlistImportClientProvider = Provider<PlaylistImportClient>((ref) {
-  return TunehubPlaylistImportClient(httpClient: TuneFreeHttpClient());
+  final sourceHttpClient = ref.watch(_playlistImportSourceHttpClientProvider);
+  final libraryController = ref.watch(libraryControllerProvider);
+  return CompositePlaylistImportClient(
+    primary: DirectPlaylistImportClient(
+      neteaseClient: ReactNeteaseClient(httpClient: sourceHttpClient),
+      qqClient: ReactQqClient(httpClient: sourceHttpClient),
+      kuwoClient: ReactKuwoClient(
+        httpClient: sourceHttpClient,
+        corsProxyProvider: () => libraryController.state.corsProxy,
+      ),
+    ),
+    fallback: TunehubPlaylistImportClient(httpClient: TuneFreeHttpClient()),
+  );
 });
 
 final playlistImportRepositoryProvider = Provider<PlaylistImportRepository>((
@@ -66,6 +97,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   String? _previousTab;
   String? _selectedPlaylistId;
   bool _isEditMode = false;
+  bool _isImportingPlaylist = false;
+  bool _isCheckingUpdate = false;
 
   @override
   Widget build(BuildContext context) {
@@ -129,7 +162,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         key: const ValueKey<String>('library-tab-playlists'),
         playlists: state.playlists,
         onCreatePlaylist: _handleCreatePlaylist,
-        onImportPlaylist: _handleImportPlaylist,
+        onImportPlaylist: _isImportingPlaylist ? null : _handleImportPlaylist,
         onOpenPlaylist: (playlist) {
           setState(() {
             _selectedPlaylistId = playlist.id;
@@ -168,6 +201,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       'about' => _AboutTab(
         key: const ValueKey<String>('library-tab-about'),
         linkLauncher: ref.watch(aboutLinkLauncherProvider),
+        isCheckingUpdate: _isCheckingUpdate,
+        onCheckUpdate: _handleCheckUpdate,
       ),
       _ => _FavoritesTab(
         key: const ValueKey<String>('library-tab-favorites'),
@@ -213,25 +248,24 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   }
 
   Future<void> _handleImportPlaylist() async {
+    if (_isImportingPlaylist) {
+      return;
+    }
     final input = await _showImportPlaylistDialog();
     if (input == null) {
       return;
     }
 
+    setState(() {
+      _isImportingPlaylist = true;
+    });
+    _showImportProgressDialog();
+    await Future<void>.delayed(Duration.zero);
+
     try {
       final result = await ref
           .read(playlistImportRepositoryProvider)
           .importPlaylist(source: input.$1, id: input.$2);
-      if (result == null) {
-        if (!mounted) {
-          return;
-        }
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('导入失败，请检查歌单信息')));
-        return;
-      }
-
       final playlist = await ref
           .read(libraryControllerProvider)
           .createPlaylist(result.$1, initialSongs: result.$2);
@@ -241,6 +275,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('成功导入歌单「${playlist.name}」')));
+    } on PlaylistImportException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_importErrorMessage(error))));
     } catch (_) {
       if (!mounted) {
         return;
@@ -248,6 +289,16 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('导入失败，请稍后重试')));
+    } finally {
+      if (mounted) {
+        final navigator = Navigator.of(context, rootNavigator: true);
+        if (navigator.canPop()) {
+          navigator.pop();
+        }
+        setState(() {
+          _isImportingPlaylist = false;
+        });
+      }
     }
   }
 
@@ -337,6 +388,128 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         .playSong(song, queue: List<Song>.unmodifiable(queueSongs));
   }
 
+  Future<void> _handleCheckUpdate() async {
+    if (_isCheckingUpdate) {
+      return;
+    }
+
+    setState(() {
+      _isCheckingUpdate = true;
+    });
+
+    try {
+      final updateInfo = await ref
+          .read(appUpdateServiceProvider)
+          .checkForUpdate();
+      if (!mounted) {
+        return;
+      }
+
+      if (!updateInfo.hasUpdate) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已是最新版本 v${updateInfo.currentVersion}')),
+        );
+        return;
+      }
+
+      final shouldOpen =
+          await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) {
+              return AlertDialog(
+                title: const Text('发现新版本'),
+                content: Text(
+                  '当前版本：v${updateInfo.currentVersion}\n'
+                  '最新版本：v${updateInfo.latestVersion}\n\n'
+                  '${updateInfo.releaseName}',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('稍后'),
+                  ),
+                  FilledButton(
+                    key: const Key('confirm-open-update-button'),
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFE94B5B),
+                    ),
+                    child: const Text('去更新'),
+                  ),
+                ],
+              );
+            },
+          ) ??
+          false;
+      if (!mounted || !shouldOpen) {
+        return;
+      }
+
+      final launched = await ref
+          .read(aboutLinkLauncherProvider)
+          .launch(updateInfo.downloadUri);
+      if (!mounted || launched) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('无法打开更新链接')));
+    } on AppUpdateException catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('检查更新失败，请稍后重试')));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('检查更新失败，请稍后重试')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCheckingUpdate = false;
+        });
+      }
+    }
+  }
+
+  void _showImportProgressDialog() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return const AlertDialog(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.4),
+              ),
+              SizedBox(width: 16),
+              Expanded(child: Text('正在导入歌单…')),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _importErrorMessage(PlaylistImportException error) {
+    return switch (error.code) {
+      PlaylistImportErrorCode.invalidInput => '无法识别歌单链接，请检查后重试',
+      PlaylistImportErrorCode.sourceMismatch => '音源和歌单链接不匹配，请重新选择',
+      PlaylistImportErrorCode.unsupportedSource => '暂不支持该音源歌单导入',
+      PlaylistImportErrorCode.emptyPlaylist => '未找到可导入歌曲，请确认歌单是否公开',
+      PlaylistImportErrorCode.network ||
+      PlaylistImportErrorCode.remoteFormat => '导入失败，请稍后重试或更换网络',
+    };
+  }
+
   Future<String?> _showTextPrompt({
     required String title,
     required Key fieldKey,
@@ -420,7 +593,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                   TextFormField(
                     key: const Key('import-playlist-id-field'),
                     autofocus: true,
-                    decoration: const InputDecoration(hintText: '输入歌单 ID'),
+                    decoration: const InputDecoration(
+                      hintText: '粘贴歌单链接或输入 ID',
+                      helperText: '支持网易云、QQ 音乐、酷我歌单链接',
+                    ),
                     onChanged: (nextValue) {
                       id = nextValue;
                     },
@@ -586,7 +762,7 @@ class _PlaylistsTab extends StatelessWidget {
 
   final List<Playlist> playlists;
   final Future<void> Function() onCreatePlaylist;
-  final Future<void> Function() onImportPlaylist;
+  final Future<void> Function()? onImportPlaylist;
   final ValueChanged<Playlist> onOpenPlaylist;
 
   @override
@@ -642,34 +818,37 @@ class _ActionPlaylistCard extends StatelessWidget {
   final String label;
   final Color borderColor;
   final Color foregroundColor;
-  final Future<void> Function() onTap;
+  final Future<void> Function()? onTap;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       key: cardKey,
       onTap: onTap,
-      child: Container(
-        height: 160,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: borderColor, width: 2),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 32, color: foregroundColor),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: foregroundColor,
+      child: Opacity(
+        opacity: onTap == null ? 0.55 : 1,
+        child: Container(
+          height: 160,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: borderColor, width: 2),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 32, color: foregroundColor),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: foregroundColor,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1234,9 +1413,16 @@ class _BackupPreviewCard extends StatelessWidget {
 }
 
 class _AboutTab extends StatelessWidget {
-  const _AboutTab({super.key, required this.linkLauncher});
+  const _AboutTab({
+    super.key,
+    required this.linkLauncher,
+    required this.isCheckingUpdate,
+    required this.onCheckUpdate,
+  });
 
   final AboutLinkLauncher linkLauncher;
+  final bool isCheckingUpdate;
+  final Future<void> Function() onCheckUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -1263,6 +1449,35 @@ class _AboutTab extends StatelessWidget {
               Text(
                 'v1.0.0',
                 style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _AboutCard(
+          title: '应用更新',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '检查 GitHub Release 上的最新正式版，发现新版本后会打开下载页面。',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF6B7280),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 14),
+              FilledButton(
+                key: const Key('about-check-update-button'),
+                onPressed: isCheckingUpdate
+                    ? null
+                    : () => unawaited(onCheckUpdate()),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFE94B5B),
+                  minimumSize: const Size(double.infinity, 46),
+                ),
+                child: Text(isCheckingUpdate ? '正在检查…' : '检查更新'),
               ),
             ],
           ),

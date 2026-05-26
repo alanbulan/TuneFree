@@ -25,6 +25,8 @@ class FakeAudioPlayerAdapter implements AudioPlayerAdapter {
   Object? seekError;
   String? lastUrl;
   Duration? lastSeekPosition;
+  int playCalls = 0;
+  int pauseCalls = 0;
   int disposeCalls = 0;
 
   @override
@@ -69,6 +71,7 @@ class FakeAudioPlayerAdapter implements AudioPlayerAdapter {
 
   @override
   Future<void> play() async {
+    playCalls += 1;
     if (playError case final Object error) {
       throw error;
     }
@@ -76,6 +79,7 @@ class FakeAudioPlayerAdapter implements AudioPlayerAdapter {
 
   @override
   Future<void> pause() async {
+    pauseCalls += 1;
     if (pauseError case final Object error) {
       throw error;
     }
@@ -257,6 +261,16 @@ void main() {
 
       await engine.loadSong(song, quality: AudioQuality.k320);
       expect(mediaSession.lastMetadataSong, song);
+      expect(mediaSession.lastMetadataIsPlaying, isFalse);
+
+      await engine.play();
+      expect(audioPlayer.playCalls, 1);
+      expect(engine.latestSnapshot.isPlaying, isTrue);
+      expect(mediaSession.lastMetadataIsPlaying, isTrue);
+
+      await engine.pause();
+      expect(audioPlayer.pauseCalls, 1);
+      expect(engine.latestSnapshot.isPlaying, isFalse);
       expect(mediaSession.lastMetadataIsPlaying, isFalse);
 
       audioPlayer.emitPosition(const Duration(seconds: 1));

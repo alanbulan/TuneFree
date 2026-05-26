@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/models/top_list.dart';
-import '../../../../core/network/music_url_normalizer.dart';
 import '../../../../shared/theme/tune_free_palette.dart';
+import '../../../../shared/widgets/music_network_image.dart';
 
 class TopListCarousel extends StatelessWidget {
   const TopListCarousel({
@@ -109,11 +109,10 @@ class _TopListArtwork extends StatelessWidget {
               ),
             )
           else
-            Image.network(
+            MusicNetworkImage(
               artworkUrl,
               key: Key('top-list-artwork-${list.id}'),
               fit: BoxFit.cover,
-              headers: musicImageRequestHeaders(artworkUrl),
               errorBuilder: (context, error, stackTrace) {
                 return const ColoredBox(
                   color: Color(0xFFF0F1F5),

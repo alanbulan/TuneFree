@@ -9,6 +9,7 @@ abstract class NeteaseClient {
   Future<List<Song>> search(String keyword, int page);
   Future<List<TopList>> getTopLists();
   Future<List<Song>> getTopListDetail(String id);
+  Future<({String name, List<Song> songs})?> getPlaylist(String id);
 }
 
 final class ReactNeteaseClient implements NeteaseClient {
@@ -55,6 +56,29 @@ final class ReactNeteaseClient implements NeteaseClient {
     return readMapList(
       readPath(payload, const <Object>['playlist', 'tracks']),
     ).map(_songFromTrack).whereType<Song>().toList(growable: false);
+  }
+
+  @override
+  Future<({String name, List<Song> songs})?> getPlaylist(String id) async {
+    final payload = await _httpClient.getJson(
+      Uri.https('music.163.com', '/api/v6/playlist/detail', <String, String>{
+        'id': id,
+        'n': '1000',
+      }),
+    );
+    final playlist = readMap(readMap(payload)?['playlist']);
+    if (playlist == null) {
+      return null;
+    }
+
+    final songs = readMapList(
+      playlist['tracks'],
+    ).map(_songFromTrack).whereType<Song>().toList(growable: false);
+    if (songs.isEmpty) {
+      return null;
+    }
+
+    return (name: readString(playlist['name']) ?? id, songs: songs);
   }
 
   Song? _songFromTrack(Map<String, dynamic> item) {

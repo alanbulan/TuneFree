@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/models/song.dart';
-import '../../../../core/network/music_url_normalizer.dart';
+import '../../../../shared/widgets/music_network_image.dart';
 import '../../../../shared/music_source_display.dart';
 import '../../../../shared/theme/tune_free_palette.dart';
 
@@ -145,11 +145,10 @@ class _SongArtwork extends StatelessWidget {
         height: 48,
         child: resolvedUrl == null || resolvedUrl.isEmpty
             ? const _SongArtworkFallback()
-            : Image.network(
+            : MusicNetworkImage(
                 resolvedUrl,
                 key: const Key('featured-song-artwork'),
                 fit: BoxFit.cover,
-                headers: musicImageRequestHeaders(resolvedUrl),
                 errorBuilder: (context, error, stackTrace) =>
                     const _SongArtworkFallback(),
               ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/models/playlist.dart';
+import '../../../../shared/widgets/music_network_image.dart';
 
 class LibraryPlaylistGrid extends StatelessWidget {
   const LibraryPlaylistGrid({
@@ -26,49 +27,108 @@ class LibraryPlaylistGrid extends StatelessWidget {
       ),
       itemBuilder: (context, index) {
         final playlist = playlists[index];
+        final coverUrl = _playlistCoverUrl(playlist);
+        final hasCover = coverUrl != null;
         return GestureDetector(
           onTap: () => onTap(playlist),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                const Icon(
-                  Icons.folder_rounded,
-                  color: Color(0xFFE94B5B),
-                  size: 28,
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      playlist.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
+                if (hasCover)
+                  MusicNetworkImage(
+                    coverUrl,
+                    width: double.infinity,
+                    height: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const _PlaylistCoverFallback();
+                    },
+                  )
+                else
+                  const _PlaylistCoverFallback(),
+                if (hasCover)
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0x26000000), Color(0xB3000000)],
                       ),
                     ),
-                    Text(
-                      '${playlist.songs.length} 首歌曲',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF8B8B95),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        playlist.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: hasCover ? Colors.white : Colors.black,
+                          height: 1.15,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+                      Text(
+                        '${playlist.songs.length} 首歌曲',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: hasCover
+                              ? const Color(0xE6FFFFFF)
+                              : const Color(0xFF8B8B95),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+}
+
+String? _playlistCoverUrl(Playlist playlist) {
+  for (final song in playlist.songs) {
+    final pic = song.pic?.trim();
+    if (pic != null && pic.isNotEmpty) {
+      return pic;
+    }
+  }
+  return null;
+}
+
+class _PlaylistCoverFallback extends StatelessWidget {
+  const _PlaylistCoverFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(18),
+      alignment: Alignment.topLeft,
+      child: Container(
+        width: 58,
+        height: 58,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEEF1),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: const Icon(
+          Icons.folder_rounded,
+          color: Color(0xFFE94B5B),
+          size: 30,
+        ),
+      ),
     );
   }
 }

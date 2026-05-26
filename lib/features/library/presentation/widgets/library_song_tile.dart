@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/models/song.dart';
-import '../../../../core/network/music_url_normalizer.dart';
+import '../../../../shared/widgets/music_network_image.dart';
 import '../../../../shared/widgets/tune_free_card.dart';
 
 class LibrarySongTile extends StatelessWidget {
@@ -84,13 +84,12 @@ class _LibrarySongArtwork extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: Image.network(
+      child: MusicNetworkImage(
         imageUrl,
         key: Key('library-song-artwork-${song.key}'),
         width: 48,
         height: 48,
         fit: BoxFit.cover,
-        headers: musicImageRequestHeaders(imageUrl),
         errorBuilder: (context, error, stackTrace) {
           return Container(
             key: Key('library-song-placeholder-${song.key}'),

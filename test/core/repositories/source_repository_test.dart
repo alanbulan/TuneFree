@@ -6,6 +6,20 @@ import 'package:tunefree/features/home/data/top_list_repository.dart';
 import 'package:tunefree/features/library/data/playlist_import_repository.dart';
 import 'package:tunefree/features/search/data/search_repository.dart';
 
+final class _TestPlaylistImportClient implements PlaylistImportClient {
+  _TestPlaylistImportClient(this._handler);
+
+  final Future<PlaylistImportPayload?> Function(String source, String id)
+  _handler;
+  final List<String> calls = <String>[];
+
+  @override
+  Future<PlaylistImportPayload?> importPlaylist(String source, String id) {
+    calls.add('$source:$id');
+    return _handler(source, id);
+  }
+}
+
 void main() {
   test(
     'aggregate search interleaves source results and tolerates failures',
@@ -176,10 +190,117 @@ void main() {
         id: 'playlist-42',
       );
 
-      expect(result, isNotNull);
-      expect(result!.$1, 'playlist-42');
+      expect(result.$1, 'playlist-42');
       expect(result.$2.map((song) => song.key).toList(), ['migu:song-1']);
       expect(calls, ['qq:playlist-42']);
     },
   );
+
+  test('playlist import repository parses pasted playlist links', () async {
+    final calls = <String>[];
+    final repository = PlaylistImportRepository.payloadLoader(
+      importPlaylist: (source, id) async {
+        calls.add('$source:$id');
+        return const (
+          name: 'Remote Playlist',
+          songs: <Song>[
+            Song(
+              id: 'song-1',
+              name: 'Imported Track',
+              artist: 'Guest Artist',
+              source: MusicSource.netease,
+            ),
+          ],
+        );
+      },
+    );
+
+    await repository.importPlaylist(
+      source: 'netease',
+      id: '分享 https://music.163.com/#/playlist?id=12345&userid=9',
+    );
+    await repository.importPlaylist(
+      source: 'qq',
+      id: 'https://y.qq.com/n/ryqq/playlist/876543',
+    );
+    await repository.importPlaylist(
+      source: 'kuwo',
+      id: 'https://www.kuwo.cn/playlist_detail/24680',
+    );
+    await repository.importPlaylist(source: 'netease', id: '13579');
+
+    expect(calls, <String>[
+      'netease:12345',
+      'qq:876543',
+      'kuwo:24680',
+      'netease:13579',
+    ]);
+  });
+
+  test('playlist import repository rejects mismatched source links', () async {
+    final repository = PlaylistImportRepository.payloadLoader(
+      importPlaylist: (source, id) async => null,
+    );
+
+    expect(
+      () => repository.importPlaylist(
+        source: 'netease',
+        id: 'https://y.qq.com/n/ryqq/playlist/876543',
+      ),
+      throwsA(
+        isA<PlaylistImportException>().having(
+          (error) => error.code,
+          'code',
+          PlaylistImportErrorCode.sourceMismatch,
+        ),
+      ),
+    );
+  });
+
+  test(
+    'composite playlist import client falls back when direct import is empty',
+    () async {
+      final primary = _TestPlaylistImportClient((source, id) async => null);
+      final fallback = _TestPlaylistImportClient(
+        (source, id) async => const (
+          name: 'Fallback Playlist',
+          songs: <Song>[
+            Song(
+              id: 'song-1',
+              name: 'Fallback Track',
+              artist: 'Guest Artist',
+              source: MusicSource.qq,
+            ),
+          ],
+        ),
+      );
+      final client = CompositePlaylistImportClient(
+        primary: primary,
+        fallback: fallback,
+      );
+
+      final payload = await client.importPlaylist('qq', 'playlist-42');
+
+      expect(payload?.name, 'Fallback Playlist');
+      expect(primary.calls, ['qq:playlist-42']);
+      expect(fallback.calls, ['qq:playlist-42']);
+    },
+  );
+
+  test('playlist import repository reports empty remote playlists', () async {
+    final repository = PlaylistImportRepository.payloadLoader(
+      importPlaylist: (source, id) async => null,
+    );
+
+    expect(
+      () => repository.importPlaylist(source: 'kuwo', id: '24680'),
+      throwsA(
+        isA<PlaylistImportException>().having(
+          (error) => error.code,
+          'code',
+          PlaylistImportErrorCode.emptyPlaylist,
+        ),
+      ),
+    );
+  });
 }

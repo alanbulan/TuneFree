@@ -9,6 +9,7 @@ abstract class QqClient {
   Future<List<Song>> search(String keyword, int page);
   Future<List<TopList>> getTopLists();
   Future<List<Song>> getTopListDetail(String id);
+  Future<({String name, List<Song> songs})?> getPlaylist(String id);
 }
 
 final class ReactQqClient implements QqClient {
@@ -77,6 +78,36 @@ final class ReactQqClient implements QqClient {
         .toList(growable: false);
   }
 
+  @override
+  Future<({String name, List<Song> songs})?> getPlaylist(String id) async {
+    final data = await _musicuFetch(<String, Object>{
+      'module': 'srf_diss_info.DissInfoServer',
+      'method': 'CgiGetDiss',
+      'param': <String, Object>{
+        'disstid': int.tryParse(id) ?? id,
+        'dirid': 0,
+        'song_begin': 0,
+        'song_num': 500,
+      },
+    });
+    final list = _playlistSongs(data);
+    final songs = list
+        .map(_songFromItem)
+        .whereType<Song>()
+        .toList(growable: false);
+    if (songs.isEmpty) {
+      return null;
+    }
+
+    final name =
+        readString(readPath(data, const <Object>['dirinfo', 'title'])) ??
+        readString(readPath(data, const <Object>['dirInfo', 'title'])) ??
+        readString(data['title']) ??
+        readString(data['name']) ??
+        id;
+    return (name: name, songs: songs);
+  }
+
   Future<Map<String, dynamic>> _musicuFetch(Map<String, Object> reqBody) async {
     final payload = await _httpClient.postJson(
       Uri.parse(_musicuUri),
@@ -87,6 +118,21 @@ final class ReactQqClient implements QqClient {
       throw StateError('QQ Music returned an error response.');
     }
     return readMap(request['data']) ?? const <String, dynamic>{};
+  }
+
+  List<Map<String, dynamic>> _playlistSongs(Map<String, dynamic> data) {
+    for (final path in const <List<Object>>[
+      <Object>['songlist'],
+      <Object>['songList'],
+      <Object>['data', 'songlist'],
+      <Object>['data', 'songList'],
+    ]) {
+      final list = readMapList(readPath(data, path));
+      if (list.isNotEmpty) {
+        return list;
+      }
+    }
+    return const <Map<String, dynamic>>[];
   }
 
   List<Map<String, dynamic>> _flattenTopListGroups(Map<String, dynamic> data) {

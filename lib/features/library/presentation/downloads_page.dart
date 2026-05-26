@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/audio_quality.dart';
 import '../../../core/models/music_source.dart';
 import '../../../core/models/song.dart';
-import '../../../core/network/music_url_normalizer.dart';
+import '../../../shared/widgets/music_network_image.dart';
 import '../../../shared/music_source_display.dart';
 import '../../../shared/theme/tune_free_spacing.dart';
 import '../../../shared/widgets/tune_free_badge.dart';
@@ -384,13 +384,12 @@ class _DownloadArtwork extends StatelessWidget {
         height: 42,
         child: artworkUrl == null || artworkUrl.isEmpty
             ? _DownloadArtworkFallback(item: item)
-            : Image.network(
+            : MusicNetworkImage(
                 artworkUrl,
                 key: Key(
                   'downloaded-track-artwork-image-${item.songKey}-${item.quality}',
                 ),
                 fit: BoxFit.cover,
-                headers: musicImageRequestHeaders(artworkUrl),
                 errorBuilder: (context, error, stackTrace) =>
                     _DownloadArtworkFallback(item: item),
               ),

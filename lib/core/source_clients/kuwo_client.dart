@@ -9,6 +9,7 @@ abstract class KuwoClient {
   Future<List<Song>> search(String keyword, int page);
   Future<List<TopList>> getTopLists();
   Future<List<Song>> getTopListDetail(String id);
+  Future<({String name, List<Song> songs})?> getPlaylist(String id);
 }
 
 final class ReactKuwoClient implements KuwoClient {
@@ -90,6 +91,56 @@ final class ReactKuwoClient implements KuwoClient {
       readMap(payload)?['musiclist'],
     ).map(_songFromChartItem).whereType<Song>().toList(growable: false);
     return _fillCovers(songs);
+  }
+
+  @override
+  Future<({String name, List<Song> songs})?> getPlaylist(String id) async {
+    final payload = await _httpClient.getJson(
+      Uri.http('nplserver.kuwo.cn', '/pl.svc', <String, String>{
+        'op': 'getlistinfo',
+        'pid': id,
+        'pn': '0',
+        'rn': '500',
+        'encode': 'utf-8',
+        'keyset': 'pl2012',
+        'identity': 'kuwo',
+      }),
+      proxyFirst: true,
+      allowSingleQuoteJson: true,
+    );
+    final data = readMap(payload) ?? const <String, dynamic>{};
+    final list = _playlistSongs(data);
+    final songs = await _fillCovers(
+      list.map(_songFromChartItem).whereType<Song>().toList(growable: false),
+    );
+    if (songs.isEmpty) {
+      return null;
+    }
+
+    final name =
+        readString(data['title']) ??
+        readString(data['name']) ??
+        readString(readMap(data['playlist'])?['name']) ??
+        readString(readMap(data['data'])?['name']) ??
+        id;
+    return (name: name, songs: songs);
+  }
+
+  List<Map<String, dynamic>> _playlistSongs(Map<String, dynamic> data) {
+    for (final path in const <List<Object>>[
+      <Object>['musiclist'],
+      <Object>['musicList'],
+      <Object>['list'],
+      <Object>['data', 'musiclist'],
+      <Object>['data', 'musicList'],
+      <Object>['data', 'list'],
+    ]) {
+      final list = readMapList(readPath(data, path));
+      if (list.isNotEmpty) {
+        return list;
+      }
+    }
+    return const <Map<String, dynamic>>[];
   }
 
   Future<String?> _loadChartCover(String id) async {
@@ -174,10 +225,12 @@ final class ReactKuwoClient implements KuwoClient {
   Song? _songFromChartItem(Map<String, dynamic> item) {
     final playableId =
         _songRidFromChartParam(readString(item['param'])) ??
+        _stripMusicRid(readString(item['MUSICRID'])) ??
+        _stripMusicRid(readString(item['musicrid'])) ??
         readString(item['rid']) ??
         readString(item['id']);
     final id = readString(item['id']) ?? playableId;
-    final name = readString(item['name']);
+    final name = readString(item['name']) ?? readString(item['SONGNAME']);
     if (id == null || playableId == null || name == null) {
       return null;
     }
@@ -185,8 +238,8 @@ final class ReactKuwoClient implements KuwoClient {
     return Song(
       id: id,
       name: name,
-      artist: readString(item['artist']) ?? '',
-      album: readString(item['album']) ?? '',
+      artist: readString(item['artist']) ?? readString(item['ARTIST']) ?? '',
+      album: readString(item['album']) ?? readString(item['ALBUM']) ?? '',
       pic: _coverFromShortPath(
         readString(item['web_albumpic_short']) ??
             readString(item['web_artistpic_short']),
