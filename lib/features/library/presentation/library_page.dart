@@ -1429,55 +1429,26 @@ class _AboutTab extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _AboutCard(
-          padding: EdgeInsets.all(22),
+        _AboutCard(
+          padding: const EdgeInsets.all(22),
           child: Column(
             children: [
-              _AboutAppIcon(),
-              SizedBox(height: 12),
-              Text(
+              const _AboutAppIcon(),
+              const SizedBox(height: 12),
+              const Text(
                 'TuneFree Mobile',
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
               ),
-              SizedBox(height: 4),
-              Text(
+              const SizedBox(height: 4),
+              const Text(
                 '一个高颜值的 Flutter Android 音乐播放器',
                 style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
                 textAlign: TextAlign.center,
               ),
-              SizedBox(height: 3),
-              Text(
-                'v1.0.0',
-                style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        _AboutCard(
-          title: '应用更新',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '检查 GitHub Release 上的最新正式版，发现新版本后会打开下载页面。',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF6B7280),
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 14),
-              FilledButton(
-                key: const Key('about-check-update-button'),
-                onPressed: isCheckingUpdate
-                    ? null
-                    : () => unawaited(onCheckUpdate()),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFE94B5B),
-                  minimumSize: const Size(double.infinity, 46),
-                ),
-                child: Text(isCheckingUpdate ? '正在检查…' : '检查更新'),
+              const SizedBox(height: 8),
+              _VersionUpdateBadge(
+                isCheckingUpdate: isCheckingUpdate,
+                onCheckUpdate: onCheckUpdate,
               ),
             ],
           ),
@@ -1581,8 +1552,8 @@ class _AboutTab extends StatelessWidget {
               const SizedBox(height: 12),
               _LinkRow(
                 title: 'GitHub 仓库',
-                subtitle: 'alanbulan/musicxilan',
-                uri: Uri.parse('https://github.com/alanbulan/musicxilan'),
+                subtitle: 'alanbulan/TuneFree_Mobile',
+                uri: Uri.parse('https://github.com/alanbulan/TuneFree_Mobile'),
                 linkLauncher: linkLauncher,
               ),
             ],
@@ -1645,6 +1616,68 @@ class _AboutAppIcon extends StatelessWidget {
         size: 30,
         color: Color(0xFFE94B5B),
       ),
+    );
+  }
+}
+
+class _VersionUpdateBadge extends StatelessWidget {
+  const _VersionUpdateBadge({
+    required this.isCheckingUpdate,
+    required this.onCheckUpdate,
+  });
+
+  final bool isCheckingUpdate;
+  final Future<void> Function() onCheckUpdate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 6,
+      children: [
+        const Text(
+          'v1.0.1',
+          style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+        ),
+        InkWell(
+          key: const Key('about-check-update-button'),
+          borderRadius: BorderRadius.circular(999),
+          onTap: isCheckingUpdate ? null : () => unawaited(onCheckUpdate()),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFEEF1),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: const Color(0x1AE94B5B)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.system_update_alt_rounded,
+                  size: 13,
+                  color: isCheckingUpdate
+                      ? const Color(0xFF9CA3AF)
+                      : const Color(0xFFE94B5B),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  isCheckingUpdate ? '检查中' : '更新',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: isCheckingUpdate
+                        ? const Color(0xFF9CA3AF)
+                        : const Color(0xFFE94B5B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
