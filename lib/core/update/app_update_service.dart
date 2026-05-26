@@ -54,7 +54,7 @@ final class AppUpdateService {
     required TuneFreeHttpClient httpClient,
     PackageInfoLoader? packageInfoLoader,
     this.repositoryOwner = 'alanbulan',
-    this.repositoryName = 'musicxilan',
+    this.repositoryName = 'TuneFree_Mobile',
   }) : _httpClient = httpClient,
        _packageInfoLoader = packageInfoLoader ?? PackageInfo.fromPlatform;
 
