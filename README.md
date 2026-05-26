@@ -1,4 +1,6 @@
 <div align="center">
+  <img src="android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="TuneFree" width="96" height="96">
+
   <h1>TuneFree Flutter</h1>
 
   <p align="center">
