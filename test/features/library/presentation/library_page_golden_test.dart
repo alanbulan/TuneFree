@@ -709,14 +709,16 @@ void main() {
 
       await tester.tap(find.byKey(const Key('import-playlist-action')));
       await tester.pumpAndSettle();
+      expect(find.text('粘贴歌单链接或输入 ID'), findsOneWidget);
+      expect(find.text('支持网易云、QQ 音乐、酷我歌单链接'), findsOneWidget);
       await tester.enterText(
         find.byKey(const Key('import-playlist-id-field')),
-        'remote-42',
+        'https://music.163.com/#/playlist?id=3136952023&userid=1',
       );
       await tester.tap(find.byKey(const Key('confirm-import-playlist-button')));
       await tester.pumpAndSettle();
 
-      expect(importClient.calls, <String>['netease:remote-42']);
+      expect(importClient.calls, <String>['netease:3136952023']);
       expect(find.text('真实远程歌单'), findsOneWidget);
 
       await tester.ensureVisible(find.text('真实远程歌单'));

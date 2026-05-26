@@ -51,7 +51,15 @@ final class JustAudioPlayerAdapter implements AudioPlayerAdapter {
   Future<Duration?> setUrl(String url) => _audioPlayer.setUrl(url);
 
   @override
-  Future<void> play() => _audioPlayer.play();
+  Future<void> play() async {
+    unawaited(
+      _audioPlayer.play().catchError((Object error, StackTrace stackTrace) {
+        debugPrint(
+          'JustAudioPlayerAdapter playback failed: $error\n$stackTrace',
+        );
+      }),
+    );
+  }
 
   @override
   Future<void> pause() => _audioPlayer.pause();
@@ -186,6 +194,7 @@ final class JustAudioPlayerEngine implements PlayerEngine {
         _emit(_latestSnapshot.copyWith(isPlaying: true));
       } else {
         await _audioPlayer!.play();
+        _emit(_latestSnapshot.copyWith(isPlaying: true));
       }
 
       final song = _latestSnapshot.currentSong;
@@ -202,6 +211,7 @@ final class JustAudioPlayerEngine implements PlayerEngine {
         _emit(_latestSnapshot.copyWith(isPlaying: false));
       } else {
         await _audioPlayer!.pause();
+        _emit(_latestSnapshot.copyWith(isPlaying: false));
       }
 
       final song = _latestSnapshot.currentSong;

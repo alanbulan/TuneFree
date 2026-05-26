@@ -5,6 +5,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/models/song.dart';
+import '../../../core/network/music_url_normalizer.dart';
 import 'media_session_remote_command.dart';
 
 abstract class MediaSessionAdapter {
@@ -82,6 +83,9 @@ final class AudioServiceMediaSessionAdapter implements MediaSessionAdapter {
   Duration? _lastProgressStatePosition;
 
   static const _progressStateSyncInterval = Duration(seconds: 5);
+  static final _fallbackArtworkUri = Uri.parse(
+    'android.resource://com.alanbulan.tunefree/mipmap/ic_launcher',
+  );
 
   @override
   Stream<MediaSessionRemoteCommand> get remoteCommands =>
@@ -274,15 +278,18 @@ final class AudioServiceMediaSessionAdapter implements MediaSessionAdapter {
     final album = song.album.trim();
     final artworkUrl = song.pic?.trim();
 
+    final artUri = artworkUrl == null || artworkUrl.isEmpty
+        ? _fallbackArtworkUri
+        : Uri.tryParse(artworkUrl);
+
     return MediaItem(
       id: song.key,
       title: song.name,
       album: album.isEmpty ? null : album,
       artist: song.artist,
       duration: duration,
-      artUri: artworkUrl == null || artworkUrl.isEmpty
-          ? null
-          : Uri.tryParse(artworkUrl),
+      artUri: artUri,
+      artHeaders: musicImageRequestHeaders(artworkUrl),
       playable: true,
       displayTitle: song.name,
       displaySubtitle: song.artist,

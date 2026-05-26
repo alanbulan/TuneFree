@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/models/song.dart';
-import '../../../../core/network/music_url_normalizer.dart';
+import '../../../../shared/widgets/music_network_image.dart';
 import '../../../../shared/music_source_display.dart';
 import 'player_bottom_sheet_transition.dart';
 
@@ -362,11 +362,10 @@ class _QueueArtwork extends StatelessWidget {
     if (artwork == null || artwork.isEmpty) {
       return const _ArtworkPlaceholder();
     }
-    return Image.network(
+    return MusicNetworkImage(
       artwork,
       key: Key('player-queue-artwork-${song.key}'),
       fit: BoxFit.cover,
-      headers: musicImageRequestHeaders(artwork),
       errorBuilder: (_, _, _) => const _ArtworkPlaceholder(),
     );
   }

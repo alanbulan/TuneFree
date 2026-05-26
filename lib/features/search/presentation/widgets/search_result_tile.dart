@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/models/song.dart';
-import '../../../../core/network/music_url_normalizer.dart';
+import '../../../../shared/widgets/music_network_image.dart';
 import 'search_source_selector.dart';
 
 class SearchResultTile extends StatelessWidget {
@@ -148,13 +148,12 @@ class _SearchResultArtwork extends StatelessWidget {
   Widget build(BuildContext context) {
     final imageUrl = song.pic;
     if (imageUrl != null && imageUrl.isNotEmpty) {
-      return Image.network(
+      return MusicNetworkImage(
         imageUrl,
         key: Key('search-result-artwork-${song.key}'),
         width: 48,
         height: 48,
         fit: BoxFit.cover,
-        headers: musicImageRequestHeaders(imageUrl),
         errorBuilder: (context, error, stackTrace) =>
             _FallbackArtwork(song: song),
       );

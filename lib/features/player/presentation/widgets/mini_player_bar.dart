@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/network/music_url_normalizer.dart';
+import '../../../../shared/widgets/music_network_image.dart';
 import '../../../../shared/theme/tune_free_palette.dart';
 import '../../../../shared/theme/tune_free_spacing.dart';
 import '../../application/player_controller.dart';
@@ -286,11 +286,10 @@ class _MiniPlayerArtwork extends StatelessWidget {
                   switchOutCurve: Curves.easeInCubic,
                   child: SizedBox.expand(
                     key: ValueKey<String>('mini-artwork-$resolvedUrl'),
-                    child: Image.network(
+                    child: MusicNetworkImage(
                       resolvedUrl,
                       key: const Key('mini-player-artwork'),
                       fit: BoxFit.cover,
-                      headers: musicImageRequestHeaders(resolvedUrl),
                       errorBuilder: (context, error, stackTrace) {
                         return _MiniPlayerPlaceholder(isPlaying: isPlaying);
                       },

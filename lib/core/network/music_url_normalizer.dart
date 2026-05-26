@@ -53,6 +53,15 @@ Map<String, String>? musicImageRequestHeaders(String? value) {
   };
 }
 
+String? musicImageProxyUrl(String? value) {
+  final uri = Uri.tryParse(value?.trim() ?? '');
+  final host = uri?.host.toLowerCase();
+  if (uri == null || host == null || !host.endsWith('music.126.net')) {
+    return null;
+  }
+  return 'https://images.weserv.nl/?url=${Uri.encodeComponent(uri.toString())}';
+}
+
 String jooxCoverUrl(String picId, {int size = 500}) {
   return 'https://image.joox.com/JOOXcover/0/$picId/$size';
 }

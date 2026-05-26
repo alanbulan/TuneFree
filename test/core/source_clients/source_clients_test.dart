@@ -77,20 +77,24 @@ final class _FakeSourceAdapter implements HttpClientAdapter {
           ],
         });
       }
-      return _jsonResponse({
-        'playlist': {
-          'tracks': [
-            {
-              'id': 456,
-              'name': '榜单歌曲',
-              'ar': [
-                {'name': '榜单歌手'},
-              ],
-              'al': {'name': '榜单专辑'},
-            },
-          ],
-        },
-      });
+      if (targetUri.path == '/api/v6/playlist/detail') {
+        final isPlaylistImport = targetUri.queryParameters['n'] == '1000';
+        return _jsonResponse({
+          'playlist': {
+            'name': isPlaylistImport ? '网易歌单' : '网易榜单',
+            'tracks': [
+              {
+                'id': 456,
+                'name': isPlaylistImport ? '网易歌单歌曲' : '榜单歌曲',
+                'ar': [
+                  {'name': isPlaylistImport ? '歌单歌手' : '榜单歌手'},
+                ],
+                'al': {'name': isPlaylistImport ? '歌单专辑' : '榜单专辑'},
+              },
+            ],
+          },
+        });
+      }
     }
 
     if (targetUri.host == 'u.y.qq.com') {
@@ -125,6 +129,17 @@ final class _FakeSourceAdapter implements HttpClientAdapter {
               'data': {
                 'songInfoList': [_qqSong()],
               },
+            },
+          },
+        });
+      }
+      if (req['method'] == 'CgiGetDiss') {
+        return _jsonResponse({
+          'req': {
+            'code': 0,
+            'data': {
+              'dirinfo': {'title': 'QQ歌单'},
+              'songlist': [_qqSong()],
             },
           },
         });
@@ -165,6 +180,20 @@ final class _FakeSourceAdapter implements HttpClientAdapter {
             'artist': '榜单歌手',
             'album': '榜单专辑',
             'param': '酷我榜单歌;榜单歌手;榜单专辑;0;0;MUSIC_654;0;0;MP3_654;0;0;MV_1;1',
+          },
+        ],
+      });
+    }
+
+    if (targetUri.host == 'nplserver.kuwo.cn') {
+      return _jsonResponse({
+        'title': '酷我歌单',
+        'musiclist': [
+          {
+            'MUSICRID': 'MUSIC_987',
+            'SONGNAME': '酷我歌单歌曲',
+            'ARTIST': '歌单歌手',
+            'ALBUM': '歌单专辑',
           },
         ],
       });
@@ -259,6 +288,7 @@ void main() {
     final songs = await client.search('gbc', 2);
     final lists = await client.getTopLists();
     final detail = await client.getTopListDetail('19723756');
+    final playlist = await client.getPlaylist('3136952023');
 
     expect(adapter.requests.first.targetUri.path, '/api/cloudsearch/pc');
     expect(adapter.requests.first.targetUri.queryParameters['s'], 'gbc');
@@ -271,6 +301,8 @@ void main() {
       'https://p2.music.126.net/top-500x500.jpg',
     );
     expect(detail.single.name, '榜单歌曲');
+    expect(playlist?.name, '网易歌单');
+    expect(playlist?.songs.single.name, '网易歌单歌曲');
   });
 
   test('QQ client posts musicu requests and maps songs/toplists', () async {
@@ -280,6 +312,7 @@ void main() {
     final songs = await client.search('句号', 1);
     final lists = await client.getTopLists();
     final detail = await client.getTopListDetail('26');
+    final playlist = await client.getPlaylist('123456');
 
     final searchBody = adapter.requests.first.body! as Map<String, dynamic>;
     final searchReq = searchBody['req']! as Map<String, dynamic>;
@@ -291,6 +324,8 @@ void main() {
     expect(lists.single.id, '26');
     expect(lists.single.coverImgUrl, 'https://y.gtimg.cn/top-500x500.jpg');
     expect(detail.single.album, 'QQ专辑');
+    expect(playlist?.name, 'QQ歌单');
+    expect(playlist?.songs.single.id, 'qq-song-mid');
   });
 
   test('Kuwo client uses proxy-first HTTP APIs and fills covers', () async {
@@ -303,6 +338,7 @@ void main() {
     final songs = await client.search('酷我', 1);
     final lists = await client.getTopLists();
     final detail = await client.getTopListDetail('93');
+    final playlist = await client.getPlaylist('1082685105');
 
     expect(adapter.requests.first.requestUri.host, 'proxy.test');
     expect(adapter.requests.first.targetUri.host, 'search.kuwo.cn');
@@ -318,6 +354,9 @@ void main() {
     expect(detail.single.lyricId, '654');
     expect(detail.single.name, '酷我榜单歌');
     expect(detail.single.pic, 'http://img1.kuwo.cn/star/cover.jpg');
+    expect(playlist?.name, '酷我歌单');
+    expect(playlist?.songs.single.id, '987');
+    expect(playlist?.songs.single.urlId, '987');
   });
 
   test(
