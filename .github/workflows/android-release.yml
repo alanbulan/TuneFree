@@ -38,7 +38,7 @@ jobs:
         id: bump
         run: |
           # Read current version from pubspec.yaml
-          current=$(grep '^version:' pubspec.yaml | sed 's/version: //')
+          current=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d '\r')
           version_name="${current%%+*}"
           build_number="${current#*+}"
 
