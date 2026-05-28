@@ -143,25 +143,6 @@ final class _FakeTopListRepository implements RemoteTopListRepository {
   }
 }
 
-Future<void> _setClipboardMockHandler({
-  required Future<void> Function(String text) onCopy,
-}) async {
-  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .setMockMethodCallHandler(_platformChannel, (methodCall) async {
-        if (methodCall.method != 'Clipboard.setData') {
-          return null;
-        }
-        final arguments = methodCall.arguments;
-        final text = arguments is Map<Object?, Object?>
-            ? arguments['text'] as String?
-            : null;
-        if (text != null) {
-          await onCopy(text);
-        }
-        return null;
-      });
-}
-
 final class _TestHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
