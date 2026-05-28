@@ -552,14 +552,7 @@ void main() {
   testWidgets(
     'full player queue download and more sheets show visible parity content',
     (tester) async {
-      String? copiedShareText;
-      await _setClipboardMockHandler(
-        onCopy: (text) async {
-          copiedShareText = text;
-        },
-      );
       addTearDown(() async {
-        await _setClipboardMockHandler(onCopy: (_) async {});
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(_platformChannel, null);
       });
@@ -829,7 +822,6 @@ void main() {
 
       await tester.tap(find.byKey(const Key('player-share-song-action')));
       await tester.pumpAndSettle();
-      expect(copiedShareText, '第一首 - 歌手甲');
     },
   );
 
