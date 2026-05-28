@@ -8,12 +8,12 @@ void main() {
         'tag_name': 'v1.2.3',
         'name': 'TuneFree 1.2.3',
         'html_url':
-            'https://github.com/alanbulan/musicxilan/releases/tag/v1.2.3',
+            'https://github.com/alanbulan/TuneFree_Mobile/releases/tag/v1.2.3',
         'assets': [
           {
             'name': 'tunefree-v1.2.3.apk',
             'browser_download_url':
-                'https://github.com/alanbulan/musicxilan/releases/download/v1.2.3/tunefree.apk',
+                'https://github.com/alanbulan/TuneFree_Mobile/releases/download/v1.2.3/tunefree.apk',
           },
         ],
       });
@@ -28,7 +28,7 @@ void main() {
       final release = AppUpdateService.parseLatestRelease({
         'tag_name': 'v1.2.3',
         'html_url':
-            'https://github.com/alanbulan/musicxilan/releases/tag/v1.2.3',
+            'https://github.com/alanbulan/TuneFree_Mobile/releases/tag/v1.2.3',
         'assets': [
           {
             'name': 'source.zip',
