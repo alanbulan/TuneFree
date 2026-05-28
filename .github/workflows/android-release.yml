@@ -12,6 +12,12 @@ on:
       - main
       - flutter
   workflow_dispatch:
+    inputs:
+      bump_version:
+        description: 'Auto-bump patch version and publish release'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -24,6 +30,36 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump version
+        if: github.event.inputs.bump_version == 'true' || startsWith(github.ref, 'refs/tags/v')
+        id: bump
+        run: |
+          # Read current version from pubspec.yaml
+          current=$(grep '^version:' pubspec.yaml | sed 's/version: //')
+          version_name="${current%%+*}"
+          build_number="${current#*+}"
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            # Tag push: use tag as version
+            new_version="${GITHUB_REF_NAME#v}"
+            new_build=$((build_number + 1))
+          else
+            # workflow_dispatch bump: increment patch
+            IFS='.' read -r major minor patch <<< "$version_name"
+            new_version="${major}.${minor}.$((patch + 1))"
+            new_build=$((build_number + 1))
+          fi
+
+          echo "version=${new_version}" >> "$GITHUB_OUTPUT"
+          echo "build=${new_build}" >> "$GITHUB_OUTPUT"
+          echo "full=${new_version}+${new_build}" >> "$GITHUB_OUTPUT"
+
+          # Update pubspec.yaml
+          sed -i "s/^version: .*/version: ${new_version}+${new_build}/" pubspec.yaml
+          echo "Bumped to ${new_version}+${new_build}"
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -57,8 +93,8 @@ jobs:
       - name: Prepare APK asset
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME}"
-          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+          version="${{ steps.bump.outputs.version }}"
+          if [ -z "$version" ]; then
             version="snapshot-${GITHUB_SHA::7}"
           fi
           cp build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/tunefree-${version}.apk"
@@ -70,9 +106,21 @@ jobs:
           name: tunefree-android-apk
           path: ${{ env.APK_PATH }}
 
+      - name: Commit version bump and tag
+        if: steps.bump.outputs.version != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml
+          git commit -m "release: v${{ steps.bump.outputs.version }} [skip ci]"
+          git tag "v${{ steps.bump.outputs.version }}"
+          git push origin HEAD --tags
+
       - name: Publish GitHub Release
-        if: github.ref_type == 'tag'
+        if: steps.bump.outputs.version != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.bump.outputs.version }}
+          name: TuneFree Mobile v${{ steps.bump.outputs.version }}
           files: ${{ env.APK_PATH }}
           generate_release_notes: true
