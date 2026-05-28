@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:go_router/go_router.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/models/playlist.dart';
@@ -446,15 +447,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         return;
       }
 
-      final launched = await ref
-          .read(aboutLinkLauncherProvider)
-          .launch(updateInfo.downloadUri);
-      if (!mounted || launched) {
-        return;
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('无法打开更新链接')));
+      await _downloadAndInstall(updateInfo.downloadUri);
     } on AppUpdateException catch (_) {
       if (!mounted) {
         return;
@@ -475,6 +468,68 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
           _isCheckingUpdate = false;
         });
       }
+    }
+  }
+
+  Future<void> _downloadAndInstall(Uri downloadUri) async {
+    final progressNotifier = ValueNotifier<double>(0);
+
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return ValueListenableBuilder<double>(
+          valueListenable: progressNotifier,
+          builder: (context, progress, _) {
+            return AlertDialog(
+              title: const Text('正在下载更新'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  LinearProgressIndicator(value: progress > 0 ? progress : null),
+                  const SizedBox(height: 12),
+                  Text(
+                    '${(progress * 100).toStringAsFixed(0)}%',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    try {
+      final updateService = ref.read(appUpdateServiceProvider);
+      final filePath = await updateService.downloadApk(
+        downloadUri.toString(),
+        (received, total) {
+          if (total > 0) {
+            progressNotifier.value = received / total;
+          }
+        },
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop(); // close progress dialog
+
+      final result = await OpenFilex.open(filePath);
+      if (result.type != ResultType.done) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('无法打开安装包，请手动安装')),
+        );
+        await ref.read(aboutLinkLauncherProvider).launch(downloadUri);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      Navigator.of(context).pop(); // close progress dialog
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('下载失败，正在跳转浏览器...')),
+      );
+      await ref.read(aboutLinkLauncherProvider).launch(downloadUri);
     }
   }
 
