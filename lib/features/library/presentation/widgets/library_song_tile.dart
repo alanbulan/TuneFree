@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/models/song.dart';
 import '../../../../shared/widgets/music_network_image.dart';
@@ -20,6 +21,7 @@ class LibrarySongTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      onLongPress: () => _showShareSheet(context, song),
       child: TuneFreeCard(
         padding: const EdgeInsets.all(10),
         child: Row(
@@ -104,5 +106,49 @@ class _LibrarySongArtwork extends StatelessWidget {
         },
       ),
     );
+  }
+}
+
+void _showShareSheet(BuildContext context, Song song) {
+  showModalBottomSheet<void>(
+    context: context,
+    builder: (sheetContext) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.share_rounded, color: Color(0xFFE94B5B)),
+              title: const Text('分享歌曲'),
+              subtitle: Text('${song.name} - ${song.artist}'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _shareSong(song);
+              },
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Future<void> _shareSong(Song song) async {
+  final url = _songSourceUrl(song);
+  final text = '${song.name} - ${song.artist}';
+  final shareText = url != null ? '$text\n$url' : text;
+  await Share.share(shareText, subject: text);
+}
+
+String? _songSourceUrl(Song song) {
+  switch (song.source.wireValue) {
+    case 'netease':
+      return 'https://music.163.com/#/song?id=${song.id}';
+    case 'qq':
+      return 'https://y.qq.com/n/ryqq/songDetail/${song.id}';
+    case 'kuwo':
+      return 'https://www.kuwo.cn/play_detail/${song.id}';
+    default:
+      return null;
   }
 }

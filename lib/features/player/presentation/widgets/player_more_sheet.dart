@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/models/audio_quality.dart';
 import '../../../../core/models/music_source.dart';
@@ -75,14 +75,10 @@ class PlayerMoreSheet extends ConsumerWidget {
       if (song == null) {
         return;
       }
-      final shareText = '${song.name} - ${song.artist}';
-      await Clipboard.setData(ClipboardData(text: shareText));
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('已复制分享文案：$shareText')));
+      final url = _songSourceUrl(song);
+      final text = '${song.name} - ${song.artist}';
+      final shareText = url != null ? '$text\n$url' : text;
+      await Share.share(shareText, subject: text);
     }
 
     return PlayerBottomSheetTransition(
@@ -480,5 +476,18 @@ class _EmptyStateCard extends StatelessWidget {
         style: const TextStyle(fontSize: 13, color: Color(0xFF8B8B95)),
       ),
     );
+  }
+}
+
+String? _songSourceUrl(Song song) {
+  switch (song.source.wireValue) {
+    case 'netease':
+      return 'https://music.163.com/#/song?id=${song.id}';
+    case 'qq':
+      return 'https://y.qq.com/n/ryqq/songDetail/${song.id}';
+    case 'kuwo':
+      return 'https://www.kuwo.cn/play_detail/${song.id}';
+    default:
+      return null;
   }
 }
