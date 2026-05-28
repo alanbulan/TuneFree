@@ -73,12 +73,70 @@ final class ReactNeteaseClient implements NeteaseClient {
 
     final songs = readMapList(
       playlist['tracks'],
-    ).map(_songFromTrack).whereType<Song>().toList(growable: false);
+    ).map(_songFromTrack).whereType<Song>().toList();
+
+    // Fetch remaining tracks via trackIds when API truncates the tracks array.
+    final allTrackIds = readMapList(playlist['trackIds'])
+        .map((e) => readString(e['id']))
+        .whereType<String>()
+        .toList(growable: false);
+    if (allTrackIds.length > songs.length) {
+      final existingIds = songs.map((s) => s.id).toSet();
+      final missingIds = allTrackIds
+          .where((tid) => !existingIds.contains(tid))
+          .toList(growable: false);
+      final extraSongs = await _fetchSongsByIds(missingIds);
+      songs.addAll(extraSongs);
+    }
+
     if (songs.isEmpty) {
       return null;
     }
 
     return (name: readString(playlist['name']) ?? id, songs: songs);
+  }
+
+  static const _batchSize = 100;
+
+  Future<List<Song>> _fetchSongsByIds(List<String> ids) async {
+    final result = <Song>[];
+    for (var i = 0; i < ids.length; i += _batchSize) {
+      final batch = ids.sublist(i, (i + _batchSize).clamp(0, ids.length));
+      final idsParam = '[${batch.join(',')}]';
+      try {
+        final payload = await _httpClient.getJson(
+          Uri.https('music.163.com', '/api/song/detail', {
+            'ids': idsParam,
+          }),
+        );
+        result.addAll(
+          readMapList(readPath(payload, const ['songs']))
+              .map(_songFromDetail)
+              .whereType<Song>(),
+        );
+      } catch (_) {
+        // Skip failed batches; partial results are still useful.
+      }
+    }
+    return result;
+  }
+
+  Song? _songFromDetail(Map<String, dynamic> item) {
+    final id = readString(item['id']);
+    final name = readString(item['name']);
+    if (id == null || name == null) {
+      return null;
+    }
+
+    final album = readMap(item['album']);
+    return Song(
+      id: id,
+      name: name,
+      artist: joinNamedEntries(item['artists']),
+      album: readString(album?['name']) ?? '',
+      pic: normalizeMusicUrl(readString(album?['picUrl'])),
+      source: MusicSource.netease,
+    );
   }
 
   Song? _songFromTrack(Map<String, dynamic> item) {
