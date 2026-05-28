@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../network/tune_free_http_client.dart';
 
@@ -191,5 +193,32 @@ final class AppUpdateService {
         .split('.')
         .map((part) => int.tryParse(part) ?? 0)
         .toList(growable: false);
+  }
+
+  Future<String> downloadApk(
+    String url,
+    void Function(int received, int total) onProgress,
+  ) async {
+    final dir = await getExternalStorageDirectory();
+    if (dir == null) {
+      throw const AppUpdateException('Cannot access external storage.');
+    }
+    final updatesDir = Directory('${dir.path}/updates');
+    if (!updatesDir.existsSync()) {
+      updatesDir.createSync(recursive: true);
+    }
+    final savePath = '${updatesDir.path}/tunefree.apk';
+
+    try {
+      await _httpClient.dio.download(
+        url,
+        savePath,
+        onReceiveProgress: onProgress,
+      );
+    } catch (error) {
+      throw AppUpdateException('APK download failed.', error);
+    }
+
+    return savePath;
   }
 }
