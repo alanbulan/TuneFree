@@ -911,7 +911,7 @@ class _ActionPlaylistCard extends StatelessWidget {
   }
 }
 
-class _PlaylistDetailTab extends StatelessWidget {
+class _PlaylistDetailTab extends StatefulWidget {
   const _PlaylistDetailTab({
     super.key,
     required this.playlist,
@@ -934,12 +934,26 @@ class _PlaylistDetailTab extends StatelessWidget {
   final ValueChanged<Song> onSongTap;
 
   @override
+  State<_PlaylistDetailTab> createState() => _PlaylistDetailTabState();
+}
+
+class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
+  static const _pageSize = 20;
+  int _displayCount = _pageSize;
+
+  @override
   Widget build(BuildContext context) {
+    final playlist = widget.playlist;
+    final isEditMode = widget.isEditMode;
+    final totalSongs = playlist.songs.length;
+    final visibleSongs = playlist.songs.take(_displayCount).toList();
+    final hasMore = _displayCount < totalSongs;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         TextButton.icon(
-          onPressed: onBack,
+          onPressed: widget.onBack,
           icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFFE94B5B)),
           label: const Text(
             '返回歌单列表',
@@ -974,7 +988,7 @@ class _PlaylistDetailTab extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${playlist.songs.length} 首歌曲',
+                          '$totalSongs 首歌曲',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Color(0xFF8B8B95),
@@ -985,7 +999,7 @@ class _PlaylistDetailTab extends StatelessWidget {
                   ),
                   FilledButton.tonal(
                     key: const Key('playlist-edit-mode-button'),
-                    onPressed: onToggleEditMode,
+                    onPressed: widget.onToggleEditMode,
                     style: FilledButton.styleFrom(
                       backgroundColor: isEditMode
                           ? const Color(0xFFE94B5B)
@@ -1005,7 +1019,7 @@ class _PlaylistDetailTab extends StatelessWidget {
                     Expanded(
                       child: OutlinedButton(
                         key: const Key('playlist-rename-button'),
-                        onPressed: onRenamePlaylist,
+                        onPressed: widget.onRenamePlaylist,
                         child: const Text('重命名'),
                       ),
                     ),
@@ -1013,7 +1027,7 @@ class _PlaylistDetailTab extends StatelessWidget {
                     Expanded(
                       child: FilledButton.tonal(
                         key: const Key('playlist-delete-button'),
-                        onPressed: onDeletePlaylist,
+                        onPressed: widget.onDeletePlaylist,
                         style: FilledButton.styleFrom(
                           backgroundColor: const Color(0x1AE94B5B),
                           foregroundColor: const Color(0xFFE94B5B),
@@ -1038,17 +1052,17 @@ class _PlaylistDetailTab extends StatelessWidget {
               ),
             ),
           )
-        else
-          ...playlist.songs.map(
+        else ...[
+          ...visibleSongs.map(
             (song) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: LibrarySongTile(
                 song: song,
-                onTap: () => onSongTap(song),
+                onTap: () => widget.onSongTap(song),
                 trailing: isEditMode
                     ? IconButton(
                         key: Key('playlist-remove-song-${song.key}'),
-                        onPressed: () => onRemoveSong(song),
+                        onPressed: () => widget.onRemoveSong(song),
                         icon: const Icon(
                           Icons.delete_outline_rounded,
                           color: Color(0xFFE94B5B),
@@ -1058,6 +1072,25 @@ class _PlaylistDetailTab extends StatelessWidget {
               ),
             ),
           ),
+          if (hasMore)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: TextButton(
+                  onPressed: () => setState(() {
+                    _displayCount += _pageSize;
+                  }),
+                  child: Text(
+                    '加载更多 (${totalSongs - _displayCount} 首剩余)',
+                    style: const TextStyle(
+                      color: Color(0xFFE94B5B),
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ],
     );
   }
