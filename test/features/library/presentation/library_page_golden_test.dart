@@ -636,7 +636,7 @@ void main() {
       expect(linkLauncher.launchedUris, <Uri>[
         Uri.parse('https://music.gdstudio.xyz/'),
         Uri.parse('https://music.alanbulan.space'),
-        Uri.parse('https://github.com/alanbulan/musicxilan'),
+        Uri.parse('https://github.com/alanbulan/TuneFree_Mobile'),
       ]);
     },
   );
