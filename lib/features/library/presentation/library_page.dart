@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -1637,9 +1638,15 @@ class _VersionUpdateBadge extends StatelessWidget {
       spacing: 8,
       runSpacing: 6,
       children: [
-        const Text(
-          'v1.0.1',
-          style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+        FutureBuilder<PackageInfo>(
+          future: PackageInfo.fromPlatform(),
+          builder: (context, snapshot) {
+            final version = snapshot.data?.version ?? '...';
+            return Text(
+              'v$version',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+            );
+          },
         ),
         InkWell(
           key: const Key('about-check-update-button'),
