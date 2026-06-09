@@ -29,28 +29,28 @@ class HomePage extends ConsumerWidget {
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
-            20,
+            TuneFreeSpacing.page,
             8,
-            20,
+            TuneFreeSpacing.page,
             TuneFreeSpacing.shellContentBottomPadding,
           ),
           children: [
             Text(
               greeting,
               style: const TextStyle(
-                fontSize: 32,
+                fontSize: 24,
                 fontWeight: FontWeight.w700,
                 color: TuneFreePalette.textPrimary,
                 letterSpacing: -0.4,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
                   '排行榜',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
                 TopSourceSwitcher(
                   activeSource: state.activeSource,
@@ -58,7 +58,7 @@ class HomePage extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
             if (state.hasError)
               const _HomeErrorCard()
             else if (state.listsLoading && state.topLists.isEmpty)
@@ -69,7 +69,7 @@ class HomePage extends ConsumerWidget {
                 selectedId: state.selectedTopListId,
                 onTap: controller.selectTopList,
               ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -79,7 +79,7 @@ class HomePage extends ConsumerWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 22,
+                      fontSize: 18,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -88,7 +88,7 @@ class HomePage extends ConsumerWidget {
                 _SourceChip(source: state.activeSource),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             if (state.songsLoading)
               const _SongSkeletonList()
             else if (state.featuredSongs.isEmpty)
@@ -96,7 +96,7 @@ class HomePage extends ConsumerWidget {
             else
               ...state.featuredSongs.asMap().entries.map(
                 (entry) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: FeaturedSongTile(
                     song: entry.value,
                     index: entry.key,
@@ -181,7 +181,7 @@ class _HomeEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       decoration: BoxDecoration(
         color: TuneFreePalette.surface.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(16),
@@ -209,18 +209,34 @@ class _HomeEmptyState extends StatelessWidget {
 class _TopListSkeleton extends StatelessWidget {
   const _TopListSkeleton();
 
+  static const _itemSpacing = 10.0;
+  static const _minCardWidth = 104.0;
+  static const _maxCardWidth = 128.0;
+  static const _targetVisibleCards = 3.05;
+  static const _cardHeightOffset = 34.0;
+
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 185,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: 3,
-        separatorBuilder: (context, index) => const SizedBox(width: 12),
-        itemBuilder: (context, index) {
-          return const SizedBox(width: 140, child: _SkeletonCard());
-        },
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth =
+            ((constraints.maxWidth - (_itemSpacing * 2)) / _targetVisibleCards)
+                .clamp(_minCardWidth, _maxCardWidth)
+                .toDouble();
+
+        return SizedBox(
+          height: cardWidth + _cardHeightOffset,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: 3,
+            separatorBuilder: (context, index) =>
+                const SizedBox(width: _itemSpacing),
+            itemBuilder: (context, index) {
+              return SizedBox(width: cardWidth, child: const _SkeletonCard());
+            },
+          ),
+        );
+      },
     );
   }
 }
@@ -234,7 +250,7 @@ class _SongSkeletonList extends StatelessWidget {
       children: [
         for (var index = 0; index < 5; index += 1)
           const Padding(
-            padding: EdgeInsets.only(bottom: 12),
+            padding: EdgeInsets.only(bottom: 8),
             child: _SkeletonSongTile(),
           ),
       ],
@@ -248,10 +264,10 @@ class _SkeletonCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(7),
       decoration: BoxDecoration(
         color: TuneFreePalette.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -259,10 +275,10 @@ class _SkeletonCard extends StatelessWidget {
           Expanded(
             child: _SkeletonBlock(borderRadius: BorderRadius.circular(12)),
           ),
-          const SizedBox(height: 8),
-          const _SkeletonBlock(width: 92, height: 12),
           const SizedBox(height: 6),
-          const _SkeletonBlock(width: 58, height: 10),
+          const _SkeletonBlock(width: 82, height: 11),
+          const SizedBox(height: 5),
+          const _SkeletonBlock(width: 54, height: 9),
         ],
       ),
     );
@@ -275,24 +291,24 @@ class _SkeletonSongTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: TuneFreePalette.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: const Row(
         children: [
-          _SkeletonBlock(width: 24, height: 18),
-          SizedBox(width: 12),
-          _SkeletonBlock(width: 48, height: 48),
-          SizedBox(width: 12),
+          _SkeletonBlock(width: 22, height: 16),
+          SizedBox(width: 10),
+          _SkeletonBlock(width: 44, height: 44),
+          SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _SkeletonBlock(height: 14),
-                SizedBox(height: 8),
-                _SkeletonBlock(width: 120, height: 12),
+                _SkeletonBlock(height: 13),
+                SizedBox(height: 7),
+                _SkeletonBlock(width: 112, height: 11),
               ],
             ),
           ),

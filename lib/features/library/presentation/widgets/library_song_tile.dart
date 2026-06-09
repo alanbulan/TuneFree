@@ -27,7 +27,7 @@ class LibrarySongTile extends StatelessWidget {
         child: Row(
           children: [
             _LibrarySongArtwork(song: song),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -37,7 +37,7 @@ class LibrarySongTile extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 15,
+                      fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -46,7 +46,7 @@ class LibrarySongTile extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
                       color: Color(0xFF8B8B95),
                     ),
                   ),
@@ -71,32 +71,32 @@ class _LibrarySongArtwork extends StatelessWidget {
     final imageUrl = song.pic?.trim();
     final decoration = BoxDecoration(
       color: const Color(0xFFF0F1F5),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(10),
     );
 
     if (imageUrl == null || imageUrl.isEmpty) {
       return Container(
         key: Key('library-song-placeholder-${song.key}'),
-        width: 48,
-        height: 48,
+        width: 44,
+        height: 44,
         decoration: decoration,
         child: const Icon(Icons.music_note_rounded, color: Color(0xFFB6B8BF)),
       );
     }
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(10),
       child: MusicNetworkImage(
         imageUrl,
         key: Key('library-song-artwork-${song.key}'),
-        width: 48,
-        height: 48,
+        width: 44,
+        height: 44,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) {
           return Container(
             key: Key('library-song-placeholder-${song.key}'),
-            width: 48,
-            height: 48,
+            width: 44,
+            height: 44,
             decoration: decoration,
             child: const Icon(
               Icons.music_note_rounded,
@@ -118,7 +118,10 @@ void _showShareSheet(BuildContext context, Song song) {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.share_rounded, color: Color(0xFFE94B5B)),
+              leading: const Icon(
+                Icons.share_rounded,
+                color: Color(0xFFE94B5B),
+              ),
               title: const Text('分享歌曲'),
               subtitle: Text('${song.name} - ${song.artist}'),
               onTap: () {

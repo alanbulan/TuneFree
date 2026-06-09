@@ -120,17 +120,17 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
-            20,
+            TuneFreeSpacing.page,
             8,
-            20,
+            TuneFreeSpacing.page,
             TuneFreeSpacing.shellContentBottomPadding,
           ),
           children: [
             const Text(
               '我的资料库',
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700),
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
             LibraryTabSwitcher(
               activeTab: _activeTab,
               onChanged: (tab) {
@@ -142,7 +142,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                 });
               },
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
             _LibraryTabContentTransition(
               activeTab: _activeTab,
               previousTab: _previousTab,
@@ -487,7 +487,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  LinearProgressIndicator(value: progress > 0 ? progress : null),
+                  LinearProgressIndicator(
+                    value: progress > 0 ? progress : null,
+                  ),
                   const SizedBox(height: 12),
                   Text(
                     '${(progress * 100).toStringAsFixed(0)}%',
@@ -503,14 +505,14 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
 
     try {
       final updateService = ref.read(appUpdateServiceProvider);
-      final filePath = await updateService.downloadApk(
-        downloadUri.toString(),
-        (received, total) {
-          if (total > 0) {
-            progressNotifier.value = received / total;
-          }
-        },
-      );
+      final filePath = await updateService.downloadApk(downloadUri.toString(), (
+        received,
+        total,
+      ) {
+        if (total > 0) {
+          progressNotifier.value = received / total;
+        }
+      });
 
       if (!mounted) return;
       Navigator.of(context).pop(); // close progress dialog
@@ -518,17 +520,17 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       final result = await OpenFilex.open(filePath);
       if (result.type != ResultType.done) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('无法打开安装包，请手动安装')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('无法打开安装包，请手动安装')));
         await ref.read(aboutLinkLauncherProvider).launch(downloadUri);
       }
     } catch (_) {
       if (!mounted) return;
       Navigator.of(context).pop(); // close progress dialog
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('下载失败，正在跳转浏览器...')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('下载失败，正在跳转浏览器...')));
       await ref.read(aboutLinkLauncherProvider).launch(downloadUri);
     }
   }
@@ -780,14 +782,14 @@ class _FavoritesTab extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               '我喜欢的音乐 (${state.favorites.length})',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         if (state.favorites.isEmpty)
           const Padding(
-            padding: EdgeInsets.symmetric(vertical: 48),
+            padding: EdgeInsets.symmetric(vertical: 36),
             child: Center(
               child: Text(
                 '暂无歌曲',
@@ -798,7 +800,7 @@ class _FavoritesTab extends StatelessWidget {
         else
           ...state.favorites.map(
             (song) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.only(bottom: 8),
               child: LibrarySongTile(song: song, onTap: () => onSongTap(song)),
             ),
           ),
@@ -837,7 +839,7 @@ class _PlaylistsTab extends StatelessWidget {
                 onTap: onCreatePlaylist,
               ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: _ActionPlaylistCard(
                 cardKey: const Key('import-playlist-action'),
@@ -851,7 +853,7 @@ class _PlaylistsTab extends StatelessWidget {
           ],
         ),
         if (playlists.isNotEmpty) ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           LibraryPlaylistGrid(playlists: playlists, onTap: onOpenPlaylist),
         ],
       ],
@@ -884,21 +886,21 @@ class _ActionPlaylistCard extends StatelessWidget {
       child: Opacity(
         opacity: onTap == null ? 0.55 : 1,
         child: Container(
-          height: 160,
+          height: 132,
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(color: borderColor, width: 2),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 32, color: foregroundColor),
-              const SizedBox(height: 8),
+              Icon(icon, size: 28, color: foregroundColor),
+              const SizedBox(height: 6),
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w500,
                   color: foregroundColor,
                 ),
@@ -965,10 +967,10 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
         ),
         const SizedBox(height: 8),
         Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -982,7 +984,7 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
                         Text(
                           playlist.name,
                           style: const TextStyle(
-                            fontSize: 28,
+                            fontSize: 24,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -1013,7 +1015,7 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
                 ],
               ),
               if (isEditMode) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
@@ -1041,10 +1043,10 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         if (playlist.songs.isEmpty)
           const Padding(
-            padding: EdgeInsets.symmetric(vertical: 48),
+            padding: EdgeInsets.symmetric(vertical: 36),
             child: Center(
               child: Text(
                 '暂无歌曲',
@@ -1055,7 +1057,7 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
         else ...[
           ...visibleSongs.map(
             (song) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.only(bottom: 8),
               child: LibrarySongTile(
                 song: song,
                 onTap: () => widget.onSongTap(song),
@@ -1271,7 +1273,7 @@ class _ManageTabState extends State<_ManageTab> {
                 controller: _proxyController,
                 hintText: '留空使用内置代理（推荐）',
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               FilledButton(
                 onPressed: () async {
                   await widget.controller.setCorsProxy(_proxyController.text);
@@ -1291,7 +1293,7 @@ class _ManageTabState extends State<_ManageTab> {
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         SettingsCard(
           title: '下载管理',
           icon: Icons.download_done_rounded,
@@ -1317,7 +1319,7 @@ class _ManageTabState extends State<_ManageTab> {
                   height: 1.5,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               FilledButton(
                 key: const Key('library-downloads-management-button'),
                 onPressed: _openDownloadsPage,
@@ -1330,7 +1332,7 @@ class _ManageTabState extends State<_ManageTab> {
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         SettingsCard(
           title: '数据备份',
           icon: Icons.upload_rounded,
@@ -1358,14 +1360,14 @@ class _ManageTabState extends State<_ManageTab> {
                 ],
               ),
               if (widget.state.exportedBackupJson case final exportedJson?) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 _BackupPreviewCard(
                   title: '最近导出',
                   previewLines: _buildPreviewLines(exportedJson),
                 ),
               ],
               if (widget.state.lastImportSummary case final importSummary?) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 _BackupPreviewCard(
                   title: importSummary,
                   previewLines: _buildImportedPreviewLines(),
@@ -1519,14 +1521,14 @@ class _AboutTab extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _AboutCard(
-          padding: const EdgeInsets.all(22),
+          padding: const EdgeInsets.all(18),
           child: Column(
             children: [
               const _AboutAppIcon(),
               const SizedBox(height: 12),
               const Text(
                 'TuneFree Mobile',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 4),
               const Text(
@@ -1620,7 +1622,7 @@ class _AboutTab extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         _AboutCard(
           title: '链接',
           child: Column(
@@ -1648,7 +1650,7 @@ class _AboutTab extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         const _DisclaimerCard(),
       ],
     );
@@ -1666,10 +1668,10 @@ class _AboutCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: padding ?? const EdgeInsets.all(18),
+      padding: padding ?? const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1677,9 +1679,9 @@ class _AboutCard extends StatelessWidget {
           if (title != null) ...[
             Text(
               title!,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
           ],
           child,
         ],
@@ -1694,15 +1696,15 @@ class _AboutAppIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 56,
-      height: 56,
+      width: 50,
+      height: 50,
       decoration: BoxDecoration(
         color: const Color(0x1AE94B5B),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: const Icon(
         Icons.music_note_rounded,
-        size: 30,
+        size: 26,
         color: Color(0xFFE94B5B),
       ),
     );
@@ -1838,14 +1840,14 @@ class _TechChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFFF3F4F6),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
-        style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)),
+        style: const TextStyle(fontSize: 11, color: Color(0xFF4B5563)),
       ),
     );
   }
@@ -1870,34 +1872,34 @@ class _LinkRow extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         key: Key('about-link-$title'),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         onTap: () => linkLauncher.launch(uri),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: const Color(0xFFF9FAFB),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
           ),
           child: Row(
             children: [
               const Icon(
                 Icons.open_in_new_rounded,
-                size: 18,
+                size: 16,
                 color: Color(0xFFE94B5B),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
               Text(
                 subtitle,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+                style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
               ),
             ],
           ),

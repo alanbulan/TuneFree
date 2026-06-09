@@ -19,15 +19,15 @@ class LibraryTabSwitcher extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: const Color(0x80E5E7EB),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(4),
+        padding: const EdgeInsets.all(3),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final tabWidth = constraints.maxWidth / tabs.length;
             return SizedBox(
-              height: 34,
+              height: 30,
               child: Stack(
                 children: [
                   AnimatedPositioned(
@@ -40,7 +40,7 @@ class LibraryTabSwitcher extends StatelessWidget {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(10),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.04),
@@ -74,7 +74,7 @@ class LibraryTabSwitcher extends StatelessWidget {
                                   duration: const Duration(milliseconds: 180),
                                   curve: Curves.easeOutCubic,
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                     color: isActive
                                         ? const Color(0xFF111111)

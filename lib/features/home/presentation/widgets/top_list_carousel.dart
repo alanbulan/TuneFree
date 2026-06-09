@@ -12,76 +12,95 @@ class TopListCarousel extends StatelessWidget {
     required this.onTap,
   });
 
+  static const _itemSpacing = 10.0;
+  static const _minCardWidth = 104.0;
+  static const _maxCardWidth = 128.0;
+  static const _targetVisibleCards = 3.05;
+  static const _cardHeightOffset = 34.0;
+
   final List<TopList> topLists;
   final String? selectedId;
   final ValueChanged<TopList> onTap;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 185,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: topLists.length,
-        separatorBuilder: (context, index) => const SizedBox(width: 12),
-        itemBuilder: (context, index) {
-          final list = topLists[index];
-          final isSelected = list.id == selectedId;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = _cardWidthFor(constraints.maxWidth);
 
-          return GestureDetector(
-            onTap: () => onTap(list),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              width: 140,
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: TuneFreePalette.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isSelected
-                      ? TuneFreePalette.accent
-                      : Colors.transparent,
-                  width: 1.2,
+        return SizedBox(
+          height: cardWidth + _cardHeightOffset,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: topLists.length,
+            separatorBuilder: (context, index) =>
+                const SizedBox(width: _itemSpacing),
+            itemBuilder: (context, index) {
+              final list = topLists[index];
+              final isSelected = list.id == selectedId;
+
+              return GestureDetector(
+                onTap: () => onTap(list),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: cardWidth,
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: TuneFreePalette.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isSelected
+                          ? TuneFreePalette.accent
+                          : Colors.transparent,
+                      width: 1.2,
+                    ),
+                    boxShadow: [
+                      if (isSelected)
+                        BoxShadow(
+                          color: TuneFreePalette.accent.withValues(alpha: 0.1),
+                          blurRadius: 0,
+                          spreadRadius: 2,
+                        ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: _TopListArtwork(list: list)),
+                      const SizedBox(height: 6),
+                      Text(
+                        list.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        list.updateFrequency ?? '每日更新',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: TuneFreePalette.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                boxShadow: [
-                  if (isSelected)
-                    BoxShadow(
-                      color: TuneFreePalette.accent.withValues(alpha: 0.1),
-                      blurRadius: 0,
-                      spreadRadius: 2,
-                    ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: _TopListArtwork(list: list)),
-                  const SizedBox(height: 8),
-                  Text(
-                    list.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    list.updateFrequency ?? '每日更新',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: TuneFreePalette.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+              );
+            },
+          ),
+        );
+      },
     );
+  }
+
+  static double _cardWidthFor(double availableWidth) {
+    final targetWidth =
+        (availableWidth - (_itemSpacing * 2)) / _targetVisibleCards;
+    return targetWidth.clamp(_minCardWidth, _maxCardWidth).toDouble();
   }
 }
 
@@ -95,7 +114,7 @@ class _TopListArtwork extends StatelessWidget {
     final artworkUrl = (list.coverImgUrl ?? list.picUrl)?.trim();
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(11),
       child: Stack(
         fit: StackFit.expand,
         children: [

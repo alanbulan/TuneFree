@@ -9,8 +9,8 @@ import '../../application/player_controller.dart';
 class MiniPlayerBar extends ConsumerWidget {
   const MiniPlayerBar({
     super.key,
-    this.horizontalPadding = 16,
-    this.bottomPadding = 12,
+    this.horizontalPadding = 12,
+    this.bottomPadding = 10,
     this.useBottomSafeArea = true,
   });
 
@@ -43,7 +43,7 @@ class MiniPlayerBar extends ConsumerWidget {
           child: Stack(
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Row(
                   children: [
                     _MiniPlayerArtwork(
@@ -51,7 +51,7 @@ class MiniPlayerBar extends ConsumerWidget {
                       isPlaying: state.isPlaying,
                       isLoading: state.isLoading,
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -103,7 +103,7 @@ class MiniPlayerBar extends ConsumerWidget {
                           : Icons.play_arrow_rounded,
                       isLoading: state.isLoading,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     _MiniPlayerIconButton(
                       key: const Key('mini-player-next-button'),
                       onPressed: state.queue.isEmpty
@@ -174,7 +174,7 @@ class _MiniPlayerCardState extends State<_MiniPlayerCard> {
             color: TuneFreePalette.surface.withValues(alpha: 0.9),
             elevation: 8,
             shadowColor: Colors.black.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               key: const Key('mini-player'),
@@ -218,10 +218,10 @@ class _MiniPlayerIconButton extends StatelessWidget {
         child: isLoading
             ? const SizedBox(
                 key: Key('mini-player-loading-indicator'),
-                width: 18,
-                height: 18,
+                width: 16,
+                height: 16,
                 child: CircularProgressIndicator(
-                  strokeWidth: 2.2,
+                  strokeWidth: 2,
                   color: TuneFreePalette.textPrimary,
                 ),
               )
@@ -231,9 +231,9 @@ class _MiniPlayerIconButton extends StatelessWidget {
                 color: TuneFreePalette.textPrimary,
               ),
       ),
-      iconSize: 24,
+      iconSize: 22,
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints.tightFor(width: 32, height: 40),
+      constraints: const BoxConstraints.tightFor(width: 32, height: 36),
       visualDensity: VisualDensity.compact,
     );
   }
@@ -263,8 +263,8 @@ class _MiniPlayerArtwork extends StatelessWidget {
 
     final artwork = resolvedUrl == null || resolvedUrl.isEmpty
         ? Container(
-            width: 40,
-            height: 40,
+            width: 36,
+            height: 36,
             decoration: decoration,
             child: ClipOval(
               child: _MiniPlayerRotation(
@@ -274,8 +274,8 @@ class _MiniPlayerArtwork extends StatelessWidget {
             ),
           )
         : Container(
-            width: 40,
-            height: 40,
+            width: 36,
+            height: 36,
             decoration: decoration,
             child: ClipOval(
               child: _MiniPlayerRotation(

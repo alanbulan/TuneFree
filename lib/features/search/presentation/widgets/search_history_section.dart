@@ -28,7 +28,7 @@ class SearchHistorySection extends StatelessWidget {
           children: [
             const Text(
               '搜索历史',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
             ),
             IconButton(
               onPressed: () async {
@@ -41,10 +41,10 @@ class SearchHistorySection extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 6,
+          runSpacing: 6,
           children: history
               .map((term) {
                 return GestureDetector(
@@ -52,19 +52,19 @@ class SearchHistorySection extends StatelessWidget {
                   child: Container(
                     constraints: const BoxConstraints(maxWidth: 150),
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                      horizontal: 10,
+                      vertical: 6,
                     ),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: const Color(0xFFF0F1F5)),
                     ),
                     child: Text(
                       term,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         color: Color(0xFF666666),
                       ),
                     ),

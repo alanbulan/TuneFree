@@ -28,7 +28,7 @@ class SearchPage extends ConsumerStatefulWidget {
 }
 
 class _SearchPageState extends ConsumerState<SearchPage> {
-  static const _headerContentSpacing = 16.0;
+  static const _headerContentSpacing = 10.0;
 
   final textController = TextEditingController();
   final GlobalKey _headerKey = GlobalKey();
@@ -73,9 +73,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           children: [
             _SearchScrollableContent(
               padding: EdgeInsets.fromLTRB(
-                20,
+                TuneFreeSpacing.page,
                 topContentPadding + _headerContentSpacing,
-                20,
+                TuneFreeSpacing.page,
                 TuneFreeSpacing.shellContentBottomPadding,
               ),
               showHistory: showHistory,
@@ -162,7 +162,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   double _minimumHeaderExtent(SearchState state, String searchHint) {
     final hasBanner = searchHint.isNotEmpty || state.searchError.isNotEmpty;
-    return hasBanner ? 260 : 200;
+    return hasBanner ? 204 : 154;
   }
 
   void _scheduleHeaderMeasurement() {
@@ -220,37 +220,53 @@ class _SearchHeader extends StatelessWidget {
                 ),
               ],
             ),
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            padding: const EdgeInsets.fromLTRB(
+              TuneFreeSpacing.page,
+              8,
+              TuneFreeSpacing.page,
+              10,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
                   '搜索',
-                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700),
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
                 TextField(
                   controller: textController,
                   onChanged: controller.updateQuery,
                   onSubmitted: (_) => controller.submitSearch(),
+                  style: const TextStyle(fontSize: 13),
                   decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
                     hintText: state.searchMode == 'aggregate'
                         ? '全网聚合搜索 (已启用跨域代理)...'
                         : '搜索 ${searchSourceFullLabel(state.selectedSource)} 资源...',
+                    hintStyle: const TextStyle(fontSize: 13),
                     filled: true,
                     fillColor: Colors.white,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(14),
                       borderSide: BorderSide.none,
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                  spacing: 6,
+                  runSpacing: 6,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     SearchModeSwitcher(
@@ -265,7 +281,7 @@ class _SearchHeader extends StatelessWidget {
                   ],
                 ),
                 if (searchHint.isNotEmpty) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _SearchMessageBanner(
                     message: searchHint,
                     backgroundColor: const Color(0xFFFFFBEB),
@@ -274,7 +290,7 @@ class _SearchHeader extends StatelessWidget {
                   ),
                 ],
                 if (state.searchError.isNotEmpty) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _SearchMessageBanner(
                     message: state.searchError,
                     backgroundColor: const Color(0xFFFEF2F2),
@@ -346,7 +362,7 @@ class _SearchScrollableContent extends StatelessWidget {
             );
           }
           if (index == 1) {
-            return const SizedBox(height: 12);
+            return const SizedBox(height: 8);
           }
         }
 
@@ -375,11 +391,11 @@ class _SearchScrollableContent extends StatelessWidget {
         if (showLoadMoreSpinner) {
           if (contentIndex == 0) {
             return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
+              padding: EdgeInsets.symmetric(vertical: 12),
               child: Center(
                 child: SizedBox(
-                  width: 24,
-                  height: 24,
+                  width: 22,
+                  height: 22,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     color: Color(0xFFE94B5B),
@@ -395,11 +411,11 @@ class _SearchScrollableContent extends StatelessWidget {
             return TextButton(
               onPressed: onLoadMore,
               child: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
+                padding: EdgeInsets.symmetric(vertical: 12),
                 child: Text(
                   '查看更多结果',
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF8B8B95),
                   ),
@@ -411,18 +427,18 @@ class _SearchScrollableContent extends StatelessWidget {
         }
 
         return const Padding(
-          padding: EdgeInsets.symmetric(vertical: 48),
+          padding: EdgeInsets.symmetric(vertical: 36),
           child: Column(
             children: [
               Icon(
                 Icons.music_note_rounded,
-                size: 48,
+                size: 40,
                 color: Color(0x33111111),
               ),
               SizedBox(height: 12),
               Text(
                 '未找到相关歌曲，请尝试简化关键词',
-                style: TextStyle(fontSize: 14, color: Color(0xFF9CA3AF)),
+                style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
               ),
             ],
           ),
@@ -457,15 +473,15 @@ class _SearchMessageBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: borderColor),
       ),
       child: Text(
         message,
-        style: TextStyle(fontSize: 12, height: 1.4, color: foregroundColor),
+        style: TextStyle(fontSize: 11, height: 1.35, color: foregroundColor),
       ),
     );
   }
@@ -494,22 +510,22 @@ class _SearchLoadingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: const Row(
         children: [
-          _SearchLoadingBlock(width: 48, height: 48, radius: 12),
-          SizedBox(width: 12),
+          _SearchLoadingBlock(width: 44, height: 44, radius: 10),
+          SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _SearchLoadingBlock(width: 180, height: 14, radius: 8),
-                SizedBox(height: 8),
-                _SearchLoadingBlock(width: 96, height: 10, radius: 999),
+                _SearchLoadingBlock(width: 168, height: 13, radius: 8),
+                SizedBox(height: 7),
+                _SearchLoadingBlock(width: 88, height: 9, radius: 999),
               ],
             ),
           ),

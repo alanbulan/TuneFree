@@ -28,7 +28,7 @@ class SearchModeSwitcher extends StatelessWidget {
         key: key,
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: active ? activeBackgroundColor : Colors.white,
             borderRadius: BorderRadius.circular(999),
@@ -37,7 +37,7 @@ class SearchModeSwitcher extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.w600,
               color: active ? activeForegroundColor : const Color(0xFF666666),
             ),
@@ -47,7 +47,7 @@ class SearchModeSwitcher extends StatelessWidget {
     }
 
     return Wrap(
-      spacing: 8,
+      spacing: 6,
       children: [
         buildChip(
           '聚合搜索',

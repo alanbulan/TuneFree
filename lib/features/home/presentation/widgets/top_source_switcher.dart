@@ -32,8 +32,8 @@ class TopSourceSwitcher extends StatelessWidget {
                   onTap: () => onChanged(source),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
+                      horizontal: 10,
+                      vertical: 5,
                     ),
                     decoration: BoxDecoration(
                       color: isActive ? Colors.white : Colors.transparent,
