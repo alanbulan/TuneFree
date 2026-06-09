@@ -25,10 +25,10 @@ class FeaturedSongTile extends StatelessWidget {
     return GestureDetector(
       onTap: () => onPlay(song),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: TuneFreePalette.surface,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.03),
@@ -40,12 +40,12 @@ class FeaturedSongTile extends StatelessWidget {
         child: Row(
           children: [
             SizedBox(
-              width: 24,
+              width: 22,
               child: Text(
                 '${index + 1}',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontStyle: FontStyle.italic,
                   fontWeight: FontWeight.w700,
                   color: highlight
@@ -54,9 +54,9 @@ class FeaturedSongTile extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             _SongArtwork(artworkUrl: song.pic),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -66,16 +66,16 @@ class FeaturedSongTile extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 15,
+                      fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Row(
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
+                          horizontal: 5,
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
@@ -85,7 +85,7 @@ class FeaturedSongTile extends StatelessWidget {
                         child: Text(
                           musicSourceBadgeLabel(song.source.wireValue),
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: 9,
                             color: badgeColors.foreground,
                             fontWeight: FontWeight.w700,
                           ),
@@ -98,7 +98,7 @@ class FeaturedSongTile extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 12,
+                            fontSize: 11,
                             color: TuneFreePalette.textSecondary,
                           ),
                         ),
@@ -108,10 +108,10 @@ class FeaturedSongTile extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Container(
-              width: 36,
-              height: 36,
+              width: 32,
+              height: 32,
               decoration: const BoxDecoration(
                 color: Color(0xFFF9FAFB),
                 shape: BoxShape.circle,
@@ -119,7 +119,7 @@ class FeaturedSongTile extends StatelessWidget {
               child: const Icon(
                 Icons.play_arrow_rounded,
                 color: TuneFreePalette.accent,
-                size: 22,
+                size: 20,
               ),
             ),
           ],
@@ -141,8 +141,8 @@ class _SongArtwork extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: SizedBox(
-        width: 48,
-        height: 48,
+        width: 44,
+        height: 44,
         child: resolvedUrl == null || resolvedUrl.isEmpty
             ? const _SongArtworkFallback()
             : MusicNetworkImage(
@@ -164,7 +164,7 @@ class _SongArtworkFallback extends StatelessWidget {
   Widget build(BuildContext context) {
     return const ColoredBox(
       color: Color(0xFFF0F1F5),
-      child: Icon(Icons.music_note_rounded, color: Color(0xFFB6B8BF), size: 24),
+      child: Icon(Icons.music_note_rounded, color: Color(0xFFB6B8BF), size: 22),
     );
   }
 }

@@ -7,7 +7,7 @@ class TuneFreeCard extends StatelessWidget {
   const TuneFreeCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(12),
+    this.padding = const EdgeInsets.all(10),
   });
 
   final Widget child;

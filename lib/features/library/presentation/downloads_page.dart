@@ -188,13 +188,13 @@ class _LibraryDownloadsPageState extends ConsumerState<LibraryDownloadsPage> {
             ? ListView.separated(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(
-                  20,
-                  12,
-                  20,
+                  TuneFreeSpacing.page,
+                  10,
+                  TuneFreeSpacing.page,
                   TuneFreeSpacing.shellContentBottomPadding,
                 ),
                 itemCount: downloads.length + (_isEditing ? 1 : 0),
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   if (_isEditing && index == 0) {
                     return _DownloadsSelectionToolbar(
@@ -226,9 +226,9 @@ class _LibraryDownloadsPageState extends ConsumerState<LibraryDownloadsPage> {
             : ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(
-                  20,
-                  80,
-                  20,
+                  TuneFreeSpacing.page,
+                  56,
+                  TuneFreeSpacing.page,
                   TuneFreeSpacing.shellContentBottomPadding,
                 ),
                 children: const [_DownloadsEmptyState()],
@@ -268,7 +268,7 @@ class _DownloadedTrackTile extends StatelessWidget {
         onTap: onTap,
         onLongPress: onLongPress,
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(10),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -284,7 +284,7 @@ class _DownloadedTrackTile extends StatelessWidget {
                       )
                     : _DownloadArtwork(item: item),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -298,7 +298,7 @@ class _DownloadedTrackTile extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 16,
+                              fontSize: 14,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -311,14 +311,14 @@ class _DownloadedTrackTile extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 13,
+                              fontSize: 12,
                               color: Color(0xFF6B7280),
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Wrap(
                       spacing: 6,
                       runSpacing: 6,
@@ -354,7 +354,7 @@ class _DownloadedTrackTile extends StatelessWidget {
                 const Icon(
                   Icons.play_circle_fill_rounded,
                   color: Color(0xFFE94B5B),
-                  size: 30,
+                  size: 26,
                 ),
             ],
           ),
@@ -378,10 +378,10 @@ class _DownloadArtwork extends StatelessWidget {
   Widget build(BuildContext context) {
     final artworkUrl = item.artworkUrl?.trim();
     return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       child: SizedBox(
-        width: 42,
-        height: 42,
+        width: 38,
+        height: 38,
         child: artworkUrl == null || artworkUrl.isEmpty
             ? _DownloadArtworkFallback(item: item)
             : MusicNetworkImage(
@@ -430,7 +430,7 @@ class _DownloadsSelectionToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       key: const Key('library-downloads-selection-toolbar'),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),

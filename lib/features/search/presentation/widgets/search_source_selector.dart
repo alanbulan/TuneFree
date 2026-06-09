@@ -61,7 +61,7 @@ class SearchSourceSelector extends StatelessWidget {
                 child: Text(
                   entry.value,
                   style: const TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -70,7 +70,7 @@ class SearchSourceSelector extends StatelessWidget {
             .toList(growable: false);
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(999),
@@ -82,7 +82,7 @@ class SearchSourceSelector extends StatelessWidget {
             Text(
               searchSourceFullLabel(selectedSource),
               style: const TextStyle(
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF374151),
               ),
@@ -90,7 +90,7 @@ class SearchSourceSelector extends StatelessWidget {
             const SizedBox(width: 4),
             const Icon(
               Icons.keyboard_arrow_down_rounded,
-              size: 16,
+              size: 15,
               color: Color(0xFF6B7280),
             ),
           ],

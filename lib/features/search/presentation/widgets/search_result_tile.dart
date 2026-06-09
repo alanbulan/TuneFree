@@ -25,14 +25,14 @@ class SearchResultTile extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         onTap: onTap,
         child: Container(
           key: isCurrent ? Key('search-result-current-${song.key}') : null,
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: isCurrent ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             boxShadow: isCurrent
                 ? const [
                     BoxShadow(
@@ -51,7 +51,7 @@ class SearchResultTile extends StatelessWidget {
               Stack(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                     child: _SearchResultArtwork(song: song),
                   ),
                   if (isCurrent && isPlaying)
@@ -60,7 +60,7 @@ class SearchResultTile extends StatelessWidget {
                         key: Key('search-result-playing-indicator-${song.key}'),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: const Center(
                           child: DecoratedBox(
@@ -75,7 +75,7 @@ class SearchResultTile extends StatelessWidget {
                     ),
                 ],
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,19 +85,19 @@ class SearchResultTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w500,
                         color: isCurrent
                             ? const Color(0xFFE94B5B)
                             : const Color(0xFF111111),
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Row(
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
+                            horizontal: 5,
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
@@ -114,14 +114,14 @@ class SearchResultTile extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             song.artist,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 12,
+                              fontSize: 11,
                               color: Color(0xFF8B8B95),
                             ),
                           ),
@@ -151,8 +151,8 @@ class _SearchResultArtwork extends StatelessWidget {
       return MusicNetworkImage(
         imageUrl,
         key: Key('search-result-artwork-${song.key}'),
-        width: 48,
-        height: 48,
+        width: 44,
+        height: 44,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) =>
             _FallbackArtwork(song: song),
@@ -171,15 +171,15 @@ class _FallbackArtwork extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       key: Key('search-result-fallback-${song.key}'),
-      width: 48,
-      height: 48,
+      width: 44,
+      height: 44,
       decoration: BoxDecoration(
         color: const Color(0xFFF3F4F6),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: const Icon(
         Icons.music_note_rounded,
-        size: 24,
+        size: 22,
         color: Color(0xFFB6B8BF),
       ),
     );

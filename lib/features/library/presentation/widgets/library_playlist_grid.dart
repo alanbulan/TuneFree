@@ -21,9 +21,9 @@ class LibraryPlaylistGrid extends StatelessWidget {
       itemCount: playlists.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        childAspectRatio: 1,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 1.08,
       ),
       itemBuilder: (context, index) {
         final playlist = playlists[index];
@@ -32,7 +32,7 @@ class LibraryPlaylistGrid extends StatelessWidget {
         return GestureDetector(
           onTap: () => onTap(playlist),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(20),
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -59,7 +59,7 @@ class LibraryPlaylistGrid extends StatelessWidget {
                     ),
                   ),
                 Padding(
-                  padding: const EdgeInsets.all(18),
+                  padding: const EdgeInsets.all(14),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.end,
@@ -69,7 +69,7 @@ class LibraryPlaylistGrid extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: 15,
                           fontWeight: FontWeight.w700,
                           color: hasCover ? Colors.white : Colors.black,
                           height: 1.15,
@@ -114,19 +114,19 @@ class _PlaylistCoverFallback extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(14),
       alignment: Alignment.topLeft,
       child: Container(
-        width: 58,
-        height: 58,
+        width: 50,
+        height: 50,
         decoration: BoxDecoration(
           color: const Color(0xFFFFEEF1),
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: const Icon(
           Icons.folder_rounded,
           color: Color(0xFFE94B5B),
-          size: 30,
+          size: 26,
         ),
       ),
     );

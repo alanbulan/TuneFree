@@ -4,7 +4,7 @@ import 'tune_free_palette.dart';
 
 final class TuneFreeTextStyles {
   static const pageTitle = TextStyle(
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: FontWeight.w700,
     color: TuneFreePalette.textPrimary,
   );

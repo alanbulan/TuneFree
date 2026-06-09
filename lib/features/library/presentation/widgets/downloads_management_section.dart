@@ -35,7 +35,7 @@ class DownloadsManagementSection extends StatelessWidget {
           else
             ...downloads.map(
               (download) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.only(bottom: 8),
                 child: TuneFreeCard(
                   child: Row(
                     children: [
