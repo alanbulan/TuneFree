@@ -1151,9 +1151,9 @@ void main() {
       final inactiveLine = tester.widget<Text>(
         find.byKey(const Key('player-lyrics-line-inactive-1')),
       );
-      expect(activeLine.style?.fontSize, 24);
+      expect(activeLine.style?.fontSize, 22);
       expect(activeLine.style?.color, const Color(0xFF111111));
-      expect(inactiveLine.style?.fontSize, 20);
+      expect(inactiveLine.style?.fontSize, 18);
       expect(inactiveLine.style?.color, const Color(0xFF8E8E93));
 
       await container
