@@ -92,7 +92,7 @@ class FullPlayerSheet extends ConsumerWidget {
                                   duration: const Duration(milliseconds: 260),
                                   curve: Curves.easeOutCubic,
                                   padding: EdgeInsets.symmetric(
-                                    horizontal: state.showLyrics ? 16 : 32,
+                                    horizontal: state.showLyrics ? 18 : 28,
                                   ),
                                   child: GestureDetector(
                                     key: const Key('player-lyrics-toggle-area'),
@@ -135,10 +135,10 @@ class FullPlayerSheet extends ConsumerWidget {
                               ),
                               Padding(
                                 padding: const EdgeInsets.fromLTRB(
-                                  32,
+                                  28,
+                                  8,
+                                  28,
                                   12,
-                                  32,
-                                  16,
                                 ),
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
@@ -156,11 +156,11 @@ class FullPlayerSheet extends ConsumerWidget {
                                             .toggleFavorite(song);
                                       },
                                     ),
-                                    const SizedBox(height: 18),
+                                    const SizedBox(height: 12),
                                     _PlayerVisualizer(
                                       isPlaying: state.isPlaying,
                                     ),
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: 4),
                                     Slider(
                                       value: positionSeconds.toDouble(),
                                       max: durationSeconds.toDouble(),
@@ -192,7 +192,7 @@ class FullPlayerSheet extends ConsumerWidget {
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 18),
+                                    const SizedBox(height: 12),
                                     _PlaybackControls(
                                       playMode: state.playMode,
                                       isPlaying: state.isPlaying,
@@ -344,7 +344,7 @@ class _FullPlayerHeaderState extends State<_FullPlayerHeader> {
         }
       },
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
         child: Row(
           children: [
             IconButton(
@@ -352,20 +352,20 @@ class _FullPlayerHeaderState extends State<_FullPlayerHeader> {
               onPressed: widget.onClose,
               icon: const Icon(
                 Icons.expand_more_rounded,
-                size: 32,
+                size: 28,
                 color: Color(0xFF6B7280),
               ),
             ),
             const Expanded(
               child: Center(
                 child: SizedBox(
-                  width: 40,
+                  width: 36,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: Color(0xCCD1D5DB),
                       borderRadius: BorderRadius.all(Radius.circular(999)),
                     ),
-                    child: SizedBox(height: 6),
+                    child: SizedBox(height: 4),
                   ),
                 ),
               ),
@@ -375,7 +375,7 @@ class _FullPlayerHeaderState extends State<_FullPlayerHeader> {
               onPressed: widget.onMore,
               icon: const Icon(
                 Icons.more_horiz_rounded,
-                size: 28,
+                size: 24,
                 color: Color(0xFF6B7280),
               ),
             ),
@@ -747,7 +747,7 @@ class _PlayerLyricsViewState extends State<_PlayerLyricsView> {
       blendMode: BlendMode.dstIn,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final verticalPadding = math.max(120.0, constraints.maxHeight * 0.4);
+          final verticalPadding = math.max(96.0, constraints.maxHeight * 0.34);
           return SingleChildScrollView(
             key: const Key('player-lyrics-view'),
             controller: _scrollController,
@@ -767,7 +767,7 @@ class _PlayerLyricsViewState extends State<_PlayerLyricsView> {
                       onSeekToLine: widget.onSeekToLine,
                     ),
                     if (entry.$1 != widget.lyrics.length - 1)
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 10),
                   ],
                 ],
               ),
@@ -805,7 +805,7 @@ class _PlayerLyricLine extends StatelessWidget {
     return GestureDetector(
       onTap: () => onSeekToLine(line),
       child: AnimatedScale(
-        scale: isActive ? 1.03 : 1,
+        scale: isActive ? 1.02 : 1,
         duration: const Duration(milliseconds: 280),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -819,12 +819,12 @@ class _PlayerLyricLine extends StatelessWidget {
                 textAlign: TextAlign.center,
                 softWrap: true,
                 style: TextStyle(
-                  fontSize: isActive ? 24 : 20,
+                  fontSize: isActive ? 22 : 18,
                   fontWeight: FontWeight.w700,
                   color: isActive
                       ? const Color(0xFF111111)
                       : TuneFreePalette.textSecondary,
-                  height: 1.4,
+                  height: 1.35,
                 ),
               ),
               if (line.translation case final translation?) ...[
@@ -835,12 +835,12 @@ class _PlayerLyricLine extends StatelessWidget {
                   textAlign: TextAlign.center,
                   softWrap: true,
                   style: TextStyle(
-                    fontSize: isActive ? 16 : 14,
+                    fontSize: isActive ? 14 : 12,
                     fontWeight: FontWeight.w500,
                     color: isActive
                         ? const Color(0xFF4B5563)
                         : const Color(0xFFB6B8BF),
-                    height: 1.4,
+                    height: 1.35,
                   ),
                 ),
               ],
@@ -898,13 +898,13 @@ class _SongInfoRow extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 28,
+                    fontSize: 24,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: -0.4,
+                    letterSpacing: -0.3,
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Row(
                 children: [
                   Container(
@@ -943,7 +943,7 @@ class _SongInfoRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 18,
+                          fontSize: 15,
                           fontWeight: FontWeight.w500,
                           color: TuneFreePalette.accent,
                         ),
@@ -955,15 +955,17 @@ class _SongInfoRow extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 10),
         IconButton(
           key: const Key('player-download-button'),
           onPressed: onDownload,
+          iconSize: 22,
           icon: const Icon(Icons.download_rounded, color: Color(0xFF6B7280)),
         ),
         IconButton(
           key: const Key('player-like-button'),
           onPressed: onFavorite,
+          iconSize: 22,
           icon: Icon(
             isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
             color: isFavorite
@@ -1093,7 +1095,7 @@ class _PlayerVisualizerState extends ConsumerState<_PlayerVisualizer>
   Widget build(BuildContext context) {
     return SizedBox(
       key: const Key('player-visualizer'),
-      height: 48,
+      height: 38,
       width: double.infinity,
       child: CustomPaint(
         painter: _VisualizerPainter(
@@ -1183,7 +1185,7 @@ class _PlaybackControls extends StatelessWidget {
               'shuffle' => Icons.shuffle_rounded,
               _ => Icons.repeat_rounded,
             },
-            size: 24,
+            size: 22,
             color: playMode == 'sequence'
                 ? const Color(0xFF9CA3AF)
                 : TuneFreePalette.accent,
@@ -1194,12 +1196,12 @@ class _PlaybackControls extends StatelessWidget {
             IconButton(
               key: const Key('player-prev-button'),
               onPressed: onPrevious,
-              icon: const Icon(Icons.skip_previous_rounded, size: 40),
+              icon: const Icon(Icons.skip_previous_rounded, size: 34),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             SizedBox(
-              width: 80,
-              height: 80,
+              width: 68,
+              height: 68,
               child: FilledButton(
                 key: const Key('player-primary-toggle'),
                 onPressed: isLoading ? null : onTogglePlay,
@@ -1216,10 +1218,10 @@ class _PlaybackControls extends StatelessWidget {
                   child: isLoading
                       ? const SizedBox(
                           key: Key('player-primary-loading-indicator'),
-                          width: 30,
-                          height: 30,
+                          width: 26,
+                          height: 26,
                           child: CircularProgressIndicator(
-                            strokeWidth: 3,
+                            strokeWidth: 2.6,
                             color: Colors.white,
                           ),
                         )
@@ -1232,17 +1234,17 @@ class _PlaybackControls extends StatelessWidget {
                           isPlaying
                               ? Icons.pause_rounded
                               : Icons.play_arrow_rounded,
-                          size: 36,
+                          size: 30,
                           color: Colors.white,
                         ),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             IconButton(
               key: const Key('player-next-button'),
               onPressed: onNext,
-              icon: const Icon(Icons.skip_next_rounded, size: 40),
+              icon: const Icon(Icons.skip_next_rounded, size: 34),
             ),
           ],
         ),
@@ -1252,7 +1254,7 @@ class _PlaybackControls extends StatelessWidget {
           icon: const Icon(
             Icons.queue_music_rounded,
             color: Color(0xFF9CA3AF),
-            size: 24,
+            size: 22,
           ),
         ),
       ],
