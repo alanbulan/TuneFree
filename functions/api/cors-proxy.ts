@@ -28,6 +28,7 @@ const ALLOWED_HOSTS = [
     'musicpay.kuwo.cn',
     'm.kuwo.cn',
     'music-api.gdstudio.xyz',
+    'tunehub.sayqz.com',
     'hdslb.com',
     'biliimg.com',
 ];

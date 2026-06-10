@@ -15,6 +15,7 @@ import {
   isSameSong,
 } from "../types";
 import { parseSongFull } from "../services/api";
+import { resolveOfflinePlayback } from "../services/offlineDownloads";
 import {
   loadStoredAudioQuality,
   loadStoredCurrentSong,
@@ -512,6 +513,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const resolveParsedSong = useCallback(
     async (song: Song, quality: AudioQuality): Promise<ParsedSongData | null> => {
+      // 离线优先（与 Flutter 版一致）：已下载的歌曲直接用本地 Blob 播放。
+      // 不写入解析缓存，删除下载后可立即回落在线解析。
+      const local = await resolveOfflinePlayback(song, quality).catch(() => null);
+      if (local?.url) {
+        return { url: local.url, lrc: local.lrc, pic: local.pic };
+      }
+
       const cacheKey = getParsedSongCacheKey(song, quality);
       const cached = parsedSongCacheRef.current.get(cacheKey);
       if (cached) return cached;

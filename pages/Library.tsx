@@ -1,8 +1,20 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { usePlayerActions } from "../contexts/PlayerContext";
 import { useLibrary, type LibraryImportMode, type LibraryImportPreview } from "../contexts/LibraryContext";
 import { useToast } from "../components/ToastHost";
 import { getImgReferrerPolicy } from "../services/api";
+import {
+  importPlaylist,
+  getPlaylistImportErrorMessage,
+  PLAYLIST_IMPORT_SOURCES,
+} from "../services/playlistImport";
+import {
+  listOfflineDownloads,
+  deleteOfflineDownload,
+  subscribeOfflineDownloads,
+  formatOfflineSize,
+  type OfflineDownloadMeta,
+} from "../services/offlineDownloads";
 import { Song } from "../types";
 import {
   HeartFillIcon,
@@ -16,6 +28,8 @@ import {
   ExternalLinkIcon,
   GithubIcon,
   PlayIcon,
+  DownloadIcon,
+  LinkIcon,
 } from "../components/Icons";
 import {
   GD_STUDIO_ATTRIBUTION,
@@ -51,6 +65,16 @@ const Library: React.FC = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [pendingImport, setPendingImport] = useState<LibraryImportPreview | null>(null);
 
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importSource, setImportSource] = useState<string>(
+    PLAYLIST_IMPORT_SOURCES[0].value,
+  );
+  const [importInput, setImportInput] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
+
+  const [showDownloadManager, setShowDownloadManager] = useState(false);
+  const [offlineDownloads, setOfflineDownloads] = useState<OfflineDownloadMeta[]>([]);
+
   const [tempProxy, setTempProxy] = useState(corsProxy);
 
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(
@@ -61,6 +85,47 @@ const Library: React.FC = () => {
     () => playlists.find((p) => p.id === selectedPlaylistId) || null,
     [playlists, selectedPlaylistId],
   );
+
+  // 离线下载列表：加载 + 订阅变更（下载/删除后自动刷新）
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      listOfflineDownloads().then((items) => {
+        if (!cancelled) setOfflineDownloads(items);
+      });
+    };
+    refresh();
+    const unsubscribe = subscribeOfflineDownloads(refresh);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  const handleImportPlaylist = async () => {
+    if (isImporting || !importInput.trim()) return;
+    setIsImporting(true);
+    try {
+      const payload = await importPlaylist(importSource, importInput);
+      createPlaylist(payload.name, payload.songs);
+      setShowImportModal(false);
+      setImportInput("");
+      showToast(`已导入「${payload.name}」共 ${payload.songs.length} 首`, "success");
+    } catch (error) {
+      showToast(getPlaylistImportErrorMessage(error), "error");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleDeleteOfflineDownload = async (item: OfflineDownloadMeta) => {
+    try {
+      await deleteOfflineDownload(item.key);
+      showToast("已删除离线条目", "success");
+    } catch {
+      showToast("删除失败，请稍后再试", "error");
+    }
+  };
 
   const handleSaveSettings = () => {
     setCorsProxy(tempProxy);
@@ -207,6 +272,7 @@ const Library: React.FC = () => {
               onClick={() => {
                 setActiveTab(t);
                 setSelectedPlaylistId(null);
+                setShowDownloadManager(false);
               }}
             >
               {t === "favorites"
@@ -240,6 +306,13 @@ const Library: React.FC = () => {
             >
               <PlusIcon size={32} className="mb-2" />
               <span className="text-sm font-medium">新建歌单</span>
+            </div>
+            <div
+              onClick={() => setShowImportModal(true)}
+              className="aspect-square bg-white rounded-2xl flex flex-col items-center justify-center border-2 border-dashed border-gray-200 text-gray-400 active:bg-gray-50 cursor-pointer"
+            >
+              <LinkIcon size={32} className="mb-2" />
+              <span className="text-sm font-medium">导入歌单</span>
             </div>
             {playlists.map((p) => (
               <div
@@ -328,7 +401,76 @@ const Library: React.FC = () => {
           </div>
         )}
 
-        {activeTab === "manage" && (
+        {activeTab === "manage" && showDownloadManager && (
+          <div>
+            <button
+              onClick={() => setShowDownloadManager(false)}
+              className="mb-4 text-ios-red text-sm font-medium flex items-center"
+            >
+              &larr; 返回管理
+            </button>
+            <div className="bg-white p-4 rounded-2xl shadow-sm mb-4">
+              <h2 className="text-2xl font-bold">下载管理</h2>
+              <p className="text-xs text-gray-500 mt-1">
+                {offlineDownloads.length} 个离线条目 · 播放时优先使用本地文件
+              </p>
+            </div>
+            <div className="space-y-3 pb-24">
+              {offlineDownloads.length === 0 ? (
+                <div className="text-center py-10 text-gray-400 text-sm">
+                  暂无离线条目，在播放器的下载面板中选择「离线缓存」即可添加
+                </div>
+              ) : (
+                offlineDownloads.map((item) => (
+                  <div
+                    key={item.key}
+                    className="flex items-center space-x-3 bg-white p-2 rounded-xl shadow-sm active:scale-[0.98] transition cursor-pointer"
+                    onClick={() => playSong(item.song)}
+                  >
+                    <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 flex items-center justify-center">
+                      {item.song.pic ? (
+                        <img
+                          src={item.song.pic}
+                          alt="art"
+                          referrerPolicy={getImgReferrerPolicy(item.song.pic)}
+                          loading="lazy"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <MusicIcon className="text-gray-300" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-ios-text text-[15px] font-medium truncate">
+                        {item.song.name}
+                      </p>
+                      <p className="text-ios-subtext text-xs truncate">
+                        {item.song.artist}
+                      </p>
+                    </div>
+                    <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full flex-shrink-0">
+                      {item.quality}
+                    </span>
+                    <span className="text-[10px] text-gray-400 flex-shrink-0">
+                      {formatOfflineSize(item.size)}
+                    </span>
+                    <button
+                      className="p-2 text-ios-red/70 hover:text-ios-red bg-ios-red/5 rounded-full flex-shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteOfflineDownload(item);
+                      }}
+                    >
+                      <TrashIcon size={16} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "manage" && !showDownloadManager && (
           <div className="space-y-4">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-ios-red/10">
               <div className="flex items-center space-x-3 mb-4 text-ios-red">
@@ -362,6 +504,27 @@ const Library: React.FC = () => {
                   保存配置
                 </button>
               </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl shadow-sm">
+              <div className="flex items-center space-x-3 mb-4 text-gray-600">
+                <DownloadIcon size={20} />
+                <h3 className="font-bold text-lg">下载管理</h3>
+              </div>
+              <p className="text-xs text-gray-400 mb-1 leading-relaxed">
+                {offlineDownloads.length > 0
+                  ? `已离线 ${offlineDownloads.length} 个条目，下载后会自动出现在独立页面。`
+                  : "暂无离线条目，下载后会自动出现在独立页面。"}
+              </p>
+              <p className="text-[10px] text-gray-400 mb-4">
+                播放时会优先使用本地文件。
+              </p>
+              <button
+                onClick={() => setShowDownloadManager(true)}
+                className="w-full py-3 bg-ios-red text-white rounded-xl font-bold text-sm shadow-md active:scale-95 transition"
+              >
+                打开下载管理
+              </button>
             </div>
 
             <div className="bg-white p-5 rounded-2xl shadow-sm">
@@ -625,6 +788,63 @@ const Library: React.FC = () => {
                 className="flex-1 py-3 bg-ios-red text-white rounded-xl font-bold text-sm"
               >
                 创建
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====== 导入在线歌单弹窗 ====== */}
+      {showImportModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4"
+          onClick={() => !isImporting && setShowImportModal(false)}
+        >
+          <div
+            className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold mb-4">导入在线歌单</h3>
+            <div className="flex bg-gray-100 p-1 rounded-xl mb-3">
+              {PLAYLIST_IMPORT_SOURCES.map((s) => (
+                <button
+                  key={s.value}
+                  onClick={() => setImportSource(s.value)}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${importSource === s.value ? "bg-white shadow-sm text-ios-text" : "text-gray-500"}`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <input
+              type="text"
+              placeholder={
+                PLAYLIST_IMPORT_SOURCES.find((s) => s.value === importSource)
+                  ?.placeholder || "歌单链接或 ID"
+              }
+              className="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ios-red/20 mb-2"
+              value={importInput}
+              onChange={(e) => setImportInput(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => e.key === "Enter" && handleImportPlaylist()}
+            />
+            <p className="text-[10px] text-gray-400 mb-4 leading-tight">
+              支持歌单分享链接或纯 ID，导入后保存为本地歌单。
+            </p>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowImportModal(false)}
+                disabled={isImporting}
+                className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-medium text-sm disabled:opacity-60"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleImportPlaylist}
+                disabled={isImporting || !importInput.trim()}
+                className="flex-1 py-3 bg-ios-red text-white rounded-xl font-bold text-sm disabled:opacity-60"
+              >
+                {isImporting ? "导入中…" : "导入"}
               </button>
             </div>
           </div>

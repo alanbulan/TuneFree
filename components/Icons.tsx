@@ -4,7 +4,7 @@ import {
   Play, Pause, SkipForward, SkipBack, Search, Home,
   ListMusic, MoreHorizontal, ChevronDown, Music2, AlertCircle,
   Heart, Plus, Share, Download, Upload, Trash2, Settings, Folder,
-  Repeat, Repeat1, Shuffle, List, Key, Info, ExternalLink, Github
+  Repeat, Repeat1, Shuffle, List, Key, Info, ExternalLink, Github, Check, Link
 } from 'lucide-react';
 
 export const PlayIcon = ({ size = 24, className = "" }) => <Play size={size} className={className} fill="currentColor" />;
@@ -39,3 +39,5 @@ export const KeyIcon = ({ size = 24, className = "" }) => <Key size={size} class
 export const InfoIcon = ({ size = 24, className = "" }) => <Info size={size} className={className} />;
 export const ExternalLinkIcon = ({ size = 24, className = "" }) => <ExternalLink size={size} className={className} />;
 export const GithubIcon = ({ size = 24, className = "" }) => <Github size={size} className={className} />;
+export const CheckIcon = ({ size = 24, className = "" }) => <Check size={size} className={className} />;
+export const LinkIcon = ({ size = 24, className = "" }) => <Link size={size} className={className} />;
