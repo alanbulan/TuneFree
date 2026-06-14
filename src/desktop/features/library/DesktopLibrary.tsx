@@ -38,6 +38,7 @@ import {
 import type { Playlist } from '../../../core/types';
 import type { LibraryView } from '../../types';
 import { GD_STUDIO_ATTRIBUTION, GD_STUDIO_RATE_LIMIT_HINT } from '../../../core/utils/musicSource';
+import { getImgReferrerPolicy } from '../../../core/services/utils';
 import SongTable from '../../components/SongTable';
 import { useToast } from '../../components/ToastHost';
 
@@ -161,7 +162,7 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const [updateDownloadProgress, setUpdateDownloadProgress] = useState<number | null>(null);
-  const [appVersion, setAppVersion] = useState('1.0.11');
+  const [appVersion, setAppVersion] = useState('1.0.13');
 
   useEffect(() => {
     const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
@@ -613,27 +614,78 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
                 key={playlist.id}
                 onClick={() => setSelectedPlaylistId(playlist.id)}
                 style={coverUrl ? {
-                  backgroundImage: `linear-gradient(to bottom, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.75)), url(${coverUrl})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
+                  position: 'relative',
+                  overflow: 'hidden',
                   color: '#ffffff',
                   border: 'none',
+                  minHeight: '270px',
                 } : undefined}
               >
-                {coverUrl ? (
-                  <div style={{ height: 34 }} />
-                ) : (
-                  <FolderIcon size={34} className="muted-text" />
+                {coverUrl && (
+                  <>
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundImage: `url(${coverUrl})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                      filter: 'blur(15px) brightness(0.65)',
+                      transform: 'scale(1.15)',
+                      zIndex: 1,
+                    }} />
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: 'linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.4))',
+                      zIndex: 2,
+                    }} />
+                  </>
                 )}
-                <h3 style={coverUrl ? { color: '#ffffff', textShadow: '0 2px 4px rgba(0,0,0,0.5)' } : undefined}>
-                  {playlist.name || '未命名歌单'}
-                </h3>
-                <p style={coverUrl ? { color: 'rgba(255,255,255,0.8)', textShadow: '0 1px 2px rgba(0,0,0,0.5)' } : undefined}>
-                  {playlist.songs.length} 首歌曲
-                </p>
-                <div className="library-card-meta">
-                  <span className="source-badge" style={coverUrl ? { backgroundColor: 'rgba(255,255,255,0.2)', color: '#ffffff' } : undefined}>本地</span>
-                  <span className="muted-text" style={coverUrl ? { color: 'rgba(255,255,255,0.9)' } : undefined}>打开</span>
+                
+                <div style={coverUrl ? { position: 'relative', zIndex: 3, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: 12, flex: 1 } : { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', flex: 1 }}>
+                  {coverUrl ? (
+                    <div style={{
+                      width: '100%',
+                      paddingTop: '100%',
+                      position: 'relative',
+                      borderRadius: '16px',
+                      overflow: 'hidden',
+                      boxShadow: '0 8px 16px rgba(0,0,0,0.3)',
+                      marginBottom: 8,
+                    }}>
+                      <img 
+                        src={coverUrl} 
+                        alt={playlist.name} 
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                        }}
+                        referrerPolicy={getImgReferrerPolicy(coverUrl)}
+                      />
+                    </div>
+                  ) : (
+                    <span style={{ marginBottom: 22, display: 'inline-flex' }}><FolderIcon size={34} className="muted-text" /></span>
+                  )}
+                  <h3 style={coverUrl ? { color: '#ffffff', fontSize: '15px', fontWeight: 'bold', margin: '4px 0 0 0', textShadow: '0 1px 3px rgba(0,0,0,0.6)' } : undefined}>
+                    {playlist.name || '未命名歌单'}
+                  </h3>
+                  <p style={coverUrl ? { color: 'rgba(255,255,255,0.75)', fontSize: '11px', margin: 0, textShadow: '0 1px 2px rgba(0,0,0,0.6)' } : undefined}>
+                    {playlist.songs.length} 首歌曲
+                  </p>
+                  <div className="library-card-meta" style={coverUrl ? { marginTop: 'auto' } : undefined}>
+                    <span className="source-badge" style={coverUrl ? { backgroundColor: 'rgba(255,255,255,0.2)', color: '#ffffff', backdropFilter: 'blur(4px)' } : undefined}>本地</span>
+                    <span className="muted-text" style={coverUrl ? { color: 'rgba(255,255,255,0.9)' } : undefined}>打开</span>
+                  </div>
                 </div>
               </button>
             );

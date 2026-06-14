@@ -76,20 +76,23 @@ pub async fn handle_cors_proxy(
     req_builder = req_builder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36");
     
     // Origin or Host as Referer
-    if let Some(origin) = parsed_url.origin().unicode_serialization().into() {
-        req_builder = req_builder.header("Referer", origin);
+    // Determine the referer header value
+    let referer_val = if host == "music-api.gdstudio.xyz" {
+        "https://music.gdstudio.xyz/".to_string()
+    } else if host == "hdslb.com" || host.ends_with(".hdslb.com") {
+        "https://www.bilibili.com/".to_string()
+    } else if host == "u.y.qq.com" || host == "c.y.qq.com" || host.ends_with(".y.qq.com") {
+        "https://y.qq.com/".to_string()
+    } else if let Some(origin) = parsed_url.origin().unicode_serialization().into() {
+        origin
     } else {
-        req_builder = req_builder.header("Referer", target_url.clone());
-    }
+        target_url.clone()
+    };
 
-    // Special referral rules matching JS
+    req_builder = req_builder.header("Referer", referer_val);
+
     if host == "music-api.gdstudio.xyz" {
         req_builder = req_builder.header("Accept", "application/json,text/plain,*/*");
-        req_builder = req_builder.header("Referer", "https://music.gdstudio.xyz/");
-    } else if host == "hdslb.com" || host.ends_with(".hdslb.com") {
-        req_builder = req_builder.header("Referer", "https://www.bilibili.com/");
-    } else if host == "u.y.qq.com" || host == "c.y.qq.com" || host.ends_with(".y.qq.com") {
-        req_builder = req_builder.header("Referer", "https://y.qq.com/");
     }
 
     // Set body if method is not GET/HEAD
