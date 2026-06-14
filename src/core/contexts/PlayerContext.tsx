@@ -158,6 +158,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const queueRef = useRef(queue);
   const playModeRef = useRef(playMode);
   const audioQualityRef = useRef(audioQuality);
+  const activeQualityRef = useRef<AudioQuality>(audioQuality);
 
   // Track error retry to prevent loops
   const retryCountRef = useRef(0);
@@ -607,7 +608,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       const targetQuality = forceQuality || audioQualityRef.current;
       const isCurrentSong = isSameSong(currentSongRef.current, song);
       const isDifferentQuality =
-        forceQuality && forceQuality !== audioQualityRef.current;
+        isCurrentSong && targetQuality !== activeQualityRef.current;
 
       if (isCurrentSong && !isDifferentQuality && !forceQuality) {
         const activeAudio = audioRef.current;
@@ -728,6 +729,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
           const activeAudio = audioRef.current;
           if (!activeAudio) return;
+
+          activeQualityRef.current = targetQuality;
 
           activeAudio.src = url;
           activeAudio.load();
