@@ -23,6 +23,7 @@ import {
 import AudioVisualizer from '../../core/components/AudioVisualizer';
 import { getLyrics, getSongUrl, triggerDownload } from '../../core/services/api';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import type { AudioQuality } from '../../core/types';
 import { findActiveLyricIndex, hasTranslatedLyrics, parseLyrics, supportsTranslatedLyricFallback } from '../../core/utils/lyrics';
 import CoverArt from './CoverArt';
@@ -56,7 +57,21 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
   const { togglePlay, playNext, playPrev, seek, togglePlayMode, setAudioQuality } = usePlayerActions();
   const { showToast } = useToast();
   const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [lyricsOverride, setLyricsOverride] = useState('');
+
+  useEffect(() => {
+    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (!isTauri) return;
+
+    const unlistenPromise = listen<{ url: string; progress: number }>('download-progress', (event) => {
+      setDownloadProgress(event.payload.progress);
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
 
   const rawLyrics = lyricsOverride || currentSong?.lrc;
   const lyricRows = useMemo(() => parseLyrics(rawLyrics), [rawLyrics]);
@@ -101,10 +116,12 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
     if (!currentSong || downloading) return;
 
     setDownloading(true);
+    setDownloadProgress(0);
     try {
       const url = await getSongUrl(currentSong.id, currentSong.source, audioQuality, currentSong);
       if (!url) {
         showToast('无法获取下载地址', 'error');
+        setDownloadProgress(null);
         return;
       }
 
@@ -124,6 +141,7 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
       showToast(err?.message || err || '下载失败，请稍后再试', 'error');
     } finally {
       setDownloading(false);
+      setDownloadProgress(null);
     }
   };
 
@@ -216,8 +234,15 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
           aria-label="下载当前歌曲"
           disabled={!currentSong || downloading}
           onClick={handleDownload}
+          style={{ minWidth: '28px' }}
         >
-          <DownloadIcon size={16} />
+          {downloading ? (
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fa233b' }}>
+              {downloadProgress !== null ? `${downloadProgress}%` : '…'}
+            </span>
+          ) : (
+            <DownloadIcon size={16} />
+          )}
         </button>
         <button type="button" className="icon-button" aria-label="切换播放模式" onClick={togglePlayMode}>
           {modeIcon}

@@ -32,6 +32,7 @@ import {
 import { getLyrics, getSongUrl, triggerDownload } from '../../core/services/api';
 import { downloadSongOffline } from '../../core/services/offlineDownloads';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import type { AudioQuality } from '../../core/types';
 import { findActiveLyricIndex, hasTranslatedLyrics, parseLyrics, supportsTranslatedLyricFallback, type ParsedLyric } from '../../core/utils/lyrics';
 import { getSongKey, isSameSong } from '../../core/types';
@@ -114,7 +115,21 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
   const { toggleFavorite, isFavorite, playlists, addToPlaylist, createPlaylist } = useLibrary();
   const { showToast } = useToast();
   const [downloadQuality, setDownloadQuality] = useState<AudioQuality | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [cachingOffline, setCachingOffline] = useState(false);
+
+  useEffect(() => {
+    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (!isTauri) return;
+
+    const unlistenPromise = listen<{ url: string; progress: number }>('download-progress', (event) => {
+      setDownloadProgress(event.payload.progress);
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
   const [lyricsOverride, setLyricsOverride] = useState('');
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [showMorePanel, setShowMorePanel] = useState(false);
@@ -255,10 +270,12 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
     if (!currentSong || downloadQuality) return;
 
     setDownloadQuality(quality);
+    setDownloadProgress(0);
     try {
       const url = await getSongUrl(currentSong.id, currentSong.source, quality, currentSong);
       if (!url) {
         showToast('无法获取下载地址', 'error');
+        setDownloadProgress(null);
         return;
       }
 
@@ -278,6 +295,7 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
       showToast(err?.message || err || '下载失败，请稍后再试', 'error');
     } finally {
       setDownloadQuality(null);
+      setDownloadProgress(null);
     }
   };
 
@@ -434,7 +452,9 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
                       key={quality}
                     >
                       <DownloadIcon size={16} />
-                      {downloadQuality === quality ? '获取中' : meta.label}
+                      {downloadQuality === quality ? (
+                        downloadProgress !== null ? `下载中 ${downloadProgress}%` : '获取中'
+                      ) : meta.label}
                     </button>
                   );
                 })}

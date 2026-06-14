@@ -217,6 +217,16 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
   const [importInput, setImportInput] = useState('');
   const [isImportingPlaylist, setIsImportingPlaylist] = useState(false);
   const [offlineDownloads, setOfflineDownloads] = useState<OfflineDownloadMeta[]>([]);
+  const [downloadPath, setDownloadPath] = useState('');
+
+  const handleOpenDownloadDir = async () => {
+    if (!downloadPath) return;
+    try {
+      await invoke('open_external_url', { url: downloadPath });
+    } catch {
+      showToast('打开下载目录失败', 'error');
+    }
+  };
 
   const selectedPlaylist = useMemo(
     () => playlists.find((playlist) => playlist.id === selectedPlaylistId) || null,
@@ -237,6 +247,16 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
       });
     };
     refresh();
+
+    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (isTauri) {
+      invoke<string>('get_download_dir')
+        .then((path) => {
+          if (!cancelled) setDownloadPath(path);
+        })
+        .catch(() => {});
+    }
+
     const unsubscribe = subscribeOfflineDownloads(refresh);
     return () => {
       cancelled = true;
@@ -481,11 +501,28 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
       {activeView === 'downloads' && (
         <section>
           <div className="content-card glass-panel" style={{ marginBottom: 14 }}>
-            <div className="panel-label-row">
-              <div>
+            <div className="panel-label-row" style={{ alignItems: 'flex-start' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <p className="eyebrow">Offline</p>
                 <h2 className="section-title">离线条目（{offlineDownloads.length}）</h2>
-                <p>音频缓存在浏览器 IndexedDB；播放时会优先使用本地文件。在迷你播放条或全屏播放器中下载后会自动出现在这里。</p>
+                <p style={{ fontSize: '0.9rem', color: '#475569', lineHeight: 1.6, margin: '8px 0 0 0' }}>
+                  离线库已启用本地优先播放策略：下载的音频文件将作为 MP3/FLAC 格式直接存入系统下载目录，播放器会自动将歌曲元数据与音频缓存至本地，以支持无网络时的离线流畅播放。
+                </p>
+                {downloadPath && (
+                  <div className="download-path-row" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.8rem', color: '#64748b', wordBreak: 'break-all' }}>
+                      当前本地下载目录：<strong>{downloadPath}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      className="soft-button"
+                      style={{ padding: '2px 8px', fontSize: '0.75rem', borderRadius: '6px' }}
+                      onClick={handleOpenDownloadDir}
+                    >
+                      打开文件夹
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
