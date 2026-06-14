@@ -1,6 +1,6 @@
 {
   "name": "tunefree-desktop",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "next lint",
-    "tauri": "tauri"
+    "tauri": "node bump-version.js && tauri"
   },
   "dependencies": {
     "@babel/generator": "^7.29.1",
