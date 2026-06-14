@@ -285,8 +285,9 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
       const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
 
       if (isTauri) {
-        await invoke('download_song_to_local', { url, filename });
-        showToast('下载成功，已保存至系统下载目录', 'success');
+        const customDir = localStorage.getItem('tunefree_download_dir') || null;
+        await invoke('download_song_to_local', { url, filename, customDir });
+        showToast('下载成功，已保存至本地下载目录', 'success');
       } else {
         triggerDownload(url, filename);
         showToast('已开始下载', 'success');

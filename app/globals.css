@@ -1920,25 +1920,60 @@ input, textarea, [contenteditable="true"], .panel-input {
   margin-top: 14px;
 }
 
-.about-hero-actions .about-version {
+.about-hero-actions .about-version,
+.about-hero-actions .update-check-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 28px !important;
+  line-height: 28px !important;
+  padding: 0 14px !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  border-radius: 999px !important;
+  box-sizing: border-box !important;
   margin-top: 0 !important;
-  display: inline-flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 12px;
-  font-size: 11px;
-  box-sizing: border-box;
+  margin-bottom: 0 !important;
+}
+
+.about-hero-actions .about-version {
+  color: #fa233b !important;
+  background: rgba(250, 35, 59, 0.09) !important;
+  border: none !important;
 }
 
 .about-hero-actions .update-check-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 28px;
-  padding: 0 12px;
-  font-size: 11px;
-  font-weight: 900;
-  box-sizing: border-box;
-  margin-top: 0;
-  border-radius: 999px;
+  background: rgba(250, 35, 59, 0.05) !important;
+  color: #fa233b !important;
+  border: 1px solid rgba(250, 35, 59, 0.2) !important;
+}
+
+/* 更新日志横向溢出折行修复及垂直滚动条美化 */
+.update-modal-body {
+  word-break: break-all !important;
+  overflow-wrap: break-word !important;
+  overflow-x: hidden !important;
+}
+
+.update-notes {
+  word-break: break-all !important;
+  overflow-wrap: break-word !important;
+  white-space: pre-wrap !important;
+}
+
+.update-modal-body::-webkit-scrollbar {
+  width: 6px !important;
+}
+
+.update-modal-body::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.update-modal-body::-webkit-scrollbar-thumb {
+  background: rgba(250, 35, 59, 0.2) !important;
+  border-radius: 3px !important;
+}
+
+.update-modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(250, 35, 59, 0.4) !important;
 }
