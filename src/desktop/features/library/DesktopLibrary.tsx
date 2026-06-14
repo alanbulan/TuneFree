@@ -161,7 +161,7 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const [updateDownloadProgress, setUpdateDownloadProgress] = useState<number | null>(null);
-  const [appVersion, setAppVersion] = useState('1.0.10');
+  const [appVersion, setAppVersion] = useState('1.0.11');
 
   useEffect(() => {
     const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
@@ -604,17 +604,40 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
             </div>
           </div>
 
-          {playlists.map((playlist) => (
-            <button type="button" className="library-card" key={playlist.id} onClick={() => setSelectedPlaylistId(playlist.id)}>
-              <FolderIcon size={34} className="muted-text" />
-              <h3>{playlist.name || '未命名歌单'}</h3>
-              <p>{playlist.songs.length} 首歌曲</p>
-              <div className="library-card-meta">
-                <span className="source-badge">本地</span>
-                <span className="muted-text">打开</span>
-              </div>
-            </button>
-          ))}
+          {playlists.map((playlist) => {
+            const coverUrl = playlist.songs[0]?.pic;
+            return (
+              <button
+                type="button"
+                className={`library-card ${coverUrl ? 'has-cover' : ''}`}
+                key={playlist.id}
+                onClick={() => setSelectedPlaylistId(playlist.id)}
+                style={coverUrl ? {
+                  backgroundImage: `linear-gradient(to bottom, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.75)), url(${coverUrl})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  color: '#ffffff',
+                  border: 'none',
+                } : undefined}
+              >
+                {coverUrl ? (
+                  <div style={{ height: 34 }} />
+                ) : (
+                  <FolderIcon size={34} className="muted-text" />
+                )}
+                <h3 style={coverUrl ? { color: '#ffffff', textShadow: '0 2px 4px rgba(0,0,0,0.5)' } : undefined}>
+                  {playlist.name || '未命名歌单'}
+                </h3>
+                <p style={coverUrl ? { color: 'rgba(255,255,255,0.8)', textShadow: '0 1px 2px rgba(0,0,0,0.5)' } : undefined}>
+                  {playlist.songs.length} 首歌曲
+                </p>
+                <div className="library-card-meta">
+                  <span className="source-badge" style={coverUrl ? { backgroundColor: 'rgba(255,255,255,0.2)', color: '#ffffff' } : undefined}>本地</span>
+                  <span className="muted-text" style={coverUrl ? { color: 'rgba(255,255,255,0.9)' } : undefined}>打开</span>
+                </div>
+              </button>
+            );
+          })}
         </section>
       )}
 
