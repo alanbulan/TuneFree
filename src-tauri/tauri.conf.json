@@ -40,7 +40,9 @@
       "nsis": {
         "languages": [
           "SimpChinese"
-        ]
+        ],
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
       }
     },
     "android": {
