@@ -10,16 +10,33 @@ struct DownloadProgress {
     progress: u8,
 }
 
+#[derive(Clone, serde::Serialize)]
+struct UpdateProgress {
+    progress: u8,
+}
+
 #[tauri::command]
 async fn download_song_to_local(
     app_handle: tauri::AppHandle,
     url: String,
     filename: String,
+    custom_dir: Option<String>,
 ) -> Result<String, String> {
-    let download_dir = app_handle
-        .path()
-        .download_dir()
-        .map_err(|e| format!("无法获取系统下载目录: {}", e))?;
+    let download_dir = if let Some(dir) = custom_dir {
+        if dir.trim().is_empty() {
+            std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|parent| parent.to_path_buf()))
+                .unwrap_or_else(|| app_handle.path().download_dir().unwrap())
+        } else {
+            std::path::PathBuf::from(dir)
+        }
+    } else {
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|parent| parent.to_path_buf()))
+            .unwrap_or_else(|| app_handle.path().download_dir().unwrap())
+    };
 
     let file_stem = std::path::Path::new(&filename)
         .file_stem()
@@ -125,13 +142,115 @@ fn get_download_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_default_download_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            return Ok(parent.to_string_lossy().to_string());
+        }
+    }
+    app_handle
+        .path()
+        .download_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn select_download_dir() -> Result<Option<String>, String> {
+    let output = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }"
+        ])
+        .output()
+        .map_err(|e| format!("执行 PowerShell 失败: {}", e))?;
+
+    if output.status.success() {
+        let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path_str.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path_str))
+        }
+    } else {
+        Err("取消选择或执行失败".to_string())
+    }
+}
+
+#[tauri::command]
+async fn download_and_install_update(
+    app_handle: tauri::AppHandle,
+    url: String,
+) -> Result<(), String> {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("TuneFree_update.exe");
+
+    let client = reqwest::Client::new();
+    let mut response = client
+        .get(&url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .send()
+        .await
+        .map_err(|e| format!("下载更新包失败: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("网络请求失败，响应码: {}", response.status()));
+    }
+
+    let total_size = response.content_length().unwrap_or(0);
+    let mut downloaded: u64 = 0;
+    let mut bytes = Vec::with_capacity(total_size as usize);
+
+    let _ = app_handle.emit("update-progress", UpdateProgress { progress: 0 });
+
+    while let Some(chunk) = response.chunk().await.map_err(|e| format!("读取更新包数据失败: {}", e))? {
+        bytes.extend_from_slice(&chunk);
+        downloaded += chunk.len() as u64;
+        if total_size > 0 {
+            let progress = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
+            let _ = app_handle.emit("update-progress", UpdateProgress { progress });
+        }
+    }
+
+    let mut file = std::fs::File::create(&file_path)
+        .map_err(|e| format!("创建更新包文件失败: {}", e))?;
+
+    file.write_all(&bytes)
+        .map_err(|e| format!("保存更新包数据失败: {}", e))?;
+
+    let _ = app_handle.emit("update-progress", UpdateProgress { progress: 100 });
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", &file_path.to_string_lossy()])
+            .spawn()
+            .map_err(|e| format!("拉起安装程序失败: {}", e))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("open")
+            .arg(&file_path)
+            .spawn()
+            .map_err(|e| format!("拉起安装程序失败: {}", e))?;
+    }
+
+    app_handle.exit(0);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
     .invoke_handler(tauri::generate_handler![
         download_song_to_local,
         open_external_url,
-        get_download_dir
+        get_download_dir,
+        get_default_download_dir,
+        select_download_dir,
+        download_and_install_update
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

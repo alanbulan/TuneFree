@@ -159,12 +159,71 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
   const [tempShowPet, setTempShowPet] = useState(true);
   const [pendingImport, setPendingImport] = useState<LibraryImportPreview | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState<{ version: string; title: string; notes: string; url: string } | null>(null);
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const [updateDownloadProgress, setUpdateDownloadProgress] = useState<number | null>(null);
+  const [appVersion, setAppVersion] = useState('1.0.7');
+
+  useEffect(() => {
+    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (isTauri) {
+      import('@tauri-apps/api/app').then(({ getVersion }) => {
+        getVersion().then((ver) => setAppVersion(ver));
+      }).catch(() => {});
+    }
+  }, []);
+
+  const triggerAutoUpdate = async (url: string) => {
+    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (isTauri) {
+      setDownloadingUpdate(true);
+      setUpdateDownloadProgress(0);
+      try {
+        await invoke('download_and_install_update', { url });
+      } catch (err: any) {
+        setDownloadingUpdate(false);
+        setUpdateDownloadProgress(null);
+        showToast('自动更新失败，正在调起浏览器为您下载...', 'error');
+        try {
+          await invoke('open_external_url', { url });
+        } catch {
+          showToast('无法打开下载页面，请手动前往', 'error');
+        }
+      }
+    } else {
+      window.open(url, '_blank');
+    }
+  };
+
+  const checkUpdateSilently = async () => {
+    try {
+      const response = await fetch('https://api.github.com/repos/alanbulan/TuneFree_Mobile/releases/latest');
+      if (!response.ok) return;
+      const data = await response.json();
+      const latestVersion = data.tag_name ? data.tag_name.replace(/^v/, '') : '';
+
+      if (latestVersion && latestVersion !== appVersion) {
+        const asset = data.assets?.find((a: any) => a.name.endsWith('.exe'));
+        const downloadUrl = asset ? asset.browser_download_url : data.html_url;
+        showToast(`发现新版本 v${latestVersion}，正在后台自动下载并更新...`, 'info');
+        void triggerAutoUpdate(downloadUrl);
+      }
+    } catch {
+      // 保持静默
+    }
+  };
+
+  useEffect(() => {
+    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (isTauri) {
+      const timer = setTimeout(() => {
+        void checkUpdateSilently();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [appVersion]);
 
   const handleCheckUpdate = async () => {
-    if (checkingUpdate) return;
+    if (checkingUpdate || downloadingUpdate) return;
     setCheckingUpdate(true);
     try {
       const response = await fetch('https://api.github.com/repos/alanbulan/TuneFree_Mobile/releases/latest');
@@ -173,63 +232,19 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
       }
       const data = await response.json();
       const latestVersion = data.tag_name ? data.tag_name.replace(/^v/, '') : '';
-      const currentVersion = '0.1.0';
 
-      if (latestVersion && latestVersion !== currentVersion) {
+      if (latestVersion && latestVersion !== appVersion) {
         const asset = data.assets?.find((a: any) => a.name.endsWith('.exe'));
         const downloadUrl = asset ? asset.browser_download_url : data.html_url;
-        setUpdateInfo({
-          version: data.tag_name,
-          title: data.name || '发现新版本',
-          notes: data.body || '无更新日志说明',
-          url: downloadUrl,
-        });
+        showToast(`发现新版本 v${latestVersion}，已开始后台静默下载并自动安装...`, 'info');
+        void triggerAutoUpdate(downloadUrl);
       } else {
-        showToast(`当前已是最新版本 (v${currentVersion})`, 'info');
+        showToast(`当前已是最新版本 (v${appVersion})`, 'info');
       }
     } catch (err: any) {
       showToast('检查更新失败，请稍后再试', 'error');
     } finally {
       setCheckingUpdate(false);
-    }
-  };
-
-  const handleDownloadUpdate = async () => {
-    if (!updateInfo || downloadingUpdate) return;
-    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
-    if (isTauri) {
-      setDownloadingUpdate(true);
-      setUpdateDownloadProgress(0);
-      try {
-        const filename = `TuneFree_${updateInfo.version}_x64-setup.exe`;
-        showToast('开始直接下载新版本安装包...', 'info');
-        
-        await invoke<string>('download_song_to_local', {
-          url: updateInfo.url,
-          filename,
-        });
-        
-        showToast('直接下载完成！新版本已保存至系统下载目录，已为您打开文件夹', 'success');
-        
-        if (downloadPath) {
-          await invoke('open_external_url', { url: downloadPath });
-        }
-        setUpdateInfo(null);
-      } catch (err: any) {
-        showToast('直接下载失败，正在调起浏览器为您下载...', 'error');
-        try {
-          await invoke('open_external_url', { url: updateInfo.url });
-          setUpdateInfo(null);
-        } catch {
-          showToast('无法打开下载页面，请手动前往', 'error');
-        }
-      } finally {
-        setDownloadingUpdate(false);
-        setUpdateDownloadProgress(null);
-      }
-    } else {
-      window.open(updateInfo.url, '_blank');
-      setUpdateInfo(null);
     }
   };
 
@@ -250,6 +265,30 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
       await invoke('open_external_url', { url: downloadPath });
     } catch {
       showToast('打开下载目录失败', 'error');
+    }
+  };
+
+  const handleSelectDownloadDir = async () => {
+    try {
+      const path = await invoke<string | null>('select_download_dir');
+      if (path) {
+        localStorage.setItem('tunefree_download_dir', path);
+        setDownloadPath(path);
+        showToast('下载路径已成功更改', 'success');
+      }
+    } catch (err: any) {
+      showToast(err?.message || err || '选择目录失败', 'error');
+    }
+  };
+
+  const handleResetDownloadDir = async () => {
+    try {
+      localStorage.removeItem('tunefree_download_dir');
+      const path = await invoke<string>('get_default_download_dir');
+      setDownloadPath(path);
+      showToast('下载路径已恢复为默认安装目录', 'success');
+    } catch (err: any) {
+      showToast('恢复默认路径失败', 'error');
     }
   };
 
@@ -275,16 +314,25 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
 
     const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
     if (isTauri) {
-      invoke<string>('get_download_dir')
-        .then((path) => {
-          if (!cancelled) setDownloadPath(path);
-        })
-        .catch(() => {});
+      const savedDir = localStorage.getItem('tunefree_download_dir');
+      if (savedDir) {
+        setDownloadPath(savedDir);
+      } else {
+        invoke<string>('get_default_download_dir')
+          .then((path) => {
+            if (!cancelled) setDownloadPath(path);
+          })
+          .catch(() => {});
+      }
 
-      // 监听下载进度以支持直接下载更新包
-      listen<{ url: string; progress: number }>('download-progress', (event) => {
+      // 监听下载进度以支持自动下载更新包
+      listen<{ progress: number }>('update-progress', (event) => {
         if (!cancelled) {
           setUpdateDownloadProgress(event.payload.progress);
+          if (event.payload.progress === 100) {
+            setDownloadingUpdate(false);
+            setUpdateDownloadProgress(null);
+          }
         }
       }).then((unlisten) => {
         if (cancelled) unlisten();
@@ -622,6 +670,42 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
             </div>
           </div>
 
+          <div className="settings-card settings-download-card glass-panel">
+            <span className="settings-card-icon"><FolderIcon size={22} /></span>
+            <h3>下载设置</h3>
+            <div className="panel-field">
+              <label>本地下载目录</label>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                <input
+                  className="panel-input"
+                  style={{ flex: 1 }}
+                  readOnly
+                  value={downloadPath}
+                  placeholder="获取下载路径中..."
+                />
+                <button
+                  type="button"
+                  className="soft-button"
+                  style={{ whiteSpace: 'nowrap' }}
+                  onClick={handleSelectDownloadDir}
+                >
+                  更改目录
+                </button>
+                <button
+                  type="button"
+                  className="soft-button"
+                  style={{ whiteSpace: 'nowrap' }}
+                  onClick={handleResetDownloadDir}
+                >
+                  恢复默认
+                </button>
+              </div>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '6px', lineHeight: 1.4 }}>
+                默认使用当前应用的安装目录（即可执行文件所在目录）。可以在此更改自定义下载路径。
+              </p>
+            </div>
+          </div>
+
           <div className="settings-card settings-backup-card glass-panel">
             <span className="settings-card-icon"><UploadIcon size={22} /></span>
             <h3>数据备份</h3>
@@ -669,15 +753,15 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
               <h3>TuneFree Desktop</h3>
               <p>一个基于 Tauri v2 桌面容器的独立 music 播放器，保留多源聚合、无损音质、歌词解析和本地资料库，并使用 Rust 完全重构了后端 API 接口，内置安和昴（486）桌面宠物。</p>
               <div className="about-hero-actions">
-                <span className="about-version">Tauri Desktop · v0.1.0</span>
+                <span className="about-version">Tauri Desktop · v{appVersion}</span>
                 <button
                   type="button"
-                  className={`update-check-btn ${checkingUpdate ? 'checking' : ''}`}
+                  className={`update-check-btn ${checkingUpdate || downloadingUpdate ? 'checking' : ''}`}
                   onClick={handleCheckUpdate}
-                  disabled={checkingUpdate}
+                  disabled={checkingUpdate || downloadingUpdate}
                 >
                   <RefreshIcon size={12} />
-                  {checkingUpdate ? '正在检查...' : '检查更新'}
+                  {downloadingUpdate ? `正在下载更新 (${updateDownloadProgress ?? 0}%)` : (checkingUpdate ? '正在检查...' : '检查更新')}
                 </button>
               </div>
             </div>
@@ -766,43 +850,6 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
             <span>MIT License © 2026 TuneFree</span>
           </div>
         </section>
-      )}
-
-      {updateInfo && (
-        <div className="update-modal-backdrop" onClick={() => setUpdateInfo(null)}>
-          <div className="update-modal-card glass-panel" onClick={(e) => e.stopPropagation()}>
-            <h3>发现新版本 {updateInfo.version}</h3>
-            <div className="update-modal-body">
-              <p className="update-release-title">{updateInfo.title}</p>
-              <div className="update-notes">
-                {updateInfo.notes.split('\n').map((line, idx) => (
-                  <p key={idx}>{line}</p>
-                ))}
-              </div>
-            </div>
-            <div className="update-modal-actions">
-              <button
-                type="button"
-                className="primary-button"
-                onClick={handleDownloadUpdate}
-                disabled={downloadingUpdate}
-                style={{ minWidth: '90px' }}
-              >
-                {downloadingUpdate ? (
-                  updateDownloadProgress !== null ? `下载中 ${updateDownloadProgress}%` : '获取中'
-                ) : '立即更新'}
-              </button>
-              <button
-                type="button"
-                className="soft-button"
-                onClick={() => setUpdateInfo(null)}
-                disabled={downloadingUpdate}
-              >
-                以后再说
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
