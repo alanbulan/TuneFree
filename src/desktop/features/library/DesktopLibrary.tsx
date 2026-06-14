@@ -17,9 +17,11 @@ import {
   SettingsIcon,
   UploadIcon,
   WaveformIcon,
+  RefreshIcon,
 } from '../../../core/components/Icons';
 import { useLibrary, type LibraryImportMode, type LibraryImportPreview } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
+import { invoke } from '@tauri-apps/api/core';
 import {
   importPlaylist,
   getPlaylistImportErrorMessage,
@@ -155,6 +157,56 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
   const [tempProxy, setTempProxy] = useState(corsProxy);
   const [tempShowPet, setTempShowPet] = useState(true);
   const [pendingImport, setPendingImport] = useState<LibraryImportPreview | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; title: string; notes: string; url: string } | null>(null);
+
+  const handleCheckUpdate = async () => {
+    if (checkingUpdate) return;
+    setCheckingUpdate(true);
+    try {
+      const response = await fetch('https://api.github.com/repos/alanbulan/TuneFree_Mobile/releases/latest');
+      if (!response.ok) {
+        throw new Error('网络请求失败');
+      }
+      const data = await response.json();
+      const latestVersion = data.tag_name ? data.tag_name.replace(/^v/, '') : '';
+      const currentVersion = '0.1.0';
+
+      if (latestVersion && latestVersion !== currentVersion) {
+        const asset = data.assets?.find((a: any) => a.name.endsWith('.exe'));
+        const downloadUrl = asset ? asset.browser_download_url : data.html_url;
+        setUpdateInfo({
+          version: data.tag_name,
+          title: data.name || '发现新版本',
+          notes: data.body || '无更新日志说明',
+          url: downloadUrl,
+        });
+      } else {
+        showToast(`当前已是最新版本 (v${currentVersion})`, 'info');
+      }
+    } catch (err: any) {
+      showToast('检查更新失败，请稍后再试', 'error');
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const handleDownloadUpdate = async () => {
+    if (!updateInfo) return;
+    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (isTauri) {
+      try {
+        showToast('正在调起浏览器下载...', 'info');
+        await invoke('open_external_url', { url: updateInfo.url });
+        setUpdateInfo(null);
+      } catch (err: any) {
+        showToast('无法打开下载页面，请手动前往', 'error');
+      }
+    } else {
+      window.open(updateInfo.url, '_blank');
+      setUpdateInfo(null);
+    }
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -545,7 +597,18 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
             <div className="about-hero-copy">
               <h3>TuneFree Desktop</h3>
               <p>一个基于 Tauri v2 桌面容器的独立 music 播放器，保留多源聚合、无损音质、歌词解析和本地资料库，并使用 Rust 完全重构了后端 API 接口，内置安和昴（486）桌面宠物。</p>
-              <span className="about-version">Tauri Desktop · v2.0.0</span>
+              <div className="about-hero-actions">
+                <span className="about-version">Tauri Desktop · v0.1.0</span>
+                <button
+                  type="button"
+                  className={`update-check-btn ${checkingUpdate ? 'checking' : ''}`}
+                  onClick={handleCheckUpdate}
+                  disabled={checkingUpdate}
+                >
+                  <RefreshIcon size={12} />
+                  {checkingUpdate ? '正在检查...' : '检查更新'}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -632,6 +695,26 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
             <span>MIT License © 2026 TuneFree</span>
           </div>
         </section>
+      )}
+
+      {updateInfo && (
+        <div className="update-modal-backdrop" onClick={() => setUpdateInfo(null)}>
+          <div className="update-modal-card glass-panel" onClick={(e) => e.stopPropagation()}>
+            <h3>发现新版本 {updateInfo.version}</h3>
+            <div className="update-modal-body">
+              <p className="update-release-title">{updateInfo.title}</p>
+              <div className="update-notes">
+                {updateInfo.notes.split('\n').map((line, idx) => (
+                  <p key={idx}>{line}</p>
+                ))}
+              </div>
+            </div>
+            <div className="update-modal-actions">
+              <button type="button" className="primary-button" onClick={handleDownloadUpdate}>立即更新</button>
+              <button type="button" className="soft-button" onClick={() => setUpdateInfo(null)}>以后再说</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

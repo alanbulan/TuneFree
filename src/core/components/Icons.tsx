@@ -5,7 +5,7 @@ import {
   ListMusic, MoreHorizontal, ChevronDown, Music2, AlertCircle,
   Heart, Plus, Share, Download, Upload, Trash2, Settings, Folder,
   Repeat, Repeat1, Shuffle, List, PanelLeftClose, PanelLeftOpen, Key, Info, ExternalLink, Github, X,
-  Code2, Boxes, FileCode2, Rocket, Cloud, Server, AudioWaveform, PanelsTopLeft, Database
+  Code2, Boxes, FileCode2, Rocket, Cloud, Server, AudioWaveform, PanelsTopLeft, Database, RefreshCw
 } from 'lucide-react';
 
 export const PlayIcon = ({ size = 24, className = "" }) => <Play size={size} className={className} fill="currentColor" />;
@@ -52,3 +52,4 @@ export const ServerIcon = ({ size = 24, className = "" }) => <Server size={size}
 export const WaveformIcon = ({ size = 24, className = "" }) => <AudioWaveform size={size} className={className} />;
 export const PanelsIcon = ({ size = 24, className = "" }) => <PanelsTopLeft size={size} className={className} />;
 export const DatabaseIcon = ({ size = 24, className = "" }) => <Database size={size} className={className} />;
+export const RefreshIcon = ({ size = 24, className = "" }) => <RefreshCw size={size} className={className} />;
