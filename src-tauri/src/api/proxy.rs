@@ -88,6 +88,8 @@ pub async fn handle_cors_proxy(
         req_builder = req_builder.header("Referer", "https://music.gdstudio.xyz/");
     } else if host == "hdslb.com" || host.ends_with(".hdslb.com") {
         req_builder = req_builder.header("Referer", "https://www.bilibili.com/");
+    } else if host == "u.y.qq.com" || host == "c.y.qq.com" || host.ends_with(".y.qq.com") {
+        req_builder = req_builder.header("Referer", "https://y.qq.com/");
     }
 
     // Set body if method is not GET/HEAD
