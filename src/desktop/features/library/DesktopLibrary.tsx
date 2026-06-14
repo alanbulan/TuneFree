@@ -161,7 +161,7 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const [updateDownloadProgress, setUpdateDownloadProgress] = useState<number | null>(null);
-  const [appVersion, setAppVersion] = useState('1.0.7');
+  const [appVersion, setAppVersion] = useState('1.0.8');
 
   useEffect(() => {
     const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
@@ -646,34 +646,6 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
               <input className="panel-input" placeholder="留空使用内置代理（推荐）" value={tempProxy} onChange={(event) => setTempProxy(event.target.value)} />
             </div>
             <div className="panel-field" style={{ marginTop: '14px' }}>
-              <label>安和昴 (486) 桌宠</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
-                <input
-                  type="checkbox"
-                  id="pet-toggle"
-                  style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#fa233b' }}
-                  checked={tempShowPet}
-                  onChange={(event) => setTempShowPet(event.target.checked)}
-                />
-                <label htmlFor="pet-toggle" style={{ fontSize: '14px', cursor: 'pointer', userSelect: 'none', color: 'var(--text)' }}>启用桌面宠物</label>
-              </div>
-            </div>
-            <div className="settings-save-row">
-              <button type="button" className="primary-button" onClick={() => {
-                setCorsProxy(tempProxy);
-                localStorage.setItem('tunefree_desktop_show_pet', tempShowPet ? 'true' : 'false');
-                window.dispatchEvent(new Event('tunefree_pet_toggle'));
-                showMessage('设置已保存', 'success');
-              }}>
-                保存配置
-              </button>
-            </div>
-          </div>
-
-          <div className="settings-card settings-download-card glass-panel">
-            <span className="settings-card-icon"><FolderIcon size={22} /></span>
-            <h3>下载设置</h3>
-            <div className="panel-field">
               <label>本地下载目录</label>
               <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                 <input
@@ -701,8 +673,18 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
                 </button>
               </div>
               <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '6px', lineHeight: 1.4 }}>
-                默认使用当前应用的安装目录（即可执行文件所在目录）。可以在此更改自定义下载路径。
+                默认下载到当前应用的安装目录。
               </p>
+            </div>
+            <div className="settings-save-row">
+              <button type="button" className="primary-button" onClick={() => {
+                setCorsProxy(tempProxy);
+                localStorage.setItem('tunefree_desktop_show_pet', tempShowPet ? 'true' : 'false');
+                window.dispatchEvent(new Event('tunefree_pet_toggle'));
+                showMessage('设置已保存', 'success');
+              }}>
+                保存配置
+              </button>
             </div>
           </div>
 

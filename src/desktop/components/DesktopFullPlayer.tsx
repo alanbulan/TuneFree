@@ -287,10 +287,20 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
       if (isTauri) {
         const customDir = localStorage.getItem('tunefree_download_dir') || null;
         await invoke('download_song_to_local', { url, filename, customDir });
-        showToast('下载成功，已保存至本地下载目录', 'success');
+        try {
+          await downloadSongOffline(currentSong, quality);
+        } catch (e) {
+          console.error("写入离线库失败", e);
+        }
+        showToast('下载成功，已保存至本地下载目录并加入离线库', 'success');
       } else {
         triggerDownload(url, filename);
-        showToast('已开始下载', 'success');
+        try {
+          await downloadSongOffline(currentSong, quality);
+        } catch (e) {
+          console.error("写入离线库失败", e);
+        }
+        showToast('已开始下载并加入离线库', 'success');
       }
     } catch (err: any) {
       showToast(err?.message || err || '下载失败，请稍后再试', 'error');

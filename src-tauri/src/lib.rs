@@ -3,6 +3,7 @@ pub mod server;
 
 use std::io::Write;
 use tauri::{Emitter, Manager};
+use tauri_plugin_dialog::DialogExt;
 
 #[derive(Clone, serde::Serialize)]
 struct DownloadProgress {
@@ -157,26 +158,22 @@ fn get_default_download_dir(app_handle: tauri::AppHandle) -> Result<String, Stri
 }
 
 #[tauri::command]
-fn select_download_dir() -> Result<Option<String>, String> {
-    let output = std::process::Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }"
-        ])
-        .output()
-        .map_err(|e| format!("执行 PowerShell 失败: {}", e))?;
-
-    if output.status.success() {
-        let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path_str.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(path_str))
-        }
-    } else {
-        Err("取消选择或执行失败".to_string())
-    }
+async fn select_download_dir(app_handle: tauri::AppHandle) -> Result<Option<String>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
+    
+    app_handle.dialog().file().pick_folder(move |folder_path| {
+        let path = folder_path.and_then(|p| match p {
+            tauri_plugin_dialog::FilePath::Path(path_buf) => {
+                Some(path_buf.to_string_lossy().into_owned())
+            }
+            tauri_plugin_dialog::FilePath::Url(url) => {
+                url.to_file_path().ok().map(|pb| pb.to_string_lossy().into_owned())
+            }
+        });
+        let _ = tx.send(path);
+    });
+    
+    rx.await.map_err(|e| format!("对话框通道错误: {}", e))
 }
 
 #[tauri::command]
@@ -253,6 +250,8 @@ pub fn run() {
         download_and_install_update
     ])
     .setup(|app| {
+      app.handle().plugin(tauri_plugin_dialog::init())?;
+
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
