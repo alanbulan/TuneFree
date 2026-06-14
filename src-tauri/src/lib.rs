@@ -2,7 +2,13 @@ pub mod api;
 pub mod server;
 
 use std::io::Write;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+
+#[derive(Clone, serde::Serialize)]
+struct DownloadProgress {
+    url: String,
+    progress: u8,
+}
 
 #[tauri::command]
 async fn download_song_to_local(
@@ -36,7 +42,7 @@ async fn download_song_to_local(
     }
 
     let client = reqwest::Client::new();
-    let response = client
+    let mut response = client
         .get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         .send()
@@ -47,16 +53,39 @@ async fn download_song_to_local(
         return Err(format!("网络请求失败，响应码: {}", response.status()));
     }
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("读取文件数据失败: {}", e))?;
+    let total_size = response.content_length().unwrap_or(0);
+    let mut downloaded: u64 = 0;
+    let mut bytes = Vec::with_capacity(total_size as usize);
+
+    // 发送 0% 初始进度
+    let _ = app_handle.emit("download-progress", DownloadProgress {
+        url: url.clone(),
+        progress: 0,
+    });
+
+    while let Some(chunk) = response.chunk().await.map_err(|e| format!("读取文件块失败: {}", e))? {
+        bytes.extend_from_slice(&chunk);
+        downloaded += chunk.len() as u64;
+        if total_size > 0 {
+            let progress = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
+            let _ = app_handle.emit("download-progress", DownloadProgress {
+                url: url.clone(),
+                progress,
+            });
+        }
+    }
 
     let mut file = std::fs::File::create(&file_path)
         .map_err(|e| format!("创建本地文件失败: {}", e))?;
 
     file.write_all(&bytes)
         .map_err(|e| format!("保存文件数据失败: {}", e))?;
+
+    // 发送 100% 结束进度
+    let _ = app_handle.emit("download-progress", DownloadProgress {
+        url: url.clone(),
+        progress: 100,
+    });
 
     Ok(file_path.to_string_lossy().to_string())
 }
@@ -87,10 +116,23 @@ async fn open_external_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn get_download_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
+    app_handle
+        .path()
+        .download_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
-    .invoke_handler(tauri::generate_handler![download_song_to_local, open_external_url])
+    .invoke_handler(tauri::generate_handler![
+        download_song_to_local,
+        open_external_url,
+        get_download_dir
+    ])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
