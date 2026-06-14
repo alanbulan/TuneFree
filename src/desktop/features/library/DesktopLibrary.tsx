@@ -281,6 +281,21 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
   const [isImportingPlaylist, setIsImportingPlaylist] = useState(false);
   const [offlineDownloads, setOfflineDownloads] = useState<OfflineDownloadMeta[]>([]);
   const [downloadPath, setDownloadPath] = useState('');
+  const [downloadsPage, setDownloadsPage] = useState(1);
+  const itemsPerPage = 10;
+
+  const totalPages = Math.ceil(offlineDownloads.length / itemsPerPage);
+  const paginatedDownloads = useMemo(() => {
+    const start = (downloadsPage - 1) * itemsPerPage;
+    return offlineDownloads.slice(start, start + itemsPerPage);
+  }, [offlineDownloads, downloadsPage]);
+
+  useEffect(() => {
+    const maxPage = Math.ceil(offlineDownloads.length / itemsPerPage) || 1;
+    if (downloadsPage > maxPage) {
+      setDownloadsPage(maxPage);
+    }
+  }, [offlineDownloads.length, downloadsPage]);
 
   const handleOpenDownloadDir = async () => {
     if (!downloadPath) return;
@@ -636,26 +651,94 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
               <p className="muted-text">暂无离线条目</p>
             </div>
           ) : (
-            <div className="content-card glass-panel">
-              {offlineDownloads.map((item) => (
-                <div
-                  key={item.key}
-                  className="panel-label-row"
-                  style={{ padding: '10px 0', borderBottom: '1px solid rgba(15, 23, 42, 0.06)' }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <strong>{item.song.name}</strong>
-                    <p className="muted-text">
-                      {item.song.artist} · {item.quality === 'flac24bit' ? 'Hi-Res' : item.quality.toUpperCase()} · {formatOfflineSize(item.size)}
-                    </p>
-                  </div>
-                  <div className="inline-actions">
-                    <button type="button" className="soft-button" onClick={() => void playSong(item.song)}>播放</button>
-                    <button type="button" className="danger-button" onClick={() => void handleDeleteOfflineDownload(item)}>删除</button>
-                  </div>
+            <>
+              <div className="content-card glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
+                <div className="song-table-container">
+                  <table className="song-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(15, 23, 42, 0.08)', textAlign: 'left' }}>
+                        <th style={{ padding: '12px 16px', color: '#64748b', fontWeight: 600, fontSize: '0.85rem' }}>歌曲</th>
+                        <th style={{ padding: '12px 16px', color: '#64748b', fontWeight: 600, fontSize: '0.85rem' }}>歌手</th>
+                        <th style={{ padding: '12px 16px', color: '#64748b', fontWeight: 600, fontSize: '0.85rem' }}>音质</th>
+                        <th style={{ padding: '12px 16px', color: '#64748b', fontWeight: 600, fontSize: '0.85rem' }}>大小</th>
+                        <th style={{ padding: '12px 16px', color: '#64748b', fontWeight: 600, fontSize: '0.85rem' }}>下载时间</th>
+                        <th style={{ padding: '12px 16px', color: '#64748b', fontWeight: 600, fontSize: '0.85rem', textAlign: 'right' }}>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedDownloads.map((item) => (
+                        <tr
+                          key={item.key}
+                          style={{ borderBottom: '1px solid rgba(15, 23, 42, 0.04)', transition: 'background 0.2s' }}
+                          className="offline-download-row"
+                        >
+                          <td style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span className="source-badge" style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(250, 35, 59, 0.08)', color: '#fa233b', border: '1px solid rgba(250, 35, 59, 0.15)', fontWeight: 600 }}>
+                              {item.song.source === 'netease' ? '网易云' : item.song.source === 'qq' ? 'QQ' : item.song.source === 'kuwo' ? '酷我' : item.song.source}
+                            </span>
+                            <span style={{ fontWeight: 500 }}>{item.song.name}</span>
+                          </td>
+                          <td style={{ padding: '12px 16px', color: '#475569' }}>{item.song.artist}</td>
+                          <td style={{ padding: '12px 16px' }}>
+                            <span style={{
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: item.quality === 'flac24bit' || item.quality === 'flac' ? 'rgba(250, 35, 59, 0.1)' : 'rgba(100, 116, 139, 0.1)',
+                              color: item.quality === 'flac24bit' || item.quality === 'flac' ? '#fa233b' : '#475569'
+                            }}>
+                              {item.quality === 'flac24bit' ? 'Hi-Res' : item.quality.toUpperCase()}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 16px', color: '#64748b' }}>{formatOfflineSize(item.size)}</td>
+                          <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                            {new Date(item.createTime).toLocaleString()}
+                          </td>
+                          <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                            <div style={{ display: 'inline-flex', gap: '8px' }}>
+                              <button type="button" className="soft-button" onClick={() => void playSong(item.song)}>播放</button>
+                              <button type="button" className="danger-button" onClick={() => void handleDeleteOfflineDownload(item)}>删除</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              ))}
-            </div>
+              </div>
+
+              {totalPages > 1 && (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginTop: '16px',
+                  padding: '8px 0'
+                }}>
+                  <button
+                    type="button"
+                    className="soft-button"
+                    disabled={downloadsPage === 1}
+                    onClick={() => setDownloadsPage((p) => Math.max(1, p - 1))}
+                  >
+                    上一页
+                  </button>
+                  <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 500 }}>
+                    第 {downloadsPage} / {totalPages} 页
+                  </span>
+                  <button
+                    type="button"
+                    className="soft-button"
+                    disabled={downloadsPage === totalPages}
+                    onClick={() => setDownloadsPage((p) => Math.min(totalPages, p + 1))}
+                  >
+                    下一页
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </section>
       )}
@@ -698,6 +781,19 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
               <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '6px', lineHeight: 1.4 }}>
                 默认下载到当前应用的安装目录。
               </p>
+            </div>
+            <div className="panel-field" style={{ marginTop: '14px' }}>
+              <label>安和昴 (486) 桌宠</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                <input
+                  type="checkbox"
+                  id="pet-toggle"
+                  style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#fa233b' }}
+                  checked={tempShowPet}
+                  onChange={(event) => setTempShowPet(event.target.checked)}
+                />
+                <label htmlFor="pet-toggle" style={{ fontSize: '14px', cursor: 'pointer', userSelect: 'none', color: 'var(--text)' }}>启用桌面宠物</label>
+              </div>
             </div>
             <div className="settings-save-row">
               <button type="button" className="primary-button" onClick={() => {
