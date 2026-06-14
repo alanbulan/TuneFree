@@ -31,6 +31,7 @@ import {
 } from '../../core/contexts/PlayerContext';
 import { getLyrics, getSongUrl, triggerDownload } from '../../core/services/api';
 import { downloadSongOffline } from '../../core/services/offlineDownloads';
+import { invoke } from '@tauri-apps/api/core';
 import type { AudioQuality } from '../../core/types';
 import { findActiveLyricIndex, hasTranslatedLyrics, parseLyrics, supportsTranslatedLyricFallback, type ParsedLyric } from '../../core/utils/lyrics';
 import { getSongKey, isSameSong } from '../../core/types';
@@ -262,10 +263,19 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
       }
 
       const meta = downloadMeta[quality] || { label: quality.toUpperCase(), ext: 'mp3' };
-      triggerDownload(url, `${currentSong.artist} - ${currentSong.name}.${meta.ext}`);
-      showToast('已开始下载', 'success');
-    } catch {
-      showToast('下载失败，请稍后再试', 'error');
+      const filename = `${currentSong.artist} - ${currentSong.name}.${meta.ext}`;
+
+      const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
+
+      if (isTauri) {
+        await invoke('download_song_to_local', { url, filename });
+        showToast('下载成功，已保存至系统下载目录', 'success');
+      } else {
+        triggerDownload(url, filename);
+        showToast('已开始下载', 'success');
+      }
+    } catch (err: any) {
+      showToast(err?.message || err || '下载失败，请稍后再试', 'error');
     } finally {
       setDownloadQuality(null);
     }
