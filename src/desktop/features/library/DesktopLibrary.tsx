@@ -22,6 +22,7 @@ import {
 import { useLibrary, type LibraryImportMode, type LibraryImportPreview } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import {
   importPlaylist,
   getPlaylistImportErrorMessage,
@@ -159,6 +160,8 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
   const [pendingImport, setPendingImport] = useState<LibraryImportPreview | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<{ version: string; title: string; notes: string; url: string } | null>(null);
+  const [downloadingUpdate, setDownloadingUpdate] = useState(false);
+  const [updateDownloadProgress, setUpdateDownloadProgress] = useState<number | null>(null);
 
   const handleCheckUpdate = async () => {
     if (checkingUpdate) return;
@@ -192,15 +195,37 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
   };
 
   const handleDownloadUpdate = async () => {
-    if (!updateInfo) return;
+    if (!updateInfo || downloadingUpdate) return;
     const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
     if (isTauri) {
+      setDownloadingUpdate(true);
+      setUpdateDownloadProgress(0);
       try {
-        showToast('正在调起浏览器下载...', 'info');
-        await invoke('open_external_url', { url: updateInfo.url });
+        const filename = `TuneFree_${updateInfo.version}_x64-setup.exe`;
+        showToast('开始直接下载新版本安装包...', 'info');
+        
+        await invoke<string>('download_song_to_local', {
+          url: updateInfo.url,
+          filename,
+        });
+        
+        showToast('直接下载完成！新版本已保存至系统下载目录，已为您打开文件夹', 'success');
+        
+        if (downloadPath) {
+          await invoke('open_external_url', { url: downloadPath });
+        }
         setUpdateInfo(null);
       } catch (err: any) {
-        showToast('无法打开下载页面，请手动前往', 'error');
+        showToast('直接下载失败，正在调起浏览器为您下载...', 'error');
+        try {
+          await invoke('open_external_url', { url: updateInfo.url });
+          setUpdateInfo(null);
+        } catch {
+          showToast('无法打开下载页面，请手动前往', 'error');
+        }
+      } finally {
+        setDownloadingUpdate(false);
+        setUpdateDownloadProgress(null);
       }
     } else {
       window.open(updateInfo.url, '_blank');
@@ -255,6 +280,15 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
           if (!cancelled) setDownloadPath(path);
         })
         .catch(() => {});
+
+      // 监听下载进度以支持直接下载更新包
+      listen<{ url: string; progress: number }>('download-progress', (event) => {
+        if (!cancelled) {
+          setUpdateDownloadProgress(event.payload.progress);
+        }
+      }).then((unlisten) => {
+        if (cancelled) unlisten();
+      });
     }
 
     const unsubscribe = subscribeOfflineDownloads(refresh);
@@ -747,8 +781,25 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
               </div>
             </div>
             <div className="update-modal-actions">
-              <button type="button" className="primary-button" onClick={handleDownloadUpdate}>立即更新</button>
-              <button type="button" className="soft-button" onClick={() => setUpdateInfo(null)}>以后再说</button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handleDownloadUpdate}
+                disabled={downloadingUpdate}
+                style={{ minWidth: '90px' }}
+              >
+                {downloadingUpdate ? (
+                  updateDownloadProgress !== null ? `下载中 ${updateDownloadProgress}%` : '获取中'
+                ) : '立即更新'}
+              </button>
+              <button
+                type="button"
+                className="soft-button"
+                onClick={() => setUpdateInfo(null)}
+                disabled={downloadingUpdate}
+              >
+                以后再说
+              </button>
             </div>
           </div>
         </div>
