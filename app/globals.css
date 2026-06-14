@@ -1911,3 +1911,34 @@ input, textarea, [contenteditable="true"], .panel-input {
   -moz-user-select: text !important;
   -ms-user-select: text !important;
 }
+
+/* 统一关于页面里的版本与检查更新按钮的高度与对齐 */
+.about-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.about-hero-actions .about-version {
+  margin-top: 0 !important;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 11px;
+  box-sizing: border-box;
+}
+
+.about-hero-actions .update-check-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 900;
+  box-sizing: border-box;
+  margin-top: 0;
+  border-radius: 999px;
+}
