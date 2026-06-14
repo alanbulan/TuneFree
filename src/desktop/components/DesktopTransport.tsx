@@ -22,6 +22,7 @@ import {
 } from '../../core/contexts/PlayerContext';
 import AudioVisualizer from '../../core/components/AudioVisualizer';
 import { getLyrics, getSongUrl, triggerDownload } from '../../core/services/api';
+import { downloadSongOffline } from '../../core/services/offlineDownloads';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { AudioQuality } from '../../core/types';
@@ -133,10 +134,20 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
       if (isTauri) {
         const customDir = localStorage.getItem('tunefree_download_dir') || null;
         await invoke('download_song_to_local', { url, filename, customDir });
-        showToast('下载成功，已保存至本地下载目录', 'success');
+        try {
+          await downloadSongOffline(currentSong, audioQuality);
+        } catch (e) {
+          console.error("写入离线库失败", e);
+        }
+        showToast('下载成功，已保存至本地下载目录并加入离线库', 'success');
       } else {
         triggerDownload(url, filename);
-        showToast('已开始下载', 'success');
+        try {
+          await downloadSongOffline(currentSong, audioQuality);
+        } catch (e) {
+          console.error("写入离线库失败", e);
+        }
+        showToast('已开始下载并加入离线库', 'success');
       }
     } catch (err: any) {
       showToast(err?.message || err || '下载失败，请稍后再试', 'error');
