@@ -172,6 +172,20 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
     }
   }, []);
 
+function isNewVersionAvailable(latest: string, current: string): boolean {
+  if (!latest || !current) return false;
+  const latestParts = latest.replace(/^v/, '').split('.').map(Number);
+  const currentParts = current.replace(/^v/, '').split('.').map(Number);
+  
+  for (let i = 0; i < Math.max(latestParts.length, currentParts.length); i++) {
+    const latestVal = latestParts[i] || 0;
+    const currentVal = currentParts[i] || 0;
+    if (latestVal > currentVal) return true;
+    if (latestVal < currentVal) return false;
+  }
+  return false;
+}
+
   const triggerAutoUpdate = async (url: string) => {
     const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
     if (isTauri) {
@@ -201,11 +215,12 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
       const data = await response.json();
       const latestVersion = data.tag_name ? data.tag_name.replace(/^v/, '') : '';
 
-      if (latestVersion && latestVersion !== appVersion) {
+      if (latestVersion && isNewVersionAvailable(latestVersion, appVersion)) {
         const asset = data.assets?.find((a: any) => a.name.endsWith('.exe'));
-        const downloadUrl = asset ? asset.browser_download_url : data.html_url;
-        showToast(`发现新版本 v${latestVersion}，正在后台自动下载并更新...`, 'info');
-        void triggerAutoUpdate(downloadUrl);
+        if (asset && asset.browser_download_url) {
+          showToast(`发现新版本 v${latestVersion}，正在后台自动下载并更新...`, 'info');
+          void triggerAutoUpdate(asset.browser_download_url);
+        }
       }
     } catch {
       // 保持静默
@@ -233,11 +248,19 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
       const data = await response.json();
       const latestVersion = data.tag_name ? data.tag_name.replace(/^v/, '') : '';
 
-      if (latestVersion && latestVersion !== appVersion) {
+      if (latestVersion && isNewVersionAvailable(latestVersion, appVersion)) {
         const asset = data.assets?.find((a: any) => a.name.endsWith('.exe'));
-        const downloadUrl = asset ? asset.browser_download_url : data.html_url;
-        showToast(`发现新版本 v${latestVersion}，已开始后台静默下载并自动安装...`, 'info');
-        void triggerAutoUpdate(downloadUrl);
+        if (asset && asset.browser_download_url) {
+          showToast(`发现新版本 v${latestVersion}，已开始后台静默下载并自动安装...`, 'info');
+          void triggerAutoUpdate(asset.browser_download_url);
+        } else {
+          showToast(`发现新版本 v${latestVersion}，但未找到 Windows 安装包，已为您打开网页`, 'info');
+          try {
+            await invoke('open_external_url', { url: data.html_url });
+          } catch {
+            window.open(data.html_url, '_blank');
+          }
+        }
       } else {
         showToast(`当前已是最新版本 (v${appVersion})`, 'info');
       }
