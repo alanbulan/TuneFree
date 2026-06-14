@@ -58,7 +58,7 @@ const desktopTechStack = [
 
 interface CustomSelectProps {
   value: string;
-  options: { label: string; value: string }[];
+  options: readonly { label: string; value: string }[];
   onChange: (value: string) => void;
 }
 
