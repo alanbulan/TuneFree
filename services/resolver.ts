@@ -12,6 +12,8 @@ import {
 import {
   SEARCHABLE_MUSIC_SOURCES,
   isGDStudioOnlySource,
+  isGDStudioSource,
+  isNativeMusicSource,
   normalizeMusicSource,
 } from "../utils/musicSource";
 import type { Song } from "../types";
@@ -125,16 +127,19 @@ export const fetchFallbackLyrics = async (
     let lrc = "";
 
     try {
-      if (isGDStudioOnlySource(normalizedSource)) {
-        lrc = await getGDStudioLyrics(id, normalizedSource, songMeta);
-      } else if (normalizedSource === "netease") {
-        lrc = await fetchNeteaselyrics(id);
-      } else if (normalizedSource === "qq") {
-        lrc = await fetchQQLyrics(id);
-      } else if (normalizedSource === "kuwo") {
-        lrc = await fetchKuwoLyrics(id);
-      }
+      // 所有源统一先走 GD Studio 歌词
+      lrc = await getGDStudioLyrics(id, normalizedSource, songMeta);
 
+      // GD Studio 歌词为空且是原生源，回退官方歌词 API
+      if (!lrc && isNativeMusicSource(normalizedSource)) {
+        if (normalizedSource === "netease") {
+          lrc = await fetchNeteaselyrics(id);
+        } else if (normalizedSource === "qq") {
+          lrc = await fetchQQLyrics(id);
+        } else if (normalizedSource === "kuwo") {
+          lrc = await fetchKuwoLyrics(id);
+        }
+      }
     } catch (e) {
       console.warn(`[Resolver] fetchFallbackLyrics failed (${normalizedSource}:${id}):`, e);
     }
@@ -169,12 +174,18 @@ const getDirectSongUrl = async (
     return null;
   }
 
-  if (isGDStudioOnlySource(normalizedSource)) {
-    return getGDStudioSongUrl(id, normalizedSource, quality, songMeta);
+  // 所有源统一走 GD Studio 解析
+  if (isGDStudioSource(normalizedSource)) {
+    const gdUrl = await getGDStudioSongUrl(id, normalizedSource, quality, songMeta);
+    if (gdUrl) return gdUrl;
   }
 
-  const nativeUrl = await fetchNativeUrl(String(id), normalizedSource, quality);
-  if (nativeUrl) return fixUrl(nativeUrl) || null;
+  // GD Studio 失败时，原生源（netease/qq/kuwo）回退官方 API 兜底
+  if (isNativeMusicSource(normalizedSource)) {
+    console.warn(`[Resolver] GD Studio failed for ${normalizedSource}, falling back to native API`);
+    const nativeUrl = await fetchNativeUrl(String(id), normalizedSource, quality);
+    if (nativeUrl) return fixUrl(nativeUrl) || null;
+  }
 
   return null;
 };
@@ -203,19 +214,28 @@ const resolveDirectSongFull = async (
     return null;
   }
 
-  if (isGDStudioOnlySource(normalizedPlatform)) {
-    return parseGDStudioSongFull(id, normalizedPlatform, quality, songMeta);
+  // 所有源统一走 GD Studio 批量解析（url + lyrics + pic 并行）
+  if (isGDStudioSource(normalizedPlatform)) {
+    const gdResult = await parseGDStudioSongFull(id, normalizedPlatform, quality, songMeta);
+    if (gdResult?.url) return gdResult;
+
+    // GD Studio 失败时，原生源回退官方 API
+    if (isNativeMusicSource(normalizedPlatform)) {
+      console.warn(`[Resolver] GD Studio full resolve failed for ${normalizedPlatform}, falling back to native`);
+      const [url, lrc] = await Promise.all([
+        fetchNativeUrl(String(id), normalizedPlatform, quality).then(
+          (u) => (u ? fixUrl(u) || null : null),
+        ),
+        fetchFallbackLyrics(id, normalizedPlatform, songMeta),
+      ]);
+      const pic = songMeta?.pic ? fixUrl(songMeta.pic) : "";
+      if (url || lrc || pic) return { url, lrc, pic };
+    }
+
+    return gdResult; // 可能有歌词/封面但无 URL
   }
 
-  const [url, lrc] = await Promise.all([
-    getDirectSongUrl(id, normalizedPlatform, quality, songMeta),
-    getLyrics(id, normalizedPlatform, songMeta),
-  ]);
-  const pic = songMeta?.pic ? fixUrl(songMeta.pic) : "";
-
-  if (!url && !lrc && !pic) return null;
-
-  return { url, lrc, pic };
+  return null;
 };
 
 const getFallbackSources = (originalSource: string): readonly string[] => {

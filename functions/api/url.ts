@@ -272,5 +272,5 @@ async function getKuwoUrl(songmid: string, quality: string) {
         throw new Error("Kuwo returned empty URL (VIP / copyright)");
     }
 
-    return `/api/cors-proxy?url=${encodeURIComponent(playUrl)}`;
+    return playUrl;
 }
