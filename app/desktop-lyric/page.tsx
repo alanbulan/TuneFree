@@ -42,6 +42,12 @@ export default function DesktopLyricPage() {
 
       const savedLock = localStorage.getItem('tunefree_lock_desktop_lyric');
       if (savedLock) setLocalLock(savedLock === 'true');
+
+      // 强制 html 和 body 完全透明，防止 Next.js 及 globals.css 注入底色导致窗口不透明
+      document.documentElement.style.setProperty('background', 'transparent', 'important');
+      document.body.style.setProperty('background', 'transparent', 'important');
+      document.documentElement.style.setProperty('background-color', 'transparent', 'important');
+      document.body.style.setProperty('background-color', 'transparent', 'important');
     }
   }, []);
 
@@ -126,12 +132,8 @@ export default function DesktopLyricPage() {
 
   const subLineText = useMemo(() => {
     if (!currentLine) return '';
-    if (currentLine.translation) {
-      return currentLine.translation;
-    }
-    const nextLine = lyricRows[activeIndex + 1];
-    return nextLine ? nextLine.text : '';
-  }, [currentLine, lyricRows, activeIndex]);
+    return currentLine.translation || '';
+  }, [currentLine]);
 
   // 控制指令发送
   const sendControl = async (action: string, value?: any) => {
@@ -344,6 +346,10 @@ export default function DesktopLyricPage() {
       </div>
 
       <style jsx global>{`
+        html, body {
+          background: transparent !important;
+          background-color: transparent !important;
+        }
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(-4px) translateX(-50%); }
           to { opacity: 1; transform: translateY(0) translateX(-50%); }
