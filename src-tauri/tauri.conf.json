@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "TuneFree",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "identifier": "com.alanbulan.tunefree",
   "build": {
     "frontendDist": "../out",
@@ -19,6 +19,19 @@
         "resizable": true,
         "fullscreen": false,
         "decorations": false
+      },
+      {
+        "label": "desktop-lyric",
+        "title": "TuneFree 桌面歌词",
+        "width": 850,
+        "height": 140,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "url": "/desktop-lyric"
       }
     ],
     "security": {

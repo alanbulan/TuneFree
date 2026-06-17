@@ -21,6 +21,7 @@ import {
 } from '../../../core/components/Icons';
 import { useLibrary, type LibraryImportMode, type LibraryImportPreview } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
+import { useTheme } from '../../../core/contexts/ThemeContext';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
@@ -136,6 +137,20 @@ interface DesktopLibraryProps {
 
 export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
   const {
+    themeMode,
+    setThemeMode,
+    themeColor,
+    setThemeColor,
+    lyricSize,
+    setLyricSize,
+    lyricFont,
+    setLyricFont,
+    showDesktopLyric,
+    setShowDesktopLyric,
+    lockDesktopLyric,
+    setLockDesktopLyric,
+  } = useTheme();
+  const {
     favorites,
     playlists,
     corsProxy,
@@ -162,7 +177,7 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const [updateDownloadProgress, setUpdateDownloadProgress] = useState<number | null>(null);
-  const [appVersion, setAppVersion] = useState('1.0.13');
+  const [appVersion, setAppVersion] = useState('1.0.14');
 
   useEffect(() => {
     const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
@@ -863,7 +878,7 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
                 <input
                   type="checkbox"
                   id="pet-toggle"
-                  style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#fa233b' }}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent)' }}
                   checked={tempShowPet}
                   onChange={(event) => setTempShowPet(event.target.checked)}
                 />
@@ -879,6 +894,137 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
               }}>
                 保存配置
               </button>
+            </div>
+          </div>
+
+          <div className="settings-card settings-theme-card glass-panel">
+            <h3><BoxesIcon size={18} /> 个性化与歌词</h3>
+            
+            <div className="panel-field" style={{ marginTop: '14px' }}>
+              <label>主题模式</label>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                {[
+                  { label: '浅色模式', value: 'light' },
+                  { label: '深色模式', value: 'dark' },
+                  { label: '跟随系统', value: 'system' }
+                ].map((mode) => (
+                  <button
+                    key={mode.value}
+                    type="button"
+                    className={`soft-button ${themeMode === mode.value ? 'active' : ''}`}
+                    style={{
+                      flex: 1,
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      backgroundColor: themeMode === mode.value ? 'var(--accent)' : 'transparent',
+                      color: themeMode === mode.value ? 'var(--ios-card)' : 'var(--text)',
+                      border: themeMode === mode.value ? '1px solid var(--accent)' : '1px solid var(--line)',
+                      fontWeight: themeMode === mode.value ? 700 : 500,
+                    }}
+                    onClick={() => setThemeMode(mode.value as any)}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="panel-field" style={{ marginTop: '14px' }}>
+              <label>强调主题色</label>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                {[
+                  { name: '玫瑰红', value: 'red', color: '#fa233b' },
+                  { name: '星海蓝', value: 'blue', color: '#007aff' },
+                  { name: '极光绿', value: 'green', color: '#34c759' },
+                  { name: '丁香紫', value: 'purple', color: '#af52de' },
+                  { name: '活力橙', value: 'orange', color: '#ff9500' }
+                ].map((color) => (
+                  <button
+                    key={color.value}
+                    type="button"
+                    title={color.name}
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      backgroundColor: color.color,
+                      border: themeColor === color.value ? '2.5px solid var(--text)' : '1px solid rgba(0,0,0,0.1)',
+                      boxShadow: themeColor === color.value ? `0 0 10px ${color.color}` : 'none',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      transform: themeColor === color.value ? 'scale(1.15)' : 'scale(1)'
+                    }}
+                    onClick={() => setThemeColor(color.value as any)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="panel-field" style={{ marginTop: '14px' }}>
+              <label>歌词字号大小 ({lyricSize}px)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px' }}>
+                <span style={{ fontSize: '11px', opacity: 0.6 }}>小</span>
+                <input
+                  type="range"
+                  min="14"
+                  max="36"
+                  value={lyricSize}
+                  onChange={(e) => setLyricSize(parseInt(e.target.value))}
+                  style={{ flex: 1, accentColor: 'var(--accent)' }}
+                />
+                <span style={{ fontSize: '15px', fontWeight: 600 }}>大</span>
+              </div>
+            </div>
+
+            <div className="panel-field" style={{ marginTop: '14px' }}>
+              <label>歌词字体</label>
+              <div style={{ marginTop: '6px' }}>
+                <CustomSelect
+                  value={lyricFont}
+                  options={[
+                    { label: '系统默认', value: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif' },
+                    { label: '优雅苹方', value: '"PingFang SC", "Helvetica Neue", sans-serif' },
+                    { label: '微软雅黑', value: '"Microsoft YaHei", sans-serif' },
+                    { label: '宋体', value: '"SimSun", serif' },
+                    { label: '华文细黑', value: '"STXihei", "STHeiti", sans-serif' }
+                  ]}
+                  onChange={(val) => setLyricFont(val)}
+                />
+              </div>
+            </div>
+
+            <div className="panel-field" style={{ marginTop: '16px', borderTop: '1px solid var(--line)', paddingTop: '14px' }}>
+              <label>桌面悬浮歌词</label>
+              <div style={{ display: 'flex', gap: '20px', marginTop: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    id="show-lyric-toggle"
+                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent)' }}
+                    checked={showDesktopLyric}
+                    onChange={(event) => setShowDesktopLyric(event.target.checked)}
+                  />
+                  <label htmlFor="show-lyric-toggle" style={{ fontSize: '14px', cursor: 'pointer', userSelect: 'none', color: 'var(--text)' }}>启用桌面歌词</label>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    id="lock-lyric-toggle"
+                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent)' }}
+                    checked={lockDesktopLyric}
+                    onChange={(event) => {
+                      const nextLock = event.target.checked;
+                      setLockDesktopLyric(nextLock);
+                      showMessage(nextLock ? '桌面歌词已锁定（鼠标穿透）' : '桌面歌词已解锁', 'success');
+                    }}
+                  />
+                  <label htmlFor="lock-lyric-toggle" style={{ fontSize: '14px', cursor: 'pointer', userSelect: 'none', color: 'var(--text)' }}>锁定桌面歌词</label>
+                </div>
+              </div>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '8px', lineHeight: 1.4 }}>
+                锁定状态下鼠标将 100% 穿透歌词悬浮窗。若要解锁，请右击底部播放栏的「LRC」按钮。
+              </p>
             </div>
           </div>
 

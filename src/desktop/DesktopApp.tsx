@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { LibraryProvider } from '../core/contexts/LibraryContext';
 import { PlayerProvider } from '../core/contexts/PlayerContext';
+import { ThemeProvider } from '../core/contexts/ThemeContext';
 import DesktopShell from './components/DesktopShell';
 import { ToastProvider } from './components/ToastHost';
 import type { DesktopView } from './types';
@@ -92,20 +93,22 @@ export default function DesktopApp({ initialView = 'home' }: { initialView?: Des
   };
 
   return (
-    <LibraryProvider>
-      <PlayerProvider>
-        <ToastProvider>
-          <div className="desktop-app" style={{
-            opacity: isReady ? 1 : 0,
-            transition: 'opacity 0.35s ease-in-out',
-            height: '100%',
-            width: '100%',
-            backgroundColor: '#ffffff'
-          }}>
-            <DesktopShell view={view} onViewChange={handleViewChange} />
-          </div>
-        </ToastProvider>
-      </PlayerProvider>
-    </LibraryProvider>
+    <ThemeProvider>
+      <LibraryProvider>
+        <PlayerProvider>
+          <ToastProvider>
+            <div className="desktop-app" style={{
+              opacity: isReady ? 1 : 0,
+              transition: 'opacity 0.35s ease-in-out',
+              height: '100%',
+              width: '100%',
+              backgroundColor: 'var(--ios-bg)'
+            }}>
+              <DesktopShell view={view} onViewChange={handleViewChange} />
+            </div>
+          </ToastProvider>
+        </PlayerProvider>
+      </LibraryProvider>
+    </ThemeProvider>
   );
 }

@@ -20,6 +20,7 @@ import {
   usePlayerQueueState,
   usePlayerSettings,
 } from '../../core/contexts/PlayerContext';
+import { useTheme } from '../../core/contexts/ThemeContext';
 import AudioVisualizer from '../../core/components/AudioVisualizer';
 import { getLyrics, getSongUrl, triggerDownload } from '../../core/services/api';
 import { downloadSongOffline } from '../../core/services/offlineDownloads';
@@ -51,6 +52,7 @@ const downloadMeta: Record<string, { ext: string }> = {
 
 export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
   const { currentSong, isPlaying, isLoading } = usePlayerNowPlaying();
+  const { showDesktopLyric, setShowDesktopLyric, lockDesktopLyric, setLockDesktopLyric } = useTheme();
   const { currentTime, duration } = usePlayerProgress();
   const { playMode } = usePlayerQueueState();
   const { audioQuality } = usePlayerSettings();
@@ -270,6 +272,39 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
             {quality === 'flac24bit' ? 'Hi-Res' : quality.toUpperCase()}
           </button>
         ))}
+        <button
+          type="button"
+          className={`lyric-toggle-btn ${showDesktopLyric ? 'active' : ''}`}
+          title="左击：开/关桌面歌词&#10;右击：锁/开鼠标穿透"
+          aria-label="桌面歌词"
+          onClick={() => setShowDesktopLyric(!showDesktopLyric)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            const nextLock = !lockDesktopLyric;
+            setLockDesktopLyric(nextLock);
+            showToast(nextLock ? '桌面歌词已锁定（鼠标穿透）' : '桌面歌词已解锁', 'info');
+          }}
+          style={{
+            background: 'transparent',
+            fontSize: '11px',
+            fontWeight: 800,
+            padding: '4px 8px',
+            borderRadius: '6px',
+            color: showDesktopLyric ? 'var(--ios-card)' : 'var(--muted)',
+            backgroundColor: showDesktopLyric ? 'var(--accent)' : 'transparent',
+            border: showDesktopLyric ? '1px solid var(--accent)' : '1px solid var(--line)',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '24px',
+            marginLeft: '6px',
+            boxShadow: showDesktopLyric ? '0 2px 8px rgba(var(--accent-rgb), 0.35)' : 'none',
+          }}
+        >
+          {lockDesktopLyric && showDesktopLyric ? '🔒 LRC' : 'LRC'}
+        </button>
       </div>
     </div>
   );
