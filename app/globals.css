@@ -2202,3 +2202,48 @@ input, textarea, [contenteditable="true"], .panel-input {
 .desktop-lyric-container button:hover {
   background: rgba(255, 255, 255, 0.15) !important;
 }
+
+/* ==========================================
+   v1.0.20: 主题快速切换按钮样式
+   ========================================== */
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  height: 28px;
+  border-radius: 14px;
+  background: var(--surface) !important;
+  border: 1px solid var(--line) !important;
+  color: var(--text) !important;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  margin-left: 14px;
+  margin-right: 10px;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  outline: none;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+}
+
+.theme-toggle-btn:hover {
+  background: var(--surface-hover) !important;
+  border-color: var(--accent) !important;
+  transform: translateY(-0.5px);
+  box-shadow: 0 4px 10px rgba(var(--accent-rgb), 0.12);
+}
+
+.theme-toggle-btn:active {
+  transform: scale(0.97);
+}
+
+/* 深色模式下的微调 */
+.dark-theme .theme-toggle-btn {
+  background: rgba(255, 255, 255, 0.04) !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2) !important;
+}
+
+.dark-theme .theme-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
