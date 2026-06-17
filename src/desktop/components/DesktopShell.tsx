@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { DownloadIcon, HeartIcon, HomeIcon, InfoIcon, LibraryIcon, SearchIcon, SettingsIcon, SidebarCollapseIcon, SidebarExpandIcon } from '../../core/components/Icons';
+import { Sun, Moon, Laptop } from 'lucide-react';
 import { usePlayerNotice, usePlayerNowPlaying, usePlayerProgress, usePlayerActions } from '../../core/contexts/PlayerContext';
 import { useTheme } from '../../core/contexts/ThemeContext';
 import DesktopHome from '../features/home/DesktopHome';
@@ -56,7 +57,16 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   const { currentSong, isPlaying } = usePlayerNowPlaying();
   const { currentTime, duration } = usePlayerProgress();
   const { togglePlay, playNext, playPrev, seek } = usePlayerActions();
-  const { showDesktopLyric, setShowDesktopLyric, lockDesktopLyric, setLockDesktopLyric, lyricSize, setLyricSize } = useTheme();
+  const {
+    showDesktopLyric,
+    setShowDesktopLyric,
+    lockDesktopLyric,
+    setLockDesktopLyric,
+    lyricSize,
+    setLyricSize,
+    themeMode,
+    setThemeMode,
+  } = useTheme();
   const [commandQuery, setCommandQuery] = useState('');
   const [searchRequest, setSearchRequest] = useState({ query: '', nonce: 0 });
   const [fullPlayerOpen, setFullPlayerOpen] = useState(false);
@@ -165,6 +175,23 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
           <img className="brand-mark" src="/icon.svg" alt="" aria-hidden="true" data-tauri-drag-region />
           <span data-tauri-drag-region>TuneFree</span>
         </div>
+        <button
+          type="button"
+          className="theme-toggle-btn"
+          title={`当前主题模式: ${themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '跟随系统'}\n点击快速切换`}
+          onClick={() => {
+            if (themeMode === 'light') setThemeMode('dark');
+            else if (themeMode === 'dark') setThemeMode('system');
+            else setThemeMode('light');
+          }}
+        >
+          {themeMode === 'light' && <Sun size={12} />}
+          {themeMode === 'dark' && <Moon size={12} />}
+          {themeMode === 'system' && <Laptop size={12} />}
+          <span>
+            {themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '随系统'}
+          </span>
+        </button>
         <div data-tauri-drag-region style={{ display: 'flex', alignItems: 'center', flex: 1, height: '100%', minWidth: 0 }}>
           {view !== 'search' && (
             <form className="command-search" onSubmit={handleCommandSearch}>
