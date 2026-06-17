@@ -133,24 +133,41 @@ export default function DesktopLyricPage() {
 
   const currentLine = activeIndex >= 0 ? lyricRows[activeIndex] : null;
 
-  // 监听 activeIndex 改变，使当前高亮歌词行平滑滚动到视口中央
+  // 监听 activeIndex 改变，以及窗口大小变化，使当前高亮歌词行平滑滚动或磁性对齐到视口中央
   useEffect(() => {
-    if (!lyricListRef.current || activeIndex < 0 || lyricRows.length === 0) return;
+    const scrollToActive = (smooth = true) => {
+      if (!lyricListRef.current || activeIndex < 0 || lyricRows.length === 0) return;
 
-    const container = lyricListRef.current;
-    const activeEl = container.querySelector<HTMLElement>('[data-active="true"]');
-    if (!activeEl) return;
+      const container = lyricListRef.current;
+      const activeEl = container.querySelector<HTMLElement>('[data-active="true"]');
+      if (!activeEl) return;
 
-    const containerHeight = container.clientHeight;
-    const activeOffsetTop = activeEl.offsetTop;
-    const activeHeight = activeEl.clientHeight;
+      const containerHeight = container.clientHeight;
+      const activeOffsetTop = activeEl.offsetTop;
+      const activeHeight = activeEl.clientHeight;
 
-    const scrollTop = activeOffsetTop - containerHeight / 2 + activeHeight / 2;
+      const scrollTop = activeOffsetTop - containerHeight / 2 + activeHeight / 2;
 
-    container.scrollTo({
-      top: scrollTop,
-      behavior: 'smooth',
-    });
+      if (smooth) {
+        container.scrollTo({
+          top: scrollTop,
+          behavior: 'smooth',
+        });
+      } else {
+        container.scrollTop = scrollTop;
+      }
+    };
+
+    scrollToActive(true);
+
+    const handleResize = () => {
+      scrollToActive(false);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
   }, [activeIndex, lyricRows]);
 
   const subLineText = useMemo(() => {
@@ -323,8 +340,9 @@ export default function DesktopLyricPage() {
           overflowY: 'scroll',
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',
-          paddingTop: '60px', // 上下大填充，保证歌词居中时始终有足够的滚动腾挪空间
-          paddingBottom: '60px',
+          paddingTop: lyricRows.length > 0 ? '50dvh' : '0', // 上下动态 50dvh 填充，实现高度自适应与精准居中
+          paddingBottom: lyricRows.length > 0 ? '50dvh' : '0',
+          justifyContent: lyricRows.length > 0 ? 'flex-start' : 'center',
           textAlign: 'center',
           cursor: localLock ? 'default' : 'move',
           transition: 'margin-top 0.2s',
@@ -351,8 +369,8 @@ export default function DesktopLyricPage() {
                   textOverflow: 'ellipsis',
                   textAlign: 'center',
                   textShadow: isActive
-                    ? '0 1.5px 0 #000, 0 -1.5px 0 #000, 1.5px 0 0 #000, -1.5px 0 0 #000, 0 0 10px rgba(0, 0, 0, 0.95), 0 2px 5px rgba(0, 0, 0, 0.8)'
-                    : '0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 0 6px rgba(0, 0, 0, 0.9), 0 1px 3px rgba(0, 0, 0, 0.7)',
+                    ? '1.5px 1.5px 0 #000, -1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 0 0 #000, -1.5px 0 0 #000, 0 1.5px 0 #000, 0 -1.5px 0 #000'
+                    : '1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000',
                   padding: '6px 0',
                   transition: 'all 0.22s ease-in-out',
                   minHeight: '28px',
@@ -403,7 +421,7 @@ export default function DesktopLyricPage() {
                 fontSize: `${localSize}px`,
                 fontWeight: 800,
                 color: 'var(--accent, #fa233b)',
-                textShadow: '0 1.5px 0 #000, 0 -1.5px 0 #000, 1.5px 0 0 #000, -1.5px 0 0 #000, 0 0 10px rgba(0, 0, 0, 0.95)',
+                textShadow: '1.5px 1.5px 0 #000, -1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 0 0 #000, -1.5px 0 0 #000, 0 1.5px 0 #000, 0 -1.5px 0 #000',
                 textAlign: 'center',
               }}
             >
@@ -416,7 +434,7 @@ export default function DesktopLyricPage() {
                 color: '#f8fafc',
                 opacity: 0.65,
                 marginTop: '6px',
-                textShadow: '0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000',
+                textShadow: '1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000',
               }}
             >
               {song?.artist || '听你想听'}
