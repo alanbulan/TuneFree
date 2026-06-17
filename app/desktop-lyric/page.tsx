@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { parseLyrics, findActiveLyricIndex } from '../../src/core/utils/lyrics';
 import { Play, Pause, SkipBack, SkipForward, Lock, ZoomIn, ZoomOut, X, GripHorizontal } from 'lucide-react';
 
@@ -27,6 +27,9 @@ export default function DesktopLyricPage() {
   const [localLock, setLocalLock] = useState(false);
   const [localSize, setLocalSize] = useState(22);
   const [localFont, setLocalFont] = useState('system-ui');
+  const lyricListRef = useRef<HTMLDivElement>(null);
+
+
 
   useEffect(() => {
     const checkTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
@@ -129,6 +132,26 @@ export default function DesktopLyricPage() {
   }, [lyricRows, currentTime]);
 
   const currentLine = activeIndex >= 0 ? lyricRows[activeIndex] : null;
+
+  // 监听 activeIndex 改变，使当前高亮歌词行平滑滚动到视口中央
+  useEffect(() => {
+    if (!lyricListRef.current || activeIndex < 0 || lyricRows.length === 0) return;
+
+    const container = lyricListRef.current;
+    const activeEl = container.querySelector<HTMLElement>('[data-active="true"]');
+    if (!activeEl) return;
+
+    const containerHeight = container.clientHeight;
+    const activeOffsetTop = activeEl.offsetTop;
+    const activeHeight = activeEl.clientHeight;
+
+    const scrollTop = activeOffsetTop - containerHeight / 2 + activeHeight / 2;
+
+    container.scrollTo({
+      top: scrollTop,
+      behavior: 'smooth',
+    });
+  }, [activeIndex, lyricRows]);
 
   const subLineText = useMemo(() => {
     if (!currentLine) return '';
@@ -286,69 +309,129 @@ export default function DesktopLyricPage() {
         </div>
       )}
 
-      {/* 歌词主面板：支持未锁定状态下直接按住任意文字或空白区拖拽整个窗口 */}
+      {/* 歌词主面板：支持完整的上下文歌词自动滚动，支持根据窗口高度动态显示多行 */}
       <div
+        ref={lyricListRef}
         data-tauri-drag-region
-        className="lyric-content-box"
+        className="lyric-scroll-container"
         style={{
           width: '100%',
+          height: 'calc(100% - 24px)', // 留出顶部 hover 控制条的微小间隙
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
-          gap: '8px',
+          overflowY: 'scroll',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+          paddingTop: '60px', // 上下大填充，保证歌词居中时始终有足够的滚动腾挪空间
+          paddingBottom: '60px',
           textAlign: 'center',
-          marginTop: isHovered && !localLock ? '20px' : '0',
-          transition: 'margin 0.2s',
           cursor: localLock ? 'default' : 'move',
+          transition: 'margin-top 0.2s',
+          marginTop: isHovered && !localLock ? '24px' : '0',
         }}
       >
-        {/* 第一行：主歌词 */}
-        <div
-          data-tauri-drag-region
-          style={{
-            fontSize: `${localSize}px`,
-            fontWeight: 800,
-            color: 'var(--accent, #fa233b)',
-            lineHeight: 1.35,
-            width: '100%',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            // 专业多层投影确保在任何壁纸下均可见，并且边缘过渡自然
-            textShadow: '0 1.5px 0 #000, 0 -1.5px 0 #000, 1.5px 0 0 #000, -1.5px 0 0 #000, 0 0 10px rgba(0, 0, 0, 0.95), 0 2px 5px rgba(0, 0, 0, 0.8)',
-            padding: '2px 4px',
-          }}
-        >
-          {currentLine?.text || song?.name || 'TuneFree Desktop'}
-        </div>
-
-        {/* 第二行：副歌词 / 翻译 / 下一句 */}
-        <div
-          data-tauri-drag-region
-          style={{
-            fontSize: `${Math.max(12, localSize - 5)}px`,
-            fontWeight: 600,
-            color: '#f8fafc',
-            opacity: 0.9,
-            lineHeight: 1.3,
-            width: '100%',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            textShadow: '0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 0 8px rgba(0, 0, 0, 0.95), 0 2px 4px rgba(0, 0, 0, 0.8)',
-            padding: '2px 4px',
-            minHeight: `${Math.max(12, localSize - 5) * 1.3}px`,
-          }}
-        >
-          {subLineText || (currentLine?.text ? '' : song?.artist || '听你想听')}
-        </div>
+        {lyricRows.length > 0 ? (
+          lyricRows.map((row, index) => {
+            const isActive = index === activeIndex;
+            return (
+              <div
+                key={`${row.time}-${row.text}-${index}`}
+                data-active={isActive ? 'true' : undefined}
+                data-tauri-drag-region
+                style={{
+                  fontSize: isActive ? `${localSize}px` : `${Math.max(12, localSize - 5)}px`,
+                  fontWeight: isActive ? 800 : 600,
+                  color: isActive ? 'var(--accent, #fa233b)' : '#f8fafc',
+                  opacity: isActive ? 1 : 0.38,
+                  lineHeight: 1.35,
+                  width: '100%',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  textAlign: 'center',
+                  textShadow: isActive
+                    ? '0 1.5px 0 #000, 0 -1.5px 0 #000, 1.5px 0 0 #000, -1.5px 0 0 #000, 0 0 10px rgba(0, 0, 0, 0.95), 0 2px 5px rgba(0, 0, 0, 0.8)'
+                    : '0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 0 6px rgba(0, 0, 0, 0.9), 0 1px 3px rgba(0, 0, 0, 0.7)',
+                  padding: '6px 0',
+                  transition: 'all 0.22s ease-in-out',
+                  minHeight: '28px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                }}
+              >
+                <span data-tauri-drag-region>{row.text}</span>
+                {row.translation && (
+                  <em
+                    data-tauri-drag-region
+                    style={{
+                      fontSize: isActive ? `${Math.max(11, localSize - 6)}px` : `${Math.max(9, localSize - 9)}px`,
+                      fontStyle: 'normal',
+                      fontWeight: isActive ? 600 : 500,
+                      opacity: isActive ? 0.92 : 0.65,
+                      marginTop: '2px',
+                      display: 'block',
+                      maxWidth: '90%',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      transition: 'all 0.22s ease-in-out',
+                    }}
+                  >
+                    {row.translation}
+                  </em>
+                )}
+              </div>
+            );
+          })
+        ) : (
+          <div
+            data-tauri-drag-region
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              width: '100%',
+            }}
+          >
+            <div
+              data-tauri-drag-region
+              style={{
+                fontSize: `${localSize}px`,
+                fontWeight: 800,
+                color: 'var(--accent, #fa233b)',
+                textShadow: '0 1.5px 0 #000, 0 -1.5px 0 #000, 1.5px 0 0 #000, -1.5px 0 0 #000, 0 0 10px rgba(0, 0, 0, 0.95)',
+                textAlign: 'center',
+              }}
+            >
+              {song?.name || 'TuneFree Desktop'}
+            </div>
+            <p
+              data-tauri-drag-region
+              style={{
+                fontSize: `${Math.max(12, localSize - 5)}px`,
+                color: '#f8fafc',
+                opacity: 0.65,
+                marginTop: '6px',
+                textShadow: '0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000',
+              }}
+            >
+              {song?.artist || '听你想听'}
+            </p>
+          </div>
+        )}
       </div>
 
       <style jsx global>{`
         html, body {
           background: transparent !important;
           background-color: transparent !important;
+        }
+        .lyric-scroll-container::-webkit-scrollbar {
+          display: none !important;
         }
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(-4px) translateX(-50%); }
