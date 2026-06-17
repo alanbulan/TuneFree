@@ -2099,6 +2099,78 @@ input, textarea, [contenteditable="true"], .panel-input {
   text-shadow: 0 0 15px rgba(var(--accent-rgb), 0.35);
 }
 
+/* ==========================================
+   v1.0.19: 补充全屏播放器及部分卡片的深色模式覆盖
+   ========================================== */
+.dark-theme .full-player-backdrop {
+  background: rgba(9, 9, 11, 0.82) !important;
+}
+
+.dark-theme .full-player-panel {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(var(--accent-rgb), 0.08), transparent 26rem),
+    radial-gradient(circle at 58% 82%, rgba(var(--accent-rgb), 0.05), transparent 20rem),
+    radial-gradient(circle at 82% 4%, rgba(var(--accent-rgb), 0.06), transparent 26rem),
+    rgba(24, 24, 27, 0.85) !important;
+  border-color: var(--line) !important;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.52) !important;
+}
+
+.dark-theme .full-queue-card {
+  background: #18181b !important;
+  border-color: var(--line) !important;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.35) !important;
+}
+
+.dark-theme .full-queue-card::before {
+  background: #18181b !important;
+}
+
+.dark-theme .full-action-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--accent) !important;
+}
+
+.dark-theme .full-more-create input {
+  background: rgba(24, 24, 27, 0.6) !important;
+  border-color: var(--line) !important;
+  color: var(--text) !important;
+}
+
+.dark-theme .full-more-button,
+.dark-theme .full-more-playlist-button {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border-color: var(--line) !important;
+}
+
+.dark-theme .stat-card {
+  background: var(--ios-card) !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25) !important;
+}
+
+.dark-theme .create-card:hover,
+.dark-theme .toplist-card.active {
+  background: var(--surface-hover) !important;
+  border-color: var(--accent) !important;
+}
+
+.dark-theme .about-notice-card {
+  background: rgba(39, 39, 42, 0.52) !important;
+  border: 1px solid var(--line) !important;
+}
+
+.dark-theme .panel-select:focus,
+.dark-theme .source-option:hover {
+  background: var(--surface-2) !important;
+  border-color: var(--accent) !important;
+}
+
+.dark-theme .lyric-line:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--text) !important;
+}
+
 /* 覆盖一些默认的高亮色 */
 ::selection {
   background: rgba(var(--accent-rgb, 250, 35, 59), .18) !important;
