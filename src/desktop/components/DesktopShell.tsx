@@ -1,7 +1,8 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { DownloadIcon, HeartIcon, HomeIcon, InfoIcon, LibraryIcon, SearchIcon, SettingsIcon, SidebarCollapseIcon, SidebarExpandIcon } from '../../core/components/Icons';
-import { usePlayerNotice } from '../../core/contexts/PlayerContext';
+import { usePlayerNotice, usePlayerNowPlaying, usePlayerProgress, usePlayerActions } from '../../core/contexts/PlayerContext';
+import { useTheme } from '../../core/contexts/ThemeContext';
 import DesktopHome from '../features/home/DesktopHome';
 import DesktopLibrary from '../features/library/DesktopLibrary';
 import DesktopSearch from '../features/search/DesktopSearch';
@@ -52,14 +53,97 @@ const handleWindowControl = async (action: 'minimize' | 'maximize' | 'close') =>
 export default function DesktopShell({ view, onViewChange }: DesktopShellProps) {
   const { playerNotice } = usePlayerNotice();
   const { showToast } = useToast();
+  const { currentSong, isPlaying } = usePlayerNowPlaying();
+  const { currentTime, duration } = usePlayerProgress();
+  const { togglePlay, playNext, playPrev, seek } = usePlayerActions();
+  const { showDesktopLyric, setShowDesktopLyric, lockDesktopLyric, setLockDesktopLyric, lyricSize, setLyricSize } = useTheme();
   const [commandQuery, setCommandQuery] = useState('');
   const [searchRequest, setSearchRequest] = useState({ query: '', nonce: 0 });
   const [fullPlayerOpen, setFullPlayerOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
+  const lyricSizeRef = useRef(lyricSize);
+  const lockDesktopLyricRef = useRef(lockDesktopLyric);
+
+  useEffect(() => {
+    lyricSizeRef.current = lyricSize;
+    lockDesktopLyricRef.current = lockDesktopLyric;
+  }, [lyricSize, lockDesktopLyric]);
+
   useEffect(() => {
     if (playerNotice) showToast(playerNotice.message, playerNotice.tone);
   }, [playerNotice, showToast]);
+
+  // 跨窗口同步播放进度和状态给桌面歌词窗口
+  useEffect(() => {
+    if (!isTauri || !showDesktopLyric) return;
+
+    const syncLyric = async () => {
+      try {
+        const { emit } = await import('@tauri-apps/api/event');
+        await emit('lyric-update', {
+          song: currentSong ? {
+            id: currentSong.id,
+            name: currentSong.name,
+            artist: currentSong.artist,
+            source: currentSong.source,
+            pic: currentSong.pic,
+            lrc: currentSong.lrc,
+          } : null,
+          currentTime,
+          duration,
+          isPlaying,
+        });
+      } catch (e) {
+        console.error('Failed to emit lyric-update:', e);
+      }
+    };
+
+    syncLyric();
+  }, [currentSong, isPlaying, currentTime, duration, showDesktopLyric]);
+
+  // 监听歌词窗口回传的播放控制事件
+  useEffect(() => {
+    if (!isTauri) return;
+
+    let unlisten: (() => void) | null = null;
+
+    const setupListener = async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const unsub = await listen<{ action: string; value?: any }>('player-control', (event) => {
+          const { action, value } = event.payload;
+          if (action === 'play-pause') {
+            togglePlay();
+          } else if (action === 'next') {
+            playNext(true);
+          } else if (action === 'prev') {
+            playPrev();
+          } else if (action === 'seek') {
+            seek(Number(value));
+          } else if (action === 'toggle-lock') {
+            const nextLock = value !== undefined ? !!value : !lockDesktopLyricRef.current;
+            setLockDesktopLyric(nextLock);
+            showToast(nextLock ? '桌面歌词已锁定（鼠标穿透）' : '桌面歌词已解锁', 'info');
+          } else if (action === 'adjust-lyric-size') {
+            const nextSize = Math.max(14, Math.min(36, lyricSizeRef.current + Number(value)));
+            setLyricSize(nextSize);
+          } else if (action === 'close-lyric') {
+            setShowDesktopLyric(false);
+          }
+        });
+        unlisten = unsub;
+      } catch (e) {
+        console.error('Failed to listen to player-control:', e);
+      }
+    };
+
+    setupListener();
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [togglePlay, playNext, playPrev, seek, setLockDesktopLyric, setLyricSize, setShowDesktopLyric, showToast]);
 
   const submitSearch = (query: string) => {
     const clean = query.trim();
