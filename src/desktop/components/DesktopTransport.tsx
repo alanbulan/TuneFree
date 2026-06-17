@@ -21,6 +21,7 @@ import {
   usePlayerSettings,
 } from '../../core/contexts/PlayerContext';
 import { useTheme } from '../../core/contexts/ThemeContext';
+import { Lock } from 'lucide-react';
 import AudioVisualizer from '../../core/components/AudioVisualizer';
 import { getLyrics, getSongUrl, triggerDownload } from '../../core/services/api';
 import { downloadSongOffline } from '../../core/services/offlineDownloads';
@@ -303,7 +304,10 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
             boxShadow: showDesktopLyric ? '0 2px 8px rgba(var(--accent-rgb), 0.35)' : 'none',
           }}
         >
-          {lockDesktopLyric && showDesktopLyric ? '🔒 LRC' : 'LRC'}
+          {showDesktopLyric && lockDesktopLyric && (
+            <Lock size={10} style={{ marginRight: '3px', display: 'inline-block', verticalAlign: 'middle' }} />
+          )}
+          <span style={{ verticalAlign: 'middle' }}>LRC</span>
         </button>
       </div>
     </div>
