@@ -359,7 +359,10 @@ export default function DesktopLyricPage() {
         className="lyric-scroll-container"
         style={{
           width: '100%',
-          height: 'calc(100% - 24px)', // 留出顶部 hover 控制条的微小间隙
+          height: 'calc(100% - 24px)', // 留出顶部 hover 控制条 of the micro-gap
+          maxHeight: 'calc(100% - 24px)',
+          flexShrink: 1,
+          minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -480,7 +483,11 @@ export default function DesktopLyricPage() {
       </div>
 
       <style jsx global>{`
-        html, body {
+        html, body, #__next, body > div:first-child {
+          height: 100% !important;
+          max-height: 100vh !important;
+          max-height: 100dvh !important;
+          overflow: hidden !important;
           background: transparent !important;
           background-color: transparent !important;
         }

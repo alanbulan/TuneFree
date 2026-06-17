@@ -175,24 +175,24 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
           <img className="brand-mark" src="/icon.svg" alt="" aria-hidden="true" data-tauri-drag-region />
           <span data-tauri-drag-region>TuneFree</span>
         </div>
-        <button
-          type="button"
-          className="theme-toggle-btn"
-          title={`当前主题模式: ${themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '跟随系统'}\n点击快速切换`}
-          onClick={() => {
-            if (themeMode === 'light') setThemeMode('dark');
-            else if (themeMode === 'dark') setThemeMode('system');
-            else setThemeMode('light');
-          }}
-        >
-          {themeMode === 'light' && <Sun size={12} />}
-          {themeMode === 'dark' && <Moon size={12} />}
-          {themeMode === 'system' && <Laptop size={12} />}
-          <span>
-            {themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '随系统'}
-          </span>
-        </button>
         <div data-tauri-drag-region style={{ display: 'flex', alignItems: 'center', flex: 1, height: '100%', minWidth: 0 }}>
+          <button
+            type="button"
+            className="theme-toggle-btn"
+            title={`当前主题模式: ${themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '跟随系统'}\n点击快速切换`}
+            onClick={() => {
+              if (themeMode === 'light') setThemeMode('dark');
+              else if (themeMode === 'dark') setThemeMode('system');
+              else setThemeMode('light');
+            }}
+          >
+            {themeMode === 'light' && <Sun size={12} />}
+            {themeMode === 'dark' && <Moon size={12} />}
+            {themeMode === 'system' && <Laptop size={12} />}
+            <span>
+              {themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '随系统'}
+            </span>
+          </button>
           {view !== 'search' && (
             <form className="command-search" onSubmit={handleCommandSearch}>
               <SearchIcon size={15} />
