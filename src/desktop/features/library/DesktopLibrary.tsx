@@ -177,7 +177,7 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const [updateDownloadProgress, setUpdateDownloadProgress] = useState<number | null>(null);
-  const [appVersion, setAppVersion] = useState('1.0.15');
+  const [appVersion, setAppVersion] = useState('1.0.16');
 
   useEffect(() => {
     const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
