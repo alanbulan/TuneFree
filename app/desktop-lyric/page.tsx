@@ -4,6 +4,40 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { parseLyrics, findActiveLyricIndex } from '../../src/core/utils/lyrics';
 import { Play, Pause, SkipBack, SkipForward, Lock, ZoomIn, ZoomOut, X, GripHorizontal } from 'lucide-react';
 
+const syncLyricStylesAndTheme = () => {
+  if (typeof window === 'undefined') return { size: 22, font: 'system-ui', lock: false };
+
+  const savedSize = localStorage.getItem('tunefree_lyric_size');
+  const savedFont = localStorage.getItem('tunefree_lyric_font');
+  const savedLock = localStorage.getItem('tunefree_lock_desktop_lyric');
+  const themeColor = localStorage.getItem('tunefree_theme_color') || 'red';
+  const themeMode = localStorage.getItem('tunefree_theme_mode') || 'system';
+
+  // 计算并同步 --accent 强调色，使高亮歌词颜色动态同步软件主题色
+  let isDark = themeMode === 'dark';
+  if (themeMode === 'system') {
+    isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  const COLOR_MAP: Record<string, { light: string; dark: string }> = {
+    red: { light: '#fa233b', dark: '#ff455b' },
+    blue: { light: '#007aff', dark: '#0a84ff' },
+    green: { light: '#34c759', dark: '#30d158' },
+    purple: { light: '#af52de', dark: '#bf5af2' },
+    orange: { light: '#ff9500', dark: '#ff9f0a' },
+  };
+
+  const colorConfig = COLOR_MAP[themeColor] || COLOR_MAP.red;
+  const accentColor = isDark ? colorConfig.dark : colorConfig.light;
+  document.documentElement.style.setProperty('--accent', accentColor);
+
+  return {
+    size: savedSize ? parseInt(savedSize, 10) : 22,
+    font: savedFont || 'system-ui',
+    lock: savedLock === 'true',
+  };
+};
+
 interface LyricUpdateEvent {
   song: {
     id: string | number;
@@ -35,16 +69,12 @@ export default function DesktopLyricPage() {
     const checkTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
     setIsTauri(checkTauri);
 
-    // 从 localStorage 初始化样式变量，以便独立进程页面能瞬间同步
+    // 从 localStorage 初始化样式与主题变量，以便独立进程页面能瞬间同步
     if (typeof window !== 'undefined') {
-      const savedSize = localStorage.getItem('tunefree_lyric_size');
-      if (savedSize) setLocalSize(parseInt(savedSize, 10));
-
-      const savedFont = localStorage.getItem('tunefree_lyric_font');
-      if (savedFont) setLocalFont(savedFont);
-
-      const savedLock = localStorage.getItem('tunefree_lock_desktop_lyric');
-      if (savedLock) setLocalLock(savedLock === 'true');
+      const { size, font, lock } = syncLyricStylesAndTheme();
+      setLocalSize(size);
+      setLocalFont(font);
+      setLocalLock(lock);
 
       // 强制 html 和 body 完全透明，防止 Next.js 及 globals.css 注入底色导致窗口不透明
       document.documentElement.style.setProperty('background', 'transparent', 'important');
@@ -102,14 +132,10 @@ export default function DesktopLyricPage() {
   // 定时器定时检测本地 localStorage 属性同步（主要是锁定和字号大小防抖）
   useEffect(() => {
     const handleStorageChange = () => {
-      const savedSize = localStorage.getItem('tunefree_lyric_size');
-      if (savedSize) setLocalSize(parseInt(savedSize, 10));
-
-      const savedFont = localStorage.getItem('tunefree_lyric_font');
-      if (savedFont) setLocalFont(savedFont);
-
-      const savedLock = localStorage.getItem('tunefree_lock_desktop_lyric');
-      if (savedLock) setLocalLock(savedLock === 'true');
+      const { size, font, lock } = syncLyricStylesAndTheme();
+      setLocalSize(size);
+      setLocalFont(font);
+      setLocalLock(lock);
     };
 
     window.addEventListener('storage', handleStorageChange);
@@ -362,24 +388,34 @@ export default function DesktopLyricPage() {
                   fontWeight: isActive ? 800 : 600,
                   color: isActive ? 'var(--accent, #fa233b)' : '#f8fafc',
                   opacity: isActive ? 1 : 0.38,
-                  lineHeight: 1.35,
+                  lineHeight: 1.5,
                   width: '100%',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
+                  overflow: 'visible', // 垂直方向绝对不裁剪，防止文字硬描边在顶部和底部被砍断
                   textAlign: 'center',
                   textShadow: isActive
                     ? '1.5px 1.5px 0 #000, -1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 0 0 #000, -1.5px 0 0 #000, 0 1.5px 0 #000, 0 -1.5px 0 #000'
                     : '1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000',
-                  padding: '6px 0',
+                  padding: isActive ? '10px 0' : '6px 0', // 高亮行上下填充加大，提供描边充分空间
                   transition: 'all 0.22s ease-in-out',
-                  minHeight: '28px',
+                  minHeight: '1.5em',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                 }}
               >
-                <span data-tauri-drag-region>{row.text}</span>
+                <span
+                  data-tauri-drag-region
+                  style={{
+                    display: 'block',
+                    maxWidth: '92%',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {row.text}
+                </span>
                 {row.translation && (
                   <em
                     data-tauri-drag-region

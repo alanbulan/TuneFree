@@ -1161,8 +1161,39 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       audioQuality,
       playerNotice,
       actionsValue,
-    ],
-  );
+    ]);
+
+  // --- 跨窗口监听来自桌面歌词的控制事件 ---
+  useEffect(() => {
+    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (!isTauri) return;
+
+    let unlisten: (() => void) | null = null;
+    const setupListener = async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const unsub = await listen<{ action: string; value?: any }>("player-control", (event) => {
+          const { action } = event.payload;
+          if (action === "play-pause") {
+            togglePlay();
+          } else if (action === "prev") {
+            playPrev();
+          } else if (action === "next") {
+            playNext(true);
+          }
+        });
+        unlisten = unsub;
+      } catch (err) {
+        console.error("Tauri player-control listener error:", err);
+      }
+    };
+
+    setupListener();
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [togglePlay, playNext, playPrev]);
 
   return (
     <PlayerActionsContext.Provider value={actionsValue}>
