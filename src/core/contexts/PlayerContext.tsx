@@ -41,6 +41,7 @@ interface PlayerContextType {
   isLoading: boolean;
   currentTime: number;
   duration: number;
+  lyricOffsetSeconds: number;
   volume: number;
   playMode: PlayMode;
   queue: Song[];
@@ -53,6 +54,8 @@ interface PlayerContextType {
   pausePlayback: () => void;
   resumePlayback: () => Promise<void>;
   seek: (time: number) => void;
+  setLyricOffsetSeconds: (offset: number) => void;
+  adjustLyricOffsetSeconds: (delta: number) => void;
   playNext: (force?: boolean) => void;
   playPrev: () => void;
   addToQueue: (song: Song) => void;
@@ -71,6 +74,8 @@ type PlayerActionsType = Pick<
   | "pausePlayback"
   | "resumePlayback"
   | "seek"
+  | "setLyricOffsetSeconds"
+  | "adjustLyricOffsetSeconds"
   | "playNext"
   | "playPrev"
   | "addToQueue"
@@ -92,7 +97,7 @@ type PlayerSettingsType = Pick<PlayerContextType, "audioQuality">;
 
 type PlayerAnalyserType = Pick<PlayerContextType, "analyser">;
 
-type PlayerProgressType = Pick<PlayerContextType, "currentTime" | "duration">;
+type PlayerProgressType = Pick<PlayerContextType, "currentTime" | "duration" | "lyricOffsetSeconds">;
 type PlayerNoticeContextType = Pick<PlayerContextType, "playerNotice">;
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -162,6 +167,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [lyricOffsetSeconds, setLyricOffsetSecondsState] = useState(0);
   const [volume, setVolume] = useState(1);
   const [queue, setQueue] = useState<Song[]>(() => loadStoredQueue());
   const [playMode, setPlayMode] = useState<PlayMode>(() => loadStoredPlayMode());
@@ -199,6 +205,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Track error retry to prevent loops
   const retryCountRef = useRef(0);
+  const forceNoCorsPlaybackRef = useRef(false);
 
   const showPlayerNotice = useCallback(
     (message: string, tone: PlayerNotice["tone"] = "info") => {
@@ -351,16 +358,31 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         );
         const isSourceError = errorCode === MEDIA_ERR_SRC_NOT_SUPPORTED_CODE;
         if (
+          isSourceError &&
+          currentSongRef.current &&
+          !forceNoCorsPlaybackRef.current &&
+          retryCountRef.current === 0
+        ) {
+          console.warn(
+            `Retrying ${currentSongRef.current.name} without CORS/AudioContext`,
+          );
+          showPlayerNotice("当前音源不支持频谱解析，已切换兼容播放模式", "warning");
+          forceNoCorsPlaybackRef.current = true;
+          retryCountRef.current = 1;
+          playSongRef.current(currentSongRef.current, audioQualityRef.current);
+          return;
+        }
+        if (
           currentSongRef.current &&
           audioQualityRef.current !== "128k" &&
-          retryCountRef.current === 0
+          retryCountRef.current <= 1
         ) {
           console.warn(
             `Triggering fallback to 128k for ${currentSongRef.current.name}`,
           );
           showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
           syncAudioQualityState("128k");
-          retryCountRef.current = 1;
+          retryCountRef.current = 2;
           playSongRef.current(currentSongRef.current, "128k");
           return;
         }
@@ -694,6 +716,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       if (!forceQuality) retryCountRef.current = 0;
 
       if (!isCurrentSong) {
+        forceNoCorsPlaybackRef.current = false;
         audioRef.current.pause();
         audioRef.current.removeAttribute("src");
         audioRef.current.load();
@@ -786,7 +809,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           const resumeTime =
             isCurrentSong && isDifferentQuality ? audioRef.current.currentTime : 0;
           const needsCors =
-            !url.includes("kuwo.cn") && !url.includes("sycdn.kuwo");
+            !forceNoCorsPlaybackRef.current &&
+            !url.includes("kuwo.cn") &&
+            !url.includes("sycdn.kuwo");
 
           if (isIOSRef.current) {
             if (audioCtxConnectedRef.current || audioRef.current.crossOrigin) {
@@ -795,7 +820,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           } else if (!needsCors) {
             if (audioCtxConnectedRef.current || audioRef.current.crossOrigin) {
               console.log(
-                "[Player] 切换到无 CORS Audio（酷我源），可视化使用模拟模式",
+                forceNoCorsPlaybackRef.current
+                  ? "[Player] 切换到无 CORS Audio（兼容播放模式），可视化使用模拟模式"
+                  : "[Player] 切换到无 CORS Audio（酷我源），可视化使用模拟模式",
               );
               createAudioElement(false);
             }
@@ -842,7 +869,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
             if (
               isUnsupportedSourcePlayError(error) &&
-              retryCountRef.current === 0 &&
+              !forceNoCorsPlaybackRef.current
+            ) {
+              console.warn(
+                "Play promise rejected with source error, retrying without CORS/AudioContext",
+              );
+              showPlayerNotice("当前音源不支持频谱解析，已切换兼容播放模式", "warning");
+              forceNoCorsPlaybackRef.current = true;
+              retryCountRef.current = Math.max(retryCountRef.current, 1);
+              playSongRef.current(song, targetQuality);
+              return;
+            }
+
+            if (
+              isUnsupportedSourcePlayError(error) &&
+              retryCountRef.current <= 1 &&
               targetQuality !== "128k"
             ) {
               console.warn(
@@ -850,7 +891,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               );
               showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
               syncAudioQualityState("128k");
-              retryCountRef.current = 1;
+              retryCountRef.current = 2;
               playSongRef.current(song, "128k");
               return;
             }
@@ -1143,6 +1184,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   }, []);
 
+  const setLyricOffsetSeconds = useCallback((offset: number) => {
+    const nextOffset = Number.isFinite(offset) ? Math.max(-10, Math.min(10, offset)) : 0;
+    setLyricOffsetSecondsState(nextOffset);
+  }, []);
+
+  const adjustLyricOffsetSeconds = useCallback((delta: number) => {
+    setLyricOffsetSecondsState((current) => {
+      const nextOffset = current + (Number.isFinite(delta) ? delta : 0);
+      return Math.max(-10, Math.min(10, nextOffset));
+    });
+  }, []);
+
   const setAudioQuality = useCallback((q: AudioQuality) => {
     syncAudioQualityState(q);
     // 使用 ref 避免 stale closure，不依赖 currentSong/isPlaying state
@@ -1163,6 +1216,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       pausePlayback,
       resumePlayback,
       seek,
+      setLyricOffsetSeconds,
+      adjustLyricOffsetSeconds,
       playNext,
       playPrev,
       addToQueue,
@@ -1179,6 +1234,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       pausePlayback,
       resumePlayback,
       seek,
+      setLyricOffsetSeconds,
+      adjustLyricOffsetSeconds,
       playNext,
       playPrev,
       addToQueue,
@@ -1225,8 +1282,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     () => ({
       currentTime,
       duration,
+      lyricOffsetSeconds,
     }),
-    [currentTime, duration],
+    [currentTime, duration, lyricOffsetSeconds],
   );
 
   const noticeValue = useMemo(
@@ -1245,6 +1303,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       isLoading,
       currentTime,
       duration,
+      lyricOffsetSeconds,
       volume,
       playMode,
       queue,
@@ -1259,6 +1318,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       isLoading,
       currentTime,
       duration,
+      lyricOffsetSeconds,
       volume,
       playMode,
       queue,
@@ -1294,6 +1354,7 @@ const PLAYER_DEFAULTS: PlayerContextType = {
   isLoading: false,
   currentTime: 0,
   duration: 0,
+  lyricOffsetSeconds: 0,
   volume: 1,
   playMode: "sequence",
   queue: [],
@@ -1306,6 +1367,8 @@ const PLAYER_DEFAULTS: PlayerContextType = {
   pausePlayback: () => {},
   resumePlayback: async () => {},
   seek: () => {},
+  setLyricOffsetSeconds: () => {},
+  adjustLyricOffsetSeconds: () => {},
   playNext: () => {},
   playPrev: () => {},
   addToQueue: () => {},
@@ -1338,6 +1401,8 @@ export const usePlayerActions = () => {
       pausePlayback: PLAYER_DEFAULTS.pausePlayback,
       resumePlayback: PLAYER_DEFAULTS.resumePlayback,
       seek: PLAYER_DEFAULTS.seek,
+      setLyricOffsetSeconds: PLAYER_DEFAULTS.setLyricOffsetSeconds,
+      adjustLyricOffsetSeconds: PLAYER_DEFAULTS.adjustLyricOffsetSeconds,
       playNext: PLAYER_DEFAULTS.playNext,
       playPrev: PLAYER_DEFAULTS.playPrev,
       addToQueue: PLAYER_DEFAULTS.addToQueue,
@@ -1415,6 +1480,7 @@ export const usePlayerProgress = () => {
     return {
       currentTime: PLAYER_DEFAULTS.currentTime,
       duration: PLAYER_DEFAULTS.duration,
+      lyricOffsetSeconds: PLAYER_DEFAULTS.lyricOffsetSeconds,
     };
   }
   return context;

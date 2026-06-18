@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import {
   BoxesIcon,
   CloudIcon,
@@ -52,14 +52,42 @@ const viewMeta: Record<LibraryView, { eyebrow: string; title: string }> = {
   about: { eyebrow: 'About TuneFree', title: '关于' },
 };
 const desktopTechStack = [
-  { name: 'Tauri v2', detail: 'Desktop Container', icon: <BoxesIcon size={18} /> },
-  { name: 'Rust', detail: 'Backend Services', icon: <ServerIcon size={18} /> },
-  { name: 'Next.js 15', detail: 'App & Route UI', icon: <RocketIcon size={18} /> },
-  { name: 'React 18', detail: 'Component Engine', icon: <CodeIcon size={18} /> },
-  { name: 'TypeScript', detail: 'Typed codebase', icon: <FileCodeIcon size={18} /> },
-  { name: 'Axum', detail: 'Local API & Proxy', icon: <DatabaseIcon size={18} /> },
-  { name: 'Web Audio API', detail: 'Audio Spectrum', icon: <WaveformIcon size={18} /> },
-  { name: 'Canvas', detail: 'Spectrum Render', icon: <PanelsIcon size={18} /> },
+  { name: 'Tauri v2.11', detail: '原生桌面容器 / 托盘', icon: <BoxesIcon size={18} /> },
+  { name: 'Rust 2021', detail: '命令、更新与下载服务', icon: <ServerIcon size={18} /> },
+  { name: 'Next.js 15', detail: 'App Router / 静态导出', icon: <RocketIcon size={18} /> },
+  { name: 'React 18', detail: '桌面端交互组件', icon: <CodeIcon size={18} /> },
+  { name: 'TypeScript 5', detail: '核心播放与 UI 类型', icon: <FileCodeIcon size={18} /> },
+  { name: 'Axum 0.7', detail: '本地音源 API 服务', icon: <DatabaseIcon size={18} /> },
+  { name: 'Reqwest', detail: 'Rust 网络请求代理', icon: <CloudIcon size={18} /> },
+  { name: 'Web Audio API', detail: 'AnalyserNode 音频频谱', icon: <WaveformIcon size={18} /> },
+  { name: 'Canvas', detail: '实时波形背景渲染', icon: <PanelsIcon size={18} /> },
+];
+
+const aboutFeatures = [
+  ['多源聚合搜索', '内置网易云、QQ 音乐、酷我音乐搜索；JOOX 通过 GD Studio 扩展源接入。'],
+  ['跨音源播放兜底', '原音源直链失效时，会按歌名与歌手在其它音源寻找可播放候选，优先保证能播。'],
+  ['多音质与离线缓存', '支持 128K、320K、FLAC、Hi-Res 选档，并可下载到本地离线库。'],
+  ['全屏播放器与队列', '常驻底部迷你播放器、沉浸式全屏歌词、播放队列、喜欢收藏和播放模式切换。'],
+  ['多轨歌词解析', '解析主歌词、翻译、罗马音/发音与逐行时间轴，桌面歌词和播放器共享同一时间线。'],
+  ['桌面歌词窗口', '独立桌面歌词窗口支持尺寸、字体、锁定与播放控制，并基于播放快照本地投影同步。'],
+  ['本地资料库', '收藏、歌单、下载记录、播放队列与默认音质保存在本地，可 JSON 备份导入导出。'],
+  ['安和昴（486）桌宠', '桌宠可拖动、记忆位置，并根据待命、加载、播放、暂停和移动状态切换动作。'],
+  ['实时频谱动画', '复用 Web Audio AnalyserNode 与 Canvas，在迷你播放器和全屏底部渲染动态波形。'],
+  ['系统集成', '接入 Media Session、Tauri 托盘、关闭行为设置与自动更新检查。'],
+];
+
+const aboutDataSources = [
+  ['网易云', '搜索 / 榜单 / 直链 / 歌词', '本地 Rust API + Web 兼容接口'],
+  ['QQ 音乐', '搜索 / 榜单 / 直链 / 双语歌词', 'musicu 请求与 Base64 歌词解码'],
+  ['酷我音乐', '搜索 / 榜单 / 封面 / 歌词', '旧版搜索接口 + lyric fallback'],
+  ['GD Studio', 'JOOX 扩展源', GD_STUDIO_RATE_LIMIT_HINT],
+];
+
+const aboutLinks = [
+  { title: 'GitHub Releases', desc: '检查安装包与更新记录', href: 'https://github.com/alanbulan/TuneFree_Mobile/releases', icon: <GithubIcon size={30} /> },
+  { title: 'GD 音乐台', desc: '扩展音源服务来源', href: 'https://music.gdstudio.xyz/', icon: <ExternalLinkIcon size={30} /> },
+  { title: 'Tauri v2', desc: '桌面容器与系统集成文档', href: 'https://tauri.app/', icon: <BoxesIcon size={30} /> },
+  { title: 'Next.js', desc: 'App Router 与静态导出文档', href: 'https://nextjs.org/docs', icon: <RocketIcon size={30} /> },
 ];
 
 const closeBehaviorOptions: Array<{ label: string; value: CloseBehavior; hint: string }> = [
@@ -185,7 +213,7 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const [updateDownloadProgress, setUpdateDownloadProgress] = useState<number | null>(null);
-  const [appVersion, setAppVersion] = useState('1.0.24');
+  const [appVersion, setAppVersion] = useState('1.0.25');
 
   useEffect(() => {
     const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
@@ -328,6 +356,20 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
     } catch {
       showToast('打开下载目录失败', 'error');
     }
+  };
+
+  const handleOpenExternal = async (event: ReactMouseEvent<HTMLAnchorElement>, url: string) => {
+    event.preventDefault();
+    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (isTauri) {
+      try {
+        await invoke('open_external_url', { url });
+        return;
+      } catch {
+        // Fall back to the browser path below.
+      }
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const handleSelectDownloadDir = async () => {
@@ -1112,7 +1154,7 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
             <div className="about-app-icon"><MusicIcon size={38} /></div>
             <div className="about-hero-copy">
               <h3>TuneFree Desktop</h3>
-              <p>一个基于 Tauri v2 桌面容器的独立 music 播放器，保留多源聚合、无损音质、歌词解析和本地资料库，并使用 Rust 完全重构了后端 API 接口，内置安和昴（486）桌面宠物。</p>
+              <p>基于 Tauri v2、Next.js 15、React 18 与 Rust 本地服务的桌面音乐播放器。当前版本聚焦多源搜索、跨源播放兜底、多轨歌词、桌面歌词、离线缓存、本地资料库、桌宠与系统托盘集成。</p>
               <div className="about-hero-actions">
                 <span className="about-version">Tauri Desktop · v{appVersion}</span>
                 <button
@@ -1135,18 +1177,7 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
                 <h3>功能特性</h3>
               </div>
               <div className="about-feature-list">
-                {[
-                  ['多源聚合搜索', '支持网易云、QQ 音乐、酷我音乐，以及 JOOX / Bilibili 等 GD Studio 扩展音源。'],
-                  ['TuneHub 解耦', '移除已关闭的 TuneHub / TuneFree API，搜索与播放不再依赖失效链路。'],
-                  ['桌面级播放体验', '常驻底部迷你播放器、全屏播放器、播放队列、喜欢收藏、下载和音质切换。'],
-                  ['稳定播放链路', '修复 URL 解析竞态、duration 同步、无音频 URL 清理和下一首预加载。'],
-                  ['安和昴（486）桌宠', '左下角常驻、可拖动、保存位置，并按加载、播放、暂停和左右移动展示状态反馈，可在设置中关闭。'],
-                  ['逐行滚动歌词', '支持 LRC 时间轴、双语歌词合并、点击歌词跳转，以及基于歌词内容的乐谱动画。'],
-                  ['本地资料库', '收藏、歌单、JSON 备份导入导出均保存在浏览器本地。'],
-                  ['实时频谱动画', '复用移动端 Web Audio + Canvas 频谱，在进度条区域显示动态波谱背景。'],
-                  ['播放状态恢复', '当前歌曲、播放队列、播放模式和默认音质会在浏览器本地保存，刷新后仍能延续。'],
-                  ['系统媒体控制', '接入 Media Session，支持系统层面的播放、暂停、上一首、下一首和进度跳转。'],
-                ].map(([title, desc], index) => (
+                {aboutFeatures.map(([title, desc], index) => (
                   <div className="about-feature-item" key={title}>
                     <span>{index + 1}</span>
                     <div>
@@ -1175,39 +1206,52 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
                     </span>
                   ))}
                 </div>
-                <p>桌面版使用 Tauri v2 构建并由 Next.js 静态导出，API 代理和解析接口使用 Rust (Axum) 重写，打包为轻量级原生桌面应用。</p>
+                <p>前端通过 Next.js 静态导出运行在 Tauri WebView 中；Rust 侧提供下载、自动更新、外部链接、托盘生命周期，以及 Axum 本地接口与代理。</p>
               </div>
 
               <div className="about-card about-api-card glass-panel">
                 <div className="about-card-heading">
-                  <InfoIcon size={30} />
+                  <DatabaseIcon size={30} />
                   <h3>后端 API 与数据源</h3>
                 </div>
-                <p>网易云、QQ 音乐、酷我音乐使用 Rust 重构的本地接口，本地 Axum 服务启动在 3002 端口以处理网络代理与加解密请求。扩展源由 {GD_STUDIO_ATTRIBUTION} 提供。</p>
-                <p>JOOX 扩展源建议控制频率：{GD_STUDIO_RATE_LIMIT_HINT}。歌词是否双语取决于上游返回字段，桌面端会自动合并 lyric / tlyric / trans / translation。</p>
+                <p>内置 Rust / Axum 本地服务用于音源接口代理、直链解析和跨域请求。扩展源由 {GD_STUDIO_ATTRIBUTION} 提供。</p>
+                <div className="about-source-list">
+                  {aboutDataSources.map(([name, scope, detail]) => (
+                    <span key={name}>
+                      <strong>{name}</strong>
+                      <em>{scope}</em>
+                      <small>{detail}</small>
+                    </span>
+                  ))}
+                </div>
                 <div className="about-link-row">
-                  <a href="https://music.gdstudio.xyz/" target="_blank" rel="noopener noreferrer"><ExternalLinkIcon size={13} /> GD 音乐台</a>
+                  <a href="https://music.gdstudio.xyz/" target="_blank" rel="noopener noreferrer" onClick={(event) => handleOpenExternal(event, 'https://music.gdstudio.xyz/')}><ExternalLinkIcon size={13} /> GD 音乐台</a>
+                  <a href="https://github.com/alanbulan/TuneFree_Mobile/releases" target="_blank" rel="noopener noreferrer" onClick={(event) => handleOpenExternal(event, 'https://github.com/alanbulan/TuneFree_Mobile/releases')}><GithubIcon size={13} /> 版本发布</a>
                 </div>
               </div>
             </div>
           </div>
 
           <div className="about-link-grid">
-            <a className="about-card glass-panel about-link-card" href="https://music.alanbulan.space/" target="_blank" rel="noopener noreferrer">
-              <ExternalLinkIcon size={30} />
-              <h3>在线演示</h3>
-              <p>music.alanbulan.space</p>
-            </a>
-            <a className="about-card glass-panel about-link-card" href="https://github.com/alanbulan/musicxilan" target="_blank" rel="noopener noreferrer">
-              <GithubIcon size={30} />
-              <h3>GitHub 仓库</h3>
-              <p>alanbulan/musicxilan</p>
-            </a>
+            {aboutLinks.map((link) => (
+              <a
+                className="about-card glass-panel about-link-card"
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(event) => handleOpenExternal(event, link.href)}
+                key={link.href}
+              >
+                {link.icon}
+                <h3>{link.title}</h3>
+                <p>{link.desc}</p>
+              </a>
+            ))}
           </div>
 
           <div className="about-card about-notice-card glass-panel">
             <h3>声明</h3>
-            <p>本项目仅供学习 React、Next.js 与现代前端工程实践使用。音乐资源来源于第三方 API，本项目不存储任何音频文件，请支持正版音乐。</p>
+            <p>本项目仅供学习 React、Next.js、Tauri 与现代桌面端工程实践使用。音乐资源来源于第三方 API，本项目不存储任何音频文件，请支持正版音乐。</p>
             <span>MIT License © 2026 TuneFree</span>
           </div>
         </section>

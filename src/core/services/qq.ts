@@ -1,5 +1,5 @@
 import { Song, TopList } from "../types";
-import { mergeTranslatedLyrics } from "../utils/lyrics";
+import { mergeLyricTracks } from "../utils/lyrics";
 import { SELF_HOSTED_PROXY } from "./config";
 import { getProxies } from "./proxy";
 import { fixUrl } from "./utils";
@@ -206,6 +206,7 @@ export const fetchQQLyrics = async (
 
     const lyricB64: string = data.lyric || "";
     const transB64: string = data.trans || "";
+    const romanizationB64: string = data.roma || "";
 
     // QQ 歌词 API 返回 Base64 编码的 LRC 文本
     const decode = (b64: string): string => {
@@ -218,8 +219,14 @@ export const fetchQQLyrics = async (
 
     const main = decode(lyricB64);
     const trans = decode(transB64);
+    const romanization = decode(romanizationB64);
 
-    return main && trans ? mergeTranslatedLyrics(main, trans) : main;
+    return mergeLyricTracks({
+      main,
+      translation: trans,
+      romanization,
+      source: "qq",
+    });
   } catch {
     return "";
   }

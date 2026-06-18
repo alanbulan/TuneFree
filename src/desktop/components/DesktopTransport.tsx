@@ -44,6 +44,10 @@ const formatTime = (seconds: number) => {
 };
 
 const qualityOptions: AudioQuality[] = ['128k', '320k', 'flac', 'flac24bit'];
+type LyricRow = ReturnType<typeof parseLyrics>[number];
+
+const getMiniLyricSecondary = (row: LyricRow | null): string =>
+  row?.romanization || row?.pronunciation || row?.translation || row?.extra?.[0]?.text || '';
 const downloadMeta: Record<string, { ext: string }> = {
   '128k': { ext: 'mp3' },
   '320k': { ext: 'mp3' },
@@ -54,7 +58,7 @@ const downloadMeta: Record<string, { ext: string }> = {
 export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
   const { currentSong, isPlaying, isLoading } = usePlayerNowPlaying();
   const { showDesktopLyric, setShowDesktopLyric, lockDesktopLyric, setLockDesktopLyric } = useTheme();
-  const { currentTime, duration } = usePlayerProgress();
+  const { currentTime, duration, lyricOffsetSeconds } = usePlayerProgress();
   const { playMode } = usePlayerQueueState();
   const { audioQuality } = usePlayerSettings();
   const { toggleFavorite, isFavorite } = useLibrary();
@@ -78,8 +82,9 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
 
   const rawLyrics = currentSong?.lrc;
   const lyricRows = useMemo(() => parseLyrics(rawLyrics), [rawLyrics]);
-  const activeLyricIndex = findActiveLyricIndex(lyricRows, currentTime);
+  const activeLyricIndex = findActiveLyricIndex(lyricRows, currentTime, lyricOffsetSeconds);
   const activeLyric = activeLyricIndex >= 0 ? lyricRows[activeLyricIndex] : null;
+  const activeLyricSecondary = getMiniLyricSecondary(activeLyric);
   const favoriteActive = !!currentSong && isFavorite(currentSong.id, currentSong.source);
   const modeIcon = playMode === 'shuffle' ? <ShuffleIcon size={17} /> : playMode === 'loop' ? <RepeatOneIcon size={17} /> : <RepeatIcon size={17} />;
 
@@ -177,9 +182,9 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
               <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '90%' }}>
                 {activeLyric?.text || currentSong?.name || 'TuneFree Desktop'}
               </span>
-              {activeLyric?.translation ? (
+              {activeLyricSecondary ? (
                 <em style={{ fontSize: '11px', fontStyle: 'normal', opacity: 0.65, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '90%' }}>
-                  {activeLyric.translation}
+                  {activeLyricSecondary}
                 </em>
               ) : null}
             </motion.div>

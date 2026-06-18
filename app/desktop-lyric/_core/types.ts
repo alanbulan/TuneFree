@@ -14,6 +14,8 @@ export interface LyricUpdateEvent {
   currentTime: number;
   duration: number;
   isPlaying: boolean;
+  playbackRate?: number;
+  lyricOffsetSeconds?: number;
   sentAt?: number;
 }
 

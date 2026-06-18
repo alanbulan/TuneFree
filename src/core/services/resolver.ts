@@ -167,16 +167,17 @@ const getDirectSongUrl = async (
     return null;
   }
 
+  if (isGDStudioSource(source)) {
+    const gdUrl = await getGDStudioSongUrl(id, source, quality);
+    if (gdUrl) return gdUrl;
+  }
+
   if (isGDStudioOnlySource(source)) {
-    return getGDStudioSongUrl(id, source, quality);
+    return null;
   }
 
   const nativeUrl = await fetchNativeUrl(String(id), source, quality);
   if (nativeUrl) return fixUrl(nativeUrl) || null;
-
-  if (isGDStudioSource(source)) {
-    return getGDStudioSongUrl(id, source, quality);
-  }
 
   return null;
 };

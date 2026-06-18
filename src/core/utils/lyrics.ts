@@ -1,17 +1,81 @@
+export type LyricTrackType = 'main' | 'translation' | 'romanization' | 'pronunciation' | 'karaoke';
+
+export type ParsedLyricExtra = {
+  type: Exclude<LyricTrackType, 'main'> | 'main';
+  text: string;
+  time?: number;
+};
+
+export type ParsedLyricWord = {
+  start: number;
+  duration: number;
+  text: string;
+};
+
 export type ParsedLyric = {
   time: number;
   text: string;
+  mainTexts?: string[];
   translation?: string;
+  translations?: string[];
+  romanization?: string;
+  pronunciation?: string;
+  extra?: ParsedLyricExtra[];
+  words?: ParsedLyricWord[];
 };
 
-export const LYRIC_DISPLAY_LEAD_SECONDS = 0.35;
+export type LyricTrackBundle = {
+  main?: string;
+  translation?: string;
+  romanization?: string;
+  pronunciation?: string;
+  karaoke?: string;
+  source?: string;
+};
+
+export type NormalizedLyrics = {
+  lines: ParsedLyric[];
+  raw: LyricTrackBundle;
+  source?: string;
+  offsetSeconds: number;
+};
+
+export const DEFAULT_LYRIC_OFFSET_SECONDS = 0;
+export const LYRIC_DISPLAY_LEAD_SECONDS = DEFAULT_LYRIC_OFFSET_SECONDS;
 
 const timeTagPattern = /\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
 const metadataPattern = /^\s*\[(ar|al|ti|by|length|re|ve|kana):.*\]\s*$/i;
 const offsetPattern = /^\s*\[offset:([+-]?\d+)\]\s*$/i;
+const trackMarkerPattern = /^\s*\[(?:tunefree:)?([a-z_-]+)\]\s*$/i;
+const inlineWordTimePattern = /<(?:(?:\d{1,3}:)?\d{1,2}[.:]\d{1,3}|\d+,\d+)(?:,[^>]*)?>/g;
 const TRANSLATED_FALLBACK_SOURCES = new Set(['netease', 'qq']);
 const BLOCK_RESET_TOLERANCE_SECONDS = 2;
-const TRANSLATION_MATCH_TOLERANCE_SECONDS = 1.25;
+const EXTENDED_TRACK_MATCH_TOLERANCE_SECONDS = 0.1;
+const LEGACY_TRACK_MATCH_TOLERANCE_SECONDS = 0.3;
+
+const TRACK_MARKERS: Record<string, LyricTrackType> = {
+  main: 'main',
+  lyric: 'main',
+  lrc: 'main',
+  translation: 'translation',
+  translations: 'translation',
+  translated: 'translation',
+  trans: 'translation',
+  tlyric: 'translation',
+  tlrc: 'translation',
+  romanization: 'romanization',
+  romanisation: 'romanization',
+  romaji: 'romanization',
+  roma: 'romanization',
+  rlyric: 'romanization',
+  rlrc: 'romanization',
+  pronunciation: 'pronunciation',
+  pron: 'pronunciation',
+  kana: 'pronunciation',
+  karaoke: 'karaoke',
+  yrc: 'karaoke',
+  qrc: 'karaoke',
+};
 
 type RawLyricLine = {
   time: number;
@@ -20,9 +84,28 @@ type RawLyricLine = {
   key: string;
 };
 
+type LyricBlock = {
+  type: LyricTrackType | 'auto';
+  lines: RawLyricLine[];
+};
+
 type LyricDocument = {
-  blocks: RawLyricLine[][];
+  blocks: LyricBlock[];
   plainLines: string[];
+  offsetSeconds: number;
+};
+
+type TimedLineGroup = {
+  key: string;
+  time: number;
+  order: number;
+  values: string[];
+};
+
+type ExtensionTrack = {
+  type: Exclude<LyricTrackType, 'main'>;
+  lines: RawLyricLine[];
+  toleranceSeconds: number;
 };
 
 const parseTimeMatch = (match: RegExpMatchArray): number => {
@@ -33,7 +116,11 @@ const parseTimeMatch = (match: RegExpMatchArray): number => {
 };
 
 const normalizeLyricText = (line: string): string =>
-  line.replace(timeTagPattern, '').replace(/\s+/g, ' ').trim();
+  line
+    .replace(timeTagPattern, '')
+    .replace(inlineWordTimePattern, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 const getTimeKey = (time: number): string => String(Math.round(time * 100));
 
@@ -50,18 +137,44 @@ const pushUnique = (values: string[], value: string) => {
   if (value && !values.includes(value)) values.push(value);
 };
 
-const parseLyricDocument = (lrc?: string): LyricDocument => {
-  const blocks: RawLyricLine[][] = [[]];
+const getTrackTypeFromMarker = (line: string): LyricTrackType | null => {
+  const marker = line.match(trackMarkerPattern)?.[1]?.toLowerCase();
+  return marker ? TRACK_MARKERS[marker] || null : null;
+};
+
+const createBlock = (type: LyricTrackType | 'auto'): LyricBlock => ({
+  type,
+  lines: [],
+});
+
+const parseLyricDocument = (
+  lrc?: string,
+  defaultTrackType: LyricTrackType | 'auto' = 'auto',
+): LyricDocument => {
+  const blocks: LyricBlock[] = [createBlock(defaultTrackType)];
   const plainLines: string[] = [];
   let order = 0;
   let offsetSeconds = 0;
   let previousLineTime: number | null = null;
 
-  if (!lrc?.trim()) return { blocks: [], plainLines };
+  if (!lrc?.trim()) return { blocks: [], plainLines, offsetSeconds };
 
   for (const rawLine of lrc.split('\n')) {
     const line = rawLine.trim();
     if (!line) continue;
+
+    const markerType = getTrackTypeFromMarker(line);
+    if (markerType) {
+      const currentBlock = blocks[blocks.length - 1];
+      if (currentBlock.lines.length === 0) {
+        currentBlock.type = markerType;
+      } else {
+        blocks.push(createBlock(markerType));
+      }
+      offsetSeconds = 0;
+      previousLineTime = null;
+      continue;
+    }
 
     const offsetMatch = line.match(offsetPattern);
     if (offsetMatch) {
@@ -85,32 +198,31 @@ const parseLyricDocument = (lrc?: string): LyricDocument => {
       previousLineTime !== null &&
       firstTime + BLOCK_RESET_TOLERANCE_SECONDS < previousLineTime
     ) {
-      blocks.push([]);
+      blocks.push(createBlock('auto'));
     }
     previousLineTime = firstTime;
 
     const block = blocks[blocks.length - 1];
     for (const match of matches) {
       const time = Math.max(0, parseTimeMatch(match) + offsetSeconds);
-      block.push({ time, text, order, key: getTimeKey(time) });
+      block.lines.push({ time, text, order, key: getTimeKey(time) });
     }
     order += 1;
   }
 
   return {
-    blocks: blocks.filter((block) => block.length > 0),
+    blocks: blocks.filter((block) => block.lines.length > 0),
     plainLines,
+    offsetSeconds,
   };
 };
 
-const groupTimedLines = (lines: RawLyricLine[]) => {
-  const groups: Array<{
-    key: string;
-    time: number;
-    order: number;
-    values: string[];
-  }> = [];
-  const groupMap = new Map<string, (typeof groups)[number]>();
+const parseTrackLines = (raw: string | undefined, type: LyricTrackType): RawLyricLine[] =>
+  parseLyricDocument(raw, type).blocks.flatMap((block) => block.lines);
+
+const groupTimedLines = (lines: RawLyricLine[]): TimedLineGroup[] => {
+  const groups: TimedLineGroup[] = [];
+  const groupMap = new Map<string, TimedLineGroup>();
 
   for (const line of [...lines].sort((a, b) => a.time - b.time || a.order - b.order)) {
     let group = groupMap.get(line.key);
@@ -125,72 +237,116 @@ const groupTimedLines = (lines: RawLyricLine[]) => {
   return groups.sort((a, b) => a.time - b.time || a.order - b.order);
 };
 
-const setRowTranslation = (row: ParsedLyric, translations: string[]) => {
-  const values = translations.filter((text) => text && text !== row.text);
-  if (values.length === 0) return;
+const joinTrackValues = (values: string[]): string => values.join('\n');
 
-  row.translation = row.translation
-    ? [row.translation, ...values.filter((text) => !row.translation?.includes(text))].join(' / ')
-    : values.join(' / ');
+const getMainTexts = (row: ParsedLyric): string[] =>
+  row.mainTexts && row.mainTexts.length > 0 ? row.mainTexts : row.text.split('\n').filter(Boolean);
+
+const filterExtensionValues = (row: ParsedLyric, values: string[]): string[] => {
+  const mainTexts = getMainTexts(row);
+  return values.filter((text) => text && !mainTexts.includes(text));
 };
 
-const buildRowsFromPrimaryAndTranslations = (
+const setRowTrack = (
+  row: ParsedLyric,
+  type: Exclude<LyricTrackType, 'main'>,
+  values: string[],
+  sourceTime?: number,
+) => {
+  const filtered = filterExtensionValues(row, values);
+  if (filtered.length === 0) return;
+
+  if (type === 'translation') {
+    const next = [...(row.translations || [])];
+    filtered.forEach((text) => pushUnique(next, text));
+    row.translations = next;
+    row.translation = joinTrackValues(next);
+    return;
+  }
+
+  if (type === 'romanization') {
+    const existing = row.romanization ? row.romanization.split('\n') : [];
+    filtered.forEach((text) => pushUnique(existing, text));
+    row.romanization = joinTrackValues(existing);
+    return;
+  }
+
+  if (type === 'pronunciation') {
+    const existing = row.pronunciation ? row.pronunciation.split('\n') : [];
+    filtered.forEach((text) => pushUnique(existing, text));
+    row.pronunciation = joinTrackValues(existing);
+    return;
+  }
+
+  const extra = [...(row.extra || [])];
+  for (const text of filtered) {
+    if (!extra.some((item) => item.type === type && item.text === text)) {
+      extra.push({ type, text, time: sourceTime });
+    }
+  }
+  row.extra = extra;
+};
+
+const buildRowsFromPrimaryAndTracks = (
   primaryLines: RawLyricLine[],
-  translationLines: RawLyricLine[] = [],
+  tracks: ExtensionTrack[] = [],
 ): ParsedLyric[] => {
   const primaryGroups = groupTimedLines(primaryLines);
-  const translationGroups = groupTimedLines(translationLines);
-  const translationByKey = new Map(translationGroups.map((group) => [group.key, group]));
-  const usedTranslationKeys = new Set<string>();
 
-  const rows = primaryGroups.map((group) => {
-    const row: ParsedLyric = { time: group.time, text: group.values[0] || '' };
-    setRowTranslation(row, group.values.slice(1));
+  if (primaryGroups.length === 0) {
+    const fallbackTrack = tracks.find((track) => track.lines.length > 0);
+    if (!fallbackTrack) return [];
 
-    const exactTranslation = translationByKey.get(group.key);
-    if (exactTranslation) {
-      setRowTranslation(row, exactTranslation.values);
-      usedTranslationKeys.add(exactTranslation.key);
-    }
+    return groupTimedLines(fallbackTrack.lines).map((group) => ({
+      time: group.time,
+      text: joinTrackValues(group.values),
+      mainTexts: group.values.length > 1 ? group.values : undefined,
+    }));
+  }
 
-    return row;
-  }).filter((row) => row.text);
+  const rows = primaryGroups.map((group) => ({
+    time: group.time,
+    text: joinTrackValues(group.values),
+    mainTexts: group.values.length > 1 ? group.values : undefined,
+  } satisfies ParsedLyric));
 
-  rows.forEach((row, rowIndex) => {
-    if (row.translation) return;
+  for (const track of tracks) {
+    const groups = groupTimedLines(track.lines);
+    const groupByKey = new Map(groups.map((group) => [group.key, group]));
+    const usedKeys = new Set<string>();
 
-    let bestGroup: (typeof translationGroups)[number] | null = null;
-    let bestScore = Number.POSITIVE_INFINITY;
-    const primaryOrder = primaryGroups[rowIndex]?.order || 0;
+    rows.forEach((row, index) => {
+      const primaryGroup = primaryGroups[index];
+      const exactGroup = groupByKey.get(primaryGroup.key);
+      if (!exactGroup) return;
 
-    for (const group of translationGroups) {
-      if (usedTranslationKeys.has(group.key)) continue;
+      setRowTrack(row, track.type, exactGroup.values, exactGroup.time);
+      usedKeys.add(exactGroup.key);
+    });
 
-      const timeDiff = Math.abs(group.time - row.time);
-      if (timeDiff > TRANSLATION_MATCH_TOLERANCE_SECONDS) continue;
+    rows.forEach((row, rowIndex) => {
+      const primaryGroup = primaryGroups[rowIndex];
+      let bestGroup: TimedLineGroup | null = null;
+      let bestScore = Number.POSITIVE_INFINITY;
 
-      const score = timeDiff + Math.abs(group.order - primaryOrder) * 0.02;
-      if (score < bestScore) {
-        bestScore = score;
-        bestGroup = group;
+      for (const group of groups) {
+        if (usedKeys.has(group.key)) continue;
+
+        const timeDiff = Math.abs(group.time - row.time);
+        if (timeDiff > track.toleranceSeconds) continue;
+
+        const score = timeDiff + Math.abs(group.order - primaryGroup.order) * 0.02;
+        if (score < bestScore) {
+          bestScore = score;
+          bestGroup = group;
+        }
       }
-    }
 
-    if (bestGroup) {
-      setRowTranslation(row, bestGroup.values);
-      usedTranslationKeys.add(bestGroup.key);
-    }
-  });
-
-  for (const group of translationGroups) {
-    if (usedTranslationKeys.has(group.key)) continue;
-
-    const text = group.values[0] || '';
-    if (!text) continue;
-
-    const row: ParsedLyric = { time: group.time, text };
-    setRowTranslation(row, group.values.slice(1));
-    rows.push(row);
+      if (bestGroup) {
+        setRowTrack(row, track.type, bestGroup.values, bestGroup.time);
+        usedKeys.add(bestGroup.key);
+      }
+    });
   }
 
   return rows.sort((a, b) => a.time - b.time);
@@ -202,46 +358,104 @@ const buildPlainRows = (plainLines: string[]): ParsedLyric[] =>
     text,
   }));
 
-export const mergeTranslatedLyrics = (main: string, trans: string): string => {
-  if (!main?.trim()) return trans || '';
-  if (!trans?.trim()) return main || '';
-
-  const mainDocument = parseLyricDocument(main);
-  const translationDocument = parseLyricDocument(trans);
-  const mainLines = mainDocument.blocks.flat();
-  const translationLines = translationDocument.blocks.flat();
-
-  if (mainLines.length === 0 || translationLines.length === 0) {
-    return `${main}\n${trans}`;
-  }
-
-  const rows = buildRowsFromPrimaryAndTranslations(mainLines, translationLines);
-  return rows.flatMap((row) => {
-    const timestamp = formatLyricTime(row.time);
-    const lines = [`[${timestamp}]${row.text}`];
-    if (row.translation) lines.push(`[${timestamp}]${row.translation}`);
-    return lines;
-  }).join('\n');
+const inferLegacyAutoTrackType = (autoTrackIndex: number): Exclude<LyricTrackType, 'main'> => {
+  if (autoTrackIndex === 2) return 'romanization';
+  return 'translation';
 };
+
+export const normalizeLyrics = (bundle: LyricTrackBundle): NormalizedLyrics => {
+  const primaryLines = parseTrackLines(bundle.main, 'main');
+  const tracks: ExtensionTrack[] = [];
+
+  const addTrack = (type: Exclude<LyricTrackType, 'main'>, raw?: string) => {
+    const lines = parseTrackLines(raw, type);
+    if (lines.length === 0) return;
+    tracks.push({
+      type,
+      lines,
+      toleranceSeconds: EXTENDED_TRACK_MATCH_TOLERANCE_SECONDS,
+    });
+  };
+
+  addTrack('translation', bundle.translation);
+  addTrack('romanization', bundle.romanization);
+  addTrack('pronunciation', bundle.pronunciation);
+  addTrack('karaoke', bundle.karaoke);
+
+  return {
+    lines: buildRowsFromPrimaryAndTracks(primaryLines, tracks),
+    raw: bundle,
+    source: bundle.source,
+    offsetSeconds: 0,
+  };
+};
+
+export const toLegacyParsedLyrics = (lyrics: NormalizedLyrics): ParsedLyric[] => lyrics.lines;
+
+export const mergeLyricTracks = (bundle: LyricTrackBundle): string => {
+  const entries: Array<[LyricTrackType, string | undefined]> = [
+    ['main', bundle.main],
+    ['translation', bundle.translation],
+    ['romanization', bundle.romanization],
+    ['pronunciation', bundle.pronunciation],
+    ['karaoke', bundle.karaoke],
+  ];
+
+  const nonEmpty = entries
+    .map(([type, value]) => [type, value?.trim() || ''] as const)
+    .filter(([, value]) => value.length > 0);
+
+  if (nonEmpty.length === 0) return '';
+  if (nonEmpty.length === 1 && nonEmpty[0][0] === 'main') return nonEmpty[0][1];
+
+  return nonEmpty
+    .map(([type, value]) => `[tunefree:${type}]\n${value}`)
+    .join('\n\n');
+};
+
+export const mergeTranslatedLyrics = (main: string, trans: string): string =>
+  mergeLyricTracks({ main, translation: trans });
 
 export const parseLyrics = (lrc?: string): ParsedLyric[] => {
   const document = parseLyricDocument(lrc);
   if (document.blocks.length === 0) return buildPlainRows(document.plainLines);
 
-  const [primaryBlock, ...translationBlocks] = document.blocks;
-  if (!primaryBlock) return buildPlainRows(document.plainLines);
+  const primaryLines: RawLyricLine[] = [];
+  const tracks: ExtensionTrack[] = [];
+  let autoExtensionIndex = 0;
 
-  return buildRowsFromPrimaryAndTranslations(primaryBlock, translationBlocks.flat());
+  document.blocks.forEach((block, index) => {
+    let type = block.type;
+    if (type === 'auto') {
+      type = index === 0 ? 'main' : inferLegacyAutoTrackType(autoExtensionIndex++);
+    }
+
+    if (type === 'main') {
+      primaryLines.push(...block.lines);
+      return;
+    }
+
+    tracks.push({
+      type,
+      lines: block.lines,
+      toleranceSeconds: block.type === 'auto'
+        ? LEGACY_TRACK_MATCH_TOLERANCE_SECONDS
+        : EXTENDED_TRACK_MATCH_TOLERANCE_SECONDS,
+    });
+  });
+
+  const rows = buildRowsFromPrimaryAndTracks(primaryLines, tracks);
+  return rows.length > 0 ? rows : buildPlainRows(document.plainLines);
 };
 
 export const findActiveLyricIndex = (
   rows: ParsedLyric[],
   currentTime: number,
-  leadSeconds = LYRIC_DISPLAY_LEAD_SECONDS,
+  lyricOffsetSeconds = DEFAULT_LYRIC_OFFSET_SECONDS,
 ): number => {
   if (rows.length === 0) return -1;
 
-  const targetTime = currentTime + leadSeconds;
+  const targetTime = currentTime + lyricOffsetSeconds;
   let low = 0;
   let high = rows.length - 1;
   let activeIndex = 0;
@@ -260,7 +474,15 @@ export const findActiveLyricIndex = (
 };
 
 export const hasTranslatedLyrics = (rows: ParsedLyric[]): boolean =>
-  rows.some((row) => !!row.translation);
+  rows.some((row) => !!row.translation || (row.translations?.length || 0) > 0);
+
+export const hasExtendedLyrics = (rows: ParsedLyric[]): boolean =>
+  rows.some((row) =>
+    !!row.translation ||
+    !!row.romanization ||
+    !!row.pronunciation ||
+    (row.extra?.length || 0) > 0,
+  );
 
 export const supportsTranslatedLyricFallback = (source?: string): boolean =>
   !!source && TRANSLATED_FALLBACK_SOURCES.has(source);

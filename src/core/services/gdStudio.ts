@@ -1,5 +1,5 @@
 import { Song } from "../types";
-import { mergeTranslatedLyrics } from "../utils/lyrics";
+import { mergeLyricTracks } from "../utils/lyrics";
 import { GD_STUDIO_API_BASE } from "./config";
 import { proxyFetch } from "./proxy";
 import { fixUrl } from "./utils";
@@ -270,20 +270,45 @@ export const getGDStudioLyrics = async (
   try {
     const data = await fetchGDStudioData<{
       lyric?: string;
+      lrc?: string;
       tlyric?: string;
       trans?: string;
       translation?: string;
+      translations?: string;
+      rlyric?: string;
+      romalrc?: string;
+      roma?: string;
+      romanization?: string;
+      pronunciation?: string;
+      qrc?: string;
+      yrc?: string;
+      karaoke?: string;
     }>({
       types: "lyric",
       source,
       id: requestId,
     });
 
-    const main = typeof data?.lyric === "string" ? data.lyric.trim() : "";
-    const trans = [data?.tlyric, data?.trans, data?.translation]
+    const main = (typeof data?.lyric === "string" ? data.lyric : data?.lrc || "").trim();
+    const trans = [data?.tlyric, data?.trans, data?.translation, data?.translations]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .map((value) => value.trim())
+      .join("\n");
+    const romanization = [data?.rlyric, data?.romalrc, data?.roma, data?.romanization]
       .find((value): value is string => typeof value === "string" && value.trim().length > 0)
       ?.trim() || "";
-    const lrc = mergeTranslatedLyrics(main, trans);
+    const pronunciation = typeof data?.pronunciation === "string" ? data.pronunciation.trim() : "";
+    const karaoke = [data?.qrc, data?.yrc, data?.karaoke]
+      .find((value): value is string => typeof value === "string" && value.trim().length > 0)
+      ?.trim() || "";
+    const lrc = mergeLyricTracks({
+      main,
+      translation: trans,
+      romanization,
+      pronunciation,
+      karaoke,
+      source,
+    });
 
     lyricCache.set(cacheKey, lrc);
     rememberTrackMeta(id, source, { lyricId: requestId });

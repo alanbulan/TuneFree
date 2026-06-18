@@ -34,7 +34,7 @@ import { downloadSongOffline } from '../../core/services/offlineDownloads';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { AudioQuality } from '../../core/types';
-import { findActiveLyricIndex, LYRIC_DISPLAY_LEAD_SECONDS, parseLyrics } from '../../core/utils/lyrics';
+import { findActiveLyricIndex, parseLyrics } from '../../core/utils/lyrics';
 import { getSongKey, isSameSong } from '../../core/types';
 import CoverArt from './CoverArt';
 import { useToast } from './ToastHost';
@@ -59,6 +59,8 @@ type NoteStyle = CSSProperties & {
   '--note-duration'?: string;
   '--note-drift'?: string;
 };
+
+type LyricRow = ReturnType<typeof parseLyrics>[number];
 
 const noteGlyphs = ['♪', '♫', '♩', '♬', '♭', '♯'];
 
@@ -105,9 +107,16 @@ const playModeLabel = {
   shuffle: '随机播放',
 };
 
+const getLyricExtensionLines = (row: LyricRow) => [
+  row.romanization,
+  row.pronunciation,
+  row.translation,
+  ...(row.extra || []).map((item) => item.text),
+].filter((line): line is string => !!line);
+
 export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: DesktopFullPlayerProps) {
   const { currentSong, isPlaying, isLoading } = usePlayerNowPlaying();
-  const { currentTime, duration } = usePlayerProgress();
+  const { currentTime, duration, lyricOffsetSeconds } = usePlayerProgress();
   const { queue, playMode } = usePlayerQueueState();
   const { audioQuality } = usePlayerSettings();
   const { toggleFavorite, isFavorite, playlists, addToPlaylist, createPlaylist } = useLibrary();
@@ -147,7 +156,7 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
   const modeIcon = playMode === 'shuffle' ? <ShuffleIcon size={17} /> : playMode === 'loop' ? <RepeatOneIcon size={17} /> : <RepeatIcon size={17} />;
   const rawLyrics = currentSong?.lrc;
   const lyricRows = useMemo(() => parseLyrics(rawLyrics), [rawLyrics]);
-  const activeLyricIndex = findActiveLyricIndex(lyricRows, currentTime);
+  const activeLyricIndex = findActiveLyricIndex(lyricRows, currentTime, lyricOffsetSeconds);
   const activeLyric = activeLyricIndex >= 0 ? lyricRows[activeLyricIndex] : null;
   const lyricWindow = lyricRows.map((row, index) => ({ row, index }));
   const scoreText = activeLyric?.text || currentSong?.name || 'TuneFree Desktop';
@@ -526,10 +535,12 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
                         style={style}
                         key={`${row.time}-${row.text}`}
                         data-active={offset === 0 ? 'true' : undefined}
-                        onClick={() => seek(Math.max(0, row.time - LYRIC_DISPLAY_LEAD_SECONDS))}
+                        onClick={() => seek(Math.max(0, row.time))}
                       >
                         <span>{row.text}</span>
-                        {row.translation ? <em>{row.translation}</em> : null}
+                        {getLyricExtensionLines(row).map((line, lineIndex) => (
+                          <em key={`${row.time}-${lineIndex}-${line}`}>{line}</em>
+                        ))}
                       </button>
                     );
                   })}
