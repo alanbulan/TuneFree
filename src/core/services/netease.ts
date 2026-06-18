@@ -1,4 +1,5 @@
 import { Song, TopList } from "../types";
+import { mergeTranslatedLyrics } from "../utils/lyrics";
 import { proxyFetchJson } from "./proxy";
 import { fixUrl } from "./utils";
 
@@ -96,7 +97,7 @@ export const fetchNeteaselyrics = async (
     );
     const main: string = data?.lrc?.lyric || "";
     const trans: string = data?.tlyric?.lyric || "";
-    return main && trans ? `${main}\n${trans}` : main;
+    return main && trans ? mergeTranslatedLyrics(main, trans) : main;
   } catch {
     return "";
   }

@@ -1,4 +1,5 @@
 import { Song } from "../types";
+import { mergeTranslatedLyrics } from "../utils/lyrics";
 import { GD_STUDIO_API_BASE } from "./config";
 import { proxyFetch } from "./proxy";
 import { fixUrl } from "./utils";
@@ -57,87 +58,6 @@ const decodeResponseText = (buffer: ArrayBuffer): string => {
   } catch {
     return utf8;
   }
-};
-
-const lyricTimeTagPattern = /\[(\d{1,3}:\d{2}(?:[.:]\d{1,3})?)\]/g;
-
-const normalizeLyricTimestamp = (timestamp: string): string => {
-  const match = timestamp.match(/^(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?$/);
-  if (!match) return timestamp;
-
-  const minutes = match[1].padStart(2, "0");
-  const seconds = match[2];
-  const fraction = (match[3] || "0").padEnd(2, "0").slice(0, 2);
-  return `${minutes}:${seconds}.${fraction}`;
-};
-
-const parseLyricLines = (lrc: string): Map<string, string[]> => {
-  const rows = new Map<string, string[]>();
-
-  for (const rawLine of lrc.split("\n")) {
-    const line = rawLine.trim();
-    if (!line) continue;
-
-    const matches = Array.from(line.matchAll(lyricTimeTagPattern));
-    if (matches.length === 0) continue;
-
-    const text = line.replace(lyricTimeTagPattern, "").replace(/\s+/g, " ").trim();
-    if (!text) continue;
-
-    for (const match of matches) {
-      const timestamp = normalizeLyricTimestamp(match[1]);
-      const values = rows.get(timestamp) || [];
-      if (!values.includes(text)) values.push(text);
-      rows.set(timestamp, values);
-    }
-  }
-
-  return rows;
-};
-
-const mergeTranslatedLyrics = (main: string, trans: string): string => {
-  if (!main) return trans;
-  if (!trans) return main;
-
-  const mainRows = parseLyricLines(main);
-  const transRows = parseLyricLines(trans);
-  if (mainRows.size === 0 || transRows.size === 0) {
-    return `${main}\n${trans}`;
-  }
-
-  const lines: string[] = [];
-  const usedTrans = new Set<string>();
-
-  for (const rawLine of main.split("\n")) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    lines.push(line);
-
-    const matches = Array.from(line.matchAll(lyricTimeTagPattern));
-    for (const match of matches) {
-      const timestamp = normalizeLyricTimestamp(match[1]);
-      const translations = transRows.get(timestamp) || [];
-      for (const text of translations) {
-        const mergedLine = `[${timestamp}]${text}`;
-        if (!usedTrans.has(mergedLine)) {
-          lines.push(mergedLine);
-          usedTrans.add(mergedLine);
-        }
-      }
-    }
-  }
-
-  for (const [timestamp, translations] of transRows.entries()) {
-    for (const text of translations) {
-      const mergedLine = `[${timestamp}]${text}`;
-      if (!usedTrans.has(mergedLine) && !mainRows.has(timestamp)) {
-        lines.push(mergedLine);
-        usedTrans.add(mergedLine);
-      }
-    }
-  }
-
-  return lines.join("\n");
 };
 
 const tryParseJson = (text: string): any | null => {

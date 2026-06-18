@@ -1392,7 +1392,7 @@ img { display: block; }
   text-align: center;
   opacity: .72;
   transform: translateY(calc(var(--lyric-offset, 0) * 3px));
-  transition: color .22s ease, opacity .22s ease, transform .22s ease, background .22s ease;
+  transition: color .14s ease, opacity .14s ease, transform .14s ease, background .14s ease;
 }
 .lyric-line:hover { background: rgba(255,255,255,.52); color: #3a3a40; }
 .lyric-line span,
@@ -2093,7 +2093,7 @@ input, textarea, [contenteditable="true"], .panel-input {
 
 .lyric-line {
   font-size: clamp(16px, calc(var(--lyric-font-size, 22px) * .9), 26px);
-  transition: font-size 0.2s ease, color 0.2s ease, opacity 0.25s ease, transform 0.25s ease !important;
+  transition: font-size 0.14s ease, color 0.14s ease, opacity 0.14s ease, transform 0.14s ease !important;
   line-height: 1.42;
   margin-bottom: 14px;
 }

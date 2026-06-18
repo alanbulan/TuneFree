@@ -1,4 +1,5 @@
 import { Song, TopList } from "../types";
+import { mergeTranslatedLyrics } from "../utils/lyrics";
 import { SELF_HOSTED_PROXY } from "./config";
 import { getProxies } from "./proxy";
 import { fixUrl } from "./utils";
@@ -218,7 +219,7 @@ export const fetchQQLyrics = async (
     const main = decode(lyricB64);
     const trans = decode(transB64);
 
-    return main && trans ? `${main}\n${trans}` : main;
+    return main && trans ? mergeTranslatedLyrics(main, trans) : main;
   } catch {
     return "";
   }

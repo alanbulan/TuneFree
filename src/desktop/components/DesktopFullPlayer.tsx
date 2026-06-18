@@ -29,12 +29,12 @@ import {
   usePlayerQueueState,
   usePlayerSettings,
 } from '../../core/contexts/PlayerContext';
-import { getLyrics, getSongUrl, triggerDownload } from '../../core/services/api';
+import { getSongUrl, triggerDownload } from '../../core/services/api';
 import { downloadSongOffline } from '../../core/services/offlineDownloads';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { AudioQuality } from '../../core/types';
-import { findActiveLyricIndex, hasTranslatedLyrics, parseLyrics, supportsTranslatedLyricFallback, type ParsedLyric } from '../../core/utils/lyrics';
+import { findActiveLyricIndex, LYRIC_DISPLAY_LEAD_SECONDS, parseLyrics } from '../../core/utils/lyrics';
 import { getSongKey, isSameSong } from '../../core/types';
 import CoverArt from './CoverArt';
 import { useToast } from './ToastHost';
@@ -45,8 +45,6 @@ interface DesktopFullPlayerProps {
   onClose: () => void;
   onSearch: (query: string) => void;
 }
-
-type LyricRow = ParsedLyric;
 
 type CoverPanelStyle = CSSProperties & {
   '--full-cover-bg'?: string;
@@ -130,8 +128,6 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
       unlistenPromise.then((unlisten) => unlisten());
     };
   }, []);
-  const [lyricsOverride, setLyricsOverride] = useState('');
-  const [lyricsLoading, setLyricsLoading] = useState(false);
   const [showMorePanel, setShowMorePanel] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const lyricListRef = useRef<HTMLDivElement>(null);
@@ -149,7 +145,7 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
     setAudioQuality,
   } = usePlayerActions();
   const modeIcon = playMode === 'shuffle' ? <ShuffleIcon size={17} /> : playMode === 'loop' ? <RepeatOneIcon size={17} /> : <RepeatIcon size={17} />;
-  const rawLyrics = lyricsOverride || currentSong?.lrc;
+  const rawLyrics = currentSong?.lrc;
   const lyricRows = useMemo(() => parseLyrics(rawLyrics), [rawLyrics]);
   const activeLyricIndex = findActiveLyricIndex(lyricRows, currentTime);
   const activeLyric = activeLyricIndex >= 0 ? lyricRows[activeLyricIndex] : null;
@@ -160,6 +156,7 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
     ? ({ '--full-cover-bg': `url(${JSON.stringify(currentSong.pic)})` } as CoverPanelStyle)
     : undefined;
   const hasSong = !!currentSong;
+  const lyricsLoading = isLoading && hasSong && !rawLyrics;
   const favoriteActive = hasSong && isFavorite(currentSong.id, currentSong.source);
   const currentSongKey = currentSong ? getSongKey(currentSong) : '';
   const canCreatePlaylist = newPlaylistName.trim().length > 0;
@@ -173,34 +170,6 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  useEffect(() => {
-    if (!isOpen || !currentSong) {
-      setLyricsOverride('');
-      setLyricsLoading(false);
-      return;
-    }
-
-    const currentRows = parseLyrics(currentSong.lrc);
-    if (currentSong.lrc && (!supportsTranslatedLyricFallback(currentSong.source) || hasTranslatedLyrics(currentRows))) {
-      setLyricsOverride('');
-      setLyricsLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setLyricsOverride('');
-    setLyricsLoading(true);
-
-    getLyrics(currentSong.id, currentSong.source).then((lrc) => {
-      if (!cancelled) setLyricsOverride(lrc || '');
-    }).finally(() => {
-      if (!cancelled) setLyricsLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentSong, isOpen]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -232,7 +201,7 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
     let frame = 0;
     let secondFrame = 0;
     let timeout = 0;
-    const behavior: ScrollBehavior = isInitialScroll || activeLyricIndex <= 1 ? 'auto' : 'smooth';
+    const behavior: ScrollBehavior = 'auto';
 
     frame = window.requestAnimationFrame(() => {
       secondFrame = window.requestAnimationFrame(() => scrollActiveLyric(behavior));
@@ -542,7 +511,7 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -15 }}
-                  transition={{ duration: 0.35, ease: [0.2, 0.8, 0.2, 1] }}
+                  transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
                   className="lyric-scroll lyric-scrollable"
                   aria-live="polite"
                   style={{ width: '100%', height: '100%' }}
@@ -557,7 +526,7 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
                         style={style}
                         key={`${row.time}-${row.text}`}
                         data-active={offset === 0 ? 'true' : undefined}
-                        onClick={() => seek(row.time)}
+                        onClick={() => seek(Math.max(0, row.time - LYRIC_DISPLAY_LEAD_SECONDS))}
                       >
                         <span>{row.text}</span>
                         {row.translation ? <em>{row.translation}</em> : null}
@@ -571,7 +540,7 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
                   initial={{ opacity: 0, scale: 0.96 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.96 }}
-                  transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
+                  transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
                   className="lyric-scroll lyric-empty"
                   aria-live="polite"
                   style={{ width: '100%', height: '100%', display: 'grid', justifyItems: 'center', alignContent: 'center', gap: '16px' }}

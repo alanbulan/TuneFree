@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { findActiveLyricIndex, hasTranslatedLyrics, parseLyrics, supportsTranslatedLyricFallback } from '../../../src/core/utils/lyrics';
-import { getLyrics } from '../../../src/core/services/api';
+import { findActiveLyricIndex, parseLyrics } from '../../../src/core/utils/lyrics';
 import type { DesktopLyricCommand, DesktopLyricPlayerState, DesktopLyricSong, DesktopLyricStyleState, LyricUpdateEvent } from './types';
 import { forceTransparentDocument, readAndApplyDesktopLyricTheme } from './theme';
-
-const getSongKey = (song: DesktopLyricSong | null) => (song ? `${song.source}:${song.id}` : '');
 
 export const useDesktopLyricBridge = () => {
   const [song, setSong] = useState<DesktopLyricSong | null>(null);
@@ -12,8 +9,6 @@ export const useDesktopLyricBridge = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isTauri, setIsTauri] = useState(false);
   const [styleState, setStyleState] = useState<DesktopLyricStyleState>({ size: 22, font: 'system-ui', lock: false });
-  const [lyricsOverride, setLyricsOverride] = useState('');
-  const [lastSongKey, setLastSongKey] = useState('');
 
   useEffect(() => {
     const checkTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
@@ -32,15 +27,11 @@ export const useDesktopLyricBridge = () => {
       try {
         const { listen } = await import('@tauri-apps/api/event');
         lyricUnlisten = await listen<LyricUpdateEvent>('lyric-update', (event) => {
-          const { song, currentTime, isPlaying } = event.payload;
-          const nextSongKey = getSongKey(song);
+          const { song, currentTime, isPlaying, sentAt } = event.payload;
+          const bridgeDelay = isPlaying && sentAt ? Math.min(0.25, Math.max(0, Date.now() - sentAt) / 1000) : 0;
 
           setSong(song);
-          setLastSongKey((currentSongKey) => {
-            if (nextSongKey !== currentSongKey) setLyricsOverride('');
-            return nextSongKey;
-          });
-          setCurrentTime(currentTime);
+          setCurrentTime(currentTime + bridgeDelay);
           setIsPlaying(isPlaying);
         });
 
@@ -75,29 +66,7 @@ export const useDesktopLyricBridge = () => {
     };
   }, []);
 
-  const songKey = song ? getSongKey(song) : lastSongKey;
-
-  useEffect(() => {
-    if (!song || lyricsOverride || !supportsTranslatedLyricFallback(song.source)) return;
-
-    const currentRows = parseLyrics(song.lrc || '');
-    if (hasTranslatedLyrics(currentRows)) return;
-
-    let cancelled = false;
-    getLyrics(song.id, song.source).then((lrc) => {
-      if (!cancelled && lrc && lrc !== song.lrc && hasTranslatedLyrics(parseLyrics(lrc))) {
-        setLyricsOverride(lrc);
-      }
-    }).catch((e) => {
-      console.error('Failed to fetch translated lyrics:', e);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [songKey, song?.lrc, lyricsOverride, song]);
-
-  const rawLyrics = lyricsOverride || song?.lrc || '';
+  const rawLyrics = song?.lrc || '';
   const rows = useMemo(() => parseLyrics(rawLyrics), [rawLyrics]);
   const activeIndex = useMemo(() => findActiveLyricIndex(rows, currentTime), [rows, currentTime]);
   const currentLine = activeIndex >= 0 ? rows[activeIndex] : rows[0] ?? null;
