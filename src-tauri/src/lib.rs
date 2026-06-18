@@ -2,7 +2,15 @@ pub mod api;
 pub mod server;
 
 use std::io::Write;
-use tauri::{Emitter, Manager};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use tauri::{
+    menu::MenuBuilder,
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager, WindowEvent,
+};
 use tauri_plugin_dialog::DialogExt;
 
 #[derive(Clone, serde::Serialize)]
@@ -14,6 +22,37 @@ struct DownloadProgress {
 #[derive(Clone, serde::Serialize)]
 struct UpdateProgress {
     progress: u8,
+}
+
+#[derive(Clone)]
+struct AppLifecycleState {
+    is_quitting: Arc<AtomicBool>,
+}
+
+fn show_main_window(app_handle: &tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn quit_app_inner(app_handle: &tauri::AppHandle) {
+    if let Some(state) = app_handle.try_state::<AppLifecycleState>() {
+        state.is_quitting.store(true, Ordering::SeqCst);
+    }
+
+    if let Some(lyric_window) = app_handle.get_webview_window("desktop-lyric") {
+        let _ = lyric_window.hide();
+        let _ = lyric_window.close();
+    }
+
+    app_handle.exit(0);
+}
+
+#[tauri::command]
+fn quit_app(app_handle: tauri::AppHandle) {
+    quit_app_inner(&app_handle);
 }
 
 #[tauri::command]
@@ -160,7 +199,7 @@ fn get_default_download_dir(app_handle: tauri::AppHandle) -> Result<String, Stri
 #[tauri::command]
 async fn select_download_dir(app_handle: tauri::AppHandle) -> Result<Option<String>, String> {
     let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
-    
+
     app_handle.dialog().file().pick_folder(move |folder_path| {
         let path = folder_path.and_then(|p| match p {
             tauri_plugin_dialog::FilePath::Path(path_buf) => {
@@ -172,7 +211,7 @@ async fn select_download_dir(app_handle: tauri::AppHandle) -> Result<Option<Stri
         });
         let _ = tx.send(path);
     });
-    
+
     rx.await.map_err(|e| format!("对话框通道错误: {}", e))
 }
 
@@ -234,21 +273,39 @@ async fn download_and_install_update(
             .map_err(|e| format!("拉起安装程序失败: {}", e))?;
     }
 
-    app_handle.exit(0);
+    quit_app_inner(&app_handle);
     Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  let lifecycle = AppLifecycleState {
+    is_quitting: Arc::new(AtomicBool::new(false)),
+  };
+  let window_lifecycle = lifecycle.clone();
+
   tauri::Builder::default()
+    .manage(lifecycle)
     .invoke_handler(tauri::generate_handler![
         download_song_to_local,
         open_external_url,
         get_download_dir,
         get_default_download_dir,
         select_download_dir,
-        download_and_install_update
+        download_and_install_update,
+        quit_app
     ])
+    .on_window_event(move |window, event| {
+      if window.label() == "desktop-lyric" {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+          if !window_lifecycle.is_quitting.load(Ordering::SeqCst) {
+            api.prevent_close();
+            let _ = window.hide();
+            let _ = window.emit_to("main", "desktop-lyric-closed", ());
+          }
+        }
+      }
+    })
     .setup(|app| {
       app.handle().plugin(tauri_plugin_dialog::init())?;
 
@@ -260,6 +317,38 @@ pub fn run() {
         )?;
       }
 
+      let menu = MenuBuilder::new(app)
+        .text("show", "显示 TuneFree")
+        .separator()
+        .text("quit", "退出 TuneFree")
+        .build()?;
+
+      let tray_icon = app.default_window_icon().cloned();
+      let mut tray_builder = TrayIconBuilder::with_id("main")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .tooltip("TuneFree")
+        .on_menu_event(|app_handle, event| match event.id().as_ref() {
+          "show" => show_main_window(app_handle),
+          "quit" => quit_app_inner(app_handle),
+          _ => {}
+        })
+        .on_tray_icon_event(|tray, event| match event {
+          TrayIconEvent::Click {
+            button: MouseButton::Left,
+            ..
+          } | TrayIconEvent::DoubleClick {
+            button: MouseButton::Left,
+            ..
+          } => show_main_window(tray.app_handle()),
+          _ => {}
+        });
+
+      if let Some(icon) = tray_icon {
+        tray_builder = tray_builder.icon(icon);
+      }
+      let _ = tray_builder.build(app)?;
+
       // Start the local Axum web server for resolving APIs
       tauri::async_runtime::spawn(server::start_server());
 
@@ -268,4 +357,3 @@ pub fn run() {
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
-

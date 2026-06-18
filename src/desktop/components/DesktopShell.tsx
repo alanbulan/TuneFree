@@ -1,7 +1,9 @@
-import { FormEvent, useEffect, useState, useRef } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
+import { invoke } from '@tauri-apps/api/core';
 import { DownloadIcon, HeartIcon, HomeIcon, InfoIcon, LibraryIcon, SearchIcon, SettingsIcon, SidebarCollapseIcon, SidebarExpandIcon } from '../../core/components/Icons';
 import { Sun, Moon, Laptop } from 'lucide-react';
+import { useDesktopPreferences, type CloseBehavior } from '../../core/contexts/DesktopPreferencesContext';
 import { usePlayerNotice, usePlayerNowPlaying, usePlayerProgress, usePlayerActions } from '../../core/contexts/PlayerContext';
 import { useTheme } from '../../core/contexts/ThemeContext';
 import DesktopHome from '../features/home/DesktopHome';
@@ -52,6 +54,7 @@ const handleWindowControl = async (action: 'minimize' | 'maximize' | 'close') =>
 };
 
 export default function DesktopShell({ view, onViewChange }: DesktopShellProps) {
+  const { closeBehavior, setCloseBehavior } = useDesktopPreferences();
   const { playerNotice } = usePlayerNotice();
   const { showToast } = useToast();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
@@ -71,9 +74,13 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   const [searchRequest, setSearchRequest] = useState({ query: '', nonce: 0 });
   const [fullPlayerOpen, setFullPlayerOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [closePromptOpen, setClosePromptOpen] = useState(false);
+  const [rememberCloseChoice, setRememberCloseChoice] = useState(false);
 
   const lyricSizeRef = useRef(lyricSize);
   const lockDesktopLyricRef = useRef(lockDesktopLyric);
+  const closeBehaviorRef = useRef<CloseBehavior>(closeBehavior);
+  const closePromptOpenRef = useRef(closePromptOpen);
 
   useEffect(() => {
     lyricSizeRef.current = lyricSize;
@@ -81,8 +88,95 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   }, [lyricSize, lockDesktopLyric]);
 
   useEffect(() => {
+    closeBehaviorRef.current = closeBehavior;
+  }, [closeBehavior]);
+
+  useEffect(() => {
+    closePromptOpenRef.current = closePromptOpen;
+  }, [closePromptOpen]);
+
+  useEffect(() => {
     if (playerNotice) showToast(playerNotice.message, playerNotice.tone);
   }, [playerNotice, showToast]);
+
+  const hideMainToTray = useCallback(async () => {
+    if (!isTauri) return;
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      await getCurrentWindow().hide();
+      showToast('TuneFree 已在后台继续运行，可从系统托盘恢复', 'info');
+    } catch (e) {
+      console.error('Failed to hide main window to tray:', e);
+      showToast('最小化到托盘失败', 'error');
+    }
+  }, [showToast]);
+
+  const quitApplication = useCallback(async () => {
+    if (!isTauri) return;
+    try {
+      await invoke('quit_app');
+    } catch (e) {
+      console.error('Failed to quit app:', e);
+      showToast('退出应用失败', 'error');
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    if (!isTauri) return;
+
+    let unlisten: (() => void) | null = null;
+
+    const setupCloseListener = async () => {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        unlisten = await getCurrentWindow().onCloseRequested((event) => {
+          event.preventDefault();
+          const behavior = closeBehaviorRef.current;
+
+          if (behavior === 'tray') {
+            void hideMainToTray();
+            return;
+          }
+
+          if (behavior === 'exit') {
+            void quitApplication();
+            return;
+          }
+
+          if (!closePromptOpenRef.current) {
+            setRememberCloseChoice(false);
+            setClosePromptOpen(true);
+          }
+        });
+      } catch (e) {
+        console.error('Failed to listen to close requested:', e);
+      }
+    };
+
+    void setupCloseListener();
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [hideMainToTray, quitApplication]);
+
+  const resolveClosePrompt = (action: 'tray' | 'exit' | 'cancel') => {
+    if (action === 'cancel') {
+      setClosePromptOpen(false);
+      return;
+    }
+
+    if (rememberCloseChoice) {
+      setCloseBehavior(action);
+    }
+
+    setClosePromptOpen(false);
+    if (action === 'tray') {
+      void hideMainToTray();
+    } else {
+      void quitApplication();
+    }
+  };
 
   // 跨窗口同步播放进度和状态给桌面歌词窗口
   useEffect(() => {
@@ -116,12 +210,13 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   useEffect(() => {
     if (!isTauri) return;
 
-    let unlisten: (() => void) | null = null;
+    let controlUnlisten: (() => void) | null = null;
+    let lyricCloseUnlisten: (() => void) | null = null;
 
     const setupListener = async () => {
       try {
         const { listen } = await import('@tauri-apps/api/event');
-        const unsub = await listen<{ action: string; value?: any }>('player-control', (event) => {
+        controlUnlisten = await listen<{ action: string; value?: any }>('player-control', (event) => {
           const { action, value } = event.payload;
           if (action === 'play-pause') {
             togglePlay();
@@ -142,7 +237,10 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
             setShowDesktopLyric(false);
           }
         });
-        unlisten = unsub;
+
+        lyricCloseUnlisten = await listen('desktop-lyric-closed', () => {
+          setShowDesktopLyric(false);
+        });
       } catch (e) {
         console.error('Failed to listen to player-control:', e);
       }
@@ -151,7 +249,8 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
     setupListener();
 
     return () => {
-      if (unlisten) unlisten();
+      if (controlUnlisten) controlUnlisten();
+      if (lyricCloseUnlisten) lyricCloseUnlisten();
     };
   }, [togglePlay, playNext, playPrev, seek, setLockDesktopLyric, setLyricSize, setShowDesktopLyric, showToast]);
 
@@ -168,31 +267,31 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
     submitSearch(commandQuery);
   };
 
+  const themeLabel = themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '随系统';
+  const nextThemeMode = themeMode === 'light' ? 'dark' : themeMode === 'dark' ? 'system' : 'light';
+  const nextThemeLabel = nextThemeMode === 'light' ? '浅色' : nextThemeMode === 'dark' ? '深色' : '随系统';
+
   return (
     <div className={`desktop-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <header className="window-bar" data-tauri-drag-region style={{ height: '100%' }}>
-        <div className="window-brand-lockup" aria-label="TuneFree Desktop" data-tauri-drag-region>
-          <img className="brand-mark" src="/icon.svg" alt="" aria-hidden="true" data-tauri-drag-region />
-          <span data-tauri-drag-region>TuneFree</span>
-        </div>
-        <div data-tauri-drag-region style={{ display: 'flex', alignItems: 'center', flex: 1, height: '100%', minWidth: 0 }}>
+        <div className="window-brand-zone" data-tauri-drag-region>
+          <div className="window-brand-lockup" aria-label="TuneFree Desktop" data-tauri-drag-region>
+            <img className="brand-mark" src="/icon.svg" alt="" aria-hidden="true" data-tauri-drag-region />
+            <span data-tauri-drag-region>TuneFree</span>
+          </div>
           <button
             type="button"
-            className="theme-toggle-btn"
-            title={`当前主题模式: ${themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '跟随系统'}\n点击快速切换`}
-            onClick={() => {
-              if (themeMode === 'light') setThemeMode('dark');
-              else if (themeMode === 'dark') setThemeMode('system');
-              else setThemeMode('light');
-            }}
+            className="theme-toggle-btn brand-theme-toggle"
+            title={`当前主题：${themeLabel}\n点击切换到${nextThemeLabel}`}
+            aria-label={`当前主题：${themeLabel}，点击切换到${nextThemeLabel}`}
+            onClick={() => setThemeMode(nextThemeMode)}
           >
-            {themeMode === 'light' && <Sun size={12} />}
-            {themeMode === 'dark' && <Moon size={12} />}
-            {themeMode === 'system' && <Laptop size={12} />}
-            <span>
-              {themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '随系统'}
-            </span>
+            {themeMode === 'light' && <Sun size={14} />}
+            {themeMode === 'dark' && <Moon size={14} />}
+            {themeMode === 'system' && <Laptop size={14} />}
           </button>
+        </div>
+        <div data-tauri-drag-region style={{ display: 'flex', alignItems: 'center', flex: 1, height: '100%', minWidth: 0 }}>
           {view !== 'search' && (
             <form className="command-search" onSubmit={handleCommandSearch}>
               <SearchIcon size={15} />
@@ -257,6 +356,60 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
           <DesktopFullPlayer isOpen={fullPlayerOpen} onClose={() => setFullPlayerOpen(false)} onSearch={submitSearch} />
         )}
       </AnimatePresence>
+
+      {closePromptOpen && (
+        <div
+          role="presentation"
+          onMouseDown={() => resolveClosePrompt('cancel')}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            background: 'rgba(15, 23, 42, 0.18)',
+            backdropFilter: 'blur(10px)',
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="close-prompt-title"
+            onMouseDown={(event) => event.stopPropagation()}
+            className="glass-panel"
+            style={{
+              width: 'min(420px, 100%)',
+              borderRadius: '24px',
+              padding: '22px',
+              background: 'var(--ios-card)',
+              color: 'var(--text)',
+              boxShadow: '0 28px 80px rgba(0, 0, 0, 0.22)',
+              border: '1px solid var(--line)',
+            }}
+          >
+            <h3 id="close-prompt-title" style={{ margin: 0, fontSize: '18px', fontWeight: 900 }}>关闭 TuneFree？</h3>
+            <p style={{ margin: '10px 0 0', color: 'var(--muted)', fontSize: '13px', lineHeight: 1.6 }}>
+              可以让 TuneFree 留在系统托盘继续播放，也可以彻底退出应用。彻底退出时桌面歌词会一起关闭。
+            </p>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '16px', fontSize: '13px', color: 'var(--text)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={rememberCloseChoice}
+                onChange={(event) => setRememberCloseChoice(event.target.checked)}
+                style={{ width: '16px', height: '16px', accentColor: 'var(--accent)' }}
+              />
+              记住我的选择
+            </label>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px', flexWrap: 'wrap' }}>
+              <button type="button" className="soft-button" onClick={() => resolveClosePrompt('cancel')}>取消</button>
+              <button type="button" className="soft-button" onClick={() => resolveClosePrompt('tray')}>最小化到托盘</button>
+              <button type="button" className="primary-button" onClick={() => resolveClosePrompt('exit')}>退出应用</button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

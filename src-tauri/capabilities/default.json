@@ -9,15 +9,22 @@
     "core:default",
     "core:window:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging",
     "core:window:allow-minimize",
     "core:window:allow-maximize",
     "core:window:allow-close",
     "core:window:allow-toggle-maximize",
+    "core:window:allow-set-size",
+    "core:window:allow-inner-size",
+    "core:window:allow-scale-factor",
     "core:window:allow-set-ignore-cursor-events",
     "core:window:allow-set-always-on-top",
     "core:window:allow-show",
     "core:window:allow-hide",
+    "core:window:allow-unminimize",
+    "core:window:allow-set-focus",
     "core:event:allow-listen",
-    "core:event:allow-emit"
+    "core:event:allow-emit",
+    "core:event:allow-emit-to"
   ]
 }

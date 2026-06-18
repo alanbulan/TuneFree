@@ -20,6 +20,7 @@ import {
   RefreshIcon,
 } from '../../../core/components/Icons';
 import { useLibrary, type LibraryImportMode, type LibraryImportPreview } from '../../../core/contexts/LibraryContext';
+import { useDesktopPreferences, type CloseBehavior } from '../../../core/contexts/DesktopPreferencesContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { useTheme } from '../../../core/contexts/ThemeContext';
 import { invoke } from '@tauri-apps/api/core';
@@ -59,6 +60,12 @@ const desktopTechStack = [
   { name: 'Axum', detail: 'Local API & Proxy', icon: <DatabaseIcon size={18} /> },
   { name: 'Web Audio API', detail: 'Audio Spectrum', icon: <WaveformIcon size={18} /> },
   { name: 'Canvas', detail: 'Spectrum Render', icon: <PanelsIcon size={18} /> },
+];
+
+const closeBehaviorOptions: Array<{ label: string; value: CloseBehavior; hint: string }> = [
+  { label: '每次询问', value: 'ask', hint: '关闭时弹出选择，可临时决定后台运行或退出。' },
+  { label: '最小化到托盘', value: 'tray', hint: '关闭主窗口后继续后台播放，可从托盘恢复。' },
+  { label: '退出应用', value: 'exit', hint: '关闭主窗口时彻底退出，桌面歌词也会关闭。' },
 ];
 
 interface CustomSelectProps {
@@ -136,6 +143,7 @@ interface DesktopLibraryProps {
 }
 
 export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
+  const { closeBehavior, setCloseBehavior } = useDesktopPreferences();
   const {
     themeMode,
     setThemeMode,
@@ -177,7 +185,7 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const [updateDownloadProgress, setUpdateDownloadProgress] = useState<number | null>(null);
-  const [appVersion, setAppVersion] = useState('1.0.22');
+  const [appVersion, setAppVersion] = useState('1.0.23');
 
   useEffect(() => {
     const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
@@ -715,12 +723,12 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p className="eyebrow">Offline</p>
                 <h2 className="section-title">离线条目（{offlineDownloads.length}）</h2>
-                <p style={{ fontSize: '0.9rem', color: '#475569', lineHeight: 1.6, margin: '8px 0 0 0' }}>
+                <p style={{ fontSize: '0.9rem', color: 'var(--text-soft)', lineHeight: 1.6, margin: '8px 0 0 0' }}>
                   离线库已启用本地优先播放策略：下载的音频文件将作为 MP3/FLAC 格式直接存入系统下载目录，播放器会自动将歌曲元数据与音频缓存至本地，以支持无网络时的离线流畅播放。
                 </p>
                 {downloadPath && (
                   <div className="download-path-row" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.8rem', color: '#64748b', wordBreak: 'break-all' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--muted)', wordBreak: 'break-all' }}>
                       当前本地下载目录：<strong>{downloadPath}</strong>
                     </span>
                     <button
@@ -746,43 +754,43 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
                 <div className="song-table-container">
                   <table className="song-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
-                      <tr style={{ borderBottom: '1px solid rgba(15, 23, 42, 0.08)', textAlign: 'left' }}>
-                        <th style={{ padding: '12px 16px', color: '#64748b', fontWeight: 600, fontSize: '0.85rem' }}>歌曲</th>
-                        <th style={{ padding: '12px 16px', color: '#64748b', fontWeight: 600, fontSize: '0.85rem' }}>歌手</th>
-                        <th style={{ padding: '12px 16px', color: '#64748b', fontWeight: 600, fontSize: '0.85rem' }}>音质</th>
-                        <th style={{ padding: '12px 16px', color: '#64748b', fontWeight: 600, fontSize: '0.85rem' }}>大小</th>
-                        <th style={{ padding: '12px 16px', color: '#64748b', fontWeight: 600, fontSize: '0.85rem' }}>下载时间</th>
-                        <th style={{ padding: '12px 16px', color: '#64748b', fontWeight: 600, fontSize: '0.85rem', textAlign: 'right' }}>操作</th>
+                      <tr style={{ borderBottom: '1px solid var(--line)', textAlign: 'left' }}>
+                        <th style={{ padding: '12px 16px', color: 'var(--muted)', fontWeight: 600, fontSize: '0.85rem' }}>歌曲</th>
+                        <th style={{ padding: '12px 16px', color: 'var(--muted)', fontWeight: 600, fontSize: '0.85rem' }}>歌手</th>
+                        <th style={{ padding: '12px 16px', color: 'var(--muted)', fontWeight: 600, fontSize: '0.85rem' }}>音质</th>
+                        <th style={{ padding: '12px 16px', color: 'var(--muted)', fontWeight: 600, fontSize: '0.85rem' }}>大小</th>
+                        <th style={{ padding: '12px 16px', color: 'var(--muted)', fontWeight: 600, fontSize: '0.85rem' }}>下载时间</th>
+                        <th style={{ padding: '12px 16px', color: 'var(--muted)', fontWeight: 600, fontSize: '0.85rem', textAlign: 'right' }}>操作</th>
                       </tr>
                     </thead>
                     <tbody>
                       {paginatedDownloads.map((item) => (
                         <tr
                           key={item.key}
-                          style={{ borderBottom: '1px solid rgba(15, 23, 42, 0.04)', transition: 'background 0.2s' }}
+                          style={{ borderBottom: '1px solid var(--line)', transition: 'background 0.2s' }}
                           className="offline-download-row"
                         >
                           <td style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span className="source-badge" style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(250, 35, 59, 0.08)', color: '#fa233b', border: '1px solid rgba(250, 35, 59, 0.15)', fontWeight: 600 }}>
+                            <span className="source-badge" style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(var(--accent-rgb), 0.08)', color: 'var(--accent)', border: '1px solid rgba(var(--accent-rgb), 0.15)', fontWeight: 600 }}>
                               {item.song.source === 'netease' ? '网易云' : item.song.source === 'qq' ? 'QQ' : item.song.source === 'kuwo' ? '酷我' : item.song.source}
                             </span>
                             <span style={{ fontWeight: 500 }}>{item.song.name}</span>
                           </td>
-                          <td style={{ padding: '12px 16px', color: '#475569' }}>{item.song.artist}</td>
+                          <td style={{ padding: '12px 16px', color: 'var(--text-soft)' }}>{item.song.artist}</td>
                           <td style={{ padding: '12px 16px' }}>
                             <span style={{
                               fontSize: '0.75rem',
                               fontWeight: 600,
                               padding: '2px 6px',
                               borderRadius: '4px',
-                              background: item.quality === 'flac24bit' || item.quality === 'flac' ? 'rgba(250, 35, 59, 0.1)' : 'rgba(100, 116, 139, 0.1)',
-                              color: item.quality === 'flac24bit' || item.quality === 'flac' ? '#fa233b' : '#475569'
+                              background: item.quality === 'flac24bit' || item.quality === 'flac' ? 'rgba(var(--accent-rgb), 0.1)' : 'rgba(100, 116, 139, 0.1)',
+                              color: item.quality === 'flac24bit' || item.quality === 'flac' ? 'var(--accent)' : 'var(--text-soft)'
                             }}>
                               {item.quality === 'flac24bit' ? 'Hi-Res' : item.quality.toUpperCase()}
                             </span>
                           </td>
-                          <td style={{ padding: '12px 16px', color: '#64748b' }}>{formatOfflineSize(item.size)}</td>
-                          <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                          <td style={{ padding: '12px 16px', color: 'var(--muted)' }}>{formatOfflineSize(item.size)}</td>
+                          <td style={{ padding: '12px 16px', color: 'var(--faint)', fontSize: '0.85rem' }}>
                             {new Date(item.createTime).toLocaleString()}
                           </td>
                           <td style={{ padding: '12px 16px', textAlign: 'right' }}>
@@ -815,7 +823,7 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
                   >
                     上一页
                   </button>
-                  <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 500 }}>
+                  <span style={{ fontSize: '0.9rem', color: 'var(--muted)', fontWeight: 500 }}>
                     第 {downloadsPage} / {totalPages} 页
                   </span>
                   <button
@@ -868,10 +876,41 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
                   恢复默认
                 </button>
               </div>
-              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '6px', lineHeight: 1.4 }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '6px', lineHeight: 1.4 }}>
                 默认下载到当前应用的安装目录。
               </p>
             </div>
+            <div className="panel-field" style={{ marginTop: '14px' }}>
+              <label>关闭主窗口时</label>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+                {closeBehaviorOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`soft-button ${closeBehavior === option.value ? 'active' : ''}`}
+                    style={{
+                      flex: '1 1 120px',
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      backgroundColor: closeBehavior === option.value ? 'var(--accent)' : 'transparent',
+                      color: closeBehavior === option.value ? 'var(--ios-card)' : 'var(--text)',
+                      border: closeBehavior === option.value ? '1px solid var(--accent)' : '1px solid var(--line)',
+                      fontWeight: closeBehavior === option.value ? 700 : 500,
+                    }}
+                    onClick={() => {
+                      setCloseBehavior(option.value);
+                      showMessage(`关闭行为已设置为：${option.label}`, 'success');
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '6px', lineHeight: 1.4 }}>
+                {closeBehaviorOptions.find((option) => option.value === closeBehavior)?.hint}
+              </p>
+            </div>
+
             <div className="panel-field" style={{ marginTop: '14px' }}>
               <label>安和昴 (486) 桌宠</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
@@ -1022,7 +1061,7 @@ function isNewVersionAvailable(latest: string, current: string): boolean {
                   <label htmlFor="lock-lyric-toggle" style={{ fontSize: '14px', cursor: 'pointer', userSelect: 'none', color: 'var(--text)' }}>锁定桌面歌词</label>
                 </div>
               </div>
-              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '8px', lineHeight: 1.4 }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '8px', lineHeight: 1.4 }}>
                 锁定状态下鼠标将 100% 穿透歌词悬浮窗。若要解锁，请右击底部播放栏的「LRC」按钮。
               </p>
             </div>

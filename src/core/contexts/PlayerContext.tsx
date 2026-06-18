@@ -116,6 +116,17 @@ type ParsedSongData = NonNullable<Awaited<ReturnType<typeof parseSongFull>>>;
 const getFiniteAudioDuration = (audio: HTMLAudioElement): number =>
   Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
 
+const MEDIA_ERR_SRC_NOT_SUPPORTED_CODE = 4;
+
+const getMediaErrorSummary = (error: MediaError | null | undefined) => ({
+  code: error?.code ?? 0,
+  message: error?.message || "",
+});
+
+const isUnsupportedSourcePlayError = (error: any): boolean =>
+  error?.name === "NotSupportedError" ||
+  String(error?.message || "").toLowerCase().includes("source");
+
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -295,6 +306,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         console.warn(
           `Audio Element Error: Code=${errorCode}, Msg=${errorMessage}`,
         );
+        const isSourceError = errorCode === MEDIA_ERR_SRC_NOT_SUPPORTED_CODE;
         if (
           currentSongRef.current &&
           audioQualityRef.current !== "128k" &&
@@ -309,7 +321,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           playSongRef.current(currentSongRef.current, "128k");
           return;
         }
-        console.error("Critical playback failure.", audio.error);
+        if (isSourceError) {
+          console.warn("Playback source is not supported.", getMediaErrorSummary(audio.error));
+        } else {
+          console.warn("Playback failed.", getMediaErrorSummary(audio.error));
+        }
         showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
         setIsLoading(false);
         setIsPlaying(false);
@@ -760,11 +776,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             if (requestId !== playRequestIdRef.current) return;
             if (error?.name === "AbortError") return;
 
-            console.error("Play start failed:", error?.name, error?.message);
+            console.warn("Play start failed:", error?.name, error?.message);
 
             if (
-              (error?.name === "NotSupportedError" ||
-                String(error?.message || "").includes("source")) &&
+              isUnsupportedSourcePlayError(error) &&
               retryCountRef.current === 0 &&
               targetQuality !== "128k"
             ) {
@@ -1162,38 +1177,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       playerNotice,
       actionsValue,
     ]);
-
-  // --- 跨窗口监听来自桌面歌词的控制事件 ---
-  useEffect(() => {
-    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
-    if (!isTauri) return;
-
-    let unlisten: (() => void) | null = null;
-    const setupListener = async () => {
-      try {
-        const { listen } = await import("@tauri-apps/api/event");
-        const unsub = await listen<{ action: string; value?: any }>("player-control", (event) => {
-          const { action } = event.payload;
-          if (action === "play-pause") {
-            togglePlay();
-          } else if (action === "prev") {
-            playPrev();
-          } else if (action === "next") {
-            playNext(true);
-          }
-        });
-        unlisten = unsub;
-      } catch (err) {
-        console.error("Tauri player-control listener error:", err);
-      }
-    };
-
-    setupListener();
-
-    return () => {
-      if (unlisten) unlisten();
-    };
-  }, [togglePlay, playNext, playPrev]);
 
   return (
     <PlayerActionsContext.Provider value={actionsValue}>

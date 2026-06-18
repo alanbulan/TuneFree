@@ -1,9 +1,22 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import {
+  applyThemeClasses,
+  applyThemeVariables,
+  clampLyricSize,
+  DEFAULT_THEME_PREFERENCES,
+  normalizeThemeColor,
+  normalizeThemeMode,
+  readThemePreferences,
+  resolveThemeIsDark,
+  resolveThemeTokens,
+  THEME_STORAGE_KEYS,
+  type ThemeColor,
+  type ThemeMode,
+} from '../utils/theme';
 
-export type ThemeMode = 'light' | 'dark' | 'system';
-export type ThemeColor = 'red' | 'blue' | 'green' | 'purple' | 'orange';
+export type { ThemeColor, ThemeMode } from '../utils/theme';
 
 interface ThemeContextType {
   themeMode: ThemeMode;
@@ -22,171 +35,81 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-const COLOR_MAP: Record<ThemeColor, { light: string; lightRgb: string; dark: string; darkRgb: string }> = {
-  red: {
-    light: '#fa233b',
-    lightRgb: '250, 35, 59',
-    dark: '#ff455b',
-    darkRgb: '255, 69, 91',
-  },
-  blue: {
-    light: '#007aff',
-    lightRgb: '0, 122, 255',
-    dark: '#0a84ff',
-    darkRgb: '10, 132, 255',
-  },
-  green: {
-    light: '#34c759',
-    lightRgb: '52, 199, 89',
-    dark: '#30d158',
-    darkRgb: '48, 209, 88',
-  },
-  purple: {
-    light: '#af52de',
-    lightRgb: '175, 82, 222',
-    dark: '#bf5af2',
-    darkRgb: '191, 90, 242',
-  },
-  orange: {
-    light: '#ff9500',
-    lightRgb: '255, 149, 0',
-    dark: '#ff9f0a',
-    darkRgb: '255, 159, 10',
-  },
-};
-
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
-  const [themeColor, setThemeColorState] = useState<ThemeColor>('red');
-  const [lyricSize, setLyricSizeState] = useState<number>(22);
-  const [lyricFont, setLyricFontState] = useState<string>('system-ui');
-  const [showDesktopLyric, setShowDesktopLyricState] = useState<boolean>(false);
-  const [lockDesktopLyric, setLockDesktopLyricState] = useState<boolean>(false);
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(DEFAULT_THEME_PREFERENCES.themeMode);
+  const [themeColor, setThemeColorState] = useState<ThemeColor>(DEFAULT_THEME_PREFERENCES.themeColor);
+  const [lyricSize, setLyricSizeState] = useState<number>(DEFAULT_THEME_PREFERENCES.lyricSize);
+  const [lyricFont, setLyricFontState] = useState<string>(DEFAULT_THEME_PREFERENCES.lyricFont);
+  const [showDesktopLyric, setShowDesktopLyricState] = useState<boolean>(DEFAULT_THEME_PREFERENCES.showDesktopLyric);
+  const [lockDesktopLyric, setLockDesktopLyricState] = useState<boolean>(DEFAULT_THEME_PREFERENCES.lockDesktopLyric);
 
-  // 从 localStorage 加载配置
+  // 从 localStorage 加载配置，并对旧版本/异常值做安全兜底
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const savedMode = localStorage.getItem('tunefree_theme_mode') as ThemeMode;
-    if (savedMode) setThemeModeState(savedMode);
-
-    const savedColor = localStorage.getItem('tunefree_theme_color') as ThemeColor;
-    if (savedColor) setThemeColorState(savedColor);
-
-    const savedLyricSize = localStorage.getItem('tunefree_lyric_size');
-    if (savedLyricSize) setLyricSizeState(parseInt(savedLyricSize, 10));
-
-    const savedLyricFont = localStorage.getItem('tunefree_lyric_font');
-    if (savedLyricFont) setLyricFontState(savedLyricFont);
-
-    const savedShowDesktopLyric = localStorage.getItem('tunefree_show_desktop_lyric');
-    if (savedShowDesktopLyric) setShowDesktopLyricState(savedShowDesktopLyric === 'true');
-
-    const savedLockDesktopLyric = localStorage.getItem('tunefree_lock_desktop_lyric');
-    if (savedLockDesktopLyric) setLockDesktopLyricState(savedLockDesktopLyric === 'true');
+    const preferences = readThemePreferences(localStorage);
+    setThemeModeState(preferences.themeMode);
+    setThemeColorState(preferences.themeColor);
+    setLyricSizeState(preferences.lyricSize);
+    setLyricFontState(preferences.lyricFont);
+    setShowDesktopLyricState(preferences.showDesktopLyric);
+    setLockDesktopLyricState(preferences.lockDesktopLyric);
   }, []);
 
   const setThemeMode = (mode: ThemeMode) => {
-    setThemeModeState(mode);
-    localStorage.setItem('tunefree_theme_mode', mode);
+    const safeMode = normalizeThemeMode(mode);
+    setThemeModeState(safeMode);
+    localStorage.setItem(THEME_STORAGE_KEYS.mode, safeMode);
   };
 
   const setThemeColor = (color: ThemeColor) => {
-    setThemeColorState(color);
-    localStorage.setItem('tunefree_theme_color', color);
+    const safeColor = normalizeThemeColor(color);
+    setThemeColorState(safeColor);
+    localStorage.setItem(THEME_STORAGE_KEYS.color, safeColor);
   };
 
   const setLyricSize = (size: number) => {
-    setLyricSizeState(size);
-    localStorage.setItem('tunefree_lyric_size', size.toString());
+    const safeSize = clampLyricSize(size);
+    setLyricSizeState(safeSize);
+    localStorage.setItem(THEME_STORAGE_KEYS.lyricSize, safeSize.toString());
   };
 
   const setLyricFont = (font: string) => {
-    setLyricFontState(font);
-    localStorage.setItem('tunefree_lyric_font', font);
+    const safeFont = font || DEFAULT_THEME_PREFERENCES.lyricFont;
+    setLyricFontState(safeFont);
+    localStorage.setItem(THEME_STORAGE_KEYS.lyricFont, safeFont);
   };
 
   const setShowDesktopLyric = (show: boolean) => {
     setShowDesktopLyricState(show);
-    localStorage.setItem('tunefree_show_desktop_lyric', show ? 'true' : 'false');
+    localStorage.setItem(THEME_STORAGE_KEYS.showDesktopLyric, show ? 'true' : 'false');
   };
 
   const setLockDesktopLyric = (lock: boolean) => {
     setLockDesktopLyricState(lock);
-    localStorage.setItem('tunefree_lock_desktop_lyric', lock ? 'true' : 'false');
+    localStorage.setItem(THEME_STORAGE_KEYS.lockDesktopLyric, lock ? 'true' : 'false');
   };
 
-  // 应用主题模式（深色/浅色/系统）
+  // 应用主题模式、主题色与歌词配置到全局 CSS 变量；system 模式跟随 OS 实时变化
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const htmlEl = document.documentElement;
-
-    const applyTheme = (isDark: boolean) => {
-      if (isDark) {
-        htmlEl.classList.add('dark-theme');
-        htmlEl.classList.remove('light-theme');
-      } else {
-        htmlEl.classList.remove('dark-theme');
-        htmlEl.classList.add('light-theme');
-      }
+    const applyTheme = () => {
+      const isDark = resolveThemeIsDark(themeMode);
+      const tokens = resolveThemeTokens(themeMode, themeColor, isDark);
+      applyThemeClasses(htmlEl, isDark);
+      applyThemeVariables(htmlEl, tokens, { lyricSize, lyricFont });
     };
 
-    if (themeMode === 'system') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      applyTheme(mediaQuery.matches);
+    applyTheme();
 
-      const handler = (e: MediaQueryListEvent) => applyTheme(e.matches);
-      mediaQuery.addEventListener('change', handler);
-      return () => mediaQuery.removeEventListener('change', handler);
-    } else {
-      applyTheme(themeMode === 'dark');
-    }
-  }, [themeMode]);
-
-  // 应用主题色与歌词配置到全局 CSS 变量
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const htmlEl = document.documentElement;
-
-    // 检查当前是否为深色模式
-    const isDark = htmlEl.classList.contains('dark-theme');
-    const colorConfig = COLOR_MAP[themeColor];
-    const hexColor = isDark ? colorConfig.dark : colorConfig.light;
-    const rgbColor = isDark ? colorConfig.darkRgb : colorConfig.lightRgb;
-
-    htmlEl.style.setProperty('--accent', hexColor);
-    htmlEl.style.setProperty('--play', hexColor);
-    htmlEl.style.setProperty('--danger', hexColor);
-    htmlEl.style.setProperty('--accent-rgb', rgbColor);
-
-    // 设置歌词大小与字体
-    htmlEl.style.setProperty('--lyric-font-size', `${lyricSize}px`);
-    htmlEl.style.setProperty('--lyric-font-family', lyricFont);
-  }, [themeColor, themeMode, lyricSize, lyricFont]);
-
-  // 当系统深色模式发生变化时，如果 themeMode 是 'system'，我们需要动态更新主题强调色 hex 颜色
-  useEffect(() => {
-    if (typeof window === 'undefined' || themeMode !== 'system') return;
+    if (themeMode !== 'system') return;
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = () => {
-      const htmlEl = document.documentElement;
-      const isDark = htmlEl.classList.contains('dark-theme');
-      const colorConfig = COLOR_MAP[themeColor];
-      const hexColor = isDark ? colorConfig.dark : colorConfig.light;
-      const rgbColor = isDark ? colorConfig.darkRgb : colorConfig.lightRgb;
-
-      htmlEl.style.setProperty('--accent', hexColor);
-      htmlEl.style.setProperty('--play', hexColor);
-      htmlEl.style.setProperty('--danger', hexColor);
-      htmlEl.style.setProperty('--accent-rgb', rgbColor);
-    };
-
-    mediaQuery.addEventListener('change', handler);
-    return () => mediaQuery.removeEventListener('change', handler);
-  }, [themeColor, themeMode]);
+    mediaQuery.addEventListener('change', applyTheme);
+    return () => mediaQuery.removeEventListener('change', applyTheme);
+  }, [themeMode, themeColor, lyricSize, lyricFont]);
 
   // 跨窗口同步 Tauri 歌词窗口的显示与隐藏
   useEffect(() => {
@@ -200,7 +123,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
         const lyricWindow = await WebviewWindow.getByLabel('desktop-lyric');
 
-        if (lyricWindow) {
+        if (active && lyricWindow) {
           if (showDesktopLyric) {
             await lyricWindow.show();
             // 应用穿透属性

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { DesktopPreferencesProvider } from '../core/contexts/DesktopPreferencesContext';
 import { LibraryProvider } from '../core/contexts/LibraryContext';
 import { PlayerProvider } from '../core/contexts/PlayerContext';
 import { ThemeProvider } from '../core/contexts/ThemeContext';
@@ -94,21 +95,23 @@ export default function DesktopApp({ initialView = 'home' }: { initialView?: Des
 
   return (
     <ThemeProvider>
-      <LibraryProvider>
-        <PlayerProvider>
-          <ToastProvider>
-            <div className="desktop-app" style={{
-              opacity: isReady ? 1 : 0,
-              transition: 'opacity 0.35s ease-in-out',
-              height: '100%',
-              width: '100%',
-              backgroundColor: 'var(--ios-bg)'
-            }}>
-              <DesktopShell view={view} onViewChange={handleViewChange} />
-            </div>
-          </ToastProvider>
-        </PlayerProvider>
-      </LibraryProvider>
+      <DesktopPreferencesProvider>
+        <LibraryProvider>
+          <PlayerProvider>
+            <ToastProvider>
+              <div className="desktop-app" style={{
+                opacity: isReady ? 1 : 0,
+                transition: 'opacity 0.35s ease-in-out',
+                height: '100%',
+                width: '100%',
+                backgroundColor: 'var(--ios-bg)'
+              }}>
+                <DesktopShell view={view} onViewChange={handleViewChange} />
+              </div>
+            </ToastProvider>
+          </PlayerProvider>
+        </LibraryProvider>
+      </DesktopPreferencesProvider>
     </ThemeProvider>
   );
 }
