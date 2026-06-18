@@ -252,7 +252,7 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
           style={{ minWidth: '28px' }}
         >
           {downloading ? (
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fa233b' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent)' }}>
               {downloadProgress !== null ? `${downloadProgress}%` : '…'}
             </span>
           ) : (
