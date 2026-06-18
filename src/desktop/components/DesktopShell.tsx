@@ -58,7 +58,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   const { playerNotice } = usePlayerNotice();
   const { showToast } = useToast();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
-  const { currentTime, duration } = usePlayerProgress();
+  const { currentTime, duration, lyricOffsetSeconds } = usePlayerProgress();
   const { togglePlay, playNext, playPrev, seek } = usePlayerActions();
   const {
     showDesktopLyric,
@@ -197,6 +197,8 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
           currentTime,
           duration,
           isPlaying,
+          playbackRate: 1,
+          lyricOffsetSeconds,
           sentAt: Date.now(),
         });
       } catch (e) {
@@ -205,7 +207,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
     };
 
     syncLyric();
-  }, [currentSong, isPlaying, currentTime, duration, showDesktopLyric]);
+  }, [currentSong, isPlaying, currentTime, duration, lyricOffsetSeconds, showDesktopLyric]);
 
   // 监听歌词窗口回传的播放控制事件
   useEffect(() => {

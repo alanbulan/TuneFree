@@ -9,6 +9,14 @@ export interface Song {
   url?: string;
   urlId?: string;
   lrc?: string;
+  lyricBundle?: {
+    main?: string;
+    translation?: string;
+    romanization?: string;
+    pronunciation?: string;
+    karaoke?: string;
+    source?: string;
+  };
   lyricId?: string;
   source: 'netease' | 'qq' | 'kuwo' | string;
   types?: string[];

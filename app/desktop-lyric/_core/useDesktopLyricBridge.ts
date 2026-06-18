@@ -3,10 +3,32 @@ import { findActiveLyricIndex, parseLyrics } from '../../../src/core/utils/lyric
 import type { DesktopLyricCommand, DesktopLyricPlayerState, DesktopLyricSong, DesktopLyricStyleState, LyricUpdateEvent } from './types';
 import { forceTransparentDocument, readAndApplyDesktopLyricTheme } from './theme';
 
+type PlaybackSnapshot = {
+  song: DesktopLyricSong | null;
+  currentTime: number;
+  isPlaying: boolean;
+  playbackRate: number;
+  lyricOffsetSeconds: number;
+  receivedAt: number;
+};
+
+const getNowSeconds = () => {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now() / 1000;
+  }
+  return Date.now() / 1000;
+};
+
 export const useDesktopLyricBridge = () => {
-  const [song, setSong] = useState<DesktopLyricSong | null>(null);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [snapshot, setSnapshot] = useState<PlaybackSnapshot>({
+    song: null,
+    currentTime: 0,
+    isPlaying: false,
+    playbackRate: 1,
+    lyricOffsetSeconds: 0,
+    receivedAt: getNowSeconds(),
+  });
+  const [projectedTime, setProjectedTime] = useState(0);
   const [isTauri, setIsTauri] = useState(false);
   const [styleState, setStyleState] = useState<DesktopLyricStyleState>({ size: 22, font: 'system-ui', lock: false });
 
@@ -27,12 +49,20 @@ export const useDesktopLyricBridge = () => {
       try {
         const { listen } = await import('@tauri-apps/api/event');
         lyricUnlisten = await listen<LyricUpdateEvent>('lyric-update', (event) => {
-          const { song, currentTime, isPlaying, sentAt } = event.payload;
-          const bridgeDelay = isPlaying && sentAt ? Math.min(0.25, Math.max(0, Date.now() - sentAt) / 1000) : 0;
+          const { song, currentTime, isPlaying, playbackRate, lyricOffsetSeconds, sentAt } = event.payload;
+          const now = getNowSeconds();
+          const transportDelay = isPlaying && sentAt ? Math.max(0, Date.now() - sentAt) / 1000 : 0;
+          const baseTime = currentTime + Math.min(0.25, transportDelay);
 
-          setSong(song);
-          setCurrentTime(currentTime + bridgeDelay);
-          setIsPlaying(isPlaying);
+          setSnapshot({
+            song,
+            currentTime: baseTime,
+            isPlaying,
+            playbackRate: playbackRate && Number.isFinite(playbackRate) ? playbackRate : 1,
+            lyricOffsetSeconds: Number.isFinite(lyricOffsetSeconds) ? lyricOffsetSeconds || 0 : 0,
+            receivedAt: now,
+          });
+          setProjectedTime(baseTime);
         });
 
         lockUnlisten = await listen<boolean>('lock-change', (event) => {
@@ -52,6 +82,23 @@ export const useDesktopLyricBridge = () => {
   }, [isTauri]);
 
   useEffect(() => {
+    if (!snapshot.isPlaying) {
+      setProjectedTime(snapshot.currentTime);
+      return;
+    }
+
+    let frame = 0;
+    const tick = () => {
+      const elapsed = Math.max(0, getNowSeconds() - snapshot.receivedAt);
+      setProjectedTime(snapshot.currentTime + elapsed * snapshot.playbackRate);
+      frame = window.requestAnimationFrame(tick);
+    };
+
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [snapshot]);
+
+  useEffect(() => {
     const syncStyle = () => setStyleState(readAndApplyDesktopLyricTheme());
 
     window.addEventListener('storage', syncStyle);
@@ -66,18 +113,21 @@ export const useDesktopLyricBridge = () => {
     };
   }, []);
 
-  const rawLyrics = song?.lrc || '';
+  const rawLyrics = snapshot.song?.lrc || '';
   const rows = useMemo(() => parseLyrics(rawLyrics), [rawLyrics]);
-  const activeIndex = useMemo(() => findActiveLyricIndex(rows, currentTime), [rows, currentTime]);
+  const activeIndex = useMemo(
+    () => findActiveLyricIndex(rows, projectedTime, snapshot.lyricOffsetSeconds),
+    [rows, projectedTime, snapshot.lyricOffsetSeconds],
+  );
   const currentLine = activeIndex >= 0 ? rows[activeIndex] : rows[0] ?? null;
 
   const playerState: DesktopLyricPlayerState = {
-    song,
+    song: snapshot.song,
     rows,
     activeIndex,
     currentLine,
-    currentTime,
-    isPlaying,
+    currentTime: projectedTime,
+    isPlaying: snapshot.isPlaying,
   };
 
   const sendCommand = async (action: DesktopLyricCommand, value?: any) => {

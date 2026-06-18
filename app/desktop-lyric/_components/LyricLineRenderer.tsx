@@ -9,9 +9,17 @@ interface LyricLineRendererProps {
   depth?: number;
 }
 
+const getExtensionLines = (line: ParsedLyric): string[] => [
+  line.romanization,
+  line.pronunciation,
+  line.translation,
+  ...(line.extra || []).map((item) => item.text),
+].filter((text): text is string => !!text);
+
 export function LyricLineRenderer({ line, active = false, size, shadow, align = 'center', depth = 1 }: LyricLineRendererProps) {
-  const translationSize = Math.max(12, Math.round(size * (active ? 0.68 : 0.56)));
+  const extensionSize = Math.max(12, Math.round(size * (active ? 0.68 : 0.56)));
   const contextOpacity = Math.max(0.12, 0.7 - Math.max(0, depth - 1) * 0.055);
+  const extensionLines = getExtensionLines(line);
 
   return (
     <div
@@ -32,6 +40,7 @@ export function LyricLineRenderer({ line, active = false, size, shadow, align = 
           overflow: active ? 'visible' : 'hidden',
           overflowWrap: 'anywhere',
           wordBreak: 'break-word',
+          whiteSpace: 'pre-line',
           WebkitLineClamp: active ? undefined : 1,
           WebkitBoxOrient: 'vertical',
           fontSize: active ? `${size}px` : `${Math.max(12, Math.round(size * 0.6))}px`,
@@ -41,27 +50,29 @@ export function LyricLineRenderer({ line, active = false, size, shadow, align = 
       >
         {line.text}
       </span>
-      {line.translation && (
+      {extensionLines.map((text, index) => (
         <em
+          key={`${index}-${text}`}
           data-tauri-drag-region
           style={{
             display: active ? 'block' : '-webkit-box',
             overflow: active ? 'visible' : 'hidden',
             overflowWrap: 'anywhere',
             wordBreak: 'break-word',
+            whiteSpace: 'pre-line',
             WebkitLineClamp: active ? undefined : 1,
             WebkitBoxOrient: 'vertical',
-            fontSize: `${translationSize}px`,
+            fontSize: `${extensionSize}px`,
             fontStyle: 'normal',
             fontWeight: active ? 680 : 620,
             lineHeight: active ? 1.26 : 1.16,
             marginTop: active ? '5px' : '2px',
-            opacity: active ? 0.86 : Math.max(0.1, contextOpacity * 0.72),
+            opacity: active ? Math.max(0.62, 0.88 - index * 0.08) : Math.max(0.1, contextOpacity * 0.72),
           }}
         >
-          {line.translation}
+          {text}
         </em>
-      )}
+      ))}
     </div>
   );
 }

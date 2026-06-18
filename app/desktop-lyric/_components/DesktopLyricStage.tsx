@@ -9,6 +9,11 @@ interface DesktopLyricStageProps {
   styleState: DesktopLyricStyleState;
 }
 
+const getExtensionCount = (line?: { translation?: string; romanization?: string; pronunciation?: string; extra?: unknown[] } | null) => {
+  if (!line) return 0;
+  return [line.romanization, line.pronunciation, line.translation].filter(Boolean).length + (line.extra?.length || 0);
+};
+
 export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageHeight, setStageHeight] = useState(0);
@@ -45,13 +50,15 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
     const measuredHeight = stageHeight || (typeof window !== 'undefined' ? window.innerHeight - 68 : 0);
     if (measuredHeight < 140) return 0;
 
-    const focusReserve = currentLine?.translation ? size * 2.65 : size * 1.65;
-    const hasContextTranslations = rows.some((row, index) => index !== activeIndex && row.translation);
-    const contextLineBudget = Math.max(15, size * (hasContextTranslations ? 1.26 : 0.82));
+    const focusReserve = size * (1.65 + getExtensionCount(currentLine) * 0.86);
+    const maxContextExtensions = rows.reduce((max, row, index) => (
+      index === activeIndex ? max : Math.max(max, getExtensionCount(row))
+    ), 0);
+    const contextLineBudget = Math.max(15, size * (0.82 + Math.min(2, maxContextExtensions) * 0.44));
     const availableHeight = Math.max(0, measuredHeight - focusReserve - 14);
 
     return Math.max(0, Math.min(14, Math.floor(availableHeight / (contextLineBudget * 2))));
-  }, [activeIndex, currentLine?.translation, rows, size, stageHeight]);
+  }, [activeIndex, currentLine, rows, size, stageHeight]);
 
   const previousLines = contextDepth > 0 && activeIndex > 0
     ? rows.slice(Math.max(0, activeIndex - contextDepth), activeIndex)

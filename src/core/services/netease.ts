@@ -1,5 +1,5 @@
 import { Song, TopList } from "../types";
-import { mergeTranslatedLyrics } from "../utils/lyrics";
+import { mergeLyricTracks } from "../utils/lyrics";
 import { proxyFetchJson } from "./proxy";
 import { fixUrl } from "./utils";
 
@@ -97,7 +97,15 @@ export const fetchNeteaselyrics = async (
     );
     const main: string = data?.lrc?.lyric || "";
     const trans: string = data?.tlyric?.lyric || "";
-    return main && trans ? mergeTranslatedLyrics(main, trans) : main;
+    const romanization: string = data?.romalrc?.lyric || data?.romalrc || "";
+    const karaoke: string = data?.yrc?.lyric || data?.yrc || "";
+    return mergeLyricTracks({
+      main,
+      translation: trans,
+      romanization,
+      karaoke,
+      source: "netease",
+    });
   } catch {
     return "";
   }
