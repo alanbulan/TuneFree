@@ -14,6 +14,7 @@ export interface LyricUpdateEvent {
   currentTime: number;
   duration: number;
   isPlaying: boolean;
+  sentAt?: number;
 }
 
 export interface DesktopLyricStyleState {

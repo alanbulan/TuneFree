@@ -197,6 +197,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
           currentTime,
           duration,
           isPlaying,
+          sentAt: Date.now(),
         });
       } catch (e) {
         console.error('Failed to emit lyric-update:', e);

@@ -46,11 +46,12 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
     if (measuredHeight < 140) return 0;
 
     const focusReserve = currentLine?.translation ? size * 2.65 : size * 1.65;
-    const contextLineBudget = Math.max(15, size * 0.82);
+    const hasContextTranslations = rows.some((row, index) => index !== activeIndex && row.translation);
+    const contextLineBudget = Math.max(15, size * (hasContextTranslations ? 1.26 : 0.82));
     const availableHeight = Math.max(0, measuredHeight - focusReserve - 14);
 
     return Math.max(0, Math.min(14, Math.floor(availableHeight / (contextLineBudget * 2))));
-  }, [activeIndex, currentLine?.translation, rows.length, size, stageHeight]);
+  }, [activeIndex, currentLine?.translation, rows, size, stageHeight]);
 
   const previousLines = contextDepth > 0 && activeIndex > 0
     ? rows.slice(Math.max(0, activeIndex - contextDepth), activeIndex)

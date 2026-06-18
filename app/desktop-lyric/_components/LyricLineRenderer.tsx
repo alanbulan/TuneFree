@@ -41,20 +41,22 @@ export function LyricLineRenderer({ line, active = false, size, shadow, align = 
       >
         {line.text}
       </span>
-      {line.translation && active && (
+      {line.translation && (
         <em
           data-tauri-drag-region
           style={{
-            display: 'block',
-            overflow: 'visible',
+            display: active ? 'block' : '-webkit-box',
+            overflow: active ? 'visible' : 'hidden',
             overflowWrap: 'anywhere',
             wordBreak: 'break-word',
+            WebkitLineClamp: active ? undefined : 1,
+            WebkitBoxOrient: 'vertical',
             fontSize: `${translationSize}px`,
             fontStyle: 'normal',
-            fontWeight: 680,
-            lineHeight: 1.26,
-            marginTop: '5px',
-            opacity: 0.86,
+            fontWeight: active ? 680 : 620,
+            lineHeight: active ? 1.26 : 1.16,
+            marginTop: active ? '5px' : '2px',
+            opacity: active ? 0.86 : Math.max(0.1, contextOpacity * 0.72),
           }}
         >
           {line.translation}

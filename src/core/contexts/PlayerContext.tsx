@@ -127,6 +127,30 @@ const isUnsupportedSourcePlayError = (error: any): boolean =>
   error?.name === "NotSupportedError" ||
   String(error?.message || "").toLowerCase().includes("source");
 
+const getLyricStats = (lrc?: string) => {
+  const rows = parseLyrics(lrc);
+  return {
+    hasRows: rows.length > 0,
+    hasTranslation: hasTranslatedLyrics(rows),
+  };
+};
+
+const shouldUseLyricCandidate = (existingLrc?: string, candidateLrc?: string): boolean => {
+  if (!candidateLrc?.trim() || candidateLrc === existingLrc) return false;
+
+  const candidateStats = getLyricStats(candidateLrc);
+  if (!candidateStats.hasRows) return false;
+
+  const existingStats = getLyricStats(existingLrc);
+  if (!existingStats.hasRows) return true;
+  return !existingStats.hasTranslation && candidateStats.hasTranslation;
+};
+
+const shouldFetchBetterLyrics = (song: Pick<Song, "source">, lrc?: string): boolean => {
+  const stats = getLyricStats(lrc);
+  return !stats.hasRows || (supportsTranslatedLyricFallback(song.source) && !stats.hasTranslation);
+};
+
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -170,6 +194,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const playModeRef = useRef(playMode);
   const audioQualityRef = useRef(audioQuality);
   const activeQualityRef = useRef<AudioQuality>(audioQuality);
+  const progressFrameRef = useRef<number | null>(null);
+  const lastProgressTimeRef = useRef(0);
 
   // Track error retry to prevent loops
   const retryCountRef = useRef(0);
@@ -206,6 +232,22 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     persistAudioQuality(audioQuality);
     audioQualityRef.current = audioQuality;
   }, [audioQuality]);
+
+  const updateCurrentTimeState = useCallback((time: number) => {
+    const nextTime = Number.isFinite(time) ? Math.max(0, time) : 0;
+    lastProgressTimeRef.current = nextTime;
+    setCurrentTime(nextTime);
+  }, []);
+
+  const syncPlaybackTime = useCallback((force = false) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const nextTime = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+    if (force || Math.abs(nextTime - lastProgressTimeRef.current) >= 0.05) {
+      updateCurrentTimeState(nextTime);
+    }
+  }, [updateCurrentTimeState]);
 
   // --- Audio 事件处理器（提取为 ref 避免重复定义，支持 Audio 元素重建） ---
   const handlersRef = useRef<{
@@ -285,10 +327,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const handlers = {
       timeupdate: () => {
-        setCurrentTime(audio.currentTime);
+        syncPlaybackTime(true);
         syncMediaPosition();
       },
       loadedmetadata: () => {
+        syncPlaybackTime(true);
         syncMediaPosition();
         setIsLoading(false);
         retryCountRef.current = 0;
@@ -346,7 +389,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     handlersRef.current = handlers;
     audioRef.current = audio;
     return audio;
-  }, [showPlayerNotice, syncAudioQualityState]);
+  }, [showPlayerNotice, syncAudioQualityState, syncPlaybackTime]);
 
   // --- Audio Element 初始化（不预设 crossOrigin，由 playSong 根据源动态决定） ---
   useEffect(() => {
@@ -381,6 +424,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         preloaded.audio.removeAttribute("src");
         preloaded.audio.load();
         preloadedAudioRef.current = null;
+      }
+      if (progressFrameRef.current !== null) {
+        window.cancelAnimationFrame(progressFrameRef.current);
+        progressFrameRef.current = null;
       }
       if (audioCtxRef.current) {
         audioCtxRef.current.close();
@@ -604,6 +651,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       await activeAudio.play();
       if (requestId !== playRequestIdRef.current) return;
+      syncPlaybackTime(true);
       setIsPlaying(true);
       setIsLoading(false);
       updateMediaSession(song, "playing");
@@ -615,7 +663,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsPlaying(false);
       setIsLoading(false);
     }
-  }, [preloadNextSong, showPlayerNotice, updateMediaSession]);
+  }, [preloadNextSong, showPlayerNotice, syncPlaybackTime, updateMediaSession]);
 
   const playSong = useCallback(
     async (song: Song, forceQuality?: AudioQuality) => {
@@ -650,7 +698,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         audioRef.current.removeAttribute("src");
         audioRef.current.load();
         setIsPlaying(false);
-        setCurrentTime(0);
+        updateCurrentTimeState(0);
         setDuration(0);
       }
 
@@ -698,20 +746,33 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             });
           }
 
-          if (
-            supportsTranslatedLyricFallback(song.source) &&
-            parsed.lrc &&
-            !hasTranslatedLyrics(parseLyrics(parsed.lrc))
-          ) {
+          if (shouldFetchBetterLyrics(song, fullSong.lrc)) {
             void getLyrics(song.id, song.source).then((lrc) => {
-              if (!lrc || lrc === parsed.lrc || !hasTranslatedLyrics(parseLyrics(lrc))) return;
+              if (
+                !isSameSong(currentSongRef.current, song) ||
+                !shouldUseLyricCandidate(currentSongRef.current?.lrc, lrc)
+              ) {
+                return;
+              }
+
               setCurrentSong((prev) => {
-                if (!isSameSong(prev, song) || !prev) return prev;
-                return { ...prev, lrc };
+                if (!isSameSong(prev, song) || !prev || !shouldUseLyricCandidate(prev.lrc, lrc)) {
+                  return prev;
+                }
+
+                const nextSong = { ...prev, lrc };
+                currentSongRef.current = nextSong;
+                return nextSong;
               });
-              setQueue((prev) =>
-                prev.map((s) => (isSameSong(s, song) ? { ...s, lrc } : s)),
-              );
+              setQueue((prev) => {
+                const next = prev.map((s) =>
+                  isSameSong(s, song) && shouldUseLyricCandidate(s.lrc, lrc)
+                    ? { ...s, lrc }
+                    : s,
+                );
+                queueRef.current = next;
+                return next;
+              });
             });
           }
         }
@@ -768,6 +829,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           try {
             await activeAudio.play();
             if (requestId !== playRequestIdRef.current) return;
+            syncPlaybackTime(true);
             setIsPlaying(true);
             setIsLoading(false);
             updateMediaSession(fullSong, "playing");
@@ -817,7 +879,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           audioRef.current.pause();
           audioRef.current.removeAttribute("src");
           audioRef.current.load();
-          setCurrentTime(0);
+          updateCurrentTimeState(0);
           setDuration(0);
           showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
           setIsLoading(false);
@@ -841,6 +903,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       resumePlayback,
       showPlayerNotice,
       syncAudioQualityState,
+      syncPlaybackTime,
+      updateCurrentTimeState,
       updateMediaSession,
     ],
   );
@@ -899,10 +963,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const seek = useCallback((time: number) => {
     if (audioRef.current) {
       audioRef.current.currentTime = time;
-      setCurrentTime(time);
+      updateCurrentTimeState(time);
       updatePositionState();
     }
-  }, [updatePositionState]);
+  }, [updateCurrentTimeState, updatePositionState]);
 
   const playNext = useCallback((force = true) => {
     const q = queueRef.current;
@@ -914,6 +978,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     if (!force && mode === "loop") {
       if (audioRef.current) {
         audioRef.current.currentTime = 0;
+        updateCurrentTimeState(0);
         audioRef.current
           .play()
           .catch((e) => console.warn("单曲循环重播失败:", e));
@@ -933,13 +998,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     playSongRef.current(nextSong);
-  }, []);
+  }, [updateCurrentTimeState]);
 
   const playPrev = useCallback(() => {
     const activeAudio = audioRef.current;
     if (activeAudio && activeAudio.currentTime > 3) {
       activeAudio.currentTime = 0;
-      setCurrentTime(0);
+      updateCurrentTimeState(0);
       updatePositionState();
       return;
     }
@@ -954,7 +1019,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     if (prevIndex < 0) return;
 
     playSongRef.current(q[prevIndex]);
-  }, [updatePositionState]);
+  }, [updateCurrentTimeState, updatePositionState]);
 
   useEffect(() => {
     playNextRef.current = playNext;
@@ -981,6 +1046,31 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       updateMediaSession(currentSong, isPlaying ? "playing" : "paused");
     }
   }, [currentSong, isPlaying, updateMediaSession]);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      if (progressFrameRef.current !== null) {
+        window.cancelAnimationFrame(progressFrameRef.current);
+        progressFrameRef.current = null;
+      }
+      syncPlaybackTime(true);
+      return;
+    }
+
+    const tick = () => {
+      syncPlaybackTime();
+      progressFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    progressFrameRef.current = window.requestAnimationFrame(tick);
+
+    return () => {
+      if (progressFrameRef.current !== null) {
+        window.cancelAnimationFrame(progressFrameRef.current);
+        progressFrameRef.current = null;
+      }
+    };
+  }, [isPlaying, syncPlaybackTime]);
 
   useEffect(() => {
     if (!currentSong || !isPlaying) return;
@@ -1020,7 +1110,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         currentSongRef.current = null;
         setCurrentSong(null);
-        setCurrentTime(0);
+        updateCurrentTimeState(0);
         setDuration(0);
         setIsPlaying(false);
         setIsLoading(false);

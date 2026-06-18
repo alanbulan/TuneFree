@@ -23,12 +23,12 @@ import {
 import { useTheme } from '../../core/contexts/ThemeContext';
 import { Lock } from 'lucide-react';
 import AudioVisualizer from '../../core/components/AudioVisualizer';
-import { getLyrics, getSongUrl, triggerDownload } from '../../core/services/api';
+import { getSongUrl, triggerDownload } from '../../core/services/api';
 import { downloadSongOffline } from '../../core/services/offlineDownloads';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { AudioQuality } from '../../core/types';
-import { findActiveLyricIndex, hasTranslatedLyrics, parseLyrics, supportsTranslatedLyricFallback } from '../../core/utils/lyrics';
+import { findActiveLyricIndex, parseLyrics } from '../../core/utils/lyrics';
 import CoverArt from './CoverArt';
 import { useToast } from './ToastHost';
 
@@ -62,7 +62,6 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
   const { showToast } = useToast();
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
-  const [lyricsOverride, setLyricsOverride] = useState('');
 
   useEffect(() => {
     const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
@@ -77,34 +76,13 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
     };
   }, []);
 
-  const rawLyrics = lyricsOverride || currentSong?.lrc;
+  const rawLyrics = currentSong?.lrc;
   const lyricRows = useMemo(() => parseLyrics(rawLyrics), [rawLyrics]);
   const activeLyricIndex = findActiveLyricIndex(lyricRows, currentTime);
   const activeLyric = activeLyricIndex >= 0 ? lyricRows[activeLyricIndex] : null;
   const favoriteActive = !!currentSong && isFavorite(currentSong.id, currentSong.source);
   const modeIcon = playMode === 'shuffle' ? <ShuffleIcon size={17} /> : playMode === 'loop' ? <RepeatOneIcon size={17} /> : <RepeatIcon size={17} />;
 
-  useEffect(() => {
-    setLyricsOverride('');
-  }, [currentSong?.id, currentSong?.source]);
-
-  useEffect(() => {
-    if (!currentSong || lyricsOverride || !supportsTranslatedLyricFallback(currentSong.source)) return;
-
-    const currentRows = parseLyrics(currentSong.lrc);
-    if (hasTranslatedLyrics(currentRows)) return;
-
-    let cancelled = false;
-    getLyrics(currentSong.id, currentSong.source).then((lrc) => {
-      if (!cancelled && lrc && lrc !== currentSong.lrc && hasTranslatedLyrics(parseLyrics(lrc))) {
-        setLyricsOverride(lrc);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentSong, lyricsOverride]);
 
   const handleToggleFavorite = () => {
     if (!currentSong) return;
@@ -193,7 +171,7 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
               initial={{ y: 8, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -8, opacity: 0 }}
-              transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
+              transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
               style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', pointerEvents: 'none' }}
             >
               <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '90%' }}>
