@@ -34,3 +34,16 @@ out
 *.sw?
 
 .claude/settings.local.json
+
+# Screenshots / debug images
+tunefree-*.png
+
+# Build artifacts (should never be tracked)
+src-tauri/target/
+
+# pnpm (project uses npm)
+pnpm-lock.yaml
+pnpm-workspace.yaml
+
+# Release notes (generated, not source)
+release_notes_*.txt
