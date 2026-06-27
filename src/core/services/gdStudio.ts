@@ -15,7 +15,7 @@ type GdStudioTrack = {
   source?: string;
 };
 
-type GdStudioSource = "netease" | "kuwo" | "joox" | "bilibili" | "qq";
+type GdStudioSource = "netease" | "kuwo" | "joox" | "bilibili" | "qq" | "embeat";
 
 type CachedTrackMeta = {
   pic?: string;
@@ -30,6 +30,7 @@ const GD_STUDIO_SOURCES: readonly GdStudioSource[] = [
   "joox",
   "bilibili",
   "qq",
+  "embeat",
 ];
 
 const GD_STUDIO_ONLY_SOURCES = ["joox", "bilibili"] as const;
@@ -75,27 +76,6 @@ const looksLikeRateLimitResponse = (status: number, text: string): boolean => {
     return true;
   }
   return /频率|rate limit|too many requests/i.test(text);
-};
-
-const makeCRCTable = (): number[] => {
-  let c;
-  const crcTable: number[] = [];
-  for (let n = 0; n < 256; n++) {
-    c = n;
-    for (let k = 0; k < 8; k++) {
-      c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
-    }
-    crcTable[n] = c;
-  }
-  return crcTable;
-};
-const crcTable = makeCRCTable();
-const crc32 = (str: string): string => {
-  let crc = 0 ^ (-1);
-  for (let i = 0; i < str.length; i++) {
-    crc = (crc >>> 8) ^ crcTable[(crc ^ str.charCodeAt(i)) & 0xFF];
-  }
-  return ((crc ^ (-1)) >>> 0).toString(16).toUpperCase();
 };
 
 const fetchGDStudioData = async <T = any>(
@@ -144,16 +124,26 @@ const fetchGDStudioData = async <T = any>(
       throw new Error("GD_STUDIO_UNAVAILABLE");
     }
   } else {
-    // 2. 通用音频与歌单数据接口（types=url/lyric/pic/playlist等）：只支持 GET 请求，动态提取核心参数进行 CRC32 签名
+    // 2. 通用接口（types=url/lyric/pic/playlist/autosource等）：GET 请求，使用与网站一致的 md5 时间戳签名
+    if (!timeSynced) {
+      await syncServerTime();
+    }
+    const currentServerTime = Date.now() + lastTimeDiff;
+    const tsPrefix = String(currentServerTime).slice(0, 9);
+
+    // 签名主体：优先用 name 参数（autosource/search），其次用 urlEncode(id)
     let signSubject = "";
-    if (params.id !== undefined) {
-      signSubject = gdUrlEncode(String(params.id));
-    } else if (params.name !== undefined) {
+    if (params.name !== undefined) {
       signSubject = String(params.name);
+    } else if (params.id !== undefined) {
+      signSubject = gdUrlEncode(String(params.id));
     } else {
       signSubject = gdUrlEncode(String(params.types || ""));
     }
-    const calculatedS = crc32(signSubject);
+
+    const textToHash = `${tsPrefix}|music.gdstudio.org|20260616|${signSubject}`;
+    const md5Hex = await calculateMD5(textToHash);
+    const calculatedS = md5Hex.slice(-8).toUpperCase();
 
     const search = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
@@ -525,6 +515,55 @@ export const parseGDStudioSongFull = async (
 };
 
 /**
+ * 调用 GD Studio 的 autosource 接口：一步到位获取 embeat 源歌曲的播放URL、歌词、封面。
+ * 传入 name | artist | album 拼接串，服务器自动跨源匹配返回真实可播放的音源数据。
+ */
+export const resolveAutosource = async (
+  song: Pick<Song, "name" | "artist" | "album" | "source">,
+): Promise<{ url: string | null; lrc: string; pic: string; resolvedSource?: string } | null> => {
+  const nameParts = [song.name || ""];
+  if (song.artist) nameParts.push(song.artist);
+  if (song.album) nameParts.push(song.album);
+  const nameStr = gdUrlEncode(nameParts.join(" | "));
+
+  try {
+    const data = await fetchGDStudioData<{
+      url?: string;
+      br?: number;
+      size?: number;
+      pic?: string;
+      lyric?: string;
+      tlyric?: string;
+      source?: string;
+      id?: string | number;
+    }>({
+      types: "autosource",
+      source: song.source || "embeat",
+      name: nameStr,
+    });
+
+    const url = fixUrl(typeof data?.url === "string" ? data.url : "");
+    const pic = fixUrl(typeof data?.pic === "string" ? data.pic : "");
+    let lrc = typeof data?.lyric === "string" ? data.lyric : "";
+    if (data?.tlyric) {
+      lrc = mergeLyricTracks({ main: lrc, translation: data.tlyric });
+    }
+
+    if (!url) return null;
+
+    return {
+      url,
+      lrc,
+      pic,
+      resolvedSource: data?.source || undefined,
+    };
+  } catch (err) {
+    console.warn("[GDStudio] resolveAutosource failed:", err);
+    return null;
+  }
+};
+
+/**
  * 纯 JavaScript 经典 MD5 算法实现 (完美规避部分浏览器 WebView 对 Web Crypto MD5 的不支持限制)
  */
 async function calculateMD5(str: string): Promise<string> {
@@ -664,12 +703,10 @@ export const getAIRecommendedSongs = async (
     const urlId = String(item.url_id || id).trim();
     const pic = picId.startsWith("http") || picId.startsWith("//")
       ? fixUrl(picId)
-      : source === "joox" && picId
-        ? fixUrl(buildJooxCoverUrl(picId, 500))
-        : "";
+      : "";
 
     if (id) {
-      rememberTrackMeta(id, source, {
+      rememberTrackMeta(id, "embeat", {
         pic,
         picId,
         lyricId,
@@ -686,7 +723,7 @@ export const getAIRecommendedSongs = async (
       picId,
       lyricId,
       urlId,
-      source,
+      source: "embeat" as const,
     };
   });
 };
