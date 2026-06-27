@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "TuneFree",
-  "version": "1.0.40",
+  "version": "1.0.43",
   "identifier": "com.alanbulan.tunefree",
   "build": {
     "frontendDist": "../out",
-    "devUrl": "http://localhost:3005",
+    "devUrl": "http://localhost:3001",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
