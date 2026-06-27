@@ -292,7 +292,12 @@ export const getGDStudioSongUrl = async (
       br: normalizeBitrate(quality),
     });
 
-    const url = fixUrl(typeof data?.url === "string" ? data.url : "");
+    let url = fixUrl(typeof data?.url === "string" ? data.url : "");
+    if (!url && source === "netease") {
+      // 针对网易云音源，如果服务器API由于版权/VIP未返回链接，使用官方原生免签外链无缝Fallback播放
+      url = `https://music.163.com/song/media/outer/url?id=${requestId}.mp3`;
+    }
+
     if (!url) return null;
 
     urlCache.set(cacheKey, {
@@ -302,6 +307,14 @@ export const getGDStudioSongUrl = async (
 
     return url;
   } catch {
+    if (source === "netease") {
+      const url = `https://music.163.com/song/media/outer/url?id=${requestId}.mp3`;
+      urlCache.set(cacheKey, {
+        url,
+        expiresAt: Date.now() + URL_CACHE_TTL,
+      });
+      return url;
+    }
     return null;
   }
 };
