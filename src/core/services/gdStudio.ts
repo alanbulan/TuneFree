@@ -415,28 +415,69 @@ export const parseGDStudioSongFull = async (
 };
 
 /**
- * 原生高效率 Web Crypto MD5 算法
+ * 纯 JavaScript 经典 MD5 算法实现 (完美规避部分浏览器 WebView 对 Web Crypto MD5 的不支持限制)
  */
 async function calculateMD5(str: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(str);
-  
-  const cryptoObj = typeof window !== 'undefined' 
-    ? (window.crypto || (window as any).msCrypto)
-    : (globalThis.crypto);
-
-  if (cryptoObj?.subtle) {
-    const hashBuffer = await cryptoObj.subtle.digest('MD5', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  let k: number[] = [], i = 0;
+  for (; i < 64; ) {
+    k[i] = Math.sin(++i) * 4294967296 | 0;
   }
   
-  // Node.js 单元测试 fallback
-  try {
-    const nodeCrypto = require('crypto');
-    return nodeCrypto.createHash('md5').update(str).digest('hex');
-  } catch {
-    throw new Error("[GDStudio] MD5 encryption not available.");
+  let s = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
+  let a = 0x67452301, b = 0xefcdab89, c = 0x98badcfe, d = 0x10325476;
+  
+  let utf8 = unescape(encodeURIComponent(str));
+  let l = utf8.length, blocks = [(l + 8 >> 6) + 1 << 4], j = 0;
+  for (; j < l; j++) {
+    blocks[j >> 2] |= utf8.charCodeAt(j) << (j % 4 << 3);
+  }
+  blocks[j >> 2] |= 0x80 << (j % 4 << 3);
+  
+  // 确保 blocks 数组最后一个位置被填充
+  const lastIndex = (blocks.length > 2) ? blocks.length - 2 : 0;
+  blocks[lastIndex] = l * 8;
+  
+  for (j = 0; j < blocks.length; j += 16) {
+    let olda = a, oldb = b, oldc = c, oldd = d;
+    for (i = 0; i < 64; i++) {
+      let f = 0, g = 0;
+      if (i < 16) {
+        f = (b & c) | (~b & d);
+        g = i;
+      } else if (i < 32) {
+        f = (d & b) | (~d & c);
+        g = (5 * i + 1) % 16;
+      } else if (i < 48) {
+        f = b ^ c ^ d;
+        g = (3 * i + 5) % 16;
+      } else {
+        f = c ^ (b | ~d);
+        g = (7 * i) % 16;
+      }
+      let temp = d;
+      d = c;
+      c = b;
+      b = (b + rol(a + f + k[i] + (blocks[j + g] || 0), s[(i >> 4 << 2) + i % 4])) | 0;
+      a = temp;
+    }
+    a = (a + olda) | 0;
+    b = (b + oldb) | 0;
+    c = (c + oldc) | 0;
+    d = (d + oldd) | 0;
+  }
+  
+  return wordToHex(a) + wordToHex(b) + wordToHex(c) + wordToHex(d);
+
+  function rol(num: number, cnt: number): number {
+    return (num << cnt) | (num >>> (32 - cnt));
+  }
+  
+  function wordToHex(num: number): string {
+    let hex = '', tmp = 0;
+    for (; tmp < 4; tmp++) {
+      hex += ((num >> (tmp << 3)) & 0xff).toString(16).padStart(2, '0');
+    }
+    return hex;
   }
 }
 
