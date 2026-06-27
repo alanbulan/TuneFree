@@ -224,16 +224,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
                   描述您想听的音乐意境、情感或特定场景，由 AI 为您量身推荐歌单。
                 </p>
               </div>
-              {currentSong && (
-                <button
-                  type="button"
-                  className="ai-radar-btn"
-                  onClick={() => handleAiSearch(`和 ${currentSong.name} - ${currentSong.artist} 意境相似的歌曲`)}
-                >
-                  <Sparkles size={13} style={{ marginRight: '5px' }} />
-                  <span>开启相似音乐流</span>
-                </button>
-              )}
+
             </div>
 
             <form
@@ -262,11 +253,21 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
               />
               <button
                 type="submit"
-                className="primary-button"
-                style={{ minHeight: '40px', padding: '0 20px', borderRadius: '10px', fontWeight: 900 }}
+                className="ai-radar-btn"
+                style={{
+                  minHeight: '40px',
+                  padding: '0 20px',
+                  borderRadius: '10px',
+                  fontWeight: 900,
+                  fontSize: '13px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
                 disabled={loadingSongs || !aiQuery.trim()}
               >
-                {loadingSongs ? '分析中…' : 'AI 搜歌'}
+                <Sparkles size={14} />
+                <span>{loadingSongs ? '分析中…' : 'AI 搜歌'}</span>
               </button>
             </form>
 
