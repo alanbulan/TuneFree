@@ -4,7 +4,7 @@ import { ErrorIcon, MusicIcon, PlayIcon } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { getImgReferrerPolicy, getTopListDetail, getTopLists } from '../../../core/services/api';
-import { getAIRecommendedSongs } from '../../../core/services/gdStudio';
+import { getAIRecommendedSongs, getGDStudioPic } from '../../../core/services/gdStudio';
 import type { Song, TopList } from '../../../core/types';
 import { getMusicSourceLabel } from '../../../core/utils/musicSource';
 import SongTable from '../../components/SongTable';
@@ -61,6 +61,23 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
         showToast('AI 未能找到符合意境的歌曲，换个词试试看', 'info');
       } else {
         showToast(`AI 精心推荐了 ${songs.length} 首歌曲`, 'success');
+
+        // 异步在后台使用已有的getGDStudioPic方法拉取每一首歌曲的真实封面
+        songs.forEach((song, index) => {
+          if (!song.pic && song.picId) {
+            getGDStudioPic(song.source as any, song.picId, 300).then((resolvedPic) => {
+              if (resolvedPic) {
+                setFeaturedSongs((prev) => {
+                  const updated = [...prev];
+                  if (updated[index] && updated[index].id === song.id) {
+                    updated[index] = { ...updated[index], pic: resolvedPic };
+                  }
+                  return updated;
+                });
+              }
+            });
+          }
+        });
       }
     } catch (err: any) {
       console.error(err);
