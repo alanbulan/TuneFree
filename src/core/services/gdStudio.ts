@@ -80,51 +80,59 @@ const looksLikeRateLimitResponse = (status: number, text: string): boolean => {
 const fetchGDStudioData = async <T = any>(
   params: Record<string, string | number>,
 ): Promise<T> => {
+  // 1. 若参数中没有提供 name 关键词，我们默认使用 "tunefree" 占位词
+  const nameValue = params.name ? String(params.name) : "tunefree";
+
+  // 2. 将关键词编码（如果是已编码过的就不重复进行二次编码）
+  const encodedName = params.name ? String(params.name) : gdUrlEncode(nameValue);
+
+  // 3. 自动计算时间同步以及 s 签名
+  if (!timeSynced) {
+    await syncServerTime();
+  }
+  const currentServerTime = Date.now() + lastTimeDiff;
+  const tsPrefix = String(currentServerTime).slice(0, 9);
+  
+  // 拼接签名文本：tsPrefix | host | version | query
+  const textToHash = `${tsPrefix}|music.gdstudio.org|20260616|${encodedName}`;
+  const md5Hex = await calculateMD5(textToHash);
+  const calculatedS = params.s ? String(params.s) : md5Hex.slice(-8).toUpperCase();
+
+  // 4. 将所有接口请求统一转化为 POST（满足新版 api.php 规范且可防止参数被乱转义）
+  const bodyParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (key === "source" && value === "qq") {
+      bodyParams.set(key, "tencent");
+    } else if (key !== "name" && key !== "s") {
+      bodyParams.set(key, String(value));
+    }
+  }
+  bodyParams.set("name", encodedName);
+  bodyParams.set("s", calculatedS);
+
+  console.log(`[GDStudio] POST Requesting types=${params.types} with body:`, bodyParams.toString());
+
   let response;
-
-  if (params.types === "embeat_agent") {
-    // 针对 AI 推荐特化为 POST 发送，以满足 api.php 仅支持 POST parameter unpacking 的限制
-    const bodyParams = new URLSearchParams();
-    for (const [key, value] of Object.entries(params)) {
-      if (key === "source" && value === "qq") {
-        bodyParams.set(key, "tencent");
-      } else {
-        bodyParams.set(key, String(value));
-      }
-    }
-
-    console.log("[GDStudio] POST Requesting with body:", bodyParams.toString());
-    try {
-      response = await proxyFetch(GD_STUDIO_API_BASE, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
-        },
-        body: bodyParams.toString()
-      } as any, 12000);
-    } catch (err) {
-      console.error("[GDStudio] proxyFetch POST network error:", err);
-      throw new Error("GD_STUDIO_UNAVAILABLE");
-    }
-  } else {
-    // 普通接口保持原有的 GET 方式
-    const url = buildApiUrl(params);
-    console.log("[GDStudio] GET Requesting URL:", url);
-    try {
-      response = await proxyFetch(url, {}, 12000);
-    } catch (err) {
-      console.error("[GDStudio] proxyFetch network error:", err);
-      throw new Error("GD_STUDIO_UNAVAILABLE");
-    }
+  try {
+    response = await proxyFetch(GD_STUDIO_API_BASE, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+      },
+      body: bodyParams.toString()
+    } as any, 12000);
+  } catch (err) {
+    console.error(`[GDStudio] proxyFetch POST network error for types=${params.types}:`, err);
+    throw new Error("GD_STUDIO_UNAVAILABLE");
   }
 
   if (!response) {
-    console.error("[GDStudio] proxyFetch returned null");
+    console.error(`[GDStudio] proxyFetch returned null for types=${params.types}`);
     throw new Error("GD_STUDIO_UNAVAILABLE");
   }
 
   const text = decodeResponseText(await response.arrayBuffer());
-  console.log("[GDStudio] Response status:", response.status, "Body:", text);
+  console.log(`[GDStudio] Response status:`, response.status, `Body preview:`, text.slice(0, 500));
   const data = tryParseJson(text);
 
   if (!response.ok) {
@@ -160,26 +168,7 @@ const getUrlCacheKey = (
   quality: string,
 ): string => `${source}:${String(id)}:${quality}`;
 
-const buildApiUrl = (params: Record<string, string | number>): string => {
-  // 针对 AI 推荐接口做特化手动拼接，以防止 name 参数中已有的百分号编码被 URLSearchParams 进行二次转义
-  if (params.types === "embeat_agent") {
-    const { types, count, source, pages, name, s } = params;
-    const sourceValue = source === "qq" ? "tencent" : source;
-    return `${GD_STUDIO_API_BASE}?types=${types}&count=${count}&source=${sourceValue}&pages=${pages}&name=${name}&s=${s}`;
-  }
 
-  const search = new URLSearchParams();
-
-  for (const [key, value] of Object.entries(params)) {
-    if (key === "source" && value === "qq") {
-      search.set(key, "tencent");
-    } else {
-      search.set(key, String(value));
-    }
-  }
-
-  return `${GD_STUDIO_API_BASE}?${search.toString()}`;
-};
 
 const joinArtists = (artist: string[] | string | undefined): string => {
   if (Array.isArray(artist)) return artist.join(", ");
