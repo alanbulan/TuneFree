@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "1.0.33"
+version = "1.0.34"
 description = "TuneFree Desktop - Modern desktop music player"
 authors = ["AlanBulan"]
 license = "MIT"
