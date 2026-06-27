@@ -4,7 +4,7 @@ import { ErrorIcon, MusicIcon, PlayIcon } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { getImgReferrerPolicy, getTopListDetail, getTopLists } from '../../../core/services/api';
-import { getAIRecommendedSongs, getGDStudioPic } from '../../../core/services/gdStudio';
+import { getAIRecommendedSongs, resolveAutosource } from '../../../core/services/gdStudio';
 import type { Song, TopList } from '../../../core/types';
 import { getMusicSourceLabel } from '../../../core/utils/musicSource';
 import SongTable from '../../components/SongTable';
@@ -62,16 +62,20 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       } else {
         showToast(`AI 精心推荐了 ${songs.length} 首歌曲`, 'success');
 
-        // 异步在后台使用已有的getGDStudioPic方法拉取每一首歌曲的真实封面
+        // 异步在后台使用 autosource 接口为每首 embeat 歌曲获取真实封面
         songs.forEach((song, index) => {
           if (!song.pic) {
-            const targetId = song.source === 'netease' ? String(song.id) : String(song.picId || song.id);
-            getGDStudioPic(song.source as any, targetId, 300).then((resolvedPic) => {
-              if (resolvedPic) {
+            resolveAutosource({
+              name: song.name || '',
+              artist: song.artist || '',
+              album: song.album || '',
+              source: song.source || 'embeat',
+            }).then((result) => {
+              if (result?.pic) {
                 setFeaturedSongs((prev) => {
                   const updated = [...prev];
                   if (updated[index] && updated[index].id === song.id) {
-                    updated[index] = { ...updated[index], pic: resolvedPic };
+                    updated[index] = { ...updated[index], pic: result.pic };
                   }
                   return updated;
                 });
