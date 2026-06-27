@@ -9,7 +9,6 @@ import {
   FileCodeIcon,
   GithubIcon,
   InfoIcon,
-  MusicIcon,
   PanelsIcon,
   RocketIcon,
   ServerIcon,
@@ -82,7 +81,7 @@ export default function AboutView() {
   return (
     <section className="about-grid about-grid-rich">
       <div className="about-card about-hero-card glass-panel">
-        <div className="about-app-icon"><MusicIcon size={38} /></div>
+        <img className="about-app-icon" src="/icon.svg" alt="TuneFree" />
         <div className="about-hero-copy">
           <h3>TuneFree Desktop</h3>
           <p>基于 Tauri v2、Next.js 15、React 18 与 Rust 本地服务的桌面音乐播放器。当前版本聚焦多源搜索、跨源播放兜底、多轨歌词、桌面歌词、离线缓存、本地资料库、桌宠与系统托盘集成。</p>

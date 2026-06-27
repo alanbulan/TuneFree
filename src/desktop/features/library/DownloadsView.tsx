@@ -76,8 +76,8 @@ export default function DownloadsView() {
 
   const handleDeleteOfflineDownload = async (item: OfflineDownloadMeta) => {
     try {
-      await deleteOfflineDownload(item.key);
-      showToast('已删除离线条目', 'success');
+      await deleteOfflineDownload(item.filename);
+      showToast('已删除本地文件', 'success');
     } catch {
       showToast('删除失败，请稍后再试', 'error');
     }
@@ -91,7 +91,7 @@ export default function DownloadsView() {
             <p className="eyebrow">Offline</p>
             <h2 className="section-title">离线条目（{offlineDownloads.length}）</h2>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-soft)', lineHeight: 1.6, margin: '8px 0 0 0' }}>
-              离线库已启用本地优先播放策略：下载的音频文件将作为 MP3/FLAC 格式直接存入系统下载目录，播放器会自动将歌曲元数据与音频缓存至本地，以支持无网络时的离线流畅播放。
+              下载的音频文件直接保存在本地目录，播放时优先读取磁盘文件。如果在外部删除了文件，列表会自动同步。
             </p>
             {downloadPath && (
               <div className="download-path-row" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -133,7 +133,7 @@ export default function DownloadsView() {
                 <tbody>
                   {paginatedDownloads.map((item) => (
                     <tr
-                      key={item.key}
+                      key={item.filename}
                       style={{ borderBottom: '1px solid var(--line)', transition: 'background 0.2s' }}
                       className="offline-download-row"
                     >
@@ -158,7 +158,7 @@ export default function DownloadsView() {
                       </td>
                       <td style={{ padding: '12px 16px', color: 'var(--muted)' }}>{formatOfflineSize(item.size)}</td>
                       <td style={{ padding: '12px 16px', color: 'var(--faint)', fontSize: '0.85rem' }}>
-                        {new Date(item.createTime).toLocaleString()}
+                        {new Date(item.create_time).toLocaleString()}
                       </td>
                       <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                         <div style={{ display: 'inline-flex', gap: '8px' }}>

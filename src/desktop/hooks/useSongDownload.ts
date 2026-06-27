@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getSongUrl, triggerDownload } from '../../core/services/api';
-import { downloadSongOffline } from '../../core/services/offlineDownloads';
+import { saveDownloadMeta } from '../../core/services/offlineDownloads';
 import type { AudioQuality, Song } from '../../core/types';
 import { useDownloadProgress } from './useDownloadProgress';
 import { useToast } from '../components/ToastHost';
@@ -69,19 +69,14 @@ export function useSongDownload(): UseSongDownloadResult {
           const customDir = localStorage.getItem('tunefree_download_dir') || null;
           await invoke('download_song_to_local', { url, filename, customDir });
           try {
-            await downloadSongOffline(song, quality);
+            await saveDownloadMeta(filename, song, String(quality));
           } catch (e) {
-            console.error('写入离线库失败', e);
+            console.error('保存下载元数据失败', e);
           }
-          showToast('下载成功，已保存至本地下载目录并加入离线库', 'success');
+          showToast('下载成功，已保存至本地下载目录', 'success');
         } else {
           triggerDownload(url, filename);
-          try {
-            await downloadSongOffline(song, quality);
-          } catch (e) {
-            console.error('写入离线库失败', e);
-          }
-          showToast('已开始下载并加入离线库', 'success');
+          showToast('已开始下载', 'success');
         }
       } catch (err: unknown) {
         const message =

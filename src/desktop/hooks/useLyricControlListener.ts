@@ -34,6 +34,30 @@ export function useLyricControlListener({
   const closeBehaviorRef = useRef<CloseBehavior>(closeBehavior);
   const closePromptOpenRef = useRef(closePromptOpen);
 
+  // Refs for action functions — updated every render so the Tauri event
+  // listener (set up once) always calls the latest versions without needing
+  // to re-register (which would create async gaps where events are lost).
+  const actionsRef = useRef({
+    togglePlay,
+    playNext,
+    playPrev,
+    seek,
+    setLockDesktopLyric,
+    setLyricSize,
+    setShowDesktopLyric,
+    showToast,
+  });
+  actionsRef.current = {
+    togglePlay,
+    playNext,
+    playPrev,
+    seek,
+    setLockDesktopLyric,
+    setLyricSize,
+    setShowDesktopLyric,
+    showToast,
+  };
+
   // Keep refs in sync with latest values.
   useEffect(() => {
     lyricSizeRef.current = lyricSize;
@@ -52,6 +76,8 @@ export function useLyricControlListener({
   }, [closePromptOpen]);
 
   // Listen for player-control and desktop-lyric-closed events.
+  // Uses refs for all callbacks so the listener is registered exactly once
+  // and never needs to be torn down / re-registered.
   useEffect(() => {
     const isTauri =
       typeof window !== 'undefined' &&
@@ -60,40 +86,50 @@ export function useLyricControlListener({
 
     let controlUnlisten: (() => void) | null = null;
     let lyricCloseUnlisten: (() => void) | null = null;
+    let cancelled = false;
 
     const setupListener = async () => {
       try {
         const { listen } = await import('@tauri-apps/api/event');
+        if (cancelled) return;
+
         controlUnlisten = await listen<{ action: string; value?: unknown }>(
           'player-control',
           (event) => {
             const { action, value } = event.payload;
+            const actions = actionsRef.current;
             if (action === 'play-pause') {
-              togglePlay();
+              actions.togglePlay();
             } else if (action === 'next') {
-              playNext(true);
+              actions.playNext(true);
             } else if (action === 'prev') {
-              playPrev();
+              actions.playPrev();
             } else if (action === 'seek') {
-              seek(Number(value));
+              actions.seek(Number(value));
             } else if (action === 'toggle-lock') {
               const nextLock = value !== undefined ? !!value : !lockDesktopLyricRef.current;
-              setLockDesktopLyric(nextLock);
-              showToast(
+              actions.setLockDesktopLyric(nextLock);
+              actions.showToast(
                 nextLock ? '桌面歌词已锁定（鼠标穿透）' : '桌面歌词已解锁',
                 'info',
               );
             } else if (action === 'adjust-lyric-size') {
               const nextSize = Math.max(14, Math.min(36, lyricSizeRef.current + Number(value)));
-              setLyricSize(nextSize);
+              actions.setLyricSize(nextSize);
             } else if (action === 'close-lyric') {
-              setShowDesktopLyric(false);
+              actions.setShowDesktopLyric(false);
             }
           },
         );
 
+        if (cancelled) {
+          controlUnlisten?.();
+          controlUnlisten = null;
+          return;
+        }
+
         lyricCloseUnlisten = await listen('desktop-lyric-closed', () => {
-          setShowDesktopLyric(false);
+          actionsRef.current.setShowDesktopLyric(false);
         });
       } catch (e) {
         console.error('Failed to listen to player-control:', e);
@@ -103,19 +139,11 @@ export function useLyricControlListener({
     void setupListener();
 
     return () => {
+      cancelled = true;
       controlUnlisten?.();
       lyricCloseUnlisten?.();
     };
-  }, [
-    togglePlay,
-    playNext,
-    playPrev,
-    seek,
-    setLockDesktopLyric,
-    setLyricSize,
-    setShowDesktopLyric,
-    showToast,
-  ]);
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps -- intentionally empty: listener registered once, reads latest via refs
 
   return {
     lyricSizeRef,

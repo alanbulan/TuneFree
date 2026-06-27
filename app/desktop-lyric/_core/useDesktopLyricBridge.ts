@@ -154,10 +154,10 @@ export const useDesktopLyricBridge = () => {
     if (!isTauri) return;
 
     try {
-      const { emitTo } = await import('@tauri-apps/api/event');
-      await emitTo('main', 'player-control', { action, value });
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('relay_player_control', { action, value });
     } catch (e) {
-      console.error('Failed to emit player-control:', e);
+      console.error('Failed to send player-control:', e);
     }
   };
 
