@@ -67,6 +67,7 @@
   --lyric-stage-bg: linear-gradient(180deg, rgba(255,255,255,.70), rgba(242,242,247,.78));
   /* Full player panel gradient overlay */
   --player-overlay: linear-gradient(90deg, rgba(255,255,255,.92) 0%, rgba(255,255,255,.84) 47%, rgba(255,255,255,.96) 62%, #fff 72%, #fff 100%);
+  --view-fade-from: rgba(255,255,255,.22);
 }
 
 * { box-sizing: border-box; }
@@ -1635,7 +1636,7 @@ img { display: block; }
 .skeleton-library-card { pointer-events: none; }
 .skeleton-card-icon { width: 36px; height: 36px; border-radius: 12px; }
 @keyframes skeletonSweep { 0% { background-position: 160% 0; } 100% { background-position: -80% 0; } }
-@keyframes viewScrollFade { from { background: rgba(255,255,255,.34); } to { background: transparent; } }
+@keyframes viewScrollFade { from { background: var(--view-fade-from); } to { background: transparent; } }
 @keyframes toastIn { from { opacity: 0; transform: translate3d(12px, 8px, 0) scale(.98); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
 @keyframes viewEnter {
   from { opacity: 0; transform: translate3d(18px, 10px, 0) scale(.988); filter: blur(8px); }
@@ -2184,6 +2185,7 @@ body, .lyric-text, .song-info, .about-content, input, textarea, [contenteditable
   --lyric-stage-bg: linear-gradient(180deg, rgba(24,24,27,.70), rgba(9,9,11,.78));
   /* Full player panel gradient overlay */
   --player-overlay: linear-gradient(180deg, rgba(24,24,27,.10), rgba(9,9,11,.34));
+  --view-fade-from: transparent;
 }
 
 /* 全屏歌词自定义字号与字体联动 */
@@ -2305,6 +2307,7 @@ body, .lyric-text, .song-info, .about-content, input, textarea, [contenteditable
 ::view-transition-new(root) {
   animation-duration: 0.35s;
   animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  mix-blend-mode: normal;
 }
 ::view-transition-old(root) {
   animation-name: vt-fade-out;
