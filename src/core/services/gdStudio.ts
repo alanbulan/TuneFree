@@ -80,12 +80,24 @@ const looksLikeRateLimitResponse = (status: number, text: string): boolean => {
 const fetchGDStudioData = async <T = any>(
   params: Record<string, string | number>,
 ): Promise<T> => {
-  const response = await proxyFetch(buildApiUrl(params), {}, 12000);
+  const url = buildApiUrl(params);
+  console.log("[GDStudio] Requesting URL:", url);
+
+  let response;
+  try {
+    response = await proxyFetch(url, {}, 12000);
+  } catch (err) {
+    console.error("[GDStudio] proxyFetch network error:", err);
+    throw new Error("GD_STUDIO_UNAVAILABLE");
+  }
+
   if (!response) {
+    console.error("[GDStudio] proxyFetch returned null for URL:", url);
     throw new Error("GD_STUDIO_UNAVAILABLE");
   }
 
   const text = decodeResponseText(await response.arrayBuffer());
+  console.log("[GDStudio] Response status:", response.status, "Body:", text);
   const data = tryParseJson(text);
 
   if (!response.ok) {
