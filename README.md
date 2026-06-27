@@ -26,14 +26,24 @@ TuneFree Desktop 是一款基于 Tauri v2、Next.js 15 和 React 18 构建的现
 
 ```text
 ├── app/                  # Next.js App Router 路由与页面配置
+│   ├── desktop-lyric/    # 桌面歌词窗口路由
+│   ├── library/          # 音乐库页面
+│   └── search/           # 搜索页面
+├── functions/            # Cloudflare Pages Functions（CORS 代理 / 音源解析）
+│   └── api/
+│       ├── cors-proxy.ts # CORS 代理（白名单转发）
+│       └── url.ts        # 音源 URL 解析（网易云 / QQ / 酷我）
 ├── src/
 │   ├── core/             # 音乐服务、上下文管理器与核心类型定义
 │   └── desktop/          # 桌面端专用交互组件与主视图
 ├── src-tauri/
 │   ├── src/              # Rust 后端主程序与 Axum 代理服务
 │   ├── icons/            # 应用程序多尺寸图标资产
+│   ├── Cargo.toml        # Rust 依赖与 crate 配置
 │   └── tauri.conf.json   # Tauri 容器配置文件
 ├── public/               # 静态前端资源
+├── bump-version.js       # 统一版本号自增脚本（tauri.conf.json / package.json / Cargo.toml）
+├── vitest.config.ts      # Vitest 测试配置
 └── package.json          # 前端依赖与构建脚本
 ```
 
@@ -69,8 +79,9 @@ npm run tauri build
 ```
 
 构建完成后，程序将输出在以下路径：
-*   **NSIS 安装程序 (Windows EXE)**: `src-tauri/target/release/bundle/nsis/TuneFree_0.1.0_x64-setup.exe`
-*   **MSI 部署包 (Windows MSI)**: `src-tauri/target/release/bundle/msi/TuneFree_0.1.0_x64_en-US.msi`
+*   **NSIS 安装程序 (Windows EXE)**: `src-tauri/target/release/bundle/nsis/TuneFree_{version}_x64-setup.exe`
+
+> 其中 `{version}` 为 `tauri.conf.json` 中配置的当前版本号（如 `1.0.25`）。
 
 ## 声明
 

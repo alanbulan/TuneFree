@@ -63,19 +63,17 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
 
         // 绘制圆角柱子
         ctx.beginPath();
-        if ('roundRect' in (ctx as any)) {
-            // @ts-ignore
+        if (typeof ctx.roundRect === 'function') {
             ctx.roundRect(x, y, w, barHeight, radius);
         } else {
             ctx.moveTo(x + radius, y);
-            ctx.lineTo(x + w - radius, y);
-            ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
-            ctx.lineTo(x + w, h - radius);
-            ctx.quadraticCurveTo(x + w, h, x + w - radius, h);
-            ctx.lineTo(x + radius, h);
-            ctx.quadraticCurveTo(x, h, x, h - radius);
+            ctx.arcTo(x + w, y, x + w, y + radius, radius);
+            ctx.lineTo(x + w, y + barHeight - radius);
+            ctx.arcTo(x + w, y + barHeight, x + w - radius, y + barHeight, radius);
+            ctx.lineTo(x + radius, y + barHeight);
+            ctx.arcTo(x, y + barHeight, x, y + barHeight - radius, radius);
             ctx.lineTo(x, y + radius);
-            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.arcTo(x, y, x + radius, y, radius);
         }
         ctx.fill();
     };

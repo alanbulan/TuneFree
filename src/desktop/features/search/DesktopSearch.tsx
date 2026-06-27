@@ -47,6 +47,8 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
   const [history, setHistory] = useState<string[]>(loadHistory);
   const debounceRef = useRef<number | null>(null);
   const searchRequestIdRef = useRef(0);
+  const lastSearchedTermRef = useRef('');
+  const sentinelRef = useRef<HTMLDivElement>(null);
   const { playSong } = usePlayerActions();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
   const { toggleFavorite, isFavorite } = useLibrary();
@@ -95,7 +97,11 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
     const requestId = ++searchRequestIdRef.current;
     setIsSearching(true);
     setSearchError('');
-    addToHistory(clean);
+    // P3-8: Only write to history when the term differs from the last search
+    if (lastSearchedTermRef.current !== clean) {
+      addToHistory(clean);
+      lastSearchedTermRef.current = clean;
+    }
     try {
       const data = searchMode === 'aggregate'
         ? await searchAggregate(clean, page, { includeExtendedSources })
@@ -123,7 +129,7 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
     debounceRef.current = window.setTimeout(() => {
       debounceRef.current = null;
       performSearch();
-    }, 520);
+    }, 300);
     return () => {
       if (debounceRef.current) {
         window.clearTimeout(debounceRef.current);
@@ -131,6 +137,24 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
       }
     };
   }, [performSearch, query, page, searchMode, selectedSource, includeExtendedSources]);
+
+  // P3-19: Infinite scroll via IntersectionObserver
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isSearching && results.length > 0) {
+          setPage((prev) => prev + 1);
+        }
+      },
+      { rootMargin: '100px' },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, isSearching, results.length]);
 
   const hint = useMemo(() => {
     if (searchMode === 'aggregate' && includeExtendedSources) {
@@ -144,7 +168,6 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
   }, [includeExtendedSources, searchMode, selectedSource]);
 
   const handlePlay = (song: Song) => {
-    addToHistory(query);
     playSong(song);
   };
 
@@ -253,6 +276,9 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
             <button type="button" className="soft-button" style={{ marginTop: 14, width: '100%' }} onClick={() => setPage((prev) => prev + 1)}>
               加载更多结果
             </button>
+          )}
+          {results.length > 0 && hasMore && (
+            <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />
           )}
         </section>
 

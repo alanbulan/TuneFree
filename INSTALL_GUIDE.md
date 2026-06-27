@@ -11,10 +11,10 @@
 
 ### 第一步：获取安装包
 编译完成后，安装程序会输出在以下路径：
-- **安装包路径**：`src-tauri/target/release/bundle/nsis/TuneFree_0.1.0_x64-setup.exe`
+- **安装包路径**：`src-tauri/target/release/bundle/nsis/TuneFree_{version}_x64-setup.exe`
 
 ### 第二步：安装向导 (简体中文)
-1. 双击运行 `TuneFree_0.1.0_x64-setup.exe`。
+1. 双击运行 `TuneFree_{version}_x64-setup.exe`（其中 `{version}` 为当前版本号，如 `1.0.25`）。
 2. 安装向导已由 **AlanBulan** 强制指定为 **简体中文**，引导步骤清晰无碍。
 3. 按照引导选择您的安装路径，并点击 **安装** 按钮。
 4. 安装完成后，勾选 **运行 TuneFree**，点击完成即可立即启动！
@@ -41,7 +41,7 @@ npm install
 # 2. 启动 Tauri 开发调试服务器 (前端 3001 端口 + Rust 后端 3002 端口 + Tauri 容器)
 npm run tauri dev
 ```
-启动后，调试窗口会自动弹出，此时支持前端热重载与 Rust 代码热重载。
+启动后，调试窗口会自动弹出，此时支持前端热重载（Next.js Fast Refresh），Rust 代码修改后 Tauri 会自动重新编译。
 
 ### 3. 正式版打包编译
 当您修改了代码，需要自己输出新的安装包时，运行：

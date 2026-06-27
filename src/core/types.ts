@@ -36,11 +36,7 @@ export const isSameSong = (
 export type PlayMode = 'sequence' | 'loop' | 'shuffle';
 export type AudioQuality = '128k' | '320k' | 'flac' | 'flac24bit';
 
-export interface ParsedLyric {
-  time: number;
-  text: string;
-  translation?: string;
-}
+export type { ParsedLyric } from "./utils/lyrics";
 
 export interface Playlist {
   id: string;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   applyThemeClasses,
   applyThemeVariables,
@@ -56,39 +56,39 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setLockDesktopLyricState(preferences.lockDesktopLyric);
   }, []);
 
-  const setThemeMode = (mode: ThemeMode) => {
+  const setThemeMode = useCallback((mode: ThemeMode) => {
     const safeMode = normalizeThemeMode(mode);
     setThemeModeState(safeMode);
     localStorage.setItem(THEME_STORAGE_KEYS.mode, safeMode);
-  };
+  }, []);
 
-  const setThemeColor = (color: ThemeColor) => {
+  const setThemeColor = useCallback((color: ThemeColor) => {
     const safeColor = normalizeThemeColor(color);
     setThemeColorState(safeColor);
     localStorage.setItem(THEME_STORAGE_KEYS.color, safeColor);
-  };
+  }, []);
 
-  const setLyricSize = (size: number) => {
+  const setLyricSize = useCallback((size: number) => {
     const safeSize = clampLyricSize(size);
     setLyricSizeState(safeSize);
     localStorage.setItem(THEME_STORAGE_KEYS.lyricSize, safeSize.toString());
-  };
+  }, []);
 
-  const setLyricFont = (font: string) => {
+  const setLyricFont = useCallback((font: string) => {
     const safeFont = font || DEFAULT_THEME_PREFERENCES.lyricFont;
     setLyricFontState(safeFont);
     localStorage.setItem(THEME_STORAGE_KEYS.lyricFont, safeFont);
-  };
+  }, []);
 
-  const setShowDesktopLyric = (show: boolean) => {
+  const setShowDesktopLyric = useCallback((show: boolean) => {
     setShowDesktopLyricState(show);
     localStorage.setItem(THEME_STORAGE_KEYS.showDesktopLyric, show ? 'true' : 'false');
-  };
+  }, []);
 
-  const setLockDesktopLyric = (lock: boolean) => {
+  const setLockDesktopLyric = useCallback((lock: boolean) => {
     setLockDesktopLyricState(lock);
     localStorage.setItem(THEME_STORAGE_KEYS.lockDesktopLyric, lock ? 'true' : 'false');
-  };
+  }, []);
 
   // 应用主题模式、主题色与歌词配置到全局 CSS 变量；system 模式跟随 OS 实时变化
   useEffect(() => {
@@ -144,23 +144,36 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     };
   }, [showDesktopLyric, lockDesktopLyric]);
 
+  const value = useMemo<ThemeContextType>(() => ({
+    themeMode,
+    setThemeMode,
+    themeColor,
+    setThemeColor,
+    lyricSize,
+    setLyricSize,
+    lyricFont,
+    setLyricFont,
+    showDesktopLyric,
+    setShowDesktopLyric,
+    lockDesktopLyric,
+    setLockDesktopLyric,
+  }), [
+    themeMode,
+    setThemeMode,
+    themeColor,
+    setThemeColor,
+    lyricSize,
+    setLyricSize,
+    lyricFont,
+    setLyricFont,
+    showDesktopLyric,
+    setShowDesktopLyric,
+    lockDesktopLyric,
+    setLockDesktopLyric,
+  ]);
+
   return (
-    <ThemeContext.Provider
-      value={{
-        themeMode,
-        setThemeMode,
-        themeColor,
-        setThemeColor,
-        lyricSize,
-        setLyricSize,
-        lyricFont,
-        setLyricFont,
-        showDesktopLyric,
-        setShowDesktopLyric,
-        lockDesktopLyric,
-        setLockDesktopLyric,
-      }}
-    >
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );

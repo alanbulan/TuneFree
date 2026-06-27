@@ -47,3 +47,6 @@ pnpm-workspace.yaml
 
 # Release notes (generated, not source)
 release_notes_*.txt
+
+# TypeScript build info
+tsconfig.tsbuildinfo

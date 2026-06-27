@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode, UIEvent } from 'react';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface VirtualRailProps<T> {
   items: T[];
@@ -49,18 +49,24 @@ export default function VirtualRail<T>({
   };
 
   return (
-    <div ref={ref} className={`virtual-rail ${className}`.trim()} style={{ height: itemHeight + 38 }} onScroll={handleScroll}>
+    <div ref={ref} className={`virtual-rail ${className}`.trim()} style={{ height: itemHeight + 38 }} onScroll={handleScroll} role="list" aria-setsize={items.length}>
       <div className="virtual-rail-spacer" style={{ width: Math.max(0, items.length * stride - gap), height: itemHeight }}>
         {visibleItems.map(({ item, index }) => (
-          <Fragment key={getKey(item, index)}>
-            {renderItem(item, index, {
+          <div
+            key={getKey(item, index)}
+            role="listitem"
+            aria-setsize={items.length}
+            aria-setpos={index + 1}
+            style={{
               position: 'absolute',
               top: 8,
               left: index * stride,
               width: itemWidth,
               height: itemHeight,
-            })}
-          </Fragment>
+            }}
+          >
+            {renderItem(item, index, { width: '100%', height: '100%' })}
+          </div>
         ))}
       </div>
     </div>

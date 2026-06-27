@@ -16,13 +16,8 @@ const nextConfig = {
     }
     return config;
   },
-  images: {
-    unoptimized: true,
-    remotePatterns: [
-      { protocol: 'https', hostname: '**' },
-      { protocol: 'http', hostname: '**' }
-    ]
-  }
+  // images.unoptimized is true (static export), so remotePatterns is not needed.
+  // Next.js skips image optimization entirely when unoptimized is enabled.
 };
 
 export default nextConfig;

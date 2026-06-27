@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -407,27 +408,44 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
     [applyImportData, parseImportData],
   );
 
+  const value = useMemo<LibraryContextType>(() => ({
+    favorites,
+    playlists,
+    corsProxy,
+    setCorsProxy,
+    toggleFavorite,
+    isFavorite,
+    createPlaylist,
+    renamePlaylist,
+    deletePlaylist,
+    addToPlaylist,
+    removeFromPlaylist,
+    exportData,
+    parseImportData,
+    applyImportData,
+    restoreData,
+    importData,
+  }), [
+    favorites,
+    playlists,
+    corsProxy,
+    setCorsProxy,
+    toggleFavorite,
+    isFavorite,
+    createPlaylist,
+    renamePlaylist,
+    deletePlaylist,
+    addToPlaylist,
+    removeFromPlaylist,
+    exportData,
+    parseImportData,
+    applyImportData,
+    restoreData,
+    importData,
+  ]);
+
   return (
-    <LibraryContext.Provider
-      value={{
-        favorites,
-        playlists,
-        corsProxy,
-        setCorsProxy,
-        toggleFavorite,
-        isFavorite,
-        createPlaylist,
-        renamePlaylist,
-        deletePlaylist,
-        addToPlaylist,
-        removeFromPlaylist,
-        exportData,
-        parseImportData,
-        applyImportData,
-        restoreData,
-        importData,
-      }}
-    >
+    <LibraryContext.Provider value={value}>
       {children}
     </LibraryContext.Provider>
   );

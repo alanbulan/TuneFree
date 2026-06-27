@@ -1,9 +1,9 @@
 [package]
 name = "app"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
+version = "1.0.25"
+description = "TuneFree Desktop - Modern desktop music player"
+authors = ["AlanBulan"]
+license = "MIT"
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"
@@ -24,10 +24,13 @@ log = "0.4"
 tauri = { version = "2.11.2", features = ["tray-icon", "image-png"] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
 axum = "0.7"
-reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 tower-http = { version = "0.5", features = ["cors"] }
 aes = "0.8"
 md5 = "0.7"
 base64 = "0.22"
+url = "2"
+thiserror = "2"
+async-trait = "0.1"

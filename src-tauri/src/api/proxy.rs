@@ -1,13 +1,17 @@
 use axum::{
     body::Bytes,
     extract::{Query, State},
-    http::{HeaderMap, HeaderValue, Method, StatusCode},
+    http::{HeaderMap, HeaderName, Method, StatusCode},
     response::{IntoResponse, Response},
 };
 use reqwest::Client;
 use serde::Deserialize;
 use std::str::FromStr;
 
+/// Whitelist of host domains allowed through the CORS proxy.
+///
+/// Only requests to these hosts (or their subdomains) are permitted.
+/// This prevents the proxy from being used as an open relay.
 const ALLOWED_HOSTS: [&str; 20] = [
     "music.163.com",
     "interface.music.163.com",
@@ -31,24 +35,57 @@ const ALLOWED_HOSTS: [&str; 20] = [
     "hdslb.com",
 ];
 
+/// Checks if `host` is in the allowed-hosts whitelist.
+///
+/// Matches exact hostnames and subdomains (e.g. "sub.kuwo.cn" matches "kuwo.cn").
+/// Uses byte-level comparison to avoid string allocation per check.
 fn is_allowed(host: &str) -> bool {
     ALLOWED_HOSTS.iter().any(|&allowed| {
-        host == allowed || host.ends_with(&format!(".{}", allowed))
+        if host == allowed {
+            return true;
+        }
+        // Check subdomain: host must end with allowed and have a dot separator
+        host.len() > allowed.len()
+            && host.ends_with(allowed)
+            && host.as_bytes()[host.len() - allowed.len() - 1] == b'.'
     })
 }
 
+/// Query parameters for the CORS proxy endpoint.
 #[derive(Deserialize)]
 pub struct ProxyQuery {
+    /// The target URL to proxy the request to.
     pub url: String,
 }
 
+/// Handles CORS proxy requests by forwarding them to the target URL
+/// and returning the response with appropriate CORS headers.
+///
+/// The proxy enforces a host whitelist, sets platform-appropriate Referer
+/// headers, and streams the response body to avoid buffering large responses
+/// entirely in memory.
+///
+/// # Arguments
+/// * `client` - Shared HTTP client (injected via axum State).
+/// * `method` - HTTP method of the original request.
+/// * `headers` - Original request headers.
+/// * `query` - Query parameters containing the target URL.
+/// * `body` - Request body bytes (forwarded for non-GET/HEAD methods).
+///
+/// # Returns
+/// A streaming `Response` with CORS headers, or an error response.
 pub async fn handle_cors_proxy(
     State(client): State<Client>,
     method: Method,
     headers: HeaderMap,
     Query(query): Query<ProxyQuery>,
     body: Bytes,
-) -> impl IntoResponse {
+) -> Response {
+    // Handle CORS preflight requests early
+    if method == Method::OPTIONS {
+        return (StatusCode::NO_CONTENT, "").into_response();
+    }
+
     let target_url = query.url;
     let parsed_url = match reqwest::Url::parse(&target_url) {
         Ok(u) => u,
@@ -57,11 +94,21 @@ pub async fn handle_cors_proxy(
 
     let host = match parsed_url.host_str() {
         Some(h) => h,
-        None => return (StatusCode::BAD_REQUEST, "Target URL missing host").into_response(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Target URL missing host",
+            )
+                .into_response()
+        }
     };
 
     if !is_allowed(host) {
-        return (StatusCode::FORBIDDEN, format!("Host not allowed: {}", host)).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            format!("Host not allowed: {}", host),
+        )
+            .into_response();
     }
 
     // Prepare forward request
@@ -73,23 +120,22 @@ pub async fn handle_cors_proxy(
     }
 
     // Generic desktop user agent
-    req_builder = req_builder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36");
-    
-    // Origin or Host as Referer
-    // Determine the referer header value
-    let referer_val = if host == "music-api.gdstudio.xyz" {
-        "https://music.gdstudio.xyz/".to_string()
-    } else if host == "hdslb.com" || host.ends_with(".hdslb.com") {
-        "https://www.bilibili.com/".to_string()
-    } else if host == "u.y.qq.com" || host == "c.y.qq.com" || host.ends_with(".y.qq.com") {
-        "https://y.qq.com/".to_string()
-    } else if let Some(origin) = parsed_url.origin().unicode_serialization().into() {
-        origin
-    } else {
-        target_url.clone()
+    req_builder = req_builder.header(
+        "User-Agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+    );
+
+    // Determine the Referer header value based on the target host
+    let referer: String = match host {
+        "music-api.gdstudio.xyz" => "https://music.gdstudio.xyz/".into(),
+        h if h == "hdslb.com" || h.ends_with(".hdslb.com") => "https://www.bilibili.com/".into(),
+        h if h == "u.y.qq.com" || h == "c.y.qq.com" || h.ends_with(".y.qq.com") => {
+            "https://y.qq.com/".into()
+        }
+        _ => parsed_url.origin().ascii_serialization(),
     };
 
-    req_builder = req_builder.header("Referer", referer_val);
+    req_builder = req_builder.header("Referer", &referer);
 
     if host == "music-api.gdstudio.xyz" {
         req_builder = req_builder.header("Accept", "application/json,text/plain,*/*");
@@ -103,34 +149,37 @@ pub async fn handle_cors_proxy(
     match req_builder.send().await {
         Ok(resp) => {
             let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::OK);
-            let mut response_headers = HeaderMap::new();
 
-            // Copy headers from downstream response
+            // Collect downstream response headers (skip encoding/length for streaming)
+            let mut response_headers = HeaderMap::new();
             for (k, v) in resp.headers().iter() {
-                // Skip content-encoding to avoid browser decompression issues
                 if k != "content-encoding" && k != "content-length" {
-                    if let Ok(name) = axum::http::HeaderName::from_str(k.as_str()) {
+                    if let Ok(name) = HeaderName::from_str(k.as_str()) {
                         response_headers.insert(name, v.clone());
                     }
                 }
             }
 
-            // Set CORS headers
-            response_headers.insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
-            response_headers.insert("Access-Control-Allow-Methods", HeaderValue::from_static("GET, POST, PUT, DELETE, OPTIONS"));
-            response_headers.insert("Access-Control-Allow-Headers", HeaderValue::from_static("Content-Type, Authorization"));
-
-            let bytes = match resp.bytes().await {
-                Ok(b) => b,
-                Err(e) => return (StatusCode::BAD_GATEWAY, format!("Failed reading response: {}", e)).into_response(),
-            };
-
-            Response::builder()
+            // Stream the response body to avoid buffering in memory
+            let stream = resp.bytes_stream();
+            let mut response = Response::builder()
                 .status(status)
-                .body(axum::body::Body::from(bytes))
-                .unwrap()
-                .into_response()
+                .body(axum::body::Body::from_stream(stream))
+                .unwrap_or_else(|_| {
+                    Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(axum::body::Body::from("Failed to stream response"))
+                        .unwrap()
+                });
+
+            // Apply collected headers to the response
+            *response.headers_mut() = response_headers;
+            response.into_response()
         }
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("Proxy fetch failed: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            format!("Proxy fetch failed: {}", e),
+        )
+            .into_response(),
     }
 }

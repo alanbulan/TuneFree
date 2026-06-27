@@ -128,9 +128,13 @@ const getMediaErrorSummary = (error: MediaError | null | undefined) => ({
   message: error?.message || "",
 });
 
-const isUnsupportedSourcePlayError = (error: any): boolean =>
-  error?.name === "NotSupportedError" ||
-  String(error?.message || "").toLowerCase().includes("source");
+const isUnsupportedSourcePlayError = (error: unknown): boolean => {
+  if (error instanceof Error) {
+    return error.name === "NotSupportedError" ||
+      String(error.message || "").toLowerCase().includes("source");
+  }
+  return false;
+};
 
 const getLyricStats = (lrc?: string) => {
   const rows = parseLyrics(lrc);
@@ -168,7 +172,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [lyricOffsetSeconds, setLyricOffsetSecondsState] = useState(0);
-  const [volume, setVolume] = useState(1);
+  const [volume] = useState(1);
   const [queue, setQueue] = useState<Song[]>(() => loadStoredQueue());
   const [playMode, setPlayMode] = useState<PlayMode>(() => loadStoredPlayMode());
   const [audioQuality, setAudioQualityState] = useState<AudioQuality>(() =>
@@ -251,7 +255,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     if (!audio) return;
 
     const nextTime = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
-    if (force || Math.abs(nextTime - lastProgressTimeRef.current) >= 0.05) {
+    // Throttle non-forced updates to ~10fps (100ms) to reduce re-renders.
+    // Forced updates (timeupdate, loadedmetadata, seek) bypass the throttle.
+    if (force || Math.abs(nextTime - lastProgressTimeRef.current) >= 0.1) {
       updateCurrentTimeState(nextTime);
     }
   }, [updateCurrentTimeState]);
@@ -262,7 +268,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     loadedmetadata: () => void;
     durationchange: () => void;
     ended: () => void;
-    error: (e: any) => void;
+    error: (e: Event) => void;
     waiting: () => void;
     canplay: () => void;
   } | null>(null);
@@ -347,13 +353,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         syncDuration();
       },
       ended: () => {
-        console.log("[Player] 歌曲播放结束，触发自动播放下一首");
         if (playNextRef.current) playNextRef.current(false);
       },
-      error: (e: any) => {
+      error: (_e: Event) => {
         const errorCode = audio.error?.code;
         const errorMessage = audio.error?.message;
-        console.warn(
+        console.error(
           `Audio Element Error: Code=${errorCode}, Msg=${errorMessage}`,
         );
         const isSourceError = errorCode === MEDIA_ERR_SRC_NOT_SUPPORTED_CODE;
@@ -363,9 +368,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           !forceNoCorsPlaybackRef.current &&
           retryCountRef.current === 0
         ) {
-          console.warn(
-            `Retrying ${currentSongRef.current.name} without CORS/AudioContext`,
-          );
           showPlayerNotice("当前音源不支持频谱解析，已切换兼容播放模式", "warning");
           forceNoCorsPlaybackRef.current = true;
           retryCountRef.current = 1;
@@ -377,9 +379,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           audioQualityRef.current !== "128k" &&
           retryCountRef.current <= 1
         ) {
-          console.warn(
-            `Triggering fallback to 128k for ${currentSongRef.current.name}`,
-          );
           showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
           syncAudioQualityState("128k");
           retryCountRef.current = 2;
@@ -387,9 +386,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           return;
         }
         if (isSourceError) {
-          console.warn("Playback source is not supported.", getMediaErrorSummary(audio.error));
+          console.error("Playback source is not supported.", getMediaErrorSummary(audio.error));
         } else {
-          console.warn("Playback failed.", getMediaErrorSummary(audio.error));
+          console.error("Playback failed.", getMediaErrorSummary(audio.error));
         }
         showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
         setIsLoading(false);
@@ -487,7 +486,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       analyserRef.current = node;
       setAnalyser(node);
     } catch (e) {
-      console.warn("AudioContext 初始化失败，使用模拟可视化", e);
+      console.error("AudioContext 初始化失败，使用模拟可视化", e);
     }
   }, []);
 
@@ -636,7 +635,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           });
         })
         .catch((error) => {
-          console.warn("Preload next song failed:", error);
+          console.error("Preload next song failed:", error);
         });
     },
     [getParsedSongCacheKey, preloadAudioUrl, resolveParsedSong],
@@ -678,7 +677,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsLoading(false);
       updateMediaSession(song, "playing");
       preloadNextSong(song);
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (requestId !== playRequestIdRef.current) return;
       console.error("Resume playback failed:", error);
       showPlayerNotice("播放被浏览器阻止，请再次点击播放", "warning");
@@ -819,11 +818,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           } else if (!needsCors) {
             if (audioCtxConnectedRef.current || audioRef.current.crossOrigin) {
-              console.log(
-                forceNoCorsPlaybackRef.current
-                  ? "[Player] 切换到无 CORS Audio（兼容播放模式），可视化使用模拟模式"
-                  : "[Player] 切换到无 CORS Audio（酷我源），可视化使用模拟模式",
-              );
               createAudioElement(false);
             }
           } else {
@@ -861,19 +855,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             setIsLoading(false);
             updateMediaSession(fullSong, "playing");
             preloadNextSong(fullSong);
-          } catch (error: any) {
+          } catch (error: unknown) {
             if (requestId !== playRequestIdRef.current) return;
-            if (error?.name === "AbortError") return;
-
-            console.warn("Play start failed:", error?.name, error?.message);
+            if (error instanceof Error && error.name === "AbortError") return;
 
             if (
               isUnsupportedSourcePlayError(error) &&
               !forceNoCorsPlaybackRef.current
             ) {
-              console.warn(
-                "Play promise rejected with source error, retrying without CORS/AudioContext",
-              );
               showPlayerNotice("当前音源不支持频谱解析，已切换兼容播放模式", "warning");
               forceNoCorsPlaybackRef.current = true;
               retryCountRef.current = Math.max(retryCountRef.current, 1);
@@ -886,9 +875,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               retryCountRef.current <= 1 &&
               targetQuality !== "128k"
             ) {
-              console.warn(
-                "Play promise rejected with source error, triggering fallback to 128k",
-              );
               showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
               syncAudioQualityState("128k");
               retryCountRef.current = 2;
@@ -896,20 +882,20 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               return;
             }
 
+            const isNotAllowed = error instanceof Error && error.name === "NotAllowedError";
             showPlayerNotice(
-              error?.name === "NotAllowedError"
+              isNotAllowed
                 ? "播放被浏览器阻止，请再次点击播放"
                 : "播放失败，请稍后再试",
-              error?.name === "NotAllowedError" ? "warning" : "error",
+              isNotAllowed ? "warning" : "error",
             );
             setIsPlaying(false);
             setIsLoading(false);
           }
         } else {
-          console.warn(`No valid URL for ${song.name} [${targetQuality}]`);
+          console.error(`No valid URL for ${song.name} [${targetQuality}]`);
 
           if (targetQuality !== "128k" && retryCountRef.current === 0) {
-            console.warn("Retrying with 128k...");
             showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
             syncAudioQualityState("128k");
             retryCountRef.current = 1;
@@ -1022,7 +1008,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         updateCurrentTimeState(0);
         audioRef.current
           .play()
-          .catch((e) => console.warn("单曲循环重播失败:", e));
+          .catch((e) => console.error("单曲循环重播失败:", e));
       }
       return;
     }

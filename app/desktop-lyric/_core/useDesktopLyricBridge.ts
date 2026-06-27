@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { findActiveLyricIndex, parseLyrics } from '../../../src/core/utils/lyrics';
 import type { DesktopLyricCommand, DesktopLyricPlayerState, DesktopLyricSong, DesktopLyricStyleState, LyricUpdateEvent } from './types';
 import { forceTransparentDocument, readAndApplyDesktopLyricTheme } from './theme';
@@ -32,7 +32,7 @@ export const useDesktopLyricBridge = () => {
   const [isTauri, setIsTauri] = useState(false);
   const [styleState, setStyleState] = useState<DesktopLyricStyleState>({ size: 22, font: 'system-ui', lock: false });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const checkTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
     setIsTauri(checkTauri);
     setStyleState(readAndApplyDesktopLyricTheme());
@@ -99,17 +99,37 @@ export const useDesktopLyricBridge = () => {
   }, [snapshot]);
 
   useEffect(() => {
+    let cancelled = false;
     const syncStyle = () => setStyleState(readAndApplyDesktopLyricTheme());
 
     window.addEventListener('storage', syncStyle);
-    const interval = window.setInterval(syncStyle, 500);
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     mediaQuery.addEventListener('change', syncStyle);
 
+    let unlistenFn: (() => void) | null = null;
+    const isTauriEnv = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (isTauriEnv) {
+      import('@tauri-apps/api/event')
+        .then(({ listen }) =>
+          listen('theme-changed', () => {
+            syncStyle();
+          }),
+        )
+        .then((unlisten) => {
+          if (cancelled) {
+            unlisten();
+          } else {
+            unlistenFn = unlisten;
+          }
+        })
+        .catch(() => {});
+    }
+
     return () => {
+      cancelled = true;
       window.removeEventListener('storage', syncStyle);
-      window.clearInterval(interval);
       mediaQuery.removeEventListener('change', syncStyle);
+      unlistenFn?.();
     };
   }, []);
 
