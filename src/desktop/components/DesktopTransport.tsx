@@ -21,7 +21,7 @@ import {
   usePlayerSettings,
 } from '../../core/contexts/PlayerContext';
 import { useTheme } from '../../core/contexts/ThemeContext';
-import { Lock } from 'lucide-react';
+import { Lock, Sparkles } from 'lucide-react';
 import AudioVisualizer from '../../core/components/AudioVisualizer';
 import { findActiveLyricIndex, parseLyrics, type ParsedLyric } from '../../core/utils/lyrics';
 import type { AudioQuality } from '../../core/types';
@@ -30,6 +30,7 @@ import { useToast } from './ToastHost';
 import { formatTime } from '../utils/formatting';
 import { useSongDownload } from '../hooks/useSongDownload';
 import QualitySelector from './QualitySelector';
+import { getAIRecommendedSongs } from '../../core/services/gdStudio';
 
 interface DesktopTransportProps {
   onExpand: () => void;
@@ -45,9 +46,35 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
   const { playMode } = usePlayerQueueState();
   const { audioQuality } = usePlayerSettings();
   const { toggleFavorite, isFavorite } = useLibrary();
-  const { togglePlay, playNext, playPrev, seek, togglePlayMode, setAudioQuality } = usePlayerActions();
+  const { togglePlay, playNext, playPrev, seek, togglePlayMode, setAudioQuality, playQueue } = usePlayerActions();
   const { showToast } = useToast();
   const { isDownloading, downloadProgress, handleDownload } = useSongDownload();
+
+  const [loadingSimilar, setLoadingSimilar] = useState(false);
+
+  const handleStartSimilarFlow = async () => {
+    if (!currentSong || loadingSimilar) return;
+    setLoadingSimilar(true);
+    showToast(`正在深度计算《${currentSong.name}》的相似意境歌曲...`, 'info');
+    try {
+      const songs = await getAIRecommendedSongs(
+        `和 ${currentSong.name} - ${currentSong.artist} 意境相似的歌曲`,
+        'netease',
+        20
+      );
+      if (songs.length === 0) {
+        showToast('未找到相似歌曲，换首其它歌曲试试吧', 'info');
+      } else {
+        await playQueue(songs, songs[0]);
+        showToast(`已成功载入 20 首相似歌曲流并开始播放！`, 'success');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('开启相似歌曲流失败，请稍后再试', 'error');
+    } finally {
+      setLoadingSimilar(false);
+    }
+  };
 
   // P3-11: Progress bar drag state
   const [isDragging, setIsDragging] = useState(false);
@@ -210,6 +237,22 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
       </div>
 
       <div className="transport-tools">
+        {currentSong && (
+          <button
+            type="button"
+            className="ai-radar-btn-mini"
+            title="根据当前播放歌曲开启相似音乐流 (Embeat)"
+            onClick={handleStartSimilarFlow}
+            disabled={loadingSimilar}
+            style={{ marginRight: '8px' }}
+          >
+            {loadingSimilar ? (
+              <span style={{ fontSize: '10px', fontWeight: 900, color: 'var(--text-soft)' }}>…</span>
+            ) : (
+              <Sparkles size={11} />
+            )}
+          </button>
+        )}
         <button
           type="button"
           className={`icon-button transport-like-button ${favoriteActive ? 'active' : ''}`}
