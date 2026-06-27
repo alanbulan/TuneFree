@@ -591,18 +591,11 @@ export const getAIRecommendedSongs = async (
     const picId = String(item.pic_id || "").trim();
     const lyricId = String(item.lyric_id || id).trim();
     const urlId = String(item.url_id || id).trim();
-    let pic = "";
-    if (picId) {
-      if (picId.startsWith("http") || picId.startsWith("//")) {
-        pic = fixUrl(picId);
-      } else if (source === "netease") {
-        pic = `https://p1.music.126.net/${picId}/${picId}.jpg?param=300y300`;
-      } else if (source === "qq") {
-        pic = `https://y.gtimg.cn/music/photo_new/T002R300x300M000${picId}.jpg`;
-      } else if (source === "joox") {
-        pic = fixUrl(buildJooxCoverUrl(picId, 500));
-      }
-    }
+    const pic = picId.startsWith("http") || picId.startsWith("//")
+      ? fixUrl(picId)
+      : source === "joox" && picId
+        ? fixUrl(buildJooxCoverUrl(picId, 500))
+        : "";
 
     if (id) {
       rememberTrackMeta(id, source, {
