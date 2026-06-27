@@ -64,8 +64,9 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
 
         // 异步在后台使用已有的getGDStudioPic方法拉取每一首歌曲的真实封面
         songs.forEach((song, index) => {
-          if (!song.pic && song.picId) {
-            getGDStudioPic(song.source as any, song.picId, 300).then((resolvedPic) => {
+          if (!song.pic) {
+            const targetId = song.source === 'netease' ? String(song.id) : String(song.picId || song.id);
+            getGDStudioPic(song.source as any, targetId, 300).then((resolvedPic) => {
               if (resolvedPic) {
                 setFeaturedSongs((prev) => {
                   const updated = [...prev];

@@ -377,23 +377,53 @@ export const getGDStudioPic = async (
 ): Promise<string> => {
   if (!picId) return "";
 
-  if (source === "joox") {
-    const pic = fixUrl(buildJooxCoverUrl(picId, size));
-    picCache.set(`${source}:${picId}:${size}`, pic);
-    return pic;
-  }
-
-  const directPic = fixUrl(picId);
-  if (directPic && (picId.startsWith("http") || picId.startsWith("//"))) {
-    picCache.set(`${source}:${picId}`, directPic);
-    return directPic;
-  }
-
   const cacheKey = `${source}:${picId}:${size}`;
   if (picCache.has(cacheKey)) {
     return picCache.get(cacheKey) || "";
   }
 
+  // 1. 若已经是完整网址，直接返回
+  const directPic = fixUrl(picId);
+  if (directPic && (picId.startsWith("http") || picId.startsWith("//"))) {
+    picCache.set(cacheKey, directPic);
+    return directPic;
+  }
+
+  // 2. 网易云：使用官方原生详情 API 配合代理安全获取，彻底绕过 .xyz/.org 的 types=pic 不稳定代理
+  if (source === "netease") {
+    try {
+      const url = `https://music.163.com/api/song/detail/?id=${picId}&ids=[${picId}]`;
+      const response = await proxyFetch(url, {}, 8000);
+      if (response) {
+        const text = decodeResponseText(await response.arrayBuffer());
+        const data = tryParseJson(text);
+        const picUrl = data?.songs?.[0]?.album?.picUrl;
+        if (picUrl) {
+          const pic = fixUrl(picUrl);
+          picCache.set(cacheKey, pic);
+          return pic;
+        }
+      }
+    } catch (err) {
+      console.warn("[GDStudio] Failed to fetch native netease cover:", err);
+    }
+  }
+
+  // 3. QQ音乐：官方 CDN 高清直接拼接，免去任何网络请求
+  if (source === "qq") {
+    const pic = `https://y.gtimg.cn/music/photo_new/T002R300x300M000${picId}.jpg`;
+    picCache.set(cacheKey, pic);
+    return pic;
+  }
+
+  // 4. Joox 音乐：直接用原厂模板
+  if (source === "joox") {
+    const pic = fixUrl(buildJooxCoverUrl(picId, size));
+    picCache.set(cacheKey, pic);
+    return pic;
+  }
+
+  // 5. 其余平台兜底
   try {
     const data = await fetchGDStudioData<{ url?: string }>({
       types: "pic",
@@ -403,13 +433,15 @@ export const getGDStudioPic = async (
     });
 
     const pic = fixUrl(typeof data?.url === "string" ? data.url : "");
-    if (!pic) return "";
-
-    picCache.set(cacheKey, pic);
-    return pic;
+    if (pic) {
+      picCache.set(cacheKey, pic);
+      return pic;
+    }
   } catch {
-    return "";
+    // skip
   }
+
+  return "";
 };
 
 export const resolveGDStudioPic = async (
