@@ -91,6 +91,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // 应用主题模式、主题色与歌词配置到全局 CSS 变量；system 模式跟随 OS 实时变化
+  // 使用 View Transitions API 实现浅色/深色切换时的平滑过渡，避免闪烁
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -98,8 +99,26 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const applyTheme = () => {
       const isDark = resolveThemeIsDark(themeMode);
       const tokens = resolveThemeTokens(themeMode, themeColor, isDark);
-      applyThemeClasses(htmlEl, isDark);
-      applyThemeVariables(htmlEl, tokens, { lyricSize, lyricFont });
+
+      const runSwitch = () => {
+        applyThemeClasses(htmlEl, isDark);
+        applyThemeVariables(htmlEl, tokens, { lyricSize, lyricFont });
+      };
+
+      // View Transitions API: cross-fade old → new snapshot, eliminates the flicker
+      const vt = (document as Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void> } });
+      if (typeof vt.startViewTransition === 'function') {
+        // Skip transition if class is already correct (e.g. first mount)
+        const alreadyDark = htmlEl.classList.contains('dark-theme') === isDark;
+        if (alreadyDark) {
+          runSwitch();
+        } else {
+          const transition = vt.startViewTransition(runSwitch);
+          transition.finished.catch(() => {});
+        }
+      } else {
+        runSwitch();
+      }
     };
 
     applyTheme();

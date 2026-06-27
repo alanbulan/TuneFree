@@ -56,7 +56,7 @@ export default function VirtualRail<T>({
             key={getKey(item, index)}
             role="listitem"
             aria-setsize={items.length}
-            aria-setpos={index + 1}
+            aria-posinset={index + 1}
             style={{
               position: 'absolute',
               top: 8,

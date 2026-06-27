@@ -234,6 +234,239 @@ async fn download_song_to_local(
     Ok(file_path.to_string_lossy().to_string())
 }
 
+/// Metadata entry stored in downloads.json for each downloaded song.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct DownloadMetaEntry {
+    filename: String,
+    song: serde_json::Value,
+    quality: String,
+    create_time: f64,
+    #[serde(default)]
+    size: u64,
+}
+
+/// Result returned by resolve_local_playback for offline playback.
+#[derive(Clone, serde::Serialize)]
+struct ResolvedPlayback {
+    filepath: String,
+    song: serde_json::Value,
+    quality: String,
+}
+
+/// Reads the downloads.json sidecar file from the download directory.
+fn read_downloads_json(dir: &std::path::Path) -> Vec<DownloadMetaEntry> {
+    let path = dir.join("downloads.json");
+    if !path.exists() {
+        return Vec::new();
+    }
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Writes the downloads.json sidecar file.
+fn write_downloads_json(dir: &std::path::Path, entries: &[DownloadMetaEntry]) -> Result<(), String> {
+    let path = dir.join("downloads.json");
+    let json = serde_json::to_string_pretty(entries)
+        .map_err(|e| format!("序列化 downloads.json 失败: {}", e))?;
+    std::fs::write(&path, json)
+        .map_err(|e| format!("写入 downloads.json 失败: {}", e))
+}
+
+/// Scans the download directory and returns all downloads with metadata.
+///
+/// Reads downloads.json for song metadata, cross-references with actual files
+/// on disk, and removes orphaned entries (files deleted externally).
+#[tauri::command]
+fn scan_download_dir(
+    app_handle: tauri::AppHandle,
+    custom_dir: Option<String>,
+) -> Result<Vec<DownloadMetaEntry>, String> {
+    let dir = match &custom_dir {
+        Some(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
+        _ => resolve_download_dir(&app_handle, true)?,
+    };
+
+    let mut entries = read_downloads_json(&dir);
+
+    // Retain only entries where the file still exists on disk
+    let before = entries.len();
+    entries.retain(|e| dir.join(&e.filename).exists());
+
+    // If entries were removed (files deleted externally), update the JSON
+    if entries.len() != before {
+        write_downloads_json(&dir, &entries)?;
+    }
+
+    // Populate file size from disk metadata
+    for entry in &mut entries {
+        if let Ok(meta) = std::fs::metadata(dir.join(&entry.filename)) {
+            entry.size = meta.len();
+        }
+    }
+
+    // Sort by create_time descending (newest first)
+    entries.sort_by(|a, b| b.create_time.partial_cmp(&a.create_time).unwrap_or(std::cmp::Ordering::Equal));
+
+    Ok(entries)
+}
+
+/// Saves download metadata to downloads.json after a successful download.
+#[tauri::command]
+fn save_download_meta(
+    app_handle: tauri::AppHandle,
+    filename: String,
+    song: serde_json::Value,
+    quality: String,
+    create_time: f64,
+    custom_dir: Option<String>,
+) -> Result<(), String> {
+    let dir = match &custom_dir {
+        Some(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
+        _ => resolve_download_dir(&app_handle, true)?,
+    };
+
+    let mut entries = read_downloads_json(&dir);
+
+    // Remove any existing entry with the same filename
+    entries.retain(|e| e.filename != filename);
+
+    entries.push(DownloadMetaEntry {
+        filename,
+        song,
+        quality,
+        create_time,
+        size: 0,
+    });
+
+    write_downloads_json(&dir, &entries)
+}
+
+/// Deletes a downloaded file and removes its metadata entry.
+#[tauri::command]
+fn delete_download_file(
+    app_handle: tauri::AppHandle,
+    filename: String,
+    custom_dir: Option<String>,
+) -> Result<(), String> {
+    let dir = match &custom_dir {
+        Some(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
+        _ => resolve_download_dir(&app_handle, true)?,
+    };
+
+    // Delete the file from disk (use trash if possible, otherwise remove)
+    let file_path = dir.join(&filename);
+    if file_path.exists() {
+        std::fs::remove_file(&file_path)
+            .map_err(|e| format!("删除文件失败: {}", e))?;
+    }
+
+    // Remove from downloads.json
+    let mut entries = read_downloads_json(&dir);
+    let before = entries.len();
+    entries.retain(|e| e.filename != filename);
+
+    if entries.len() != before {
+        write_downloads_json(&dir, &entries)?;
+    }
+
+    Ok(())
+}
+
+/// Resolves a local file path for offline playback.
+///
+/// Searches downloads.json for a matching song (by ID and source), preferring
+/// the requested quality but falling back to any available quality.
+/// Returns the filepath, song metadata, and quality if found.
+#[tauri::command]
+fn resolve_local_playback(
+    app_handle: tauri::AppHandle,
+    song_id: String,
+    source: String,
+    quality: Option<String>,
+    custom_dir: Option<String>,
+) -> Result<Option<ResolvedPlayback>, String> {
+    let dir = match &custom_dir {
+        Some(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
+        _ => resolve_download_dir(&app_handle, true)?,
+    };
+
+    let entries = read_downloads_json(&dir);
+
+    // Find entries matching song ID and source
+    let matches: Vec<&DownloadMetaEntry> = entries
+        .iter()
+        .filter(|e| {
+            if let Some(id) = e.song.get("id").and_then(|v| v.as_str()) {
+                id == song_id
+            } else if let Some(id) = e.song.get("id").and_then(|v| v.as_i64()) {
+                id.to_string() == song_id
+            } else {
+                false
+            }
+        })
+        .filter(|e| {
+            e.song
+                .get("source")
+                .and_then(|v| v.as_str())
+                .map_or(false, |s| s == source)
+        })
+        .collect();
+
+    if matches.is_empty() {
+        return Ok(None);
+    }
+
+    // Prefer exact quality match, otherwise use first available
+    let chosen = if let Some(ref q) = quality {
+        matches.iter().find(|e| e.quality == *q)
+    } else {
+        None
+    }.or_else(|| matches.first());
+
+    if let Some(entry) = chosen {
+        let file_path = dir.join(&entry.filename);
+        if file_path.exists() {
+            return Ok(Some(ResolvedPlayback {
+                filepath: file_path.to_string_lossy().to_string(),
+                song: entry.song.clone(),
+                quality: entry.quality.clone(),
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Payload for player control events relayed from the desktop-lyric window.
+#[derive(Clone, serde::Serialize)]
+struct PlayerControlPayload {
+    action: String,
+    value: Option<serde_json::Value>,
+}
+
+/// Relays player control commands from the desktop-lyric window to the main window.
+///
+/// The desktop-lyric window calls this via `invoke` (which doesn't require
+/// event emission permissions), and the Rust side emits the event to the
+/// main window using `emit_to` (which bypasses capability restrictions).
+#[tauri::command]
+async fn relay_player_control(
+    app_handle: tauri::AppHandle,
+    action: String,
+    value: Option<serde_json::Value>,
+) -> Result<(), String> {
+    app_handle
+        .emit_to(
+            "main",
+            "player-control",
+            PlayerControlPayload { action, value },
+        )
+        .map_err(|e| format!("Failed to relay player control: {}", e))?;
+    Ok(())
+}
+
 /// Tauri command to open an external URL in the system's default browser.
 ///
 /// On Windows, uses `cmd /C start "" <url>` where the empty string
@@ -426,6 +659,11 @@ pub fn run() {
         .manage(client.clone())
         .invoke_handler(tauri::generate_handler![
             download_song_to_local,
+            scan_download_dir,
+            save_download_meta,
+            delete_download_file,
+            resolve_local_playback,
+            relay_player_control,
             open_external_url,
             get_download_dir,
             get_default_download_dir,

@@ -1,21 +1,19 @@
-import { AudioQuality, Song, getSongKey } from "../types";
-import { getSongUrl } from "./resolver";
-import { proxyFetch } from "./proxy";
+import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+import type { AudioQuality, Song } from '../types';
+import { getSongKey } from '../types';
 
 // ==============================
-// 离线下载库（与 Flutter 版 download manager / local resolver 对齐）
-// 音频 Blob 存入 IndexedDB，播放时本地优先：先精确匹配音质，否则任意音质。
-// meta 与 blob 分库存储，列表页只读 meta，避免把全部音频载入内存。
+// 本地文件下载管理（基于磁盘文件 + downloads.json 元数据）
+// 不再使用 IndexedDB 存储 Blob，直接读取磁盘文件播放。
+// downloads.json 保存在下载目录，记录每首歌的元数据。
 // ==============================
 
 export interface OfflineDownloadMeta {
-  key: string; // `${source}:${id}::${quality}`
-  songKey: string; // `${source}:${id}`
-  song: Song; // 歌曲元数据快照（含封面/歌词，便于离线展示）
+  filename: string;
+  song: Song;
   quality: string;
-  mimeType: string;
+  create_time: number;
   size: number;
-  createTime: number;
 }
 
 export interface OfflinePlayback {
@@ -24,52 +22,6 @@ export interface OfflinePlayback {
   pic: string;
   quality: string;
 }
-
-const DB_NAME = "tunefree_offline";
-const DB_VERSION = 1;
-const META_STORE = "meta";
-const BLOB_STORE = "blobs";
-
-let dbPromise: Promise<IDBDatabase> | null = null;
-
-const openDb = (): Promise<IDBDatabase> => {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(META_STORE)) {
-        const meta = db.createObjectStore(META_STORE, { keyPath: "key" });
-        meta.createIndex("songKey", "songKey", { unique: false });
-      }
-      if (!db.objectStoreNames.contains(BLOB_STORE)) {
-        db.createObjectStore(BLOB_STORE);
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => {
-      dbPromise = null;
-      reject(request.error);
-    };
-  });
-  return dbPromise;
-};
-
-const requestAsPromise = <T>(request: IDBRequest<T>): Promise<T> =>
-  new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-
-const txDone = (tx: IDBTransaction): Promise<void> =>
-  new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
-
-const buildRecordKey = (songKey: string, quality: string): string =>
-  `${songKey}::${quality}`;
 
 // ==============================
 // 变更通知（下载/删除后让 UI 刷新）
@@ -95,190 +47,116 @@ const notifyOfflineChanged = () => {
   });
 };
 
+const isTauri = (): boolean =>
+  typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+const getCustomDir = (): string | null =>
+  typeof window !== 'undefined'
+    ? localStorage.getItem('tunefree_download_dir') || null
+    : null;
+
 // ==============================
 // 查询
 // ==============================
 
 export const listOfflineDownloads = async (): Promise<OfflineDownloadMeta[]> => {
+  if (!isTauri()) return [];
   try {
-    const db = await openDb();
-    const tx = db.transaction(META_STORE, "readonly");
-    const all = await requestAsPromise(
-      tx.objectStore(META_STORE).getAll() as IDBRequest<OfflineDownloadMeta[]>,
-    );
-    return all.sort((a, b) => b.createTime - a.createTime);
+    return await invoke<OfflineDownloadMeta[]>('scan_download_dir', {
+      customDir: getCustomDir(),
+    });
   } catch {
     return [];
   }
-};
-
-const listMetaForSong = async (
-  songKey: string,
-): Promise<OfflineDownloadMeta[]> => {
-  try {
-    const db = await openDb();
-    const tx = db.transaction(META_STORE, "readonly");
-    const index = tx.objectStore(META_STORE).index("songKey");
-    return await requestAsPromise(
-      index.getAll(songKey) as IDBRequest<OfflineDownloadMeta[]>,
-    );
-  } catch {
-    return [];
-  }
-};
-
-/** 某首歌已离线缓存的音质列表（下载弹窗用于显示「已缓存」标记） */
-export const getOfflineQualities = async (
-  song: Pick<Song, "id" | "source">,
-): Promise<string[]> => {
-  const metas = await listMetaForSong(getSongKey(song));
-  return metas.map((meta) => meta.quality);
 };
 
 // ==============================
 // 本地优先播放解析
-// 与 Flutter LocalPlaybackResolver 一致：先精确匹配音质，否则任意已缓存音质。
+// 查找磁盘上的已下载文件，通过 convertFileSrc 转为可播放 URL。
 // ==============================
-
-// 每条记录复用同一个 object URL，删除记录时统一 revoke。
-const objectUrlCache = new Map<string, string>();
-
-const getRecordObjectUrl = async (key: string): Promise<string | null> => {
-  const cached = objectUrlCache.get(key);
-  if (cached) return cached;
-
-  try {
-    const db = await openDb();
-    const tx = db.transaction(BLOB_STORE, "readonly");
-    const blob = await requestAsPromise(
-      tx.objectStore(BLOB_STORE).get(key) as IDBRequest<Blob | undefined>,
-    );
-    if (!blob) return null;
-    const url = URL.createObjectURL(blob);
-    objectUrlCache.set(key, url);
-    return url;
-  } catch {
-    return null;
-  }
-};
 
 export const resolveOfflinePlayback = async (
   song: Song,
   quality: AudioQuality | string,
 ): Promise<OfflinePlayback | null> => {
-  const metas = await listMetaForSong(getSongKey(song));
-  if (metas.length === 0) return null;
+  if (!isTauri()) return null;
 
-  const exact = metas.find((meta) => meta.quality === quality);
-  const record = exact || metas[0];
+  try {
+    const result = await invoke<{
+      filepath: string;
+      song: Song;
+      quality: string;
+    } | null>('resolve_local_playback', {
+      songId: String(song.id),
+      source: song.source,
+      quality: String(quality),
+      customDir: getCustomDir(),
+    });
 
-  const url = await getRecordObjectUrl(record.key);
-  if (!url) {
-    // blob 丢失（如存储被清理）：清掉孤儿 meta，回落在线播放
-    await deleteOfflineDownload(record.key).catch(() => undefined);
+    if (!result?.filepath) return null;
+
+    const url = convertFileSrc(result.filepath);
+    const songMeta = result.song;
+
+    return {
+      url,
+      lrc: song.lrc || songMeta?.lrc || '',
+      pic: song.pic || songMeta?.pic || '',
+      quality: result.quality,
+    };
+  } catch {
     return null;
   }
-
-  return {
-    url,
-    lrc: song.lrc || record.song.lrc || "",
-    pic: song.pic || record.song.pic || "",
-    quality: record.quality,
-  };
 };
 
 // ==============================
-// 下载与删除
+// 保存元数据（下载完成后调用）
 // ==============================
 
-const inferMimeType = (contentType: string | null, quality: string): string => {
-  if (contentType && contentType.startsWith("audio/")) return contentType;
-  return quality === "flac" || quality === "flac24bit"
-    ? "audio/flac"
-    : "audio/mpeg";
-};
-
-const fetchAudioBlob = async (
-  url: string,
-): Promise<{ blob: Blob; contentType: string | null }> => {
-  // 网易/QQ/GD 源 CDN 带 CORS 头，可直接 fetch；酷我 CDN 不支持 CORS，走代理。
-  try {
-    const resp = await fetch(url, { credentials: "omit", mode: "cors" });
-    if (resp.ok) {
-      return { blob: await resp.blob(), contentType: resp.headers.get("Content-Type") };
-    }
-  } catch {
-    /* 回落代理 */
-  }
-
-  const proxied = await proxyFetch(url, {}, 60000);
-  if (proxied?.ok) {
-    return {
-      blob: await proxied.blob(),
-      contentType: proxied.headers.get("Content-Type"),
-    };
-  }
-  throw new Error("audio download failed");
-};
-
-export type OfflineDownloadResult = "saved" | "exists";
-
-/** 下载到离线库；已存在同曲同音质时直接返回 exists */
-export const downloadSongOffline = async (
+export const saveDownloadMeta = async (
+  filename: string,
   song: Song,
-  quality: AudioQuality | string,
-): Promise<OfflineDownloadResult> => {
-  const songKey = getSongKey(song);
-  const key = buildRecordKey(songKey, String(quality));
+  quality: string,
+): Promise<void> => {
+  if (!isTauri()) return;
 
-  const existing = await listMetaForSong(songKey);
-  if (existing.some((meta) => meta.key === key)) return "exists";
-
-  const url = await getSongUrl(song.id, song.source, String(quality), song);
-  if (!url) throw new Error("no playable url");
-
-  const { blob, contentType } = await fetchAudioBlob(url);
-  if (blob.size === 0) throw new Error("empty audio payload");
-
-  // 快照歌曲元数据（剥离临时播放地址，保留封面/歌词供离线使用）
+  // Strip the temporary play URL before saving metadata
   const { url: _ignoredUrl, ...songMeta } = song;
-  const meta: OfflineDownloadMeta = {
-    key,
-    songKey,
-    song: songMeta as Song,
-    quality: String(quality),
-    mimeType: inferMimeType(contentType, String(quality)),
-    size: blob.size,
+
+  await invoke('save_download_meta', {
+    filename,
+    song: songMeta,
+    quality,
     createTime: Date.now(),
-  };
-
-  const db = await openDb();
-  const tx = db.transaction([META_STORE, BLOB_STORE], "readwrite");
-  tx.objectStore(META_STORE).put(meta);
-  tx.objectStore(BLOB_STORE).put(blob, key);
-  await txDone(tx);
+    customDir: getCustomDir(),
+  });
 
   notifyOfflineChanged();
-  return "saved";
 };
 
-export const deleteOfflineDownload = async (key: string): Promise<void> => {
-  const db = await openDb();
-  const tx = db.transaction([META_STORE, BLOB_STORE], "readwrite");
-  tx.objectStore(META_STORE).delete(key);
-  tx.objectStore(BLOB_STORE).delete(key);
-  await txDone(tx);
+// ==============================
+// 删除
+// ==============================
 
-  const cachedUrl = objectUrlCache.get(key);
-  if (cachedUrl) {
-    URL.revokeObjectURL(cachedUrl);
-    objectUrlCache.delete(key);
-  }
+export const deleteOfflineDownload = async (filename: string): Promise<void> => {
+  if (!isTauri()) return;
+
+  await invoke('delete_download_file', {
+    filename,
+    customDir: getCustomDir(),
+  });
+
   notifyOfflineChanged();
 };
+
+// ==============================
+// 工具函数
+// ==============================
 
 export const formatOfflineSize = (size: number): string => {
   if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   if (size >= 1024) return `${(size / 1024).toFixed(0)} KB`;
   return `${size} B`;
 };
+
+export { getSongKey };

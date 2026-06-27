@@ -6,6 +6,7 @@ import { useDesktopPreferences, type CloseBehavior } from '../../../core/context
 import { useTheme } from '../../../core/contexts/ThemeContext';
 import { useToast } from '../../components/ToastHost';
 import CustomSelect from './components/CustomSelect';
+import ColorPalette from './components/ColorPalette';
 
 const closeBehaviorOptions: Array<{ label: string; value: CloseBehavior; hint: string }> = [
   { label: '每次询问', value: 'ask', hint: '关闭时弹出选择，可临时决定后台运行或退出。' },
@@ -265,32 +266,8 @@ export default function SettingsView() {
 
         <div className="panel-field" style={{ marginTop: '14px' }}>
           <label>强调主题色</label>
-          <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
-            {[
-              { name: '玫瑰红', value: 'red', color: '#fa233b' },
-              { name: '星海蓝', value: 'blue', color: '#007aff' },
-              { name: '极光绿', value: 'green', color: '#34c759' },
-              { name: '丁香紫', value: 'purple', color: '#af52de' },
-              { name: '活力橙', value: 'orange', color: '#ff9500' },
-            ].map((color) => (
-              <button
-                key={color.value}
-                type="button"
-                title={color.name}
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  backgroundColor: color.color,
-                  border: themeColor === color.value ? '2.5px solid var(--text)' : '1px solid rgba(0,0,0,0.1)',
-                  boxShadow: themeColor === color.value ? `0 0 10px ${color.color}` : 'none',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  transform: themeColor === color.value ? 'scale(1.15)' : 'scale(1)',
-                }}
-                onClick={() => setThemeColor(color.value as 'red' | 'blue' | 'green' | 'purple' | 'orange')}
-              />
-            ))}
+          <div style={{ marginTop: '8px' }}>
+            <ColorPalette value={themeColor} onChange={(color) => setThemeColor(color)} />
           </div>
         </div>
 

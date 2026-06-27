@@ -10,7 +10,6 @@ import {
 } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerNowPlaying, usePlayerSettings } from '../../../core/contexts/PlayerContext';
-import { downloadSongOffline } from '../../../core/services/offlineDownloads';
 import { getSongKey, type AudioQuality } from '../../../core/types';
 import { useSongDownload, qualityOptions, getDownloadMeta } from '../../hooks/useSongDownload';
 import { useToast } from '../ToastHost';
@@ -31,7 +30,6 @@ export default function FullPlayerActions({
   const { toggleFavorite, isFavorite, playlists, addToPlaylist, createPlaylist } = useLibrary();
   const { showToast } = useToast();
   const { downloadQuality, downloadProgress, handleDownload } = useSongDownload();
-  const [cachingOffline, setCachingOffline] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
 
   const hasSong = !!currentSong;
@@ -50,20 +48,8 @@ export default function FullPlayerActions({
   };
 
   const handleOfflineCache = async () => {
-    if (!currentSong || cachingOffline) return;
-    setCachingOffline(true);
-    try {
-      const result = await downloadSongOffline(currentSong, audioQuality);
-      if (result === 'exists') {
-        showToast('该音质已在离线库中', 'info');
-      } else {
-        showToast('已缓存到离线库，播放时优先使用本地文件', 'success');
-      }
-    } catch {
-      showToast('离线缓存失败，请稍后再试', 'error');
-    } finally {
-      setCachingOffline(false);
-    }
+    if (!currentSong || downloadQuality) return;
+    await handleDownload(currentSong, audioQuality);
   };
 
   const handleShare = async () => {
@@ -120,12 +106,12 @@ export default function FullPlayerActions({
           <button
             type="button"
             className="full-action-button"
-            disabled={!currentSong || cachingOffline}
+            disabled={!currentSong || downloadQuality !== null}
             onClick={handleOfflineCache}
-            title="缓存当前音质到离线库，播放时优先使用本地文件"
+            title="下载当前音质到本地目录"
           >
             <DownloadIcon size={16} />
-            {cachingOffline ? '缓存中' : '离线缓存'}
+            {downloadQuality !== null ? '下载中' : '离线缓存'}
           </button>
           {qualityOptions.map((quality: AudioQuality) => {
             const meta = getDownloadMeta(quality);

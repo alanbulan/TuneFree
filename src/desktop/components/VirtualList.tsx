@@ -65,7 +65,7 @@ export default function VirtualList<T>({
             key={getKey(item, index)}
             role="listitem"
             aria-setsize={items.length}
-            aria-setpos={index + 1}
+            aria-posinset={index + 1}
             style={{
               position: 'absolute',
               top: index * itemHeight,

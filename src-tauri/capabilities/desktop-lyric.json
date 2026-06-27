@@ -11,6 +11,7 @@
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-ignore-cursor-events",
     "core:window:allow-start-dragging",
-    "core:event:allow-listen"
+    "core:event:allow-listen",
+    "core:event:allow-emit-to"
   ]
 }
