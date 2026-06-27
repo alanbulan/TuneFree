@@ -49,8 +49,25 @@ const offsetPattern = /^\s*\[offset:([+-]?\d+)\]\s*$/i;
 const trackMarkerPattern = /^\s*\[(?:tunefree:)?([a-z_-]+)\]\s*$/i;
 const inlineWordTimePattern = /<(?:(?:\d{1,3}:)?\d{1,2}[.:]\d{1,3}|\d+,\d+)(?:,[^>]*)?>/g;
 const TRANSLATED_FALLBACK_SOURCES = new Set(['netease', 'qq']);
+
+/**
+ * 容差：当某行歌词的时间戳比前一行早出超过此秒数时，认为进入了新的轨道块
+ * （即翻译/罗马音等扩展轨道的开始）。取 2 秒是因为正常歌词的时间是单调递增的，
+ * 轨道切换时时间会重置从头开始，2 秒足以区分正常递进与轨道重置。
+ */
 const BLOCK_RESET_TOLERANCE_SECONDS = 2;
+
+/**
+ * 容差：将扩展轨道（翻译/罗马音等）的行匹配到主轨道行时允许的最大时间偏差。
+ * 取 0.1 秒是因为同一歌曲的不同轨道通常时间戳精确对齐，0.1 秒既能容忍
+ * 微小编码差异，又不会错误地将不同行的翻译匹配到一起。
+ */
 const EXTENDED_TRACK_MATCH_TOLERANCE_SECONDS = 0.1;
+
+/**
+ * 容差：用于旧版（无显式轨道标记）自动推断轨道的行匹配。
+ * 取 0.3 秒比扩展轨道更宽松，因为旧格式中各轨道可能有较大的时间偏差。
+ */
 const LEGACY_TRACK_MATCH_TOLERANCE_SECONDS = 0.3;
 
 const TRACK_MARKERS: Record<string, LyricTrackType> = {
@@ -123,15 +140,6 @@ const normalizeLyricText = (line: string): string =>
     .trim();
 
 const getTimeKey = (time: number): string => String(Math.round(time * 100));
-
-const formatLyricTime = (time: number): string => {
-  const centiseconds = Math.max(0, Math.round(time * 100));
-  const minutes = Math.floor(centiseconds / 6000);
-  const seconds = Math.floor((centiseconds % 6000) / 100);
-  const fraction = centiseconds % 100;
-
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(fraction).padStart(2, '0')}`;
-};
 
 const pushUnique = (values: string[], value: string) => {
   if (value && !values.includes(value)) values.push(value);
@@ -363,6 +371,16 @@ const inferLegacyAutoTrackType = (autoTrackIndex: number): Exclude<LyricTrackTyp
   return 'translation';
 };
 
+/**
+ * 将多轨歌词包标准化为带时间轴的歌词行数组。
+ *
+ * 解析主歌词轨道并提取翻译、罗马音、发音、卡拉OK等扩展轨道，
+ * 通过时间戳匹配将扩展轨道的内容合并到对应的主轨道行上。
+ * 匹配策略：先精确匹配时间键，再在容差范围内寻找最近的时间匹配。
+ *
+ * @param bundle - 包含各轨道原始 LRC 文本的歌词包
+ * @returns 标准化后的歌词对象，包含合并后的行数组、原始包、来源及偏移量
+ */
 export const normalizeLyrics = (bundle: LyricTrackBundle): NormalizedLyrics => {
   const primaryLines = parseTrackLines(bundle.main, 'main');
   const tracks: ExtensionTrack[] = [];
@@ -392,6 +410,17 @@ export const normalizeLyrics = (bundle: LyricTrackBundle): NormalizedLyrics => {
 
 export const toLegacyParsedLyrics = (lyrics: NormalizedLyrics): ParsedLyric[] => lyrics.lines;
 
+/**
+ * 将多个歌词轨道合并为单个 LRC 字符串，使用 TuneFree 内部轨道标记格式。
+ *
+ * 合并算法：遍历所有轨道类型（main、translation、romanization、pronunciation、karaoke），
+ * 过滤掉空轨道，为每个非空轨道添加 `[tunefree:类型]` 标记前缀，然后拼接。
+ * 如果只有一个 main 轨道且有内容，直接返回其内容不加标记。
+ * 标记格式可被 parseLyricDocument 重新解析还原多轨结构。
+ *
+ * @param bundle - 包含各轨道原始 LRC 文本的歌词包
+ * @returns 合并后的单个 LRC 字符串，空输入返回空字符串
+ */
 export const mergeLyricTracks = (bundle: LyricTrackBundle): string => {
   const entries: Array<[LyricTrackType, string | undefined]> = [
     ['main', bundle.main],
@@ -416,6 +445,21 @@ export const mergeLyricTracks = (bundle: LyricTrackBundle): string => {
 export const mergeTranslatedLyrics = (main: string, trans: string): string =>
   mergeLyricTracks({ main, translation: trans });
 
+/**
+ * 解析 LRC 格式歌词字符串为带时间轴的歌词行数组。
+ *
+ * 解析逻辑：
+ * 1. 将 LRC 文本按行拆分，识别 `[tunefree:类型]` 轨道标记将文档分块
+ * 2. 识别 `[offset:±ms]` 元数据调整时间偏移
+ * 3. 对每行提取 `[mm:ss.xx]` 时间标签和歌词文本
+ * 4. 根据时间跳跃检测（BLOCK_RESET_TOLERANCE）自动分割轨道块
+ * 5. 无显式标记的块按位置推断类型（首块=main，次块=translation，第三块=romanization）
+ * 6. 通过时间戳匹配将扩展轨道内容合并到主轨道行
+ * 7. 无时间标签的纯文本行按 4 秒间隔生成时间戳
+ *
+ * @param lrc - LRC 格式的歌词字符串，可选
+ * @returns 解析后的歌词行数组，空输入返回空数组
+ */
 export const parseLyrics = (lrc?: string): ParsedLyric[] => {
   const document = parseLyricDocument(lrc);
   if (document.blocks.length === 0) return buildPlainRows(document.plainLines);
@@ -448,6 +492,18 @@ export const parseLyrics = (lrc?: string): ParsedLyric[] => {
   return rows.length > 0 ? rows : buildPlainRows(document.plainLines);
 };
 
+/**
+ * 根据当前播放时间查找应高亮的歌词行索引。
+ *
+ * 时间匹配策略：使用二分查找在已排序的歌词行数组中找到时间戳
+ * 不超过目标时间的最后一行。目标时间 = currentTime + lyricOffsetSeconds，
+ * 即考虑用户手动调整的歌词偏移量。返回 -1 表示无歌词行。
+ *
+ * @param rows - 已按时间排序的歌词行数组
+ * @param currentTime - 当前播放位置（秒）
+ * @param lyricOffsetSeconds - 歌词偏移量（秒），默认 0
+ * @returns 当前应高亮的歌词行索引，无歌词时返回 -1
+ */
 export const findActiveLyricIndex = (
   rows: ParsedLyric[],
   currentTime: number,

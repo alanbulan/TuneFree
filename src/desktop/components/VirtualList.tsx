@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode, UIEvent } from 'react';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface VirtualListProps<T> {
   items: T[];
@@ -58,18 +58,24 @@ export default function VirtualList<T>({
   };
 
   return (
-    <div ref={rootRef} className={`virtual-list ${className}`.trim()} style={{ height: viewportHeight }} onScroll={handleScroll}>
+    <div ref={rootRef} className={`virtual-list ${className}`.trim()} style={{ height: viewportHeight }} onScroll={handleScroll} role="list" aria-setsize={items.length}>
       <div className="virtual-spacer" style={{ height: contentHeight }}>
         {visibleItems.map(({ item, index }) => (
-          <Fragment key={getKey(item, index)}>
-            {renderItem(item, index, {
+          <div
+            key={getKey(item, index)}
+            role="listitem"
+            aria-setsize={items.length}
+            aria-setpos={index + 1}
+            style={{
               position: 'absolute',
               top: index * itemHeight,
               left: 0,
               right: 0,
               height: itemHeight,
-            })}
-          </Fragment>
+            }}
+          >
+            {renderItem(item, index, { width: '100%', height: '100%' })}
+          </div>
         ))}
       </div>
     </div>

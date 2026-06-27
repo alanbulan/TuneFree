@@ -1,34 +1,17 @@
 import { Song, TopList } from "../types";
-import {
-  searchNetease,
-  getNeteaseTopLists,
-  getNeteaseTopListDetail,
-  fetchNeteaselyrics,
-} from "./netease";
-import { searchQQ, getQQTopLists, getQQTopListDetail, fetchQQLyrics } from "./qq";
-import {
-  searchKuwo,
-  getKuwoTopLists,
-  getKuwoTopListDetail,
-  fetchKuwoLyrics,
-  batchFetchKuwoCovers,
-} from "./kuwo";
-import {
-  searchGDStudio,
-  getGDStudioSongUrl,
-  getGDStudioLyrics,
-  getGDStudioPic,
-  isGDStudioSource,
-  isGDStudioOnlySource,
-} from "./gdStudio";
-import { fixUrl, getImgReferrerPolicy, normalizeSongs, extractList } from "./utils";
+import { searchNetease, getNeteaseTopLists, getNeteaseTopListDetail } from "./netease";
+import { searchQQ, getQQTopLists, getQQTopListDetail } from "./qq";
+import { searchKuwo, getKuwoTopLists, getKuwoTopListDetail } from "./kuwo";
+import { searchGDStudio } from "./gdStudio";
 
 export {
-  fixUrl,
+  normalizeMusicUrl,
   getImgReferrerPolicy,
   normalizeSongs,
   extractList,
-};
+} from "./utils";
+// Backward compatibility: keep fixUrl alias until all callers are updated
+export { normalizeMusicUrl as fixUrl } from "./utils";
 
 export {
   fetchNativeUrl,
@@ -42,8 +25,10 @@ export {
   searchNetease,
   getNeteaseTopLists,
   getNeteaseTopListDetail,
-  fetchNeteaselyrics,
+  fetchNeteaseLyrics,
 } from "./netease";
+// Backward compatibility: keep old name until all callers are updated
+export { fetchNeteaseLyrics as fetchNeteaselyrics } from "./netease";
 export { searchQQ, qqMusicuFetch, getQQTopLists, getQQTopListDetail, fetchQQLyrics } from "./qq";
 export {
   searchKuwo,

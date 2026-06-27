@@ -1,10 +1,13 @@
 import crypto from 'node:crypto';
 import { Buffer } from 'node:buffer';
 
-// Types
-interface Env {}
+interface PagesFunctionContext {
+    request: Request;
+    env: Record<string, unknown>;
+    params: Record<string, string>;
+}
 
-export const onRequest: any = async (context: any) => {
+export const onRequest = async (context: PagesFunctionContext) => {
     const { request } = context;
     const url = new URL(request.url);
     const platform = url.searchParams.get('platform');
@@ -14,13 +17,13 @@ export const onRequest: any = async (context: any) => {
     if (!platform || !id) {
         return new Response(JSON.stringify({ error: 'Missing platform or id' }), {
             status: 400,
-            headers: corsHeaders()
+            headers: corsHeaders(request)
         });
     }
 
     try {
         let playUrl: string | null = null;
-        
+
         if (platform === 'netease') {
             playUrl = await getNeteaseUrl(id, quality);
         } else if (platform === 'qq' || platform === 'tencent') {
@@ -30,27 +33,34 @@ export const onRequest: any = async (context: any) => {
         } else {
             return new Response(JSON.stringify({ error: `Platform ${platform} not supported natively` }), {
                 status: 400,
-                headers: corsHeaders()
+                headers: corsHeaders(request)
             });
         }
-        
+
         return new Response(JSON.stringify({ url: playUrl }), {
             status: 200,
-            headers: corsHeaders()
+            headers: corsHeaders(request)
         });
-    } catch (e: any) {
-        return new Response(JSON.stringify({ error: e.message || 'Failed to fetch url' }), {
+    } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : 'Failed to fetch url';
+        return new Response(JSON.stringify({ error: message }), {
             status: 500,
-            headers: corsHeaders()
+            headers: corsHeaders(request)
         });
     }
 }
 
-function corsHeaders() {
+/**
+ * CORS 策略与 cors-proxy.ts / Rust 版本保持一致：
+ * - 反射请求 Origin 而非使用通配符 *
+ * - 携带 Access-Control-Max-Age: 86400
+ */
+function corsHeaders(request: Request): Record<string, string> {
     return {
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '86400',
         'Content-Type': 'application/json'
     };
 }
@@ -113,7 +123,7 @@ async function getTencentUrl(songmid: string, quality: string) {
         default: filenamePrefix = "M5000.mp3"; break;
     }
     
-    const endpoint = Buffer.from("aHR0cHM6Ly91LnkucXEuY29tL2NnaS1iaW4vbXVzaWN1LmZjZz9kYXRhPXsicXVlcnl2a2V5Ijp7Im1ldGhvZCI6IkNnaUdldFZrZXkiLCJtb2R1bGUiOiJ2a2V5LkdldFZrZXlTZXJ2ZXIiLCJwYXJhbSI6eyJjaGVja2xpbWl0IjowLCJjdHgiOjEsImRvd25sb2FkZnJvbSI6MCwidWluIjoiMCIsImZpbGVuYW1lIjpbIg==", "base64").toString("utf-8");
+    const endpoint = 'https://u.y.qq.com/cgi-bin/musicu.fcg?data={"queryvkey":{"method":"CgiGetVkey","module":"vkey.GetVkeyServer","param":{"checklimit":0,"ctx":1,"downloadfrom":0,"uin":"0","filename":["';
     const apiUrl = `${endpoint}${filenamePrefix}"],"guid":"0","songmid":["${songmid}"]}}}`;
     
     const resp = await fetch(apiUrl, {
@@ -239,7 +249,7 @@ async function getKuwoUrl(songmid: string, quality: string) {
     }
 
     const params = `type=convert_url&br=${bitrate}&format=${format}&sig=0&rid=${songmid}&network=wifi&response=url&prod=kwplayer_ar_10.3.3.0`;
-    const endpoint = Buffer.from("aHR0cDovL21vYmkua3V3by5jbi9tb2JpLnM/Zj1rdXdvJnE9", "base64").toString("utf-8");
+    const endpoint = 'http://mobi.kuwo.cn/mobi.s?f=kuwo&q=';
     
     const encBytes = kuwoCryptoAlgorithm(params);
     const qParams = Buffer.from(encBytes).toString("base64");

@@ -4,7 +4,17 @@
  *
  * 替代外部 CORS 代理（corsproxy.io 等），国内可直接访问。
  * 支持 GET/POST/PUT/DELETE，透传请求体和 Content-Type。
+ *
+ * CORS 策略与 Rust 版本（src-tauri/src/proxy.rs）保持一致：
+ * - 反射请求 Origin 而非使用通配符 *
+ * - 预检响应携带 Access-Control-Max-Age: 86400
  */
+
+interface PagesFunctionContext {
+    request: Request;
+    env: Record<string, unknown>;
+    params: Record<string, string>;
+}
 
 // 允许的目标域名白名单（防止被滥用为开放代理）
 const ALLOWED_HOSTS = [
@@ -30,7 +40,7 @@ const ALLOWED_HOSTS = [
     'hdslb.com',
 ];
 
-export const onRequest = async (context: any) => {
+export const onRequest = async (context: PagesFunctionContext) => {
     const { request } = context;
 
     // 处理 CORS 预检请求
@@ -106,8 +116,9 @@ export const onRequest = async (context: any) => {
             status: resp.status,
             headers: respHeaders,
         });
-    } catch (e: any) {
-        return jsonResponse({ error: e.message || 'Proxy fetch failed' }, 502, request);
+    } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : 'Proxy fetch failed';
+        return jsonResponse({ error: message }, 502, request);
     }
 };
 
@@ -120,7 +131,7 @@ function corsHeaders(request: Request): Record<string, string> {
     };
 }
 
-function jsonResponse(data: any, status: number, request: Request) {
+function jsonResponse(data: Record<string, unknown>, status: number, request: Request) {
     return new Response(JSON.stringify(data), {
         status,
         headers: {

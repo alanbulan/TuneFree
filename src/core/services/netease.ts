@@ -1,7 +1,7 @@
 import { Song, TopList } from "../types";
 import { mergeLyricTracks } from "../utils/lyrics";
 import { proxyFetchJson } from "./proxy";
-import { fixUrl } from "./utils";
+import { normalizeMusicUrl } from "./utils";
 
 // ==============================
 // 网易云音乐 直连接口
@@ -27,14 +27,18 @@ export const searchNetease = async (
 
   if (!songs || !Array.isArray(songs)) return [];
 
-  return songs.map((s: any) => ({
-    id: String(s.id),
-    name: s.name || "",
-    artist: s.ar?.map((a: any) => a.name).join(", ") || "",
-    album: s.al?.name || "",
-    pic: fixUrl(s.al?.picUrl || ""),
-    source: "netease" as const,
-  }));
+  return songs.map((s: Record<string, unknown>) => {
+    const ar = s.ar;
+    const al = s.al;
+    return {
+      id: String(s.id),
+      name: String(s.name ?? ""),
+      artist: Array.isArray(ar) ? ar.map((a: Record<string, unknown>) => String(a.name ?? "")).join(", ") : "",
+      album: typeof al === "object" && al !== null ? String((al as Record<string, unknown>).name ?? "") : "",
+      pic: normalizeMusicUrl(typeof al === "object" && al !== null ? (al as Record<string, unknown>).picUrl as string : ""),
+      source: "netease" as const,
+    };
+  });
 };
 
 /**
@@ -49,12 +53,12 @@ export const getNeteaseTopLists = async (): Promise<TopList[]> => {
 
   if (!list || !Array.isArray(list)) return [];
 
-  return list.map((item: any) => ({
+  return list.map((item: Record<string, unknown>) => ({
     id: String(item.id),
-    name: item.name || "",
-    updateFrequency: item.updateFrequency || "",
-    picUrl: fixUrl(item.coverImgUrl || ""),
-    coverImgUrl: fixUrl(item.coverImgUrl || ""),
+    name: String(item.name ?? ""),
+    updateFrequency: String(item.updateFrequency ?? ""),
+    picUrl: normalizeMusicUrl(item.coverImgUrl as string || ""),
+    coverImgUrl: normalizeMusicUrl(item.coverImgUrl as string || ""),
   }));
 };
 
@@ -72,14 +76,18 @@ export const getNeteaseTopListDetail = async (
 
   if (!tracks || !Array.isArray(tracks)) return [];
 
-  return tracks.map((s: any) => ({
-    id: String(s.id),
-    name: s.name || "",
-    artist: s.ar?.map((a: any) => a.name).join(", ") || "",
-    album: s.al?.name || "",
-    pic: fixUrl(s.al?.picUrl || ""),
-    source: "netease" as const,
-  }));
+  return tracks.map((s: Record<string, unknown>) => {
+    const ar = s.ar;
+    const al = s.al;
+    return {
+      id: String(s.id),
+      name: String(s.name ?? ""),
+      artist: Array.isArray(ar) ? ar.map((a: Record<string, unknown>) => String(a.name ?? "")).join(", ") : "",
+      album: typeof al === "object" && al !== null ? String((al as Record<string, unknown>).name ?? "") : "",
+      pic: normalizeMusicUrl(typeof al === "object" && al !== null ? (al as Record<string, unknown>).picUrl as string : ""),
+      source: "netease" as const,
+    };
+  });
 };
 
 /**
@@ -88,7 +96,7 @@ export const getNeteaseTopListDetail = async (
  * 无翻译时只返回原文。
  * @param id 歌曲 ID
  */
-export const fetchNeteaselyrics = async (
+export const fetchNeteaseLyrics = async (
   id: string | number,
 ): Promise<string> => {
   try {

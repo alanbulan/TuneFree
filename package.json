@@ -8,13 +8,10 @@
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "next lint",
+    "test": "vitest",
     "tauri": "node bump-version.js && tauri"
   },
   "dependencies": {
-    "@babel/generator": "^7.29.1",
-    "@babel/parser": "^7.29.0",
-    "@babel/traverse": "^7.29.0",
-    "@babel/types": "^7.29.0",
     "@tauri-apps/api": "^2.11.0",
     "framer-motion": "^11.0.8",
     "lucide-react": "^0.344.0",
@@ -27,6 +24,9 @@
     "@types/node": "^22.15.3",
     "@types/react": "^18.2.64",
     "@types/react-dom": "^18.2.21",
-    "typescript": "^5.2.2"
-  }
+    "@vitest/ui": "^4.1.9",
+    "typescript": "^5.2.2",
+    "vitest": "^4.1.9"
+  },
+  "//framer-motion": "Tip: for better tree-shaking, import from framer-motion subpaths (e.g. 'framer-motion/m' for motion components) if bundle size becomes a concern."
 }

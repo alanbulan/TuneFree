@@ -38,7 +38,8 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* https:; media-src 'self' http://ws.stream.qqmusic.qq.com https://ws.stream.qqmusic.qq.com",
+      "capabilities": ["main", "desktop-lyric"]
     }
   },
   "bundle": {

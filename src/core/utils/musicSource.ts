@@ -9,17 +9,7 @@ const SOURCE_LABELS: Record<string, { short: string; full: string }> = {
   joox: { short: "JOOX", full: "JOOX" },
 };
 
-const SOURCE_BADGE_CLASSES: Record<string, string> = {
-  netease: "bg-red-100 text-red-600",
-  qq: "bg-green-100 text-green-600",
-  kuwo: "bg-yellow-100 text-yellow-700",
-  joox: "bg-purple-100 text-purple-700",
-};
-
 export const getMusicSourceLabel = (
   source: string,
   variant: "short" | "full" = "short",
 ): string => SOURCE_LABELS[source]?.[variant] || source;
-
-export const getMusicSourceBadgeClass = (source: string): string =>
-  SOURCE_BADGE_CLASSES[source] || "bg-gray-200 text-gray-600";

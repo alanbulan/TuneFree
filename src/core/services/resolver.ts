@@ -1,6 +1,6 @@
 import { API_PREFIX } from "./config";
-import { fixUrl } from "./utils";
-import { fetchNeteaselyrics, searchNetease } from "./netease";
+import { normalizeMusicUrl } from "./utils";
+import { fetchNeteaseLyrics, searchNetease } from "./netease";
 import { fetchQQLyrics, searchQQ } from "./qq";
 import { fetchKuwoLyrics, searchKuwo } from "./kuwo";
 import {
@@ -119,7 +119,7 @@ export const fetchFallbackLyrics = async (
 
     try {
       if (source === "netease") {
-        lrc = await fetchNeteaselyrics(id);
+        lrc = await fetchNeteaseLyrics(id);
       } else if (source === "qq") {
         lrc = await fetchQQLyrics(id);
       } else if (source === "kuwo") {
@@ -177,7 +177,7 @@ const getDirectSongUrl = async (
   }
 
   const nativeUrl = await fetchNativeUrl(String(id), source, quality);
-  if (nativeUrl) return fixUrl(nativeUrl) || null;
+  if (nativeUrl) return normalizeMusicUrl(nativeUrl) || null;
 
   return null;
 };
@@ -213,7 +213,7 @@ const resolveDirectSongFull = async (
     getDirectSongUrl(id, platform, quality),
     getLyrics(id, platform),
   ]);
-  const pic = songMeta?.pic ? fixUrl(songMeta.pic) : "";
+  const pic = songMeta?.pic ? normalizeMusicUrl(songMeta.pic) : "";
 
   if (!url && !lrc && !pic) return null;
 
