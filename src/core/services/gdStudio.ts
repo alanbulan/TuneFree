@@ -15,7 +15,7 @@ type GdStudioTrack = {
   source?: string;
 };
 
-type GdStudioSource = "netease" | "kuwo" | "joox" | "bilibili";
+type GdStudioSource = "netease" | "kuwo" | "joox" | "bilibili" | "qq";
 
 type CachedTrackMeta = {
   pic?: string;
@@ -29,6 +29,7 @@ const GD_STUDIO_SOURCES: readonly GdStudioSource[] = [
   "kuwo",
   "joox",
   "bilibili",
+  "qq",
 ];
 
 const GD_STUDIO_ONLY_SOURCES = ["joox", "bilibili"] as const;
@@ -124,7 +125,11 @@ const buildApiUrl = (params: Record<string, string | number>): string => {
   const search = new URLSearchParams();
 
   for (const [key, value] of Object.entries(params)) {
-    search.set(key, String(value));
+    if (key === "source" && value === "qq") {
+      search.set(key, "tencent");
+    } else {
+      search.set(key, String(value));
+    }
   }
 
   return `${GD_STUDIO_API_BASE}?${search.toString()}`;

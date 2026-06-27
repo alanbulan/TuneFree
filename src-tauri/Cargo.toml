@@ -26,7 +26,7 @@ tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
 axum = "0.7"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots", "stream"] }
 tower-http = { version = "0.5", features = ["cors"] }
 aes = "0.8"
 md5 = "0.7"
