@@ -238,6 +238,8 @@ const resolveFallbackSongFull = async (
   for (const source of fallbackSources) {
     try {
       const results = await searchFallbackSource(query, source);
+      if (!Array.isArray(results)) continue;
+
       const candidates = results
         .filter(
           (song) =>
