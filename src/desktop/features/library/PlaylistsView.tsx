@@ -87,28 +87,32 @@ export default function PlaylistsView() {
             <p>{playlist.songs.length} 首歌曲</p>
           </div>
           <div className="inline-actions">
-            <button
-              type="button"
-              className="soft-button"
-              onClick={() => {
-                const nextName = window.prompt('重命名歌单', playlist.name);
-                if (nextName?.trim()) renamePlaylist(playlist.id, nextName.trim());
-              }}
-            >
-              重命名
-            </button>
-            <button
-              type="button"
-              className="danger-button"
-              onClick={() => {
-                if (window.confirm('确定删除这个歌单？')) {
-                  deletePlaylist(playlist.id);
-                  setSelectedPlaylistId(null);
-                }
-              }}
-            >
-              删除歌单
-            </button>
+            {playlist.id !== 'favorites' && (
+              <>
+                <button
+                  type="button"
+                  className="soft-button"
+                  onClick={() => {
+                    const nextName = window.prompt('重命名歌单', playlist.name);
+                    if (nextName?.trim()) renamePlaylist(playlist.id, nextName.trim());
+                  }}
+                >
+                  重命名
+                </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={() => {
+                    if (window.confirm('确定删除这个歌单？')) {
+                      deletePlaylist(playlist.id);
+                      setSelectedPlaylistId(null);
+                    }
+                  }}
+                >
+                  删除歌单
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
