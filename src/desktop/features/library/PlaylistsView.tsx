@@ -17,6 +17,22 @@ import SongTable from '../../components/SongTable';
 import CustomSelect from './components/CustomSelect';
 import type { Playlist, Song } from '../../../core/types';
 
+const getPlaylistSourceLabel = (playlist: Playlist): string => {
+  if (playlist.id === 'favorites') return '本地';
+  if (!playlist.songs || playlist.songs.length === 0) return '本地';
+  
+  const firstSongSource = playlist.songs[0].source;
+  if (firstSongSource === 'netease') return '网易云';
+  if (firstSongSource === 'tencent' || firstSongSource === 'qq') return 'QQ音乐';
+  if (firstSongSource === 'kuwo') return '酷我音乐';
+  if (firstSongSource === 'joox') return 'JOOX';
+  if (firstSongSource === 'bilibili') return 'B站';
+  if (firstSongSource === 'apple') return 'Apple Music';
+  if (firstSongSource === 'ytmusic') return 'YouTube';
+  if (firstSongSource === 'spotify') return 'Spotify';
+  return '本地';
+};
+
 export default function PlaylistsView() {
   const {
     playlists,
@@ -349,7 +365,7 @@ export default function PlaylistsView() {
                       : undefined
                   }
                 >
-                  本地
+                  {getPlaylistSourceLabel(playlist)}
                 </span>
                 <span className="muted-text" style={coverUrl ? { color: 'rgba(255,255,255,0.9)' } : undefined}>
                   打开

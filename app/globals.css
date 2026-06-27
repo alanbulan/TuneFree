@@ -1019,18 +1019,19 @@ img { display: block; }
 .panel-field label { color: var(--muted); font-size: 10px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
 .color-palette { display: flex; flex-direction: column; gap: 12px; }
 .color-palette-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .color-swatch {
-  width: 100%;
-  aspect-ratio: 1;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   border: 2px solid transparent;
   cursor: pointer;
   transition: transform .18s cubic-bezier(.2,.8,.2,1), box-shadow .18s ease;
   position: relative;
+  flex-shrink: 0;
 }
 .color-swatch:hover { transform: scale(1.12); }
 .color-swatch-active {
