@@ -2330,3 +2330,106 @@ body, .lyric-text, .song-info, .about-content, input, textarea, [contenteditable
     animation: none;
   }
 }
+
+/* AI 智能极细边缘彩虹流动动效 */
+@keyframes rainbow-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* 首页 AI 推荐音源 Chip - 1px 彩虹边框 + 极简淡雅底色 */
+.source-chip.ai-source-chip {
+  border: 1px solid transparent !important;
+  background-image: 
+    linear-gradient(var(--glass-bg), var(--glass-bg)), 
+    linear-gradient(90deg, #ff2a5f, #7928ca, #00dfd8, #ff2a5f) !important;
+  background-origin: border-box !important;
+  background-clip: padding-box, border-box !important;
+  background-size: 100% 100%, 300% 300% !important;
+  animation: rainbow-flow 5s ease infinite !important;
+  color: var(--text) !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.source-chip.ai-source-chip:hover {
+  transform: translateY(-0.5px);
+  box-shadow: 0 4px 10px rgba(121, 40, 202, 0.08);
+}
+.source-chip.ai-source-chip.active {
+  background-image: 
+    linear-gradient(var(--accent), var(--accent)), 
+    linear-gradient(90deg, #ff2a5f, #7928ca, #00dfd8, #ff2a5f) !important;
+  color: #ffffff !important;
+}
+
+/* AI 推荐面板容器 - 1.5px 极细流动彩虹边框 + 极简主体底色 */
+.ai-rainbow-flow-border {
+  border: 1.5px solid transparent;
+  background-image: 
+    linear-gradient(var(--ios-card), var(--ios-card)), 
+    linear-gradient(90deg, #ff2a5f, #7928ca, #00dfd8, #ff2a5f);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  background-size: 100% 100%, 300% 300%;
+  animation: rainbow-flow 5s ease infinite;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(121, 40, 202, 0.04);
+}
+
+/* 首页 AI 助理大面板中的“开启相似音乐流”流光发光按钮 (极细流动边框) */
+.ai-radar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background-image: 
+    linear-gradient(var(--surface-soft), var(--surface-soft)), 
+    linear-gradient(90deg, #ff2a5f, #7928ca, #00dfd8, #ff2a5f);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  background-size: 100% 100%, 300% 300%;
+  animation: rainbow-flow 5s ease infinite;
+  color: var(--text) !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.ai-radar-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(121, 40, 202, 0.12);
+}
+.ai-radar-btn:active {
+  transform: translateY(0);
+}
+
+/* 底栏 24px 圆形相似流按钮 - 1px 极细流动彩虹边框 + 极简圆形背景 */
+.ai-radar-btn-mini {
+  width: 24px;
+  height: 24px;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  border: 1px solid transparent !important;
+  background-image: 
+    linear-gradient(var(--ios-card), var(--ios-card)), 
+    linear-gradient(90deg, #ff2a5f, #7928ca, #00dfd8, #ff2a5f) !important;
+  background-origin: border-box !important;
+  background-clip: padding-box, border-box !important;
+  background-size: 100% 100%, 300% 300% !important;
+  animation: rainbow-flow 5s ease infinite !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  align-self: center;
+  cursor: pointer;
+  color: var(--text-soft) !important;
+  transition: transform 0.15s ease;
+}
+.ai-radar-btn-mini:hover {
+  color: var(--text) !important;
+  transform: scale(1.08);
+}

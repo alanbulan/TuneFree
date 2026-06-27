@@ -122,6 +122,13 @@ const getUrlCacheKey = (
 ): string => `${source}:${String(id)}:${quality}`;
 
 const buildApiUrl = (params: Record<string, string | number>): string => {
+  // 针对 AI 推荐接口做特化手动拼接，以防止 name 参数中已有的百分号编码被 URLSearchParams 进行二次转义
+  if (params.types === "embeat_agent") {
+    const { types, count, source, pages, name, s } = params;
+    const sourceValue = source === "qq" ? "tencent" : source;
+    return `${GD_STUDIO_API_BASE}?types=${types}&count=${count}&source=${sourceValue}&pages=${pages}&name=${name}&s=${s}`;
+  }
+
   const search = new URLSearchParams();
 
   for (const [key, value] of Object.entries(params)) {
@@ -405,4 +412,130 @@ export const parseGDStudioSongFull = async (
     lrc,
     pic,
   };
+};
+
+/**
+ * 原生高效率 Web Crypto MD5 算法
+ */
+async function calculateMD5(str: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+  
+  const cryptoObj = typeof window !== 'undefined' 
+    ? (window.crypto || (window as any).msCrypto)
+    : (globalThis.crypto);
+
+  if (cryptoObj?.subtle) {
+    const hashBuffer = await cryptoObj.subtle.digest('MD5', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  
+  // Node.js 单元测试 fallback
+  try {
+    const nodeCrypto = require('crypto');
+    return nodeCrypto.createHash('md5').update(str).digest('hex');
+  } catch {
+    throw new Error("[GDStudio] MD5 encryption not available.");
+  }
+}
+
+/**
+ * 对应 ajax.js 中的 urlEncode 实现
+ */
+function gdUrlEncode(a: string): string {
+  return encodeURIComponent(a)
+    .replace(/'/g, "%27")
+    .replace(/\(/g, "%28")
+    .replace(/\)/g, "%29");
+}
+
+let lastTimeDiff = 0;
+let timeSynced = false;
+
+/**
+ * 同步 GD 音乐台的时间戳以保证签名处于有效期（10秒）内
+ */
+export async function syncServerTime(): Promise<void> {
+  try {
+    const start = Date.now();
+    const resp = await fetch('https://music.gdstudio.org/time', { method: 'GET' });
+    const text = await resp.text();
+    const serverTime = Number(text.trim());
+    if (!isNaN(serverTime) && serverTime > 0) {
+      const end = Date.now();
+      const latency = (end - start) / 2;
+      lastTimeDiff = serverTime - (start + latency);
+      timeSynced = true;
+    }
+  } catch (err) {
+    console.warn("[GDStudio] Failed to sync server time, using local time:", err);
+  }
+}
+
+/**
+ * 调用 Embeat 大模型获取 AI 推荐歌曲 (支持大语言模型搜歌 / 情感电台)
+ */
+export const getAIRecommendedSongs = async (
+  keyword: string,
+  source: GdStudioSource = 'netease',
+  count: number = 20
+): Promise<Song[]> => {
+  if (!timeSynced) {
+    await syncServerTime();
+  }
+
+  const encodedName = gdUrlEncode(keyword);
+  // 计算当前服务器的秒级时间戳前 9 位 (对应 crc32 中的 slice(0, 9))
+  const currentServerTime = Date.now() + lastTimeDiff;
+  const tsPrefix = String(currentServerTime).slice(0, 9);
+
+  // 拼接签名主体：tsPrefix | host | version | query
+  const textToHash = `${tsPrefix}|music.gdstudio.org|20260616|${encodedName}`;
+  const md5Hex = await calculateMD5(textToHash);
+  const calculatedS = md5Hex.slice(-8).toUpperCase();
+
+  const data = await fetchGDStudioData<GdStudioTrack[]>({
+    types: "embeat_agent",
+    count,
+    source,
+    pages: 1,
+    name: encodedName,
+    s: calculatedS
+  });
+
+  if (!Array.isArray(data)) return [];
+
+  return data.map((item: GdStudioTrack) => {
+    const id = String(item.id || item.url_id || item.lyric_id || "").trim();
+    const picId = String(item.pic_id || "").trim();
+    const lyricId = String(item.lyric_id || id).trim();
+    const urlId = String(item.url_id || id).trim();
+    const pic = picId.startsWith("http") || picId.startsWith("//")
+      ? fixUrl(picId)
+      : source === "joox" && picId
+        ? fixUrl(buildJooxCoverUrl(picId, 500))
+        : "";
+
+    if (id) {
+      rememberTrackMeta(id, source, {
+        pic,
+        picId,
+        lyricId,
+        urlId,
+      });
+    }
+
+    return {
+      id: id || `temp_${Math.random().toString(36).slice(2)}`,
+      name: String(item.name || ""),
+      artist: joinArtists(item.artist),
+      album: String(item.album || ""),
+      pic,
+      picId,
+      lyricId,
+      urlId,
+      source,
+    };
+  });
 };
