@@ -210,7 +210,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
   const [favorites, setFavorites] = useState<Song[]>(() =>
     getStoredJson<Song[]>(FAVORITES_KEY, [], normalizeSongArray),
   );
-  const [playlists, setPlaylists] = useState<Playlist[]>(() =>
+  const [playlistsState, setPlaylistsState] = useState<Playlist[]>(() =>
     getStoredJson<Playlist[]>(PLAYLISTS_KEY, [], normalizePlaylistArray),
   );
   const [corsProxy, setCorsProxyInternal] = useState<string>(
@@ -218,21 +218,31 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const favoritesRef = useRef(favorites);
-  const playlistsRef = useRef(playlists);
+  const playlistsRef = useRef(playlistsState);
   useEffect(() => {
     favoritesRef.current = favorites;
   }, [favorites]);
   useEffect(() => {
-    playlistsRef.current = playlists;
-  }, [playlists]);
+    playlistsRef.current = playlistsState;
+  }, [playlistsState]);
 
   useEffect(() => {
     setStoredValue(FAVORITES_KEY, JSON.stringify(favorites));
   }, [favorites]);
 
   useEffect(() => {
-    setStoredValue(PLAYLISTS_KEY, JSON.stringify(playlists));
-  }, [playlists]);
+    setStoredValue(PLAYLISTS_KEY, JSON.stringify(playlistsState));
+  }, [playlistsState]);
+
+  const playlists = useMemo(() => {
+    const favPlaylist: Playlist = {
+      id: "favorites",
+      name: "我喜欢",
+      createTime: 0,
+      songs: favorites,
+    };
+    return [favPlaylist, ...playlistsState];
+  }, [favorites, playlistsState]);
 
   const setCorsProxy = useCallback((url: string) => {
     setCorsProxyInternal(url);
@@ -268,25 +278,35 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
         createTime: Date.now(),
         songs: uniqueSongs(initialSongs.map(normalizeSong).filter((song): song is Song => Boolean(song))),
       };
-      setPlaylists((prev) => [newPlaylist, ...prev]);
+      setPlaylistsState((prev) => [newPlaylist, ...prev]);
     },
     [],
   );
 
   const renamePlaylist = useCallback((id: string, name: string) => {
-    setPlaylists((prev) =>
+    if (id === "favorites") return;
+    setPlaylistsState((prev) =>
       prev.map((p) => (p.id === id ? { ...p, name: String(name) } : p)),
     );
   }, []);
 
   const deletePlaylist = useCallback((id: string) => {
-    setPlaylists((prev) => prev.filter((p) => p.id !== id));
+    if (id === "favorites") return;
+    setPlaylistsState((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
   const addToPlaylist = useCallback((playlistId: string, song: Song) => {
     const normalizedSong = normalizeSong(song);
     if (!normalizedSong) return;
-    setPlaylists((prev) =>
+    if (playlistId === "favorites") {
+      setFavorites((prev) => {
+        const songKey = getSongKey(normalizedSong);
+        if (prev.find((s) => getSongKey(s) === songKey)) return prev;
+        return [normalizedSong, ...prev];
+      });
+      return;
+    }
+    setPlaylistsState((prev) =>
       prev.map((p) => {
         if (p.id !== playlistId) return p;
         const songKey = getSongKey(normalizedSong);
@@ -294,11 +314,19 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
         return { ...p, songs: [...p.songs, normalizedSong] };
       }),
     );
-  }, []);
+  }, [setFavorites]);
 
   const removeFromPlaylist = useCallback(
     (playlistId: string, songId: number | string, source?: string) => {
-      setPlaylists((prev) =>
+      if (playlistId === "favorites") {
+        setFavorites((prev) =>
+          prev.filter(
+            (s) => !(String(s.id) === String(songId) && (!source || s.source === source)),
+          ),
+        );
+        return;
+      }
+      setPlaylistsState((prev) =>
         prev.map((p) => {
           if (p.id !== playlistId) return p;
           return {
@@ -310,7 +338,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
         }),
       );
     },
-    [],
+    [setFavorites],
   );
 
   const exportData = useCallback((): LibraryExportResult => {
@@ -383,10 +411,10 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (mode === "merge") {
         setFavorites((prev) => mergeSongLists(prev, favoritesToApply));
-        setPlaylists((prev) => mergePlaylists(prev, playlistsToApply));
+        setPlaylistsState((prev) => mergePlaylists(prev, playlistsToApply));
       } else {
         setFavorites(favoritesToApply);
-        setPlaylists(playlistsToApply);
+        setPlaylistsState(playlistsToApply);
       }
 
       return { ok: true, backup };
@@ -396,7 +424,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const restoreData = useCallback((backup: LibraryBackup) => {
     setFavorites(backup.favorites);
-    setPlaylists(backup.playlists);
+    setPlaylistsState(backup.playlists);
   }, []);
 
   const importData = useCallback(
