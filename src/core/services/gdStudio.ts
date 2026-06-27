@@ -144,10 +144,16 @@ const fetchGDStudioData = async <T = any>(
       throw new Error("GD_STUDIO_UNAVAILABLE");
     }
   } else {
-    // 2. 普通音频解析接口（types=url/lyric/pic等）：只支持 GET 请求，只校验 crc32(urlEncode(id)) 基础签名
-    const targetId = params.id ? String(params.id) : "";
-    const encodedId = gdUrlEncode(targetId);
-    const calculatedS = crc32(encodedId);
+    // 2. 通用音频与歌单数据接口（types=url/lyric/pic/playlist等）：只支持 GET 请求，动态提取核心参数进行 CRC32 签名
+    let signSubject = "";
+    if (params.id !== undefined) {
+      signSubject = gdUrlEncode(String(params.id));
+    } else if (params.name !== undefined) {
+      signSubject = String(params.name);
+    } else {
+      signSubject = gdUrlEncode(String(params.types || ""));
+    }
+    const calculatedS = crc32(signSubject);
 
     const search = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
