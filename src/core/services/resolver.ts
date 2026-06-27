@@ -9,6 +9,7 @@ import {
   isGDStudioOnlySource,
   isGDStudioSource,
   parseGDStudioSongFull,
+  resolveAutosource,
   searchGDStudio,
 } from "./gdStudio";
 import type { Song } from "../types";
@@ -279,6 +280,20 @@ export const getSongUrl = async (
   quality: string = "320k",
   songMeta?: SongMeta,
 ): Promise<string | null> => {
+  // embeat 源：走 autosource 跨源匹配
+  if (source === "embeat" && songMeta) {
+    const autosource = await resolveAutosource({
+      name: songMeta.name || "",
+      artist: songMeta.artist || "",
+      album: songMeta.album || "",
+      source: "embeat",
+    });
+    if (autosource?.url) return autosource.url;
+    // autosource 失败走常规 fallback
+    const fallback = await resolveFallbackSongFull(source, quality, songMeta);
+    return fallback?.url || null;
+  }
+
   const directUrl = await getDirectSongUrl(id, source, quality);
   if (directUrl) return directUrl;
 
@@ -293,6 +308,21 @@ export const parseSongFull = async (
   songMeta?: SongMeta,
 ): Promise<ParsedSongFull | null> => {
   if (!platform || platform === "undefined") return null;
+
+  // embeat 源（AI 推荐歌曲）：走 autosource 一站式跨源匹配通道
+  if (platform === "embeat" && songMeta) {
+    const autosource = await resolveAutosource({
+      name: songMeta.name || "",
+      artist: songMeta.artist || "",
+      album: songMeta.album || "",
+      source: "embeat",
+    });
+    if (autosource?.url) return autosource;
+    // autosource 失败时走常规 fallback
+    const fallback = await resolveFallbackSongFull(platform, quality, songMeta);
+    if (fallback?.url) return fallback;
+    return null;
+  }
 
   const direct = await resolveDirectSongFull(id, platform, quality, songMeta);
   if (direct?.url) return direct;
