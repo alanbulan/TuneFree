@@ -452,17 +452,7 @@ export const getGDStudioPic = async (
     return pic;
   }
 
-  // 5. Embeat 源（AI推荐）：Spotify ID 无法通过 types=pic 获取，用 autosource 获取封面
-  if (source === "embeat") {
-    const trackMeta = resolveTrackMeta(picId, source);
-    // 如果 trackMetaCache 里有已存储的元信息，跳过网络请求
-    if (trackMeta.pic) {
-      picCache.set(cacheKey, trackMeta.pic);
-      return trackMeta.pic;
-    }
-    // embeat 的 pic_id 是 Spotify ID，无法直接获取封面，返回空
-    return "";
-  }
+
 
   // 5. 其余平台兜底
   try {
