@@ -191,8 +191,28 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setLockDesktopLyric,
   ]);
 
+  const styleContent = useMemo(() => {
+    const isDark = resolveThemeIsDark(themeMode);
+    const tokens = resolveThemeTokens(themeMode, themeColor, isDark);
+    const size = clampLyricSize(lyricSize);
+    const font = lyricFont || DEFAULT_THEME_PREFERENCES.lyricFont;
+    return `
+      html, :root {
+        --accent: ${tokens.accent} !important;
+        --play: ${tokens.play} !important;
+        --danger: ${tokens.danger} !important;
+        --accent-rgb: ${tokens.accentRgb} !important;
+        --danger-rgb: ${tokens.dangerRgb} !important;
+        --accent-soft: rgba(${tokens.accentRgb},.12) !important;
+        --lyric-font-size: ${size}px !important;
+        --lyric-font-family: ${font} !important;
+      }
+    `;
+  }, [themeMode, themeColor, lyricSize, lyricFont]);
+
   return (
     <ThemeContext.Provider value={value}>
+      <style id="tunefree-dynamic-theme" dangerouslySetInnerHTML={{ __html: styleContent }} />
       {children}
     </ThemeContext.Provider>
   );

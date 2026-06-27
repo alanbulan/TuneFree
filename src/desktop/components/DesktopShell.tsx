@@ -311,7 +311,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
             title={sidebarCollapsed ? '展开侧边菜单' : '收起侧边菜单'}
             onClick={() => setSidebarCollapsed((prev) => !prev)}
           >
-            {sidebarCollapsed ? <SidebarExpandIcon size={20} /> : <SidebarCollapseIcon size={20} />}
+            {sidebarCollapsed ? <SidebarExpandIcon size={16} /> : <SidebarCollapseIcon size={16} />}
           </button>
         </div>
         <p className="sidebar-section-title">TuneFree</p>
