@@ -38,7 +38,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' http://127.0.0.1:* http://asset.localhost https: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* http://asset.localhost https:; media-src 'self' http://asset.localhost http://ws.stream.qqmusic.qq.com https://ws.stream.qqmusic.qq.com",
+      "csp": "default-src 'self'; img-src 'self' http://127.0.0.1:* http://asset.localhost https: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* http://asset.localhost https:; media-src 'self' http: https: data: blob: http://asset.localhost",
       "assetProtocol": {
         "enable": true,
         "scope": [
