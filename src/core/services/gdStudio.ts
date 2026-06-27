@@ -77,53 +77,97 @@ const looksLikeRateLimitResponse = (status: number, text: string): boolean => {
   return /频率|rate limit|too many requests/i.test(text);
 };
 
+const makeCRCTable = (): number[] => {
+  let c;
+  const crcTable: number[] = [];
+  for (let n = 0; n < 256; n++) {
+    c = n;
+    for (let k = 0; k < 8; k++) {
+      c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+    }
+    crcTable[n] = c;
+  }
+  return crcTable;
+};
+const crcTable = makeCRCTable();
+const crc32 = (str: string): string => {
+  let crc = 0 ^ (-1);
+  for (let i = 0; i < str.length; i++) {
+    crc = (crc >>> 8) ^ crcTable[(crc ^ str.charCodeAt(i)) & 0xFF];
+  }
+  return ((crc ^ (-1)) >>> 0).toString(16).toUpperCase();
+};
+
 const fetchGDStudioData = async <T = any>(
   params: Record<string, string | number>,
 ): Promise<T> => {
-  // 1. 若参数中没有提供 name 关键词，我们默认使用 "tunefree" 占位词
-  const nameValue = params.name ? String(params.name) : "tunefree";
-
-  // 2. 将关键词编码（如果是已编码过的就不重复进行二次编码）
-  const encodedName = params.name ? String(params.name) : gdUrlEncode(nameValue);
-
-  // 3. 自动计算时间同步以及 s 签名
-  if (!timeSynced) {
-    await syncServerTime();
-  }
-  const currentServerTime = Date.now() + lastTimeDiff;
-  const tsPrefix = String(currentServerTime).slice(0, 9);
-  
-  // 拼接签名文本：tsPrefix | host | version | query
-  const textToHash = `${tsPrefix}|music.gdstudio.org|20260616|${encodedName}`;
-  const md5Hex = await calculateMD5(textToHash);
-  const calculatedS = params.s ? String(params.s) : md5Hex.slice(-8).toUpperCase();
-
-  // 4. 将所有接口请求统一转化为 POST（满足新版 api.php 规范且可防止参数被乱转义）
-  const bodyParams = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (key === "source" && value === "qq") {
-      bodyParams.set(key, "tencent");
-    } else if (key !== "name" && key !== "s") {
-      bodyParams.set(key, String(value));
-    }
-  }
-  bodyParams.set("name", encodedName);
-  bodyParams.set("s", calculatedS);
-
-  console.log(`[GDStudio] POST Requesting types=${params.types} with body:`, bodyParams.toString());
-
   let response;
-  try {
-    response = await proxyFetch(GD_STUDIO_API_BASE, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
-      },
-      body: bodyParams.toString()
-    } as any, 12000);
-  } catch (err) {
-    console.error(`[GDStudio] proxyFetch POST network error for types=${params.types}:`, err);
-    throw new Error("GD_STUDIO_UNAVAILABLE");
+
+  if (params.types === "embeat_agent") {
+    // 1. AI 推荐搜歌：只支持 POST 请求，且强制校验时间戳 md5 签名 s
+    const nameValue = params.name ? String(params.name) : "tunefree";
+    const encodedName = params.name ? String(params.name) : gdUrlEncode(nameValue);
+
+    if (!timeSynced) {
+      await syncServerTime();
+    }
+    const currentServerTime = Date.now() + lastTimeDiff;
+    const tsPrefix = String(currentServerTime).slice(0, 9);
+    
+    const textToHash = `${tsPrefix}|music.gdstudio.org|20260616|${encodedName}`;
+    const md5Hex = await calculateMD5(textToHash);
+    const calculatedS = params.s ? String(params.s) : md5Hex.slice(-8).toUpperCase();
+
+    const bodyParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (key === "source" && value === "qq") {
+        bodyParams.set(key, "tencent");
+      } else if (key !== "name" && key !== "s") {
+        bodyParams.set(key, String(value));
+      }
+    }
+    bodyParams.set("name", encodedName);
+    bodyParams.set("s", calculatedS);
+
+    console.log(`[GDStudio] POST Requesting types=embeat_agent with body:`, bodyParams.toString());
+
+    try {
+      response = await proxyFetch(GD_STUDIO_API_BASE, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        body: bodyParams.toString()
+      } as any, 12000);
+    } catch (err) {
+      console.error("[GDStudio] proxyFetch POST network error:", err);
+      throw new Error("GD_STUDIO_UNAVAILABLE");
+    }
+  } else {
+    // 2. 普通音频解析接口（types=url/lyric/pic等）：只支持 GET 请求，只校验 crc32(urlEncode(id)) 基础签名
+    const targetId = params.id ? String(params.id) : "";
+    const encodedId = gdUrlEncode(targetId);
+    const calculatedS = crc32(encodedId);
+
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (key === "source" && value === "qq") {
+        search.set(key, "tencent");
+      } else if (key !== "s") {
+        search.set(key, String(value));
+      }
+    }
+    search.set("s", calculatedS);
+
+    const url = `${GD_STUDIO_API_BASE}?${search.toString()}`;
+    console.log("[GDStudio] GET Requesting URL:", url);
+
+    try {
+      response = await proxyFetch(url, {}, 12000);
+    } catch (err) {
+      console.error("[GDStudio] proxyFetch GET network error:", err);
+      throw new Error("GD_STUDIO_UNAVAILABLE");
+    }
   }
 
   if (!response) {
