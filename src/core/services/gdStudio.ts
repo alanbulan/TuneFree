@@ -80,19 +80,46 @@ const looksLikeRateLimitResponse = (status: number, text: string): boolean => {
 const fetchGDStudioData = async <T = any>(
   params: Record<string, string | number>,
 ): Promise<T> => {
-  const url = buildApiUrl(params);
-  console.log("[GDStudio] Requesting URL:", url);
-
   let response;
-  try {
-    response = await proxyFetch(url, {}, 12000);
-  } catch (err) {
-    console.error("[GDStudio] proxyFetch network error:", err);
-    throw new Error("GD_STUDIO_UNAVAILABLE");
+
+  if (params.types === "embeat_agent") {
+    // 针对 AI 推荐特化为 POST 发送，以满足 api.php 仅支持 POST parameter unpacking 的限制
+    const bodyParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (key === "source" && value === "qq") {
+        bodyParams.set(key, "tencent");
+      } else {
+        bodyParams.set(key, String(value));
+      }
+    }
+
+    console.log("[GDStudio] POST Requesting with body:", bodyParams.toString());
+    try {
+      response = await proxyFetch(GD_STUDIO_API_BASE, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        body: bodyParams.toString()
+      } as any, 12000);
+    } catch (err) {
+      console.error("[GDStudio] proxyFetch POST network error:", err);
+      throw new Error("GD_STUDIO_UNAVAILABLE");
+    }
+  } else {
+    // 普通接口保持原有的 GET 方式
+    const url = buildApiUrl(params);
+    console.log("[GDStudio] GET Requesting URL:", url);
+    try {
+      response = await proxyFetch(url, {}, 12000);
+    } catch (err) {
+      console.error("[GDStudio] proxyFetch network error:", err);
+      throw new Error("GD_STUDIO_UNAVAILABLE");
+    }
   }
 
   if (!response) {
-    console.error("[GDStudio] proxyFetch returned null for URL:", url);
+    console.error("[GDStudio] proxyFetch returned null");
     throw new Error("GD_STUDIO_UNAVAILABLE");
   }
 
@@ -518,7 +545,7 @@ export async function syncServerTime(): Promise<void> {
     if (!isNaN(serverTime) && serverTime > 0) {
       const end = Date.now();
       const latency = (end - start) / 2;
-      lastTimeDiff = serverTime - (start + latency);
+      lastTimeDiff = (serverTime * 1000) - (start + latency);
       timeSynced = true;
     }
   } catch (err) {
