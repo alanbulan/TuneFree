@@ -69,11 +69,7 @@ pub async fn get_netease_url(
     };
 
     let req_path = "/api/song/enhance/player/url";
-    let payload_str = serde_json::json!({
-        "ids": format!("[{}]", songmid),
-        "br": br,
-    })
-    .to_string();
+    let payload_str = format!(r#"{{"ids":"[{}]","br":{}}}"#, songmid, br);
     let hash_str = format!("nobody{}use{}md5forencrypt", req_path, payload_str);
 
     let md5_hash = format!("{:x}", md5::compute(hash_str.as_bytes()));
