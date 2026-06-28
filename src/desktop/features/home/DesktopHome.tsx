@@ -68,7 +68,8 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
         // 2. 对于真正的 embeat 源歌曲，采用串行 resolveAutosource 按需拉取前 8 首
         songs.forEach((song, index) => {
           if (!song.pic && song.source !== 'embeat') {
-            const targetId = String(song.picId || song.id);
+            // 网易云原生详情接口获取封面需要的是歌曲 ID（song.id），而 QQ 音乐根据 picId 拼接 CDN 封面
+            const targetId = song.source === 'netease' ? String(song.id) : String(song.picId || song.id);
             getGDStudioPic(song.source as any, targetId, 300).then((resolvedPic) => {
               if (resolvedPic) {
                 setFeaturedSongs((prev) => {
