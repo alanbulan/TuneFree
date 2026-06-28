@@ -36,6 +36,8 @@ const ALLOWED_HOSTS = [
     'musicpay.kuwo.cn',
     'm.kuwo.cn',
     'music-api.gdstudio.xyz',
+    'music.gdstudio.org',
+    'music-api.gdstudio.org',
     'tunehub.sayqz.com',
     'hdslb.com',
 ];
@@ -82,9 +84,9 @@ export const onRequest = async (context: PagesFunctionContext) => {
         headers.set('Referer', parsedTarget.origin);
 
         // GD Studio API 对浏览器头更敏感，使用接近真实站点的请求头可减少风控挑战页。
-        if (parsedTarget.hostname === 'music-api.gdstudio.xyz') {
+        if (parsedTarget.hostname === 'music-api.gdstudio.xyz' || parsedTarget.hostname === 'music.gdstudio.org' || parsedTarget.hostname === 'music-api.gdstudio.org') {
             headers.set('Accept', 'application/json,text/plain,*/*');
-            headers.set('Referer', 'https://music.gdstudio.xyz/');
+            headers.set('Referer', 'https://music.gdstudio.org/');
         }
 
         if (parsedTarget.hostname === 'hdslb.com' || parsedTarget.hostname.endsWith('.hdslb.com')) {

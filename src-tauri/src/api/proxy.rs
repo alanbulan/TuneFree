@@ -12,7 +12,7 @@ use std::str::FromStr;
 ///
 /// Only requests to these hosts (or their subdomains) are permitted.
 /// This prevents the proxy from being used as an open relay.
-const ALLOWED_HOSTS: [&str; 20] = [
+const ALLOWED_HOSTS: [&str; 21] = [
     "music.163.com",
     "interface.music.163.com",
     "interface3.music.163.com",
@@ -31,6 +31,8 @@ const ALLOWED_HOSTS: [&str; 20] = [
     "musicpay.kuwo.cn",
     "m.kuwo.cn",
     "music-api.gdstudio.xyz",
+    "music.gdstudio.org",
+    "music-api.gdstudio.org",
     "tunehub.sayqz.com",
     "hdslb.com",
 ];
@@ -127,7 +129,9 @@ pub async fn handle_cors_proxy(
 
     // Determine the Referer header value based on the target host
     let referer: String = match host {
-        "music-api.gdstudio.xyz" => "https://music.gdstudio.xyz/".into(),
+        "music-api.gdstudio.xyz" | "music.gdstudio.org" | "music-api.gdstudio.org" => {
+            "https://music.gdstudio.org/".into()
+        }
         h if h == "hdslb.com" || h.ends_with(".hdslb.com") => "https://www.bilibili.com/".into(),
         h if h == "u.y.qq.com" || h == "c.y.qq.com" || h.ends_with(".y.qq.com") => {
             "https://y.qq.com/".into()
@@ -137,7 +141,7 @@ pub async fn handle_cors_proxy(
 
     req_builder = req_builder.header("Referer", &referer);
 
-    if host == "music-api.gdstudio.xyz" {
+    if host == "music-api.gdstudio.xyz" || host == "music.gdstudio.org" || host == "music-api.gdstudio.org" {
         req_builder = req_builder.header("Accept", "application/json,text/plain,*/*");
     }
 
