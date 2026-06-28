@@ -91,7 +91,7 @@ const fetchGDStudioData = async <T = any>(
   // 签名主体：优先用 name 参数（embeat_agent/autosource/search），其次用 urlEncode(id)
   let signSubject = "";
   if (params.name !== undefined) {
-    signSubject = String(params.name);
+    signSubject = gdUrlEncode(String(params.name));
   } else if (params.id !== undefined) {
     signSubject = gdUrlEncode(String(params.id));
   } else {
@@ -488,7 +488,7 @@ export const resolveAutosource = async (
   const nameParts = [song.name || ""];
   if (song.artist) nameParts.push(song.artist);
   if (song.album) nameParts.push(song.album);
-  const nameStr = gdUrlEncode(nameParts.join(" | "));
+  const nameStr = nameParts.join(" | ");
 
   try {
     const data = await fetchGDStudioData<{
@@ -635,27 +635,12 @@ export const getAIRecommendedSongs = async (
   source: GdStudioSource = 'netease',
   count: number = 20
 ): Promise<Song[]> => {
-  if (!timeSynced) {
-    await syncServerTime();
-  }
-
-  const encodedName = gdUrlEncode(keyword);
-  // 计算当前服务器的秒级时间戳前 9 位 (对应 crc32 中的 slice(0, 9))
-  const currentServerTime = Date.now() + lastTimeDiff;
-  const tsPrefix = String(currentServerTime).slice(0, 9);
-
-  // 拼接签名主体：tsPrefix | host | version | query
-  const textToHash = `${tsPrefix}|music.gdstudio.org|20260616|${encodedName}`;
-  const md5Hex = await calculateMD5(textToHash);
-  const calculatedS = md5Hex.slice(-8).toUpperCase();
-
   const data = await fetchGDStudioData<GdStudioTrack[]>({
     types: "embeat_agent",
     count,
     source,
     pages: 1,
-    name: encodedName,
-    s: calculatedS
+    name: keyword,
   });
 
   if (!Array.isArray(data)) return [];
