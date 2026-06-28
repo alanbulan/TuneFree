@@ -12,7 +12,7 @@ use std::str::FromStr;
 ///
 /// Only requests to these hosts (or their subdomains) are permitted.
 /// This prevents the proxy from being used as an open relay.
-const ALLOWED_HOSTS: [&str; 21] = [
+const ALLOWED_HOSTS: [&str; 22] = [
     "music.163.com",
     "interface.music.163.com",
     "interface3.music.163.com",
