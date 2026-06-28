@@ -39,5 +39,6 @@ export const SELF_HOSTED_PROXY = `${proxyBase}/api/cors-proxy?url=`;
 
 export const DEFAULT_PROXIES: string[] = [
   SELF_HOSTED_PROXY,
+  "http://127.0.0.1:3002/api/cors-proxy?url=",
   "https://corsproxy.io/?url=",
 ];
