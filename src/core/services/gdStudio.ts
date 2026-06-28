@@ -114,21 +114,18 @@ const fetchGDStudioData = async <T = any>(
   console.log(`[GDStudio] POST types=${params.types}, body:`, bodyParams.toString());
 
   const tryFallbackRetry = async (): Promise<T | null> => {
-    console.warn(`[GDStudio] Attempting automatic fallback retry via corsproxy.io for types=${params.types}...`);
+    console.warn(`[GDStudio] Attempting automatic fallback retry via allorigins (GET) for types=${params.types}...`);
     try {
-      const fallbackUrl = `https://corsproxy.io/?url=${encodeURIComponent(GD_STUDIO_API_BASE)}`;
+      const finalUrl = `${GD_STUDIO_API_BASE}?${bodyParams.toString()}`;
+      const fallbackUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(finalUrl)}`;
       const retryResp = await fetch(fallbackUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
-        },
-        body: bodyParams.toString()
+        method: "GET",
       });
       if (retryResp.ok) {
         const retryText = decodeResponseText(await retryResp.arrayBuffer());
         const retryData = tryParseJson(retryText);
         if (retryData && !retryData.error) {
-          console.log(`[GDStudio] Fallback retry succeeded via corsproxy.io!`);
+          console.log(`[GDStudio] Fallback retry succeeded via allorigins!`);
           return retryData as T;
         }
       }
