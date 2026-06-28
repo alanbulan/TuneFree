@@ -4,7 +4,7 @@ import { ErrorIcon, MusicIcon, PlayIcon } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { getImgReferrerPolicy, getTopListDetail, getTopLists } from '../../../core/services/api';
-import { getAIRecommendedSongs, resolveAutosource, getGDStudioPic } from '../../../core/services/gdStudio';
+import { getAIRecommendedSongs, resolveAutosource } from '../../../core/services/gdStudio';
 import type { Song, TopList } from '../../../core/types';
 import { getMusicSourceLabel } from '../../../core/utils/musicSource';
 import SongTable from '../../components/SongTable';
@@ -14,7 +14,6 @@ import type { DesktopView } from '../../types';
 
 const topListCache = new Map<string, { lists: TopList[]; ts: number }>();
 const detailCache = new Map<string, { songs: Song[]; ts: number }>();
-const localPicCache = new Map<string, string>();
 const cacheTtl = 3 * 60 * 1000;
 
 interface DesktopHomeProps {
@@ -63,47 +62,11 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       } else {
         showToast(`AI 精心推荐了 ${songs.length} 首歌曲`, 'success');
 
-        // 极速加载封面：
-        // 1. 对于非 embeat 源歌曲（网易云、QQ），使用最轻量的 getGDStudioPic 并行秒速加载（不消耗 GD Studio 限额）
-        // 2. 对于真正的 embeat 源歌曲，采用串行 resolveAutosource 按需拉取前 8 首
-        songs.forEach((song, index) => {
-          if (!song.pic && song.source !== 'embeat') {
-            // 网易云原生详情接口获取封面需要的是歌曲 ID（song.id），而 QQ 音乐根据 picId 拼接 CDN 封面
-            const targetId = song.source === 'netease' ? String(song.id) : String(song.picId || song.id);
-            getGDStudioPic(song.source as any, targetId, 300).then((resolvedPic) => {
-              if (resolvedPic) {
-                setFeaturedSongs((prev) => {
-                  const updated = [...prev];
-                  if (updated[index] && updated[index].id === song.id) {
-                    updated[index] = { ...updated[index], pic: resolvedPic };
-                  }
-                  return updated;
-                });
-              }
-            });
-          }
-        });
-
-        // 串行队列（针对真正的 embeat 源）
+        // 串行队列：逐首通过 autosource 获取真实封面（避免并发触发限流）
         (async () => {
-          const limit = Math.min(songs.length, 8);
-          for (let i = 0; i < limit; i++) {
+          for (let i = 0; i < songs.length; i++) {
             const song = songs[i];
-            if (song.source !== 'embeat' || song.pic) continue;
-
-            const cacheKey = `embeat:${song.id}`;
-            const cachedPic = localPicCache.get(cacheKey);
-            if (cachedPic) {
-              setFeaturedSongs((prev) => {
-                const updated = [...prev];
-                if (updated[i] && updated[i].id === song.id) {
-                  updated[i] = { ...updated[i], pic: cachedPic };
-                }
-                return updated;
-              });
-              continue;
-            }
-
+            if (song.pic) continue;
             try {
               const result = await resolveAutosource({
                 name: song.name || '',
@@ -112,7 +75,6 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
                 source: song.source || 'embeat',
               });
               if (result?.pic) {
-                localPicCache.set(cacheKey, result.pic);
                 setFeaturedSongs((prev) => {
                   const updated = [...prev];
                   if (updated[i] && updated[i].id === song.id) {
@@ -122,9 +84,9 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
                 });
               }
             } catch { /* skip */ }
-
-            if (i < limit - 1) {
-              await new Promise((r) => setTimeout(r, 300));
+            // 间隔 200ms 避免触发服务器限流
+            if (i < songs.length - 1) {
+              await new Promise((r) => setTimeout(r, 200));
             }
           }
         })();

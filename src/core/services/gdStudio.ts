@@ -88,9 +88,10 @@ const fetchGDStudioData = async <T = any>(
   const currentServerTime = Date.now() + lastTimeDiff;
   const tsPrefix = String(currentServerTime).slice(0, 9);
 
+  // 签名主体：优先用 name 参数（embeat_agent/autosource/search），其次用 urlEncode(id)
   let signSubject = "";
   if (params.name !== undefined) {
-    signSubject = gdUrlEncode(String(params.name));
+    signSubject = String(params.name);
   } else if (params.id !== undefined) {
     signSubject = gdUrlEncode(String(params.id));
   } else {
@@ -113,28 +114,6 @@ const fetchGDStudioData = async <T = any>(
 
   console.log(`[GDStudio] POST types=${params.types}, body:`, bodyParams.toString());
 
-  const tryFallbackRetry = async (): Promise<T | null> => {
-    console.warn(`[GDStudio] Attempting automatic fallback retry via allorigins (GET) for types=${params.types}...`);
-    try {
-      const finalUrl = `${GD_STUDIO_API_BASE}?${bodyParams.toString()}`;
-      const fallbackUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(finalUrl)}`;
-      const retryResp = await fetch(fallbackUrl, {
-        method: "GET",
-      });
-      if (retryResp.ok) {
-        const retryText = decodeResponseText(await retryResp.arrayBuffer());
-        const retryData = tryParseJson(retryText);
-        if (retryData && !retryData.error) {
-          console.log(`[GDStudio] Fallback retry succeeded via allorigins!`);
-          return retryData as T;
-        }
-      }
-    } catch (retryErr) {
-      console.error(`[GDStudio] Fallback retry failed:`, retryErr);
-    }
-    return null;
-  };
-
   let response;
   try {
     response = await proxyFetch(GD_STUDIO_API_BASE, {
@@ -145,16 +124,12 @@ const fetchGDStudioData = async <T = any>(
       body: bodyParams.toString()
     } as any, 12000);
   } catch (err) {
-    console.error("[GDStudio] proxyFetch POST network error, triggering fallback retry:", err);
-    const retryResult = await tryFallbackRetry();
-    if (retryResult) return retryResult;
+    console.error("[GDStudio] proxyFetch POST network error:", err);
     throw new Error("GD_STUDIO_UNAVAILABLE");
   }
 
   if (!response) {
     console.error(`[GDStudio] proxyFetch returned null for types=${params.types}`);
-    const retryResult = await tryFallbackRetry();
-    if (retryResult) return retryResult;
     throw new Error("GD_STUDIO_UNAVAILABLE");
   }
 
@@ -163,10 +138,6 @@ const fetchGDStudioData = async <T = any>(
   const data = tryParseJson(text);
 
   if (!response.ok) {
-    if (response.status === 520 || response.status === 502 || response.status === 403) {
-      const retryResult = await tryFallbackRetry();
-      if (retryResult) return retryResult;
-    }
     if (looksLikeRateLimitResponse(response.status, text)) {
       throw new Error("GD_STUDIO_RATE_LIMIT");
     }
@@ -517,7 +488,7 @@ export const resolveAutosource = async (
   const nameParts = [song.name || ""];
   if (song.artist) nameParts.push(song.artist);
   if (song.album) nameParts.push(song.album);
-  const nameStr = nameParts.join(" | ");
+  const nameStr = gdUrlEncode(nameParts.join(" | "));
 
   try {
     const data = await fetchGDStudioData<{
@@ -542,11 +513,10 @@ export const resolveAutosource = async (
       lrc = mergeLyricTracks({ main: lrc, translation: data.tlyric });
     }
 
-    // 只要有 pic 或 url 任何一个就返回结果（封面获取不应依赖 url）
-    if (!url && !pic) return null;
+    if (!url) return null;
 
     return {
-      url: url || null,
+      url,
       lrc,
       pic,
       resolvedSource: data?.source || undefined,
@@ -665,12 +635,27 @@ export const getAIRecommendedSongs = async (
   source: GdStudioSource = 'netease',
   count: number = 20
 ): Promise<Song[]> => {
+  if (!timeSynced) {
+    await syncServerTime();
+  }
+
+  const encodedName = gdUrlEncode(keyword);
+  // 计算当前服务器的秒级时间戳前 9 位 (对应 crc32 中的 slice(0, 9))
+  const currentServerTime = Date.now() + lastTimeDiff;
+  const tsPrefix = String(currentServerTime).slice(0, 9);
+
+  // 拼接签名主体：tsPrefix | host | version | query
+  const textToHash = `${tsPrefix}|music.gdstudio.org|20260616|${encodedName}`;
+  const md5Hex = await calculateMD5(textToHash);
+  const calculatedS = md5Hex.slice(-8).toUpperCase();
+
   const data = await fetchGDStudioData<GdStudioTrack[]>({
     types: "embeat_agent",
     count,
     source,
     pages: 1,
-    name: keyword,
+    name: encodedName,
+    s: calculatedS
   });
 
   if (!Array.isArray(data)) return [];
@@ -684,14 +669,8 @@ export const getAIRecommendedSongs = async (
       ? fixUrl(picId)
       : "";
 
-    // 自动判定歌曲的真实出处平台，还原其真正的封面拉取和播放代理通道
-    const rawSource = String(item.source || "").trim().toLowerCase();
-    const realSource = (rawSource === "tencent" || rawSource === "qq")
-      ? "qq"
-      : (rawSource === "netease" ? "netease" : (rawSource || "embeat")) as GdStudioSource;
-
     if (id) {
-      rememberTrackMeta(id, realSource, {
+      rememberTrackMeta(id, "embeat", {
         pic,
         picId,
         lyricId,
@@ -708,7 +687,7 @@ export const getAIRecommendedSongs = async (
       picId,
       lyricId,
       urlId,
-      source: realSource,
+      source: "embeat" as const,
     };
   });
 };
