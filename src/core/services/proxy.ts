@@ -81,6 +81,7 @@ export const proxyFetch = async (
   timeoutMs = 8000,
 ): Promise<Response | null> => {
   const proxies = getProxies();
+  let lastResp: Response | null = null;
 
   for (const proxy of proxies) {
     try {
@@ -97,13 +98,18 @@ export const proxyFetch = async (
       });
       clearTimeout(timeoutId);
 
-      return resp;
-    } catch {
-      /* 继续下一个代理 */
+      if (resp.ok) {
+        return resp;
+      }
+
+      lastResp = resp;
+      console.warn(`[Proxy] Proxy ${proxy} returned non-ok status ${resp.status} for url: ${url}, trying next...`);
+    } catch (err) {
+      console.warn(`[Proxy] Proxy ${proxy} fetch failed for url: ${url}, trying next...`, err);
     }
   }
 
-  return null;
+  return lastResp;
 };
 
 /**
