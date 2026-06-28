@@ -106,6 +106,8 @@ const fetchGDStudioData = async <T = any>(
   for (const [key, value] of Object.entries(params)) {
     if (key === "source" && value === "qq") {
       bodyParams.set(key, "tencent");
+    } else if (key === "name") {
+      bodyParams.set(key, gdUrlEncode(String(value)));
     } else if (key !== "s") {
       bodyParams.set(key, String(value));
     }
@@ -365,6 +367,7 @@ export const getGDStudioPic = async (
   source: GdStudioSource,
   picId: string,
   size: 300 | 500 = 500,
+  songId?: string | number,
 ): Promise<string> => {
   if (!picId) return "";
 
@@ -380,10 +383,11 @@ export const getGDStudioPic = async (
     return directPic;
   }
 
-  // 2. 网易云：使用官方原生详情 API 配合代理安全获取，彻底绕过 .xyz/.org 的 types=pic 不稳定代理
+  // 2. 网易云：使用官方原生详情 API 配合代理安全获取，透传正确的歌曲 ID
   if (source === "netease") {
     try {
-      const url = `https://music.163.com/api/song/detail/?id=${picId}&ids=[${picId}]`;
+      const targetId = songId || picId;
+      const url = `https://music.163.com/api/song/detail/?id=${targetId}&ids=[${targetId}]`;
       const response = await proxyFetch(url, {}, 8000);
       if (response) {
         const text = decodeResponseText(await response.arrayBuffer());
@@ -449,7 +453,7 @@ export const resolveGDStudioPic = async (
 
   if (!picId) return "";
 
-  const pic = await getGDStudioPic(source, picId, 500);
+  const pic = await getGDStudioPic(source, picId, 500, id);
   if (pic) {
     rememberTrackMeta(id, source, { pic, picId });
   }
@@ -613,7 +617,7 @@ let timeSynced = false;
 export async function syncServerTime(): Promise<void> {
   try {
     const start = Date.now();
-    const resp = await fetch('https://music.gdstudio.org/time', { method: 'GET' });
+    const resp = await fetch('https://music-api.gdstudio.xyz/time', { method: 'GET' });
     const text = await resp.text();
     const serverTime = Number(text.trim());
     if (!isNaN(serverTime) && serverTime > 0) {
@@ -635,15 +639,105 @@ export const getAIRecommendedSongs = async (
   source: GdStudioSource = 'netease',
   count: number = 20
 ): Promise<Song[]> => {
-  const data = await fetchGDStudioData<GdStudioTrack[]>({
-    types: "embeat_agent",
-    count,
-    source,
-    pages: 1,
-    name: keyword,
-  });
+  let data: GdStudioTrack[] | null = null;
+  try {
+    data = await fetchGDStudioData<GdStudioTrack[]>({
+      types: "embeat_agent",
+      count,
+      source,
+      pages: 1,
+      name: keyword,
+    });
+  } catch (err) {
+    console.warn("[GDStudio] embeat_agent failed, trying Pollinations AI fallback:", err);
+  }
+
+  // 第二梯队：若官方AI失效，降级使用本地 Pollinations AI 推荐 + 并发 search 查询
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    try {
+      const prompt = `[No reasoning] 严格禁止任何思考链。请根据意境“${keyword}”，推荐4首适合的中文歌曲。以极简的纯JSON数组格式返回：[{"name":"歌名","artist":"歌手"}]。绝对不要有任何解释、推理思考、Markdown格式标记或多余字眼！`;
+      const aiResp = await fetch("https://text.pollinations.ai/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      if (aiResp.ok) {
+        const aiText = await aiResp.text();
+        const dataObj = JSON.parse(aiText);
+        const content = dataObj.content || aiText;
+        const match = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
+        if (match) {
+          const recommendedList = JSON.parse(match[0]);
+          if (Array.isArray(recommendedList) && recommendedList.length > 0) {
+            const searchPromises = recommendedList.map(async (rec: any) => {
+              try {
+                const queryName = `${rec.name} ${rec.artist}`;
+                const searchRes = await fetchGDStudioData<GdStudioTrack[]>({
+                  types: "search",
+                  count: 1,
+                  source,
+                  pages: 1,
+                  name: queryName,
+                });
+                return Array.isArray(searchRes) && searchRes.length > 0 ? searchRes[0] : null;
+              } catch {
+                return null;
+              }
+            });
+            const searchResults = await Promise.all(searchPromises);
+            data = searchResults.filter((t): t is GdStudioTrack => t !== null);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[GDStudio] Pollinations AI fallback failed:", err);
+    }
+  }
+
+  // 第三梯队：终极直接搜索降级，截取前几个字符以保证必能返回普通列表
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    try {
+      const fallbackKeyword = keyword.length > 6 ? keyword.slice(0, 4) : keyword;
+      data = await fetchGDStudioData<GdStudioTrack[]>({
+        types: "search",
+        count,
+        source,
+        pages: 1,
+        name: fallbackKeyword,
+      });
+    } catch (err) {
+      console.error("[GDStudio] Ultimate fallback search failed:", err);
+    }
+  }
 
   if (!Array.isArray(data)) return [];
+
+  // 统一对列表所有歌曲进行本地大图封面并发拉取补全，保障全部封面在首屏与后续完美展现
+  if (data.length > 0) {
+    const coverPromises = data.map(async (item) => {
+      const picId = String(item.pic_id || "").trim();
+      const songId = String(item.id || item.url_id || "").trim();
+      // 获取规范化的真实歌曲来源
+      const rawSource = String(item.source || "").trim();
+      const itemSource = rawSource && rawSource !== "embeat"
+        ? (rawSource === "tencent" ? "qq" : rawSource)
+        : "netease";
+        
+      if (picId && songId && !picId.startsWith("http") && !picId.startsWith("//")) {
+        try {
+          const realPic = await getGDStudioPic(itemSource as any, picId, 500, songId);
+          if (realPic) {
+            item.pic_id = realPic;
+          }
+        } catch {
+          // skip
+        }
+      }
+    });
+    await Promise.all(coverPromises);
+  }
 
   return data.map((item: GdStudioTrack) => {
     const id = String(item.id || item.url_id || item.lyric_id || "").trim();
@@ -654,8 +748,13 @@ export const getAIRecommendedSongs = async (
       ? fixUrl(picId)
       : "";
 
+    const rawSource = String(item.source || "").trim();
+    const itemSource = rawSource && rawSource !== "embeat"
+      ? (rawSource === "tencent" ? "qq" : rawSource)
+      : "netease";
+
     if (id) {
-      rememberTrackMeta(id, "embeat", {
+      rememberTrackMeta(id, itemSource as any, {
         pic,
         picId,
         lyricId,
@@ -672,7 +771,7 @@ export const getAIRecommendedSongs = async (
       picId,
       lyricId,
       urlId,
-      source: "embeat" as const,
+      source: itemSource as any,
     };
   });
 };

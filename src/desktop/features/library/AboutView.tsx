@@ -28,10 +28,12 @@ const desktopTechStack = [
   { name: 'Axum 0.7', detail: '本地音源 API 服务', icon: <DatabaseIcon size={18} /> },
   { name: 'Reqwest', detail: 'Rust 网络请求代理', icon: <CloudIcon size={18} /> },
   { name: 'Web Audio API', detail: 'AnalyserNode 音频频谱', icon: <WaveformIcon size={18} /> },
+  { name: 'Pollinations AI', detail: '本地 AI 意境大模型推荐', icon: <CloudIcon size={18} /> },
   { name: 'Canvas', detail: '实时波形背景渲染', icon: <PanelsIcon size={18} /> },
 ];
 
 const aboutFeatures = [
+  ['AI 智能意境搜歌', '通过大语言模型本地意境理解推荐，联动跨源普通搜索与并发封面拉取补全。'],
   ['多源聚合搜索', '内置网易云、QQ 音乐、酷我音乐搜索；JOOX 通过 GD Studio 扩展源接入。'],
   ['跨音源播放兜底', '原音源直链失效时，会按歌名与歌手在其它音源寻找可播放候选，优先保证能播。'],
   ['多音质与离线缓存', '支持 128K、320K、FLAC、Hi-Res 选档，并可下载到本地离线库。'],
@@ -49,6 +51,7 @@ const aboutDataSources = [
   ['QQ 音乐', '搜索 / 榜单 / 直链 / 双语歌词', 'musicu 请求与 Base64 歌词解码'],
   ['酷我音乐', '搜索 / 榜单 / 封面 / 歌词', '旧版搜索接口 + lyric fallback'],
   ['GD Studio', 'JOOX 扩展源', GD_STUDIO_RATE_LIMIT_HINT],
+  ['Pollinations AI', '本地 AI 大模型降级推荐', '完全免 Key 本地闭环的意境大语言模型接口'],
 ];
 
 const aboutLinks = [
