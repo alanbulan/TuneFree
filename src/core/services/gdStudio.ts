@@ -114,6 +114,31 @@ const fetchGDStudioData = async <T = any>(
 
   console.log(`[GDStudio] POST types=${params.types}, body:`, bodyParams.toString());
 
+  const tryFallbackRetry = async (): Promise<T | null> => {
+    console.warn(`[GDStudio] Attempting automatic fallback retry via corsproxy.io for types=${params.types}...`);
+    try {
+      const fallbackUrl = `https://corsproxy.io/?url=${encodeURIComponent(GD_STUDIO_API_BASE)}`;
+      const retryResp = await fetch(fallbackUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        body: bodyParams.toString()
+      });
+      if (retryResp.ok) {
+        const retryText = decodeResponseText(await retryResp.arrayBuffer());
+        const retryData = tryParseJson(retryText);
+        if (retryData && !retryData.error) {
+          console.log(`[GDStudio] Fallback retry succeeded via corsproxy.io!`);
+          return retryData as T;
+        }
+      }
+    } catch (retryErr) {
+      console.error(`[GDStudio] Fallback retry failed:`, retryErr);
+    }
+    return null;
+  };
+
   let response;
   try {
     response = await proxyFetch(GD_STUDIO_API_BASE, {
@@ -124,12 +149,16 @@ const fetchGDStudioData = async <T = any>(
       body: bodyParams.toString()
     } as any, 12000);
   } catch (err) {
-    console.error("[GDStudio] proxyFetch POST network error:", err);
+    console.error("[GDStudio] proxyFetch POST network error, triggering fallback retry:", err);
+    const retryResult = await tryFallbackRetry();
+    if (retryResult) return retryResult;
     throw new Error("GD_STUDIO_UNAVAILABLE");
   }
 
   if (!response) {
     console.error(`[GDStudio] proxyFetch returned null for types=${params.types}`);
+    const retryResult = await tryFallbackRetry();
+    if (retryResult) return retryResult;
     throw new Error("GD_STUDIO_UNAVAILABLE");
   }
 
@@ -138,6 +167,10 @@ const fetchGDStudioData = async <T = any>(
   const data = tryParseJson(text);
 
   if (!response.ok) {
+    if (response.status === 520 || response.status === 502 || response.status === 403) {
+      const retryResult = await tryFallbackRetry();
+      if (retryResult) return retryResult;
+    }
     if (looksLikeRateLimitResponse(response.status, text)) {
       throw new Error("GD_STUDIO_RATE_LIMIT");
     }
