@@ -282,13 +282,17 @@ export const getSongUrl = async (
 ): Promise<string | null> => {
   // embeat 源：走 autosource 跨源匹配
   if (source === "embeat" && songMeta) {
-    const autosource = await resolveAutosource({
-      name: songMeta.name || "",
-      artist: songMeta.artist || "",
-      album: songMeta.album || "",
-      source: "embeat",
-    });
-    if (autosource?.url) return autosource.url;
+    try {
+      const autosource = await resolveAutosource({
+        name: songMeta.name || "",
+        artist: songMeta.artist || "",
+        album: songMeta.album || "",
+        source: "embeat",
+      });
+      if (autosource?.url) return autosource.url;
+    } catch (e) {
+      console.warn("[Resolver] resolveAutosource failed in getSongUrl, falling back:", e);
+    }
     // autosource 失败走常规 fallback
     const fallback = await resolveFallbackSongFull(source, quality, songMeta);
     return fallback?.url || null;
@@ -311,13 +315,17 @@ export const parseSongFull = async (
 
   // embeat 源（AI 推荐歌曲）：走 autosource 一站式跨源匹配通道
   if (platform === "embeat" && songMeta) {
-    const autosource = await resolveAutosource({
-      name: songMeta.name || "",
-      artist: songMeta.artist || "",
-      album: songMeta.album || "",
-      source: "embeat",
-    });
-    if (autosource?.url) return autosource;
+    try {
+      const autosource = await resolveAutosource({
+        name: songMeta.name || "",
+        artist: songMeta.artist || "",
+        album: songMeta.album || "",
+        source: "embeat",
+      });
+      if (autosource?.url) return autosource;
+    } catch (e) {
+      console.warn("[Resolver] resolveAutosource failed in parseSongFull, falling back:", e);
+    }
     // autosource 失败时走常规 fallback
     const fallback = await resolveFallbackSongFull(platform, quality, songMeta);
     if (fallback?.url) return fallback;
