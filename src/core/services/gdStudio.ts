@@ -670,8 +670,14 @@ export const getAIRecommendedSongs = async (
       ? fixUrl(picId)
       : "";
 
+    // 自动判定歌曲的真实出处平台，还原其真正的封面拉取和播放代理通道
+    const rawSource = String(item.source || "").trim().toLowerCase();
+    const realSource = (rawSource === "tencent" || rawSource === "qq")
+      ? "qq"
+      : (rawSource === "netease" ? "netease" : (rawSource || "embeat")) as GdStudioSource;
+
     if (id) {
-      rememberTrackMeta(id, "embeat", {
+      rememberTrackMeta(id, realSource, {
         pic,
         picId,
         lyricId,
@@ -688,7 +694,7 @@ export const getAIRecommendedSongs = async (
       picId,
       lyricId,
       urlId,
-      source: "embeat" as const,
+      source: realSource,
     };
   });
 };

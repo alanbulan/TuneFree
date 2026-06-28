@@ -4,7 +4,7 @@ import { ErrorIcon, MusicIcon, PlayIcon } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { getImgReferrerPolicy, getTopListDetail, getTopLists } from '../../../core/services/api';
-import { getAIRecommendedSongs, resolveAutosource } from '../../../core/services/gdStudio';
+import { getAIRecommendedSongs, resolveAutosource, getGDStudioPic } from '../../../core/services/gdStudio';
 import type { Song, TopList } from '../../../core/types';
 import { getMusicSourceLabel } from '../../../core/utils/musicSource';
 import SongTable from '../../components/SongTable';
@@ -63,13 +63,33 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       } else {
         showToast(`AI 精心推荐了 ${songs.length} 首歌曲`, 'success');
 
-        // 极客式按需拉取封面：只为前 8 首无封面的歌曲拉取封面（规避高频限流）
+        // 极速加载封面：
+        // 1. 对于非 embeat 源歌曲（网易云、QQ），使用最轻量的 getGDStudioPic 并行秒速加载（不消耗 GD Studio 限额）
+        // 2. 对于真正的 embeat 源歌曲，采用串行 resolveAutosource 按需拉取前 8 首
+        songs.forEach((song, index) => {
+          if (!song.pic && song.source !== 'embeat') {
+            const targetId = String(song.picId || song.id);
+            getGDStudioPic(song.source as any, targetId, 300).then((resolvedPic) => {
+              if (resolvedPic) {
+                setFeaturedSongs((prev) => {
+                  const updated = [...prev];
+                  if (updated[index] && updated[index].id === song.id) {
+                    updated[index] = { ...updated[index], pic: resolvedPic };
+                  }
+                  return updated;
+                });
+              }
+            });
+          }
+        });
+
+        // 串行队列（针对真正的 embeat 源）
         (async () => {
           const limit = Math.min(songs.length, 8);
           for (let i = 0; i < limit; i++) {
             const song = songs[i];
-            if (song.pic) continue;
-            
+            if (song.source !== 'embeat' || song.pic) continue;
+
             const cacheKey = `embeat:${song.id}`;
             const cachedPic = localPicCache.get(cacheKey);
             if (cachedPic) {
@@ -101,7 +121,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
                 });
               }
             } catch { /* skip */ }
-            
+
             if (i < limit - 1) {
               await new Promise((r) => setTimeout(r, 300));
             }
