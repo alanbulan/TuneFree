@@ -4,7 +4,7 @@ import { ErrorIcon, MusicIcon, PlayIcon } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { getImgReferrerPolicy, getTopListDetail, getTopLists } from '../../../core/services/api';
-import { getAIRecommendedSongs, resolveAutosource } from '../../../core/services/gdStudio';
+import { getAIRecommendedSongs } from '../../../core/services/gdStudio';
 import type { Song, TopList } from '../../../core/types';
 import { getMusicSourceLabel } from '../../../core/utils/musicSource';
 import SongTable from '../../components/SongTable';
@@ -61,35 +61,6 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
         showToast('AI 未能找到符合意境的歌曲，换个词试试看', 'info');
       } else {
         showToast(`AI 精心推荐了 ${songs.length} 首歌曲`, 'success');
-
-        // 串行队列：逐首通过 autosource 获取真实封面（避免并发触发限流）
-        (async () => {
-          for (let i = 0; i < songs.length; i++) {
-            const song = songs[i];
-            if (song.pic) continue;
-            try {
-              const result = await resolveAutosource({
-                name: song.name || '',
-                artist: song.artist || '',
-                album: song.album || '',
-                source: song.source || 'embeat',
-              });
-              if (result?.pic) {
-                setFeaturedSongs((prev) => {
-                  const updated = [...prev];
-                  if (updated[i] && updated[i].id === song.id) {
-                    updated[i] = { ...updated[i], pic: result.pic };
-                  }
-                  return updated;
-                });
-              }
-            } catch { /* skip */ }
-            // 间隔 200ms 避免触发服务器限流
-            if (i < songs.length - 1) {
-              await new Promise((r) => setTimeout(r, 200));
-            }
-          }
-        })();
       }
     } catch (err: any) {
       console.error(err);
