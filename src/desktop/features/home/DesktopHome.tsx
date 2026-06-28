@@ -4,7 +4,7 @@ import { ErrorIcon, MusicIcon, PlayIcon } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { getImgReferrerPolicy, getTopListDetail, getTopLists } from '../../../core/services/api';
-import { getAIRecommendedSongs } from '../../../core/services/gdStudio';
+import { getAIRecommendedSongs, resolveAutosource } from '../../../core/services/gdStudio';
 import type { Song, TopList } from '../../../core/types';
 import { getMusicSourceLabel } from '../../../core/utils/musicSource';
 import SongTable from '../../components/SongTable';
@@ -14,6 +14,7 @@ import type { DesktopView } from '../../types';
 
 const topListCache = new Map<string, { lists: TopList[]; ts: number }>();
 const detailCache = new Map<string, { songs: Song[]; ts: number }>();
+const localPicCache = new Map<string, string>();
 const cacheTtl = 3 * 60 * 1000;
 
 interface DesktopHomeProps {
@@ -61,6 +62,51 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
         showToast('AI 未能找到符合意境的歌曲，换个词试试看', 'info');
       } else {
         showToast(`AI 精心推荐了 ${songs.length} 首歌曲`, 'success');
+
+        // 极客式按需拉取封面：只为前 8 首无封面的歌曲拉取封面（规避高频限流）
+        (async () => {
+          const limit = Math.min(songs.length, 8);
+          for (let i = 0; i < limit; i++) {
+            const song = songs[i];
+            if (song.pic) continue;
+            
+            const cacheKey = `embeat:${song.id}`;
+            const cachedPic = localPicCache.get(cacheKey);
+            if (cachedPic) {
+              setFeaturedSongs((prev) => {
+                const updated = [...prev];
+                if (updated[i] && updated[i].id === song.id) {
+                  updated[i] = { ...updated[i], pic: cachedPic };
+                }
+                return updated;
+              });
+              continue;
+            }
+
+            try {
+              const result = await resolveAutosource({
+                name: song.name || '',
+                artist: song.artist || '',
+                album: song.album || '',
+                source: song.source || 'embeat',
+              });
+              if (result?.pic) {
+                localPicCache.set(cacheKey, result.pic);
+                setFeaturedSongs((prev) => {
+                  const updated = [...prev];
+                  if (updated[i] && updated[i].id === song.id) {
+                    updated[i] = { ...updated[i], pic: result.pic };
+                  }
+                  return updated;
+                });
+              }
+            } catch { /* skip */ }
+            
+            if (i < limit - 1) {
+              await new Promise((r) => setTimeout(r, 300));
+            }
+          }
+        })();
       }
     } catch (err: any) {
       console.error(err);
