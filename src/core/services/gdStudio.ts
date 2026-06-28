@@ -81,89 +81,51 @@ const looksLikeRateLimitResponse = (status: number, text: string): boolean => {
 const fetchGDStudioData = async <T = any>(
   params: Record<string, string | number>,
 ): Promise<T> => {
-  let response;
+  // 统一使用 POST + md5 时间戳签名（与官方网站 mkPlayer.method = "POST" 完全一致）
+  if (!timeSynced) {
+    await syncServerTime();
+  }
+  const currentServerTime = Date.now() + lastTimeDiff;
+  const tsPrefix = String(currentServerTime).slice(0, 9);
 
-  if (params.types === "embeat_agent") {
-    // 1. AI 推荐搜歌：只支持 POST 请求，且强制校验时间戳 md5 签名 s
-    const nameValue = params.name ? String(params.name) : "tunefree";
-    const encodedName = params.name ? String(params.name) : gdUrlEncode(nameValue);
-
-    if (!timeSynced) {
-      await syncServerTime();
-    }
-    const currentServerTime = Date.now() + lastTimeDiff;
-    const tsPrefix = String(currentServerTime).slice(0, 9);
-    
-    const textToHash = `${tsPrefix}|music.gdstudio.org|20260616|${encodedName}`;
-    const md5Hex = await calculateMD5(textToHash);
-    const calculatedS = params.s ? String(params.s) : md5Hex.slice(-8).toUpperCase();
-
-    const bodyParams = new URLSearchParams();
-    for (const [key, value] of Object.entries(params)) {
-      if (key === "source" && value === "qq") {
-        bodyParams.set(key, "tencent");
-      } else if (key !== "name" && key !== "s") {
-        bodyParams.set(key, String(value));
-      }
-    }
-    bodyParams.set("name", encodedName);
-    bodyParams.set("s", calculatedS);
-
-    console.log(`[GDStudio] POST Requesting types=embeat_agent with body:`, bodyParams.toString());
-
-    try {
-      response = await proxyFetch(GD_STUDIO_API_BASE, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
-        },
-        body: bodyParams.toString()
-      } as any, 12000);
-    } catch (err) {
-      console.error("[GDStudio] proxyFetch POST network error:", err);
-      throw new Error("GD_STUDIO_UNAVAILABLE");
-    }
+  // 签名主体：优先用 name 参数（embeat_agent/autosource/search），其次用 urlEncode(id)
+  let signSubject = "";
+  if (params.name !== undefined) {
+    signSubject = String(params.name);
+  } else if (params.id !== undefined) {
+    signSubject = gdUrlEncode(String(params.id));
   } else {
-    // 2. 通用接口（types=url/lyric/pic/playlist/autosource等）：GET 请求，使用与网站一致的 md5 时间戳签名
-    if (!timeSynced) {
-      await syncServerTime();
+    signSubject = gdUrlEncode(String(params.types || ""));
+  }
+
+  const textToHash = `${tsPrefix}|music.gdstudio.org|20260616|${signSubject}`;
+  const md5Hex = await calculateMD5(textToHash);
+  const calculatedS = params.s ? String(params.s) : md5Hex.slice(-8).toUpperCase();
+
+  const bodyParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (key === "source" && value === "qq") {
+      bodyParams.set(key, "tencent");
+    } else if (key !== "s") {
+      bodyParams.set(key, String(value));
     }
-    const currentServerTime = Date.now() + lastTimeDiff;
-    const tsPrefix = String(currentServerTime).slice(0, 9);
+  }
+  bodyParams.set("s", calculatedS);
 
-    // 签名主体：优先用 name 参数（autosource/search），其次用 urlEncode(id)
-    let signSubject = "";
-    if (params.name !== undefined) {
-      signSubject = String(params.name);
-    } else if (params.id !== undefined) {
-      signSubject = gdUrlEncode(String(params.id));
-    } else {
-      signSubject = gdUrlEncode(String(params.types || ""));
-    }
+  console.log(`[GDStudio] POST types=${params.types}, body:`, bodyParams.toString());
 
-    const textToHash = `${tsPrefix}|music.gdstudio.org|20260616|${signSubject}`;
-    const md5Hex = await calculateMD5(textToHash);
-    const calculatedS = md5Hex.slice(-8).toUpperCase();
-
-    const search = new URLSearchParams();
-    for (const [key, value] of Object.entries(params)) {
-      if (key === "source" && value === "qq") {
-        search.set(key, "tencent");
-      } else if (key !== "s") {
-        search.set(key, String(value));
-      }
-    }
-    search.set("s", calculatedS);
-
-    const url = `${GD_STUDIO_API_BASE}?${search.toString()}`;
-    console.log("[GDStudio] GET Requesting URL:", url);
-
-    try {
-      response = await proxyFetch(url, {}, 12000);
-    } catch (err) {
-      console.error("[GDStudio] proxyFetch GET network error:", err);
-      throw new Error("GD_STUDIO_UNAVAILABLE");
-    }
+  let response;
+  try {
+    response = await proxyFetch(GD_STUDIO_API_BASE, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+      },
+      body: bodyParams.toString()
+    } as any, 12000);
+  } catch (err) {
+    console.error("[GDStudio] proxyFetch POST network error:", err);
+    throw new Error("GD_STUDIO_UNAVAILABLE");
   }
 
   if (!response) {
