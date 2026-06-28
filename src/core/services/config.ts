@@ -37,4 +37,7 @@ const proxyBase = isTauri
 export const API_PREFIX = proxyBase;
 export const SELF_HOSTED_PROXY = `${proxyBase}/api/cors-proxy?url=`;
 
-export const DEFAULT_PROXIES: string[] = [SELF_HOSTED_PROXY];
+export const DEFAULT_PROXIES: string[] = [
+  SELF_HOSTED_PROXY,
+  "https://corsproxy.io/?url=",
+];
