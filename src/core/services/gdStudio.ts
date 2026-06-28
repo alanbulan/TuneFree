@@ -513,10 +513,11 @@ export const resolveAutosource = async (
       lrc = mergeLyricTracks({ main: lrc, translation: data.tlyric });
     }
 
-    if (!url) return null;
+    // 只要有 pic 或 url 任何一个就返回结果（封面获取不应依赖 url）
+    if (!url && !pic) return null;
 
     return {
-      url,
+      url: url || null,
       lrc,
       pic,
       resolvedSource: data?.source || undefined,
