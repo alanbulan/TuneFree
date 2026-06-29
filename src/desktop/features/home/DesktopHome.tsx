@@ -40,7 +40,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
   const [loadingSongs, setLoadingSongs] = useState(false);
   const [error, setError] = useState('');
 
-  // AI 智能推荐状态
+  // 语境搜歌状态
   const [aiQuery, setAiQuery] = useState('');
   const [lastAiSearch, setLastAiSearch] = useState('');
   const requestIdRef = useRef(0);
@@ -54,7 +54,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
   const activeSourceLabel = useMemo(() => {
     if (activeSource === 'local') return '本地推荐';
     if (activeSource === 'hybrid') return '智能推荐';
-    if (activeSource === 'embeat') return 'AI 推荐';
+    if (activeSource === 'embeat') return '语境搜歌';
     return getMusicSourceLabel(activeSource);
   }, [activeSource]);
 
@@ -76,13 +76,13 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       const songs = await getAIRecommendedSongs(query, 'netease', 20);
       setFeaturedSongs(songs);
       if (songs.length === 0) {
-        showToast('AI 未能找到符合意境的歌曲，换个词试试看', 'info');
+        showToast('暂未找到符合意境的歌曲，换个词试试看', 'info');
       } else {
-        showToast(`AI 精心推荐了 ${songs.length} 首歌曲`, 'success');
+        showToast(`已生成 ${songs.length} 首语境歌曲`, 'success');
       }
     } catch (err: any) {
       console.error(err);
-      setError('AI 搜歌接口繁忙或超时，请稍后再试。');
+      setError('语境搜歌接口繁忙或超时，请稍后再试。');
       setFeaturedSongs([]);
     } finally {
       setLoadingSongs(false);
@@ -266,12 +266,12 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
         <h2 className="section-title">推荐榜单</h2>
         <div className="inline-actions">
           {[
-            { key: 'local', label: '本地推荐' },
-            { key: 'hybrid', label: '智能推荐' },
             { key: 'netease', label: getMusicSourceLabel('netease') },
             { key: 'qq', label: getMusicSourceLabel('qq') },
             { key: 'kuwo', label: getMusicSourceLabel('kuwo') },
-            { key: 'embeat', label: 'AI 推荐' },
+            { key: 'local', label: '本地推荐' },
+            { key: 'hybrid', label: '智能推荐' },
+            { key: 'embeat', label: '语境搜歌' },
           ].map((source) => (
             <button
               type="button"
@@ -303,9 +303,9 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 900 }}>AI 音乐助理</h3>
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 900 }}>语境搜歌</h3>
                 <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--muted)' }}>
-                  描述您想听的音乐意境、情感或特定场景，由 AI 为您量身推荐歌单。
+                  描述想听的音乐意境、情感或特定场景，生成更贴近当下语境的歌单。
                 </p>
               </div>
               {currentSong && (
@@ -350,7 +350,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
                 style={{ minHeight: '40px', padding: '0 20px', borderRadius: '10px', fontWeight: 900 }}
                 disabled={loadingSongs || !aiQuery.trim()}
               >
-                {loadingSongs ? '分析中…' : 'AI 搜歌'}
+                {loadingSongs ? '分析中…' : '语境搜歌'}
               </button>
             </form>
 
@@ -440,7 +440,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       <div className="section-header">
         <h2 className="section-title">
           {activeSource === 'embeat'
-            ? (lastAiSearch ? `“${lastAiSearch}” 的 AI 推荐歌单` : 'AI 推荐歌单')
+            ? (lastAiSearch ? `“${lastAiSearch}” 的语境歌单` : '语境搜歌歌单')
             : activeSource === 'local'
               ? '本地为你推荐'
               : activeSource === 'hybrid'
@@ -454,14 +454,14 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       </div>
 
       {loadingSongs && featuredSongs.length === 0 ? (
-        <SongTable songs={[]} currentSong={currentSong} isPlaying={isPlaying} isLoading skeletonRows={7} emptyText={isRecommendationSource ? '正在生成推荐...' : 'AI 正在深度意境分析中...'} onPlay={handleRecommendationPlay} onFavorite={handleFavorite} isFavorite={(song) => isFavorite(song.id, song.source)} />
+        <SongTable songs={[]} currentSong={currentSong} isPlaying={isPlaying} isLoading skeletonRows={7} emptyText={isRecommendationSource ? '正在生成推荐...' : '正在分析语境...'} onPlay={handleRecommendationPlay} onFavorite={handleFavorite} isFavorite={(song) => isFavorite(song.id, song.source)} />
       ) : featuredSongs.length === 0 ? (
         <div className="empty-state">
           <p>
             {isRecommendationSource
               ? '多播放或收藏几首歌后，推荐会更准确。'
               : activeSource === 'embeat'
-              ? '请在上方输入想听的内容，或者点击提示词开启 AI 音乐心流之旅。'
+              ? '请在上方输入想听的内容，或者点击提示词开启语境音乐流。'
               : '选择上方任意榜单后，这里会加载完整热歌列表。'
             }
           </p>

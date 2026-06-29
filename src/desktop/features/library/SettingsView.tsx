@@ -217,7 +217,18 @@ export default function SettingsView() {
   const handleTestLlmProvider = async () => {
     setTestingLlm(true);
     try {
-      const result = await testLlmProvider();
+      const result = await testLlmProvider({
+        enabled: llmConfig.enabled,
+        baseUrl: llmConfig.baseUrl,
+        model: llmConfig.model,
+        timeoutMs: llmConfig.timeoutMs,
+        maxCandidates: llmConfig.maxCandidates,
+        maxResults: llmConfig.maxResults,
+        cacheTtlSeconds: llmConfig.cacheTtlSeconds,
+        uploadRecentEvents: llmConfig.uploadRecentEvents,
+        apiKey: apiKey.trim() || undefined,
+        clearApiKey,
+      });
       showToast(
         result.ok
           ? `模型连接成功${result.latencyMs ? `，${result.latencyMs}ms` : ''}`

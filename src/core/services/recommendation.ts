@@ -191,7 +191,7 @@ export async function saveLlmConfig(config: LlmConfigInput): Promise<void> {
   await invoke('save_llm_config', { config });
 }
 
-export async function testLlmProvider(): Promise<LlmProviderTestResult> {
+export async function testLlmProvider(config?: LlmConfigInput): Promise<LlmProviderTestResult> {
   if (!isTauri()) {
     return {
       ok: false,
@@ -200,7 +200,7 @@ export async function testLlmProvider(): Promise<LlmProviderTestResult> {
       error: '当前环境不是 Tauri 桌面端',
     };
   }
-  return invoke<LlmProviderTestResult>('test_llm_provider');
+  return invoke<LlmProviderTestResult>('test_llm_provider', { config });
 }
 
 export async function clearRecommendationData(): Promise<RecommendationMaintenanceStats> {

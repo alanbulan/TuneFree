@@ -206,11 +206,34 @@ impl RecommendationService {
         llm_config::save_config(&conn, config)
     }
 
-    pub async fn test_llm_provider(&self) -> Result<LlmProviderTestResult, String> {
+    pub async fn test_llm_provider(
+        &self,
+        input: Option<LlmConfigInput>,
+    ) -> Result<LlmProviderTestResult, String> {
         let (config, api_key) = {
-            let conn = self.conn.lock();
-            let config = llm_config::load_config(&conn).map_err(|e| format!("读取模型配置失败: {}", e))?;
-            let api_key = llm_config::get_api_key()?;
+            let config = if let Some(input) = input.clone() {
+                llm_config::config_from_input(&input)
+            } else {
+                let conn = self.conn.lock();
+                llm_config::load_config(&conn).map_err(|e| format!("读取模型配置失败: {}", e))?
+            };
+            let api_key = if input
+                .as_ref()
+                .and_then(|value| value.clear_api_key)
+                .unwrap_or(false)
+            {
+                input
+                    .and_then(|value| value.api_key)
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_default()
+            } else {
+                input
+                    .and_then(|value| value.api_key)
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_else(|| llm_config::get_api_key().unwrap_or_default())
+            };
             (config, api_key)
         };
         let result = self.provider.test(&config, &api_key).await;

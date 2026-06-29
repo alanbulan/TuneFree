@@ -27,6 +27,19 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<LlmConfig> {
     )
 }
 
+pub fn config_from_input(input: &LlmConfigInput) -> LlmConfig {
+    LlmConfig {
+        enabled: input.enabled,
+        base_url: input.base_url.trim().to_string(),
+        model: input.model.trim().to_string(),
+        timeout_ms: input.timeout_ms.unwrap_or(8000).clamp(1000, 60000),
+        max_candidates: input.max_candidates.unwrap_or(80).clamp(1, 120),
+        max_results: input.max_results.unwrap_or(30).clamp(1, 50),
+        cache_ttl_seconds: input.cache_ttl_seconds.unwrap_or(86400).clamp(60, 7 * 24 * 60 * 60),
+        upload_recent_events: input.upload_recent_events.unwrap_or(false),
+    }
+}
+
 pub fn view_config(
     conn: &Connection,
     database_size_bytes: u64,
@@ -55,11 +68,7 @@ pub fn view_config(
 }
 
 pub fn save_config(conn: &Connection, input: LlmConfigInput) -> Result<(), String> {
-    let timeout_ms = input.timeout_ms.unwrap_or(8000).clamp(1000, 60000);
-    let max_candidates = input.max_candidates.unwrap_or(80).clamp(1, 120);
-    let max_results = input.max_results.unwrap_or(30).clamp(1, 50);
-    let cache_ttl_seconds = input.cache_ttl_seconds.unwrap_or(86400).clamp(60, 7 * 24 * 60 * 60);
-    let upload_recent_events = input.upload_recent_events.unwrap_or(false);
+    let config = config_from_input(&input);
 
     conn.execute(
         r#"
@@ -79,14 +88,14 @@ pub fn save_config(conn: &Connection, input: LlmConfigInput) -> Result<(), Strin
           updated_at = excluded.updated_at
         "#,
         params![
-            if input.enabled { 1 } else { 0 },
-            input.base_url.trim(),
-            input.model.trim(),
-            timeout_ms as i64,
-            max_candidates as i64,
-            max_results as i64,
-            cache_ttl_seconds,
-            if upload_recent_events { 1 } else { 0 },
+            if config.enabled { 1 } else { 0 },
+            config.base_url,
+            config.model,
+            config.timeout_ms as i64,
+            config.max_candidates as i64,
+            config.max_results as i64,
+            config.cache_ttl_seconds,
+            if config.upload_recent_events { 1 } else { 0 },
             catalog::now_ms(),
         ],
     )

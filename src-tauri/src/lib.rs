@@ -169,8 +169,9 @@ async fn save_llm_config(
 #[tauri::command]
 async fn test_llm_provider(
     state: State<'_, RecommendationService>,
+    config: Option<LlmConfigInput>,
 ) -> Result<LlmProviderTestResult, String> {
-    state.test_llm_provider().await
+    state.test_llm_provider(config).await
 }
 
 #[tauri::command]
