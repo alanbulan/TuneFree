@@ -37,7 +37,7 @@ pub async fn enhance_recommendations(
     local_items: Vec<RecommendationItem>,
     request_id: &str,
 ) -> Vec<RecommendationItem> {
-    let (config, profile_tokens, cache_key, cached_content) = {
+    let (config, api_key, profile_tokens, cache_key, cached_content) = {
         let guard = conn.lock();
         let config = match llm_config::load_config(&guard) {
             Ok(config) => config,
@@ -51,22 +51,21 @@ pub async fn enhance_recommendations(
             return local_items;
         }
 
+        let api_key = match llm_config::get_api_key(&guard) {
+            Ok(key) if !key.trim().is_empty() => key,
+            Ok(_) => return local_items,
+            Err(e) => {
+                log_llm_call(&guard, request_id, &config.model, "key_error", None, local_items.len(), 0, Some(&e));
+                return local_items;
+            }
+        };
+
         let max_candidates = config.max_candidates.min(local_items.len()).max(1);
         let candidates: Vec<_> = local_items.iter().take(max_candidates).cloned().collect();
         let profile_tokens = super::profile::top_profile_tokens(&guard, 30).unwrap_or_default();
         let cache_key = cache_key(&config, query, &profile_tokens, &candidates);
         let cached_content = load_cache(&guard, &cache_key).ok().flatten();
-        (config, profile_tokens, cache_key, cached_content)
-    };
-
-    let api_key = match llm_config::get_api_key() {
-        Ok(key) if !key.trim().is_empty() => key,
-        Ok(_) => return local_items,
-        Err(e) => {
-            let guard = conn.lock();
-            log_llm_call(&guard, request_id, &config.model, "key_error", None, local_items.len(), 0, Some(&e));
-            return local_items;
-        }
+        (config, api_key, profile_tokens, cache_key, cached_content)
     };
 
     let max_candidates = config.max_candidates.min(local_items.len()).max(1);
