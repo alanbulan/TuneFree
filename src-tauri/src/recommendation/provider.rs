@@ -18,6 +18,23 @@ impl OpenAiCompatibleProvider {
         Self { client }
     }
 
+    fn chat_completion_urls(base_url: &str) -> Vec<String> {
+        let base = privacy::sanitize_base_url(base_url);
+        if base.is_empty() {
+            return Vec::new();
+        }
+        let lower = base.to_ascii_lowercase();
+        if lower.ends_with("/chat/completions") {
+            return vec![base];
+        }
+
+        let mut urls = vec![format!("{}/chat/completions", base)];
+        if !lower.ends_with("/v1") {
+            urls.push(format!("{}/v1/chat/completions", base));
+        }
+        urls
+    }
+
     pub async fn chat_json(
         &self,
         config: &LlmConfig,
@@ -25,7 +42,6 @@ impl OpenAiCompatibleProvider {
         messages: Vec<serde_json::Value>,
         use_json_object: bool,
     ) -> Result<String, String> {
-        let url = format!("{}/chat/completions", privacy::sanitize_base_url(&config.base_url));
         let mut body = json!({
             "model": config.model,
             "messages": messages,
@@ -35,58 +51,72 @@ impl OpenAiCompatibleProvider {
             body["response_format"] = json!({ "type": "json_object" });
         }
 
-        let response = self
-            .client
-            .post(url)
-            .bearer_auth(api_key)
-            .timeout(std::time::Duration::from_millis(config.timeout_ms))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| format!("模型服务请求失败: {}", e))?;
+        let mut last_error = None;
+        for url in Self::chat_completion_urls(&config.base_url) {
+            let response = match self
+                .client
+                .post(url)
+                .bearer_auth(api_key)
+                .timeout(std::time::Duration::from_millis(config.timeout_ms))
+                .json(&body)
+                .send()
+                .await
+            {
+                Ok(response) => response,
+                Err(e) => {
+                    last_error = Some(format!("模型服务请求失败: {}", e));
+                    continue;
+                }
+            };
 
-        let status = response.status();
-        let value: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| format!("模型服务响应不是 JSON: {}", e))?;
+            let status = response.status();
+            let value: serde_json::Value = match response.json().await {
+                Ok(value) => value,
+                Err(e) => {
+                    last_error = Some(format!("模型服务响应不是 JSON: {}", e));
+                    continue;
+                }
+            };
 
-        if !status.is_success() {
-            let message = value
-                .get("error")
-                .and_then(|error| error.get("message"))
-                .and_then(|message| message.as_str())
-                .unwrap_or("模型服务返回错误");
-            return Err(format!("{}: {}", status.as_u16(), message));
+            if !status.is_success() {
+                let message = value
+                    .get("error")
+                    .and_then(|error| error.get("message"))
+                    .and_then(|message| message.as_str())
+                    .unwrap_or("模型服务返回错误");
+                let error = format!("{}: {}", status.as_u16(), message);
+                if status.as_u16() == 401 || status.as_u16() == 403 {
+                    return Err(error);
+                }
+                last_error = Some(error);
+                continue;
+            }
+
+            match value
+                .get("choices")
+                .and_then(|choices| choices.get(0))
+                .and_then(|choice| choice.get("message"))
+                .and_then(|message| message.get("content"))
+                .and_then(|content| content.as_str())
+            {
+                Some(content) => return Ok(content.to_string()),
+                None => {
+                    last_error = Some("模型服务响应缺少 choices[0].message.content".to_string());
+                }
+            }
         }
 
-        value
-            .get("choices")
-            .and_then(|choices| choices.get(0))
-            .and_then(|choice| choice.get("message"))
-            .and_then(|message| message.get("content"))
-            .and_then(|content| content.as_str())
-            .map(|content| content.to_string())
-            .ok_or_else(|| "模型服务响应缺少 choices[0].message.content".to_string())
+        Err(last_error.unwrap_or_else(|| "请填写 API 根地址".to_string()))
     }
 
     pub async fn test(&self, config: &LlmConfig, api_key: &str) -> LlmProviderTestResult {
-        if !config.enabled {
-            return LlmProviderTestResult {
-                ok: false,
-                status: "disabled".to_string(),
-                latency_ms: None,
-                supports_json_object: false,
-                error: Some("云端智能增强未启用".to_string()),
-            };
-        }
         if config.base_url.trim().is_empty() || config.model.trim().is_empty() || api_key.trim().is_empty() {
             return LlmProviderTestResult {
                 ok: false,
                 status: "missing_config".to_string(),
                 latency_ms: None,
                 supports_json_object: false,
-                error: Some("请填写 API 根地址、模型名和 API Key".to_string()),
+                error: Some("请填写 API 根地址、模型名和 API Key；如果已经保存 Key，请重新填写保存一次".to_string()),
             };
         }
 

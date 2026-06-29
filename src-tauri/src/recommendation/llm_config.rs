@@ -104,8 +104,13 @@ pub fn save_config(conn: &Connection, input: LlmConfigInput) -> Result<(), Strin
     if input.clear_api_key.unwrap_or(false) {
         delete_api_key()?;
     } else if let Some(api_key) = input.api_key {
-        if !api_key.trim().is_empty() {
-            set_api_key(api_key.trim())?;
+        let api_key = api_key.trim();
+        if !api_key.is_empty() {
+            set_api_key(api_key)?;
+            let saved_api_key = get_api_key()?;
+            if saved_api_key.trim() != api_key {
+                return Err("API Key 已提交保存，但系统凭据校验失败".to_string());
+            }
         }
     }
 
