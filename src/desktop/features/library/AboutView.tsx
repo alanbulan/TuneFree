@@ -37,7 +37,7 @@ const desktopTechStack = [
 ];
 
 const aboutFeatures = [
-  ['混合智能推荐', '本地 SQLite 行为画像、召回排序与 OpenAI 兼容云端模型增强协同工作，断网时回退本地推荐。'],
+  ['统一推荐', '本地画像先生成候选，云端模型生成发现方向，经平台搜索验证真实歌曲后统一重排。'],
   ['语境搜歌', '保留 GD Studio / Pollinations 的外部意境搜歌能力，和本地画像推荐系统分离。'],
   ['多源聚合搜索', '内置网易云、QQ 音乐、酷我音乐搜索；JOOX 通过 GD Studio 扩展源接入。'],
   ['跨音源播放兜底', '原音源直链失效时，会按歌名与歌手在其它音源寻找可播放候选，优先保证能播。'],
@@ -56,7 +56,7 @@ const aboutDataSources = [
   ['QQ 音乐', '搜索 / 榜单 / 直链 / 双语歌词', 'musicu 请求与 Base64 歌词解码'],
   ['酷我音乐', '搜索 / 榜单 / 封面 / 歌词', '旧版搜索接口 + lyric fallback'],
   ['GD Studio', 'JOOX 扩展源', GD_STUDIO_RATE_LIMIT_HINT],
-  ['OpenAI 兼容模型', '可选智能推荐增强', '通过用户配置的 Chat Completions 兼容接口重排本地候选'],
+  ['OpenAI 兼容模型', '可选发现与重排', '通过用户配置的 Chat Completions 兼容接口生成发现方向并重排候选'],
   ['Pollinations AI', 'GD 意境搜歌降级', '仅用于外部意境搜歌兜底，不参与本地画像推荐'],
 ];
 
@@ -93,7 +93,7 @@ export default function AboutView() {
         <img className="about-app-icon" src="/icon.svg" alt="TuneFree" />
         <div className="about-hero-copy">
           <h3>TuneFree Desktop</h3>
-          <p>基于 Tauri 2.11、Next.js 16、React 19、TypeScript 6 与 Rust/Axum 本地服务的桌面音乐播放器。当前版本聚焦多源搜索、跨源播放兜底、多轨歌词、桌面歌词、离线缓存、本地资料库、本地与云端混合推荐、桌宠与系统托盘集成。</p>
+          <p>基于 Tauri 2.11、Next.js 16、React 19、TypeScript 6 与 Rust/Axum 本地服务的桌面音乐播放器。当前版本聚焦多源搜索、跨源播放兜底、多轨歌词、桌面歌词、离线缓存、本地资料库、统一推荐、桌宠与系统托盘集成。</p>
           <div className="about-hero-actions">
             <span className="about-version">Tauri Desktop · v{appVersion}</span>
             <button

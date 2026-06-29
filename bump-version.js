@@ -13,10 +13,10 @@ import path from 'path';
 //   1. src-tauri/tauri.conf.json   (Tauri 容器版本)
 //   2. package.json                (前端依赖版本)
 //   3. src-tauri/Cargo.toml        (Rust crate 版本)
-//   4. src/desktop/features/library/DesktopLibrary.tsx (前端硬编码版本)
+//   4. src/desktop/features/library/hooks/useUpdateChecker.ts (前端兜底版本)
 //
 // 注意:
-//   DesktopLibrary.tsx 中使用 useState('x.y.z') 硬编码版本号仅为兜底。
+//   useUpdateChecker.ts 中使用 useState('x.y.z') 硬编码版本号仅为兜底。
 //   推荐在运行时通过 Tauri 的 app.getVersion() 获取真实版本号，
 //   例如: const appVersion = await getVersion(); (需从 @tauri-apps/api/app 导入)
 //   本脚本仍会同步更新硬编码值以保证一致性。
@@ -86,25 +86,25 @@ if (cargoMatch) {
   console.warn(`[Bump] Warn: Could not find version field in Cargo.toml.`);
 }
 
-// 4. 写入 DesktopLibrary.tsx 里的默认版本号
+// 4. 写入 useUpdateChecker.ts 里的默认版本号
 //    注意: 推荐使用 app.getVersion() 替代硬编码值，此处仅为兜底同步。
-const libraryPath = path.resolve('src/desktop/features/library/DesktopLibrary.tsx');
+const libraryPath = path.resolve('src/desktop/features/library/hooks/useUpdateChecker.ts');
 let libraryContent = fs.readFileSync(libraryPath, 'utf8');
 const searchStr = `useState('${currentVersion}')`;
 const replaceStr = `useState('${nextVersion}')`;
 if (libraryContent.includes(searchStr)) {
   libraryContent = libraryContent.replace(searchStr, replaceStr);
   fs.writeFileSync(libraryPath, libraryContent, 'utf8');
-  console.log(`[Bump] DesktopLibrary.tsx default appVersion bumped to ${nextVersion}`);
+  console.log(`[Bump] useUpdateChecker.ts default appVersion bumped to ${nextVersion}`);
 } else {
   // 正则兜底替换
   const regex = /const\s+\[appVersion,\s*setAppVersion\]\s*=\s*useState\(['"][^'"]+['"]\)/;
   if (regex.test(libraryContent)) {
     libraryContent = libraryContent.replace(regex, `const [appVersion, setAppVersion] = useState('${nextVersion}')`);
     fs.writeFileSync(libraryPath, libraryContent, 'utf8');
-    console.log(`[Bump] DesktopLibrary.tsx default appVersion bumped via regex to ${nextVersion}`);
+    console.log(`[Bump] useUpdateChecker.ts default appVersion bumped via regex to ${nextVersion}`);
   } else {
-    console.warn(`[Bump] Warn: Could not find appVersion useState line in DesktopLibrary.tsx to replace.`);
+    console.warn(`[Bump] Warn: Could not find appVersion useState line in useUpdateChecker.ts to replace.`);
     console.warn(`[Bump] Hint: Consider using app.getVersion() from @tauri-apps/api/app instead of hardcoded version.`);
   }
 }

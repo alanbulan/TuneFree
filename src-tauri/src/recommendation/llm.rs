@@ -9,11 +9,11 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 
 use super::{
-    catalog,
-    llm_config,
+    catalog, llm_config,
     model::{LlmConfig, ProfileToken, RecommendationItem, RecommendationQuery},
-    privacy, prompt, rerank,
+    privacy, prompt,
     provider::OpenAiCompatibleProvider,
+    rerank,
 };
 
 #[derive(Debug, Deserialize)]
@@ -30,33 +30,240 @@ struct LlmResponseItem {
     reason: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct DiscoveryResponse {
+    #[serde(default)]
+    queries: Vec<DiscoveryResponseQuery>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscoveryResponseQuery {
+    keyword: String,
+    source: Option<String>,
+    reason: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiscoverySearchQuery {
+    pub keyword: String,
+    pub source: String,
+    pub reason: String,
+}
+
+pub struct DiscoveryPlanResult {
+    pub queries: Vec<DiscoverySearchQuery>,
+    pub error: Option<String>,
+}
+
+pub struct LlmEnhancementResult {
+    pub items: Vec<RecommendationItem>,
+    pub error: Option<String>,
+}
+
+impl LlmEnhancementResult {
+    fn ok(items: Vec<RecommendationItem>) -> Self {
+        Self { items, error: None }
+    }
+
+    fn failed(items: Vec<RecommendationItem>, error: String) -> Self {
+        Self {
+            items,
+            error: Some(error),
+        }
+    }
+}
+
+pub async fn build_discovery_plan(
+    conn: Arc<Mutex<Connection>>,
+    provider: &OpenAiCompatibleProvider,
+    query: &RecommendationQuery,
+    local_items: &[RecommendationItem],
+    request_id: &str,
+    limit: usize,
+) -> DiscoveryPlanResult {
+    let (config, api_key, profile_tokens) = {
+        let guard = conn.lock();
+        let config = match llm_config::load_config(&guard) {
+            Ok(config) => config,
+            Err(e) => {
+                let error = e.to_string();
+                log_llm_call(
+                    &guard,
+                    request_id,
+                    "",
+                    "discovery_config_error",
+                    None,
+                    local_items.len(),
+                    0,
+                    Some(&error),
+                );
+                return DiscoveryPlanResult {
+                    queries: Vec::new(),
+                    error: Some(error),
+                };
+            }
+        };
+
+        if !can_call_llm(&config) {
+            return DiscoveryPlanResult {
+                queries: Vec::new(),
+                error: Some("云端发现未启用或配置不完整".to_string()),
+            };
+        }
+
+        let api_key = match llm_config::get_api_key(&guard) {
+            Ok(key) if !key.trim().is_empty() => key,
+            Ok(_) => {
+                return DiscoveryPlanResult {
+                    queries: Vec::new(),
+                    error: Some("未保存模型 API Key".to_string()),
+                }
+            }
+            Err(e) => {
+                log_llm_call(
+                    &guard,
+                    request_id,
+                    &config.model,
+                    "discovery_key_error",
+                    None,
+                    local_items.len(),
+                    0,
+                    Some(&e),
+                );
+                return DiscoveryPlanResult {
+                    queries: Vec::new(),
+                    error: Some(e),
+                };
+            }
+        };
+        let profile_tokens = super::profile::top_profile_tokens(&guard, 30).unwrap_or_default();
+        (config, api_key, profile_tokens)
+    };
+
+    let local_candidates: Vec<_> = local_items
+        .iter()
+        .take(config.max_candidates.min(local_items.len()).max(1))
+        .cloned()
+        .collect();
+    let messages =
+        prompt::build_discovery_messages(query, &profile_tokens, &local_candidates, limit);
+    let started = Instant::now();
+    let first_attempt = provider
+        .chat_json(&config, &api_key, messages.clone(), true)
+        .await;
+    let content = match first_attempt {
+        Ok(content) => content,
+        Err(_) => match provider.chat_json(&config, &api_key, messages, false).await {
+            Ok(content) => content,
+            Err(e) => {
+                let guard = conn.lock();
+                log_llm_call(
+                    &guard,
+                    request_id,
+                    &config.model,
+                    "discovery_request_failed",
+                    Some(started.elapsed().as_millis() as i64),
+                    local_candidates.len(),
+                    0,
+                    Some(&e),
+                );
+                return DiscoveryPlanResult {
+                    queries: Vec::new(),
+                    error: Some(e),
+                };
+            }
+        },
+    };
+
+    let parsed = match parse_discovery_response(&content, limit) {
+        Some(queries) if !queries.is_empty() => queries,
+        _ => {
+            let guard = conn.lock();
+            log_llm_call(
+                &guard,
+                request_id,
+                &config.model,
+                "discovery_invalid_json",
+                Some(started.elapsed().as_millis() as i64),
+                local_candidates.len(),
+                0,
+                None,
+            );
+            return DiscoveryPlanResult {
+                queries: Vec::new(),
+                error: Some("模型发现计划格式不正确".to_string()),
+            };
+        }
+    };
+
+    let guard = conn.lock();
+    log_llm_call(
+        &guard,
+        request_id,
+        &config.model,
+        "discovery_ok",
+        Some(started.elapsed().as_millis() as i64),
+        local_candidates.len(),
+        parsed.len(),
+        None,
+    );
+    DiscoveryPlanResult {
+        queries: parsed,
+        error: None,
+    }
+}
+
 pub async fn enhance_recommendations(
     conn: Arc<Mutex<Connection>>,
     provider: &OpenAiCompatibleProvider,
     query: &RecommendationQuery,
     local_items: Vec<RecommendationItem>,
     request_id: &str,
-) -> Vec<RecommendationItem> {
+) -> LlmEnhancementResult {
     let (config, api_key, profile_tokens, cache_key, cached_content) = {
         let guard = conn.lock();
         let config = match llm_config::load_config(&guard) {
             Ok(config) => config,
             Err(e) => {
-                log_llm_call(&guard, request_id, "", "config_error", None, local_items.len(), 0, Some(&e.to_string()));
-                return local_items;
+                let error = e.to_string();
+                log_llm_call(
+                    &guard,
+                    request_id,
+                    "",
+                    "config_error",
+                    None,
+                    local_items.len(),
+                    0,
+                    Some(&error),
+                );
+                return LlmEnhancementResult::failed(local_items, error);
             }
         };
 
         if !can_call_llm(&config) {
-            return local_items;
+            return LlmEnhancementResult::failed(
+                local_items,
+                "云端重排未启用或配置不完整".to_string(),
+            );
         }
 
         let api_key = match llm_config::get_api_key(&guard) {
             Ok(key) if !key.trim().is_empty() => key,
-            Ok(_) => return local_items,
+            Ok(_) => {
+                return LlmEnhancementResult::failed(local_items, "未保存模型 API Key".to_string())
+            }
             Err(e) => {
-                log_llm_call(&guard, request_id, &config.model, "key_error", None, local_items.len(), 0, Some(&e));
-                return local_items;
+                log_llm_call(
+                    &guard,
+                    request_id,
+                    &config.model,
+                    "key_error",
+                    None,
+                    local_items.len(),
+                    0,
+                    Some(&e),
+                );
+                return LlmEnhancementResult::failed(local_items, e);
             }
         };
 
@@ -77,10 +284,21 @@ pub async fn enhance_recommendations(
     let candidates: Vec<_> = local_items.iter().take(max_candidates).cloned().collect();
 
     if let Some(content) = cached_content {
-        if let Some(items) = apply_llm_response(&content, local_items.clone(), max_results, request_id) {
+        if let Some(items) =
+            apply_llm_response(&content, local_items.clone(), max_results, request_id)
+        {
             let guard = conn.lock();
-            log_llm_call(&guard, request_id, &config.model, "cache_hit", Some(0), candidates.len(), items.len(), None);
-            return items;
+            log_llm_call(
+                &guard,
+                request_id,
+                &config.model,
+                "cache_hit",
+                Some(0),
+                candidates.len(),
+                items.len(),
+                None,
+            );
+            return LlmEnhancementResult::ok(items);
         }
     }
 
@@ -96,16 +314,16 @@ pub async fn enhance_recommendations(
             Err(e) => {
                 let guard = conn.lock();
                 log_llm_call(
-                &guard,
-                request_id,
-                &config.model,
-                "request_failed",
-                Some(started.elapsed().as_millis() as i64),
-                candidates.len(),
-                0,
-                Some(&e),
+                    &guard,
+                    request_id,
+                    &config.model,
+                    "request_failed",
+                    Some(started.elapsed().as_millis() as i64),
+                    candidates.len(),
+                    0,
+                    Some(&e),
                 );
-                return local_items;
+                return LlmEnhancementResult::failed(local_items, e);
             }
         },
     };
@@ -115,15 +333,68 @@ pub async fn enhance_recommendations(
         Some(items) => {
             let guard = conn.lock();
             let _ = save_cache(&guard, &cache_key, &config, &content);
-            log_llm_call(&guard, request_id, &config.model, "ok", Some(latency_ms), candidates.len(), items.len(), None);
-            items
+            log_llm_call(
+                &guard,
+                request_id,
+                &config.model,
+                "ok",
+                Some(latency_ms),
+                candidates.len(),
+                items.len(),
+                None,
+            );
+            LlmEnhancementResult::ok(items)
         }
         None => {
             let guard = conn.lock();
-            log_llm_call(&guard, request_id, &config.model, "invalid_json", Some(latency_ms), candidates.len(), 0, None);
-            local_items
+            log_llm_call(
+                &guard,
+                request_id,
+                &config.model,
+                "invalid_json",
+                Some(latency_ms),
+                candidates.len(),
+                0,
+                None,
+            );
+            LlmEnhancementResult::failed(local_items, "模型响应 JSON 不符合推荐格式".to_string())
         }
     }
+}
+
+fn parse_discovery_response(content: &str, limit: usize) -> Option<Vec<DiscoverySearchQuery>> {
+    let parsed: DiscoveryResponse = serde_json::from_str(content.trim()).ok()?;
+    let mut queries = Vec::new();
+    let mut seen = HashSet::new();
+    for item in parsed.queries {
+        let keyword = item.keyword.trim();
+        if keyword.is_empty() {
+            continue;
+        }
+        let source = match item.source.as_deref().unwrap_or("all").trim() {
+            "netease" => "netease",
+            "qq" | "tencent" => "qq",
+            "kuwo" => "kuwo",
+            _ => "all",
+        };
+        let key = format!("{}:{}", source, catalog::normalize_text(keyword));
+        if !seen.insert(key) {
+            continue;
+        }
+        queries.push(DiscoverySearchQuery {
+            keyword: privacy::short_reason(keyword),
+            source: source.to_string(),
+            reason: item
+                .reason
+                .as_deref()
+                .and_then(|reason| prompt::item_reason(Some(reason)))
+                .unwrap_or_else(|| "云端扩展发现".to_string()),
+        });
+        if queries.len() >= limit {
+            break;
+        }
+    }
+    Some(queries)
 }
 
 fn can_call_llm(config: &LlmConfig) -> bool {
@@ -156,7 +427,12 @@ fn load_cache(conn: &Connection, cache_key: &str) -> rusqlite::Result<Option<Str
     .optional()
 }
 
-fn save_cache(conn: &Connection, cache_key: &str, config: &LlmConfig, content: &str) -> rusqlite::Result<()> {
+fn save_cache(
+    conn: &Connection,
+    cache_key: &str,
+    config: &LlmConfig,
+    content: &str,
+) -> rusqlite::Result<()> {
     let now = catalog::now_ms();
     let payload_hash = format!("{:x}", md5::compute(content));
     conn.execute(
@@ -223,12 +499,18 @@ fn apply_llm_response(
                     .unwrap_or_else(|| 1.0 - (index as f64 / total))
             })
             .clamp(0.0, 1.0);
-        let explanation_confidence = if llm_item.reason.as_deref().map(|reason| !reason.trim().is_empty()).unwrap_or(false) {
+        let explanation_confidence = if llm_item
+            .reason
+            .as_deref()
+            .map(|reason| !reason.trim().is_empty())
+            .unwrap_or(false)
+        {
             1.0
         } else {
             0.0
         };
-        item.score = (0.65 * item.score + 0.25 * rank_score + 0.10 * explanation_confidence).clamp(0.0, 1.0);
+        item.score =
+            (0.65 * item.score + 0.25 * rank_score + 0.10 * explanation_confidence).clamp(0.0, 1.0);
         item.recommendation_source = "hybrid".to_string();
         item.request_id = request_id.to_string();
         if let Some(reason) = prompt::item_reason(llm_item.reason.as_deref()) {
@@ -239,7 +521,11 @@ fn apply_llm_response(
     }
 
     let mut rest: Vec<_> = by_key.into_values().collect();
-    rest.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    rest.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     ordered.extend(rest);
 
     let mut candidates: Vec<_> = ordered
@@ -261,8 +547,16 @@ fn apply_llm_response(
             last_seen_at: 0,
         })
         .collect();
-    candidates.sort_by(|a, b| b.local_score.partial_cmp(&a.local_score).unwrap_or(std::cmp::Ordering::Equal));
-    Some(rerank::to_items(rerank::mmr(candidates, limit), request_id, "hybrid"))
+    candidates.sort_by(|a, b| {
+        b.local_score
+            .partial_cmp(&a.local_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Some(rerank::to_items(
+        rerank::mmr(candidates, limit),
+        request_id,
+        "hybrid",
+    ))
 }
 
 fn log_llm_call(

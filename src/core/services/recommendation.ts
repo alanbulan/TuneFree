@@ -22,7 +22,6 @@ export interface RecommendationOptions {
   limit?: number;
   seed?: Song;
   context?: string;
-  useLlm?: boolean;
 }
 
 export interface RecommendationItem {
@@ -88,6 +87,27 @@ export interface RecommendationMaintenanceStats {
   llmCacheEntries: number;
 }
 
+export type RecommendationJobStatus = 'running' | 'done' | 'error';
+
+export type RecommendationJobStage =
+  | 'local_recall'
+  | 'discovery_plan'
+  | 'platform_search'
+  | 'cloud_rerank'
+  | 'local_only'
+  | 'done'
+  | 'error';
+
+export interface RecommendationJob {
+  jobId: string;
+  status: RecommendationJobStatus;
+  stage: RecommendationJobStage;
+  detail: string;
+  items: RecommendationItem[];
+  error?: string | null;
+  updatedAt: number;
+}
+
 const toRecommendedSong = (item: RecommendationItem): Song => ({
   ...item.song,
   recommendationReasons: item.reasons,
@@ -118,23 +138,26 @@ export async function getHomeRecommendations(
       limit: options.limit,
       seed: options.seed,
       context: options.context,
-      useLlm: false,
     },
   });
 }
 
-export async function getLlmEnhancedRecommendations(
+export async function startRecommendationJob(
   options: RecommendationOptions = {},
-): Promise<RecommendationItem[]> {
-  if (!isTauri() || !isLocalRecommendationEnabled()) return [];
-  return invoke<RecommendationItem[]>('get_llm_enhanced_recommendations', {
+): Promise<RecommendationJob | null> {
+  if (!isTauri() || !isLocalRecommendationEnabled()) return null;
+  return invoke<RecommendationJob>('start_recommendation_job', {
     query: {
       limit: options.limit,
       seed: options.seed,
       context: options.context,
-      useLlm: true,
     },
   });
+}
+
+export async function getRecommendationJob(jobId: string): Promise<RecommendationJob | null> {
+  if (!isTauri() || !isLocalRecommendationEnabled()) return null;
+  return invoke<RecommendationJob | null>('get_recommendation_job', { jobId });
 }
 
 export async function getSimilarSongs(
@@ -145,7 +168,6 @@ export async function getSimilarSongs(
   return invoke<RecommendationItem[]>('get_similar_songs', {
     song,
     limit: options.limit,
-    useLlm: options.useLlm,
   });
 }
 

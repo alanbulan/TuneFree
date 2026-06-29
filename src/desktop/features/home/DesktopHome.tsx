@@ -8,13 +8,13 @@ import { getAIRecommendedSongs } from '../../../core/services/gdStudio';
 import {
   attachRecommendationMeta,
   dismissRecommendation,
-  getHomeRecommendations,
-  getLlmConfig,
-  getLlmEnhancedRecommendations,
+  getRecommendationJob,
   logRecommendationEvent,
   recommendationFeedbackFromSong,
   saveRecommendationFeedback,
+  startRecommendationJob,
 } from '../../../core/services/recommendation';
+import { updateRecommendationTaskProgress } from '../../../core/services/recommendationTaskProgress';
 import type { Song, TopList } from '../../../core/types';
 import { getMusicSourceLabel } from '../../../core/utils/musicSource';
 import SongTable from '../../components/SongTable';
@@ -25,6 +25,9 @@ import type { DesktopView } from '../../types';
 const topListCache = new Map<string, { lists: TopList[]; ts: number }>();
 const detailCache = new Map<string, { songs: Song[]; ts: number }>();
 const cacheTtl = 3 * 60 * 1000;
+const recommendationJobPollMs = 1200;
+const recommendationJobMaxPolls = 25;
+const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
 interface DesktopHomeProps {
   onViewChange: (view: DesktopView) => void;
@@ -49,11 +52,10 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
   const { currentSong, isPlaying } = usePlayerNowPlaying();
   const { favorites, playlists, toggleFavorite, isFavorite } = useLibrary();
   const { showToast } = useToast();
-  const isRecommendationSource = activeSource === 'local' || activeSource === 'hybrid';
+  const isRecommendationSource = activeSource === 'recommendation';
 
   const activeSourceLabel = useMemo(() => {
-    if (activeSource === 'local') return '本地推荐';
-    if (activeSource === 'hybrid') return '智能推荐';
+    if (activeSource === 'recommendation') return '推荐';
     if (activeSource === 'embeat') return '语境搜歌';
     return getMusicSourceLabel(activeSource);
   }, [activeSource]);
@@ -89,40 +91,157 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
     }
   }, [loadingSongs, showToast]);
 
-  const loadLocalRecommendations = useCallback(async (useLlm: boolean) => {
+  const loadRecommendations = useCallback(async () => {
     const requestId = ++detailRequestIdRef.current;
+    const startedAt = Date.now();
     setTopLists([]);
     setSelectedTopListId(null);
-    setSelectedTopListName(useLlm ? '智能推荐' : '本地推荐');
+    setSelectedTopListName('为你推荐');
     setError('');
     setLoadingLists(false);
     setLoadingSongs(true);
+    updateRecommendationTaskProgress({
+      local: {
+        label: '本地 worker',
+        status: 'running',
+        detail: '正在召回和排序推荐候选',
+        updatedAt: startedAt,
+      },
+      cloud: {
+        label: '云端 worker',
+        status: 'idle',
+        detail: '等待本地候选',
+        updatedAt: startedAt,
+      },
+    });
 
+    let keepLoadingForCloud = false;
     try {
-      if (useLlm) {
-        const config = await getLlmConfig();
-        if (!config.enabled || !config.baseUrl || !config.model || !config.hasApiKey) {
-          if (requestId !== detailRequestIdRef.current) return;
-          setFeaturedSongs([]);
-          setError('智能推荐需要先在设置页配置 OpenAI 兼容模型。');
-          return;
-        }
-      }
-      const items = useLlm
-        ? await getLlmEnhancedRecommendations({ limit: 30, context: 'home', useLlm: true })
-        : await getHomeRecommendations({ limit: 30, context: 'home', useLlm: false });
+      const job = await startRecommendationJob({ limit: 30, context: 'home' });
       if (requestId !== detailRequestIdRef.current) return;
-      setFeaturedSongs(attachRecommendationMeta(items));
-      if (items.length === 0) {
-        showToast('多播放或收藏几首歌后，推荐会更准确', 'info');
+      if (!job) {
+        setFeaturedSongs([]);
+        setError('推荐仅支持桌面端本地推荐数据库。');
+        updateRecommendationTaskProgress({
+          local: {
+            status: 'error',
+            detail: '桌面端推荐数据库不可用',
+            updatedAt: Date.now(),
+          },
+          cloud: {
+            status: 'disabled',
+            detail: '当前环境不支持云端任务',
+            updatedAt: Date.now(),
+          },
+        });
+        return;
       }
+
+      const hasInitialItems = job.items.length > 0;
+      const isCloudRunning = job.status === 'running';
+      keepLoadingForCloud = isCloudRunning && !hasInitialItems;
+      setFeaturedSongs(attachRecommendationMeta(job.items));
+      updateRecommendationTaskProgress({
+        local: {
+          status: 'done',
+          detail: hasInitialItems ? `已生成 ${job.items.length} 首候选` : '本地候选为空，等待云端发现',
+          updatedAt: Date.now(),
+        },
+        cloud: {
+          status: job.stage === 'local_only' ? 'disabled' : job.status,
+          detail: job.detail,
+          updatedAt: Date.now(),
+        },
+      });
+      if (!hasInitialItems && !isCloudRunning) {
+        showToast('多播放或收藏几首歌后，推荐会更准确', 'info');
+        return;
+      }
+
+      if (job.status === 'error') {
+        if (job.error) showToast('云端发现与重排暂不可用，已保留当前推荐', 'warning');
+        return;
+      }
+      if (job.status === 'done') return;
+
+      void (async () => {
+        try {
+          for (let attempt = 0; attempt < recommendationJobMaxPolls; attempt += 1) {
+            await wait(recommendationJobPollMs);
+            if (requestId !== detailRequestIdRef.current) return;
+            const nextJob = await getRecommendationJob(job.jobId);
+            if (requestId !== detailRequestIdRef.current || !nextJob) return;
+            updateRecommendationTaskProgress({
+              cloud: {
+                status: nextJob.status,
+                detail: nextJob.detail,
+                updatedAt: Date.now(),
+              },
+            });
+            if (nextJob.status === 'done') {
+              setFeaturedSongs(attachRecommendationMeta(nextJob.items));
+              setLoadingSongs(false);
+              updateRecommendationTaskProgress({
+                cloud: {
+                  status: 'done',
+                  detail: `已刷新 ${nextJob.items.length} 首推荐`,
+                  updatedAt: Date.now(),
+                },
+              });
+              return;
+            }
+            if (nextJob.status === 'error') {
+              if (nextJob.items.length > 0) {
+                setFeaturedSongs(attachRecommendationMeta(nextJob.items));
+              }
+              setLoadingSongs(false);
+              if (nextJob.error) showToast('云端发现与重排暂不可用，已保留当前推荐', 'warning');
+              return;
+            }
+          }
+          setLoadingSongs(false);
+          updateRecommendationTaskProgress({
+            cloud: {
+              status: 'error',
+              detail: '云端任务超时，保留当前推荐',
+              updatedAt: Date.now(),
+            },
+          });
+        } catch (err) {
+          if (requestId !== detailRequestIdRef.current) return;
+          console.error(err);
+          setLoadingSongs(false);
+          updateRecommendationTaskProgress({
+            cloud: {
+              status: 'error',
+              detail: '云端任务查询失败，保留当前推荐',
+              updatedAt: Date.now(),
+            },
+          });
+          showToast('云端发现与重排暂不可用，已保留当前推荐', 'warning');
+        }
+      })();
     } catch (err) {
       if (requestId !== detailRequestIdRef.current) return;
       console.error(err);
       setFeaturedSongs([]);
-      setError(useLlm ? '智能推荐暂不可用，已保留本地和榜单入口。' : '本地推荐暂不可用。');
+      setError('推荐暂不可用。');
+      updateRecommendationTaskProgress({
+        local: {
+          status: 'error',
+          detail: '本地推荐任务失败',
+          updatedAt: Date.now(),
+        },
+        cloud: {
+          status: 'disabled',
+          detail: '未启动云端任务',
+          updatedAt: Date.now(),
+        },
+      });
     } finally {
-      if (requestId === detailRequestIdRef.current) setLoadingSongs(false);
+      if (requestId === detailRequestIdRef.current && !keepLoadingForCloud) {
+        setLoadingSongs(false);
+      }
     }
   }, [showToast]);
 
@@ -158,8 +277,8 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       setSelectedTopListName('');
       setLoadingLists(true);
 
-      if (activeSource === 'local' || activeSource === 'hybrid') {
-        await loadLocalRecommendations(activeSource === 'hybrid');
+      if (activeSource === 'recommendation') {
+        await loadRecommendations();
         return;
       }
 
@@ -195,7 +314,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       }
     };
     load();
-  }, [activeSource, loadLocalRecommendations, loadTopListDetail]);
+  }, [activeSource, loadRecommendations, loadTopListDetail]);
 
   const firstSong = featuredSongs[0];
 
@@ -269,14 +388,13 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
             { key: 'netease', label: getMusicSourceLabel('netease') },
             { key: 'qq', label: getMusicSourceLabel('qq') },
             { key: 'kuwo', label: getMusicSourceLabel('kuwo') },
-            { key: 'local', label: '本地推荐' },
-            { key: 'hybrid', label: '智能推荐' },
+            { key: 'recommendation', label: '推荐' },
             { key: 'embeat', label: '语境搜歌' },
           ].map((source) => (
             <button
               type="button"
               key={source.key}
-              className={`source-chip ${activeSource === source.key ? 'active' : ''} ${source.key === 'embeat' || source.key === 'hybrid' ? 'ai-source-chip' : ''}`}
+              className={`source-chip ${activeSource === source.key ? 'active' : ''} ${source.key === 'embeat' ? 'ai-source-chip' : ''}`}
               onClick={() => setActiveSource(source.key)}
             >
               <span>{source.label}</span>
@@ -290,7 +408,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <ErrorIcon size={18} /> {error}
           </span>
-          {activeSource === 'hybrid' && (
+          {activeSource === 'recommendation' && (
             <button type="button" className="soft-button" onClick={() => onViewChange('settings')}>
               打开设置
             </button>
@@ -441,10 +559,8 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
         <h2 className="section-title">
           {activeSource === 'embeat'
             ? (lastAiSearch ? `“${lastAiSearch}” 的语境歌单` : '语境搜歌歌单')
-            : activeSource === 'local'
-              ? '本地为你推荐'
-              : activeSource === 'hybrid'
-                ? '智能推荐歌单'
+            : activeSource === 'recommendation'
+              ? '为你推荐'
             : (selectedTopListName ? `${selectedTopListName} · 热歌` : '榜单热歌')
           }
         </h2>

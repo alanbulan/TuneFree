@@ -36,7 +36,38 @@ pub struct RecommendationQuery {
     pub limit: Option<usize>,
     pub seed: Option<RecSong>,
     pub context: Option<String>,
-    pub use_llm: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecommendationJobStatus {
+    Running,
+    Done,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecommendationJobStage {
+    LocalRecall,
+    DiscoveryPlan,
+    PlatformSearch,
+    CloudRerank,
+    LocalOnly,
+    Done,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecommendationJob {
+    pub job_id: String,
+    pub status: RecommendationJobStatus,
+    pub stage: RecommendationJobStage,
+    pub detail: String,
+    pub items: Vec<RecommendationItem>,
+    pub error: Option<String>,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, Deserialize)]

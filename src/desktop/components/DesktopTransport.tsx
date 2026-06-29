@@ -63,7 +63,7 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
     setLoadingSimilar(true);
     showToast(`正在计算《${currentSong.name}》的相似歌曲...`, 'info');
     try {
-      const items = await getSimilarSongs(currentSong, { limit: 20, useLlm: true });
+      const items = await getSimilarSongs(currentSong, { limit: 20 });
       const songs = attachRecommendationMeta(items);
       if (songs.length === 0) {
         showToast('未找到相似歌曲，换首其它歌曲试试吧', 'info');
