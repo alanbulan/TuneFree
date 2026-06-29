@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { DesktopPreferencesProvider } from '../core/contexts/DesktopPreferencesContext';
-import { LibraryProvider } from '../core/contexts/LibraryContext';
-import { PlayerProvider } from '../core/contexts/PlayerContext';
+import { LibraryProvider, useLibrary } from '../core/contexts/LibraryContext';
+import { PlayerProvider, usePlayerNowPlaying, usePlayerQueueState } from '../core/contexts/PlayerContext';
 import { ThemeProvider } from '../core/contexts/ThemeContext';
+import { syncRecommendationLibrary } from '../core/services/recommendation';
 import DesktopShell from './components/DesktopShell';
 import { ToastProvider } from './components/ToastHost';
 import type { DesktopView } from './types';
@@ -30,6 +31,23 @@ const getViewFromPath = (fallback: DesktopView): DesktopView => {
   if (path.startsWith('/library')) return 'favorites';
   return fallback;
 };
+
+function RecommendationSyncBridge() {
+  const { favorites, playlists } = useLibrary();
+  const { currentSong } = usePlayerNowPlaying();
+  const { queue } = usePlayerQueueState();
+
+  useEffect(() => {
+    void syncRecommendationLibrary({
+      favorites,
+      playlists: playlists.filter((playlist) => playlist.id !== 'favorites'),
+      queue,
+      currentSong,
+    }).catch(() => {});
+  }, [currentSong, favorites, playlists, queue]);
+
+  return null;
+}
 
 export default function DesktopApp({ initialView = 'home' }: { initialView?: DesktopView }) {
   const [view, setView] = useState<DesktopView>(() => getViewFromPath(initialView));
@@ -99,6 +117,7 @@ export default function DesktopApp({ initialView = 'home' }: { initialView?: Des
         <LibraryProvider>
           <PlayerProvider>
             <ToastProvider>
+              <RecommendationSyncBridge />
               <div className="desktop-app" style={{
                 opacity: isReady ? 1 : 0,
                 transition: 'opacity 0.35s ease-in-out',

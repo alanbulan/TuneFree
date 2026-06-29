@@ -30,7 +30,13 @@ import { useToast } from './ToastHost';
 import { formatTime } from '../utils/formatting';
 import { useSongDownload } from '../hooks/useSongDownload';
 import QualitySelector from './QualitySelector';
-import { getAIRecommendedSongs } from '../../core/services/gdStudio';
+import {
+  attachRecommendationMeta,
+  getSimilarSongs,
+  logRecommendationEvent,
+  recommendationFeedbackFromSong,
+  saveRecommendationFeedback,
+} from '../../core/services/recommendation';
 
 interface DesktopTransportProps {
   onExpand: () => void;
@@ -55,18 +61,25 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
   const handleStartSimilarFlow = async () => {
     if (!currentSong || loadingSimilar) return;
     setLoadingSimilar(true);
-    showToast(`正在深度计算《${currentSong.name}》的相似意境歌曲...`, 'info');
+    showToast(`正在计算《${currentSong.name}》的相似歌曲...`, 'info');
     try {
-      const songs = await getAIRecommendedSongs(
-        `和 ${currentSong.name} - ${currentSong.artist} 意境相似的歌曲`,
-        'netease',
-        20
-      );
+      const items = await getSimilarSongs(currentSong, { limit: 20, useLlm: true });
+      const songs = attachRecommendationMeta(items);
       if (songs.length === 0) {
         showToast('未找到相似歌曲，换首其它歌曲试试吧', 'info');
       } else {
+        const first = songs[0];
+        const feedback = first ? recommendationFeedbackFromSong(first, 'play') : null;
+        if (feedback) void saveRecommendationFeedback(feedback).catch(() => {});
+        if (first) {
+          void logRecommendationEvent({
+            eventType: first.recommendationSource === 'hybrid' ? 'llm_recommend_click' : 'similar_click',
+            song: first,
+            context: 'similar',
+          }).catch(() => {});
+        }
         await playQueue(songs, songs[0]);
-        showToast(`已成功载入 20 首相似歌曲流并开始播放！`, 'success');
+        showToast(`已载入 ${songs.length} 首相似歌曲`, 'success');
       }
     } catch (err) {
       console.error(err);

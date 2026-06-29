@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getSongUrl, triggerDownload } from '../../core/services/api';
 import { saveDownloadMeta } from '../../core/services/offlineDownloads';
+import { logRecommendationEvent } from '../../core/services/recommendation';
 import type { AudioQuality, Song } from '../../core/types';
 import { useDownloadProgress } from './useDownloadProgress';
 import { useToast } from '../components/ToastHost';
@@ -70,6 +71,12 @@ export function useSongDownload(): UseSongDownloadResult {
           await invoke('download_song_to_local', { url, filename, customDir });
           try {
             await saveDownloadMeta(filename, song, String(quality));
+            void logRecommendationEvent({
+              eventType: 'download',
+              song,
+              quality: String(quality),
+              context: 'download',
+            }).catch(() => {});
           } catch (e) {
             console.error('保存下载元数据失败', e);
           }

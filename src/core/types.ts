@@ -20,6 +20,10 @@ export interface Song {
   lyricId?: string;
   source: 'netease' | 'qq' | 'kuwo' | string;
   types?: string[];
+  recommendationReasons?: string[];
+  recommendationSource?: 'local' | 'llm' | 'hybrid' | string;
+  recommendationRequestId?: string;
+  recommendationScore?: number;
 }
 
 export const getSongKey = (song: Pick<Song, 'id' | 'source'>): string =>
@@ -52,4 +56,3 @@ export interface TopList {
   picUrl?: string;
   coverImgUrl?: string; // Netease often uses this
 }
-

@@ -1,4 +1,5 @@
 pub mod api;
+pub mod recommendation;
 pub mod server;
 
 use std::io::Write;
@@ -12,6 +13,12 @@ use tauri::{
     Emitter, Manager, State, WindowEvent,
 };
 use tauri_plugin_dialog::DialogExt;
+
+use recommendation::{
+    LibrarySnapshot, LlmConfigInput, LlmConfigView, LlmProviderTestResult, RecSong,
+    RecommendationEvent, RecommendationFeedback, RecommendationItem, RecommendationMaintenanceStats,
+    RecommendationQuery, RecommendationService,
+};
 
 /// Progress payload emitted during file downloads.
 ///
@@ -73,6 +80,104 @@ fn quit_app_inner(app_handle: &tauri::AppHandle) {
 #[tauri::command]
 fn quit_app(app_handle: tauri::AppHandle) {
     quit_app_inner(&app_handle);
+}
+
+#[tauri::command]
+async fn log_recommendation_event(
+    state: State<'_, RecommendationService>,
+    event: RecommendationEvent,
+) -> Result<(), String> {
+    state.log_event(event).map_err(|e| {
+        log::error!("{}", e);
+        e
+    })
+}
+
+#[tauri::command]
+async fn sync_recommendation_library(
+    state: State<'_, RecommendationService>,
+    snapshot: LibrarySnapshot,
+) -> Result<(), String> {
+    state.sync_library(snapshot)
+}
+
+#[tauri::command]
+async fn get_home_recommendations(
+    state: State<'_, RecommendationService>,
+    query: RecommendationQuery,
+) -> Result<Vec<RecommendationItem>, String> {
+    state.home_recommendations(query)
+}
+
+#[tauri::command]
+async fn get_similar_songs(
+    state: State<'_, RecommendationService>,
+    song: RecSong,
+    limit: Option<usize>,
+    use_llm: Option<bool>,
+) -> Result<Vec<RecommendationItem>, String> {
+    state.similar_songs(song, limit, use_llm).await
+}
+
+#[tauri::command]
+async fn get_llm_enhanced_recommendations(
+    state: State<'_, RecommendationService>,
+    query: RecommendationQuery,
+) -> Result<Vec<RecommendationItem>, String> {
+    state.llm_enhanced_recommendations(query).await
+}
+
+#[tauri::command]
+async fn dismiss_recommendation(
+    state: State<'_, RecommendationService>,
+    song: RecSong,
+    reason: Option<String>,
+) -> Result<(), String> {
+    state.dismiss(song, reason)
+}
+
+#[tauri::command]
+async fn save_recommendation_feedback(
+    state: State<'_, RecommendationService>,
+    feedback: RecommendationFeedback,
+) -> Result<(), String> {
+    state.save_feedback(feedback)
+}
+
+#[tauri::command]
+async fn rebuild_recommendation_index(
+    state: State<'_, RecommendationService>,
+) -> Result<(), String> {
+    state.rebuild_index()
+}
+
+#[tauri::command]
+async fn get_llm_config(
+    state: State<'_, RecommendationService>,
+) -> Result<LlmConfigView, String> {
+    state.get_llm_config()
+}
+
+#[tauri::command]
+async fn save_llm_config(
+    state: State<'_, RecommendationService>,
+    config: LlmConfigInput,
+) -> Result<(), String> {
+    state.save_llm_config(config)
+}
+
+#[tauri::command]
+async fn test_llm_provider(
+    state: State<'_, RecommendationService>,
+) -> Result<LlmProviderTestResult, String> {
+    state.test_llm_provider().await
+}
+
+#[tauri::command]
+async fn clear_recommendation_data(
+    state: State<'_, RecommendationService>,
+) -> Result<RecommendationMaintenanceStats, String> {
+    state.clear_data()
 }
 
 /// Resolves the download directory for saving files.
@@ -669,6 +774,18 @@ pub fn run() {
             get_default_download_dir,
             select_download_dir,
             download_and_install_update,
+            log_recommendation_event,
+            sync_recommendation_library,
+            get_home_recommendations,
+            get_similar_songs,
+            get_llm_enhanced_recommendations,
+            dismiss_recommendation,
+            save_recommendation_feedback,
+            rebuild_recommendation_index,
+            get_llm_config,
+            save_llm_config,
+            test_llm_provider,
+            clear_recommendation_data,
             quit_app
         ])
         .on_window_event(move |window, event| {
@@ -684,6 +801,10 @@ pub fn run() {
         })
         .setup(move |app| {
             app.handle().plugin(tauri_plugin_dialog::init())?;
+            let recommendation_service =
+                RecommendationService::new(app.handle().clone(), client.clone())
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            app.manage(recommendation_service);
 
             if cfg!(debug_assertions) {
                 app.handle().plugin(

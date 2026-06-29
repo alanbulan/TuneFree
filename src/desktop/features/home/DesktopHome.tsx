@@ -5,6 +5,16 @@ import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { getImgReferrerPolicy, getTopListDetail, getTopLists } from '../../../core/services/api';
 import { getAIRecommendedSongs } from '../../../core/services/gdStudio';
+import {
+  attachRecommendationMeta,
+  dismissRecommendation,
+  getHomeRecommendations,
+  getLlmConfig,
+  getLlmEnhancedRecommendations,
+  logRecommendationEvent,
+  recommendationFeedbackFromSong,
+  saveRecommendationFeedback,
+} from '../../../core/services/recommendation';
 import type { Song, TopList } from '../../../core/types';
 import { getMusicSourceLabel } from '../../../core/utils/musicSource';
 import SongTable from '../../components/SongTable';
@@ -39,6 +49,14 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
   const { currentSong, isPlaying } = usePlayerNowPlaying();
   const { favorites, playlists, toggleFavorite, isFavorite } = useLibrary();
   const { showToast } = useToast();
+  const isRecommendationSource = activeSource === 'local' || activeSource === 'hybrid';
+
+  const activeSourceLabel = useMemo(() => {
+    if (activeSource === 'local') return '本地推荐';
+    if (activeSource === 'hybrid') return '智能推荐';
+    if (activeSource === 'embeat') return 'AI 推荐';
+    return getMusicSourceLabel(activeSource);
+  }, [activeSource]);
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -70,6 +88,43 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       setLoadingSongs(false);
     }
   }, [loadingSongs, showToast]);
+
+  const loadLocalRecommendations = useCallback(async (useLlm: boolean) => {
+    const requestId = ++detailRequestIdRef.current;
+    setTopLists([]);
+    setSelectedTopListId(null);
+    setSelectedTopListName(useLlm ? '智能推荐' : '本地推荐');
+    setError('');
+    setLoadingLists(false);
+    setLoadingSongs(true);
+
+    try {
+      if (useLlm) {
+        const config = await getLlmConfig();
+        if (!config.enabled || !config.baseUrl || !config.model || !config.hasApiKey) {
+          if (requestId !== detailRequestIdRef.current) return;
+          setFeaturedSongs([]);
+          setError('智能推荐需要先在设置页配置 OpenAI 兼容模型。');
+          return;
+        }
+      }
+      const items = useLlm
+        ? await getLlmEnhancedRecommendations({ limit: 30, context: 'home', useLlm: true })
+        : await getHomeRecommendations({ limit: 30, context: 'home', useLlm: false });
+      if (requestId !== detailRequestIdRef.current) return;
+      setFeaturedSongs(attachRecommendationMeta(items));
+      if (items.length === 0) {
+        showToast('多播放或收藏几首歌后，推荐会更准确', 'info');
+      }
+    } catch (err) {
+      if (requestId !== detailRequestIdRef.current) return;
+      console.error(err);
+      setFeaturedSongs([]);
+      setError(useLlm ? '智能推荐暂不可用，已保留本地和榜单入口。' : '本地推荐暂不可用。');
+    } finally {
+      if (requestId === detailRequestIdRef.current) setLoadingSongs(false);
+    }
+  }, [showToast]);
 
   const loadTopListDetail = useCallback(async (list: TopList, source = activeSource) => {
     const requestId = ++detailRequestIdRef.current;
@@ -103,6 +158,11 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       setSelectedTopListName('');
       setLoadingLists(true);
 
+      if (activeSource === 'local' || activeSource === 'hybrid') {
+        await loadLocalRecommendations(activeSource === 'hybrid');
+        return;
+      }
+
       if (activeSource === 'embeat') {
         setTopLists([]);
         setFeaturedSongs([]);
@@ -135,7 +195,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       }
     };
     load();
-  }, [activeSource, loadTopListDetail]);
+  }, [activeSource, loadLocalRecommendations, loadTopListDetail]);
 
   const firstSong = featuredSongs[0];
 
@@ -148,6 +208,30 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
     });
   };
 
+  const handleRecommendationPlay = (song: Song) => {
+    const feedback = recommendationFeedbackFromSong(song, 'play');
+    if (feedback) {
+      void saveRecommendationFeedback(feedback).catch(() => {});
+      void logRecommendationEvent({
+        eventType: song.recommendationSource === 'hybrid' ? 'llm_recommend_click' : 'similar_click',
+        song,
+        context: song.recommendationSource || 'recommendation',
+      }).catch(() => {});
+    }
+    void playSong(song);
+  };
+
+  const handleDismissRecommendation = (song: Song) => {
+    void dismissRecommendation(song, 'not_interested')
+      .then(() => {
+        const feedback = recommendationFeedbackFromSong(song, 'dismiss');
+        if (feedback) void saveRecommendationFeedback(feedback).catch(() => {});
+        setFeaturedSongs((prev) => prev.filter((item) => !(item.id === song.id && item.source === song.source)));
+        showToast('已减少类似推荐', 'success');
+      })
+      .catch(() => showToast('操作失败，请稍后再试', 'error'));
+  };
+
   return (
     <div>
       <section className="hero-grid">
@@ -156,13 +240,13 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
           <h1 className="hero-title">{greeting}</h1>
           <div className="hero-nowline">
             <span>桌面音乐空间</span>
-            <strong>{getMusicSourceLabel(activeSource)}</strong>
+            <strong>{activeSourceLabel}</strong>
           </div>
           <div className="hero-actions">
             <button
               type="button"
               className="primary-button"
-              onClick={() => firstSong && playSong(firstSong)}
+              onClick={() => firstSong && handleRecommendationPlay(firstSong)}
               disabled={!firstSong}
               title={firstSong ? `播放 ${selectedTopListName || '当前榜单'}` : '先选择榜单'}
             >
@@ -181,22 +265,40 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       <div className="section-header">
         <h2 className="section-title">推荐榜单</h2>
         <div className="inline-actions">
-          {['netease', 'qq', 'kuwo', 'embeat'].map((source) => (
+          {[
+            { key: 'local', label: '本地推荐' },
+            { key: 'hybrid', label: '智能推荐' },
+            { key: 'netease', label: getMusicSourceLabel('netease') },
+            { key: 'qq', label: getMusicSourceLabel('qq') },
+            { key: 'kuwo', label: getMusicSourceLabel('kuwo') },
+            { key: 'embeat', label: 'AI 推荐' },
+          ].map((source) => (
             <button
               type="button"
-              key={source}
-              className={`source-chip ${activeSource === source ? 'active' : ''} ${source === 'embeat' ? 'ai-source-chip' : ''}`}
-              onClick={() => setActiveSource(source)}
+              key={source.key}
+              className={`source-chip ${activeSource === source.key ? 'active' : ''} ${source.key === 'embeat' || source.key === 'hybrid' ? 'ai-source-chip' : ''}`}
+              onClick={() => setActiveSource(source.key)}
             >
-              <span>{source === 'embeat' ? 'AI 推荐' : getMusicSourceLabel(source)}</span>
+              <span>{source.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {error && <div className="content-card"><ErrorIcon size={18} /> {error}</div>}
+      {error && (
+        <div className="content-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <ErrorIcon size={18} /> {error}
+          </span>
+          {activeSource === 'hybrid' && (
+            <button type="button" className="soft-button" onClick={() => onViewChange('settings')}>
+              打开设置
+            </button>
+          )}
+        </div>
+      )}
 
-      {activeSource === 'embeat' ? (
+      {isRecommendationSource ? null : activeSource === 'embeat' ? (
         <div className="ai-rainbow-flow-border" style={{ margin: '8px 0 20px 0', padding: '22px 20px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
@@ -339,27 +441,42 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
         <h2 className="section-title">
           {activeSource === 'embeat'
             ? (lastAiSearch ? `“${lastAiSearch}” 的 AI 推荐歌单` : 'AI 推荐歌单')
+            : activeSource === 'local'
+              ? '本地为你推荐'
+              : activeSource === 'hybrid'
+                ? '智能推荐歌单'
             : (selectedTopListName ? `${selectedTopListName} · 热歌` : '榜单热歌')
           }
         </h2>
         <span className="source-badge">
-          {activeSource === 'embeat' ? 'AI 推荐' : getMusicSourceLabel(activeSource)}
+          {activeSourceLabel}
         </span>
       </div>
 
       {loadingSongs && featuredSongs.length === 0 ? (
-        <SongTable songs={[]} currentSong={currentSong} isPlaying={isPlaying} isLoading skeletonRows={7} emptyText="AI 正在深度意境分析中..." onPlay={playSong} onFavorite={handleFavorite} isFavorite={(song) => isFavorite(song.id, song.source)} />
+        <SongTable songs={[]} currentSong={currentSong} isPlaying={isPlaying} isLoading skeletonRows={7} emptyText={isRecommendationSource ? '正在生成推荐...' : 'AI 正在深度意境分析中...'} onPlay={handleRecommendationPlay} onFavorite={handleFavorite} isFavorite={(song) => isFavorite(song.id, song.source)} />
       ) : featuredSongs.length === 0 ? (
         <div className="empty-state">
           <p>
-            {activeSource === 'embeat'
+            {isRecommendationSource
+              ? '多播放或收藏几首歌后，推荐会更准确。'
+              : activeSource === 'embeat'
               ? '请在上方输入想听的内容，或者点击提示词开启 AI 音乐心流之旅。'
               : '选择上方任意榜单后，这里会加载完整热歌列表。'
             }
           </p>
         </div>
       ) : (
-        <SongTable songs={featuredSongs} currentSong={currentSong} isPlaying={isPlaying} emptyText="暂无榜单歌曲" onPlay={playSong} onFavorite={handleFavorite} isFavorite={(song) => isFavorite(song.id, song.source)} />
+        <SongTable
+          songs={featuredSongs}
+          currentSong={currentSong}
+          isPlaying={isPlaying}
+          emptyText="暂无榜单歌曲"
+          onPlay={handleRecommendationPlay}
+          onFavorite={handleFavorite}
+          isFavorite={(song) => isFavorite(song.id, song.source)}
+          onDismiss={isRecommendationSource ? handleDismissRecommendation : undefined}
+        />
       )}
     </div>
   );

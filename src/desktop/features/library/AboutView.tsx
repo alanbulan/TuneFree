@@ -28,6 +28,8 @@ const desktopTechStack = [
   { name: 'Axum 0.8.9', detail: '本地音源 API 服务', icon: <DatabaseIcon size={18} /> },
   { name: 'Tower HTTP 0.7', detail: '本地 CORS 与中间件', icon: <SettingsIcon size={18} /> },
   { name: 'Reqwest 0.12', detail: 'Rust 网络请求代理', icon: <CloudIcon size={18} /> },
+  { name: 'Rusqlite 0.32', detail: '本地推荐数据库', icon: <DatabaseIcon size={18} /> },
+  { name: 'Keyring 3.6', detail: '模型 API Key 系统凭据', icon: <SettingsIcon size={18} /> },
   { name: 'Framer Motion 12', detail: '播放器与面板动效', icon: <RocketIcon size={18} /> },
   { name: 'Lucide React 1', detail: '桌面端图标组件', icon: <CodeIcon size={18} /> },
   { name: 'Web Audio API', detail: 'AnalyserNode 音频频谱', icon: <WaveformIcon size={18} /> },
@@ -35,7 +37,8 @@ const desktopTechStack = [
 ];
 
 const aboutFeatures = [
-  ['AI 智能意境搜歌', '通过大语言模型本地意境理解推荐，联动跨源普通搜索与并发封面拉取补全。'],
+  ['混合智能推荐', '本地 SQLite 行为画像、召回排序与 OpenAI 兼容云端模型增强协同工作，断网时回退本地推荐。'],
+  ['AI 智能意境搜歌', '保留 GD Studio / Pollinations 的外部意境搜歌能力，和本地画像推荐系统分离。'],
   ['多源聚合搜索', '内置网易云、QQ 音乐、酷我音乐搜索；JOOX 通过 GD Studio 扩展源接入。'],
   ['跨音源播放兜底', '原音源直链失效时，会按歌名与歌手在其它音源寻找可播放候选，优先保证能播。'],
   ['多音质与离线缓存', '支持 128K、320K、FLAC、Hi-Res 选档，并可下载到本地离线库。'],
@@ -53,7 +56,8 @@ const aboutDataSources = [
   ['QQ 音乐', '搜索 / 榜单 / 直链 / 双语歌词', 'musicu 请求与 Base64 歌词解码'],
   ['酷我音乐', '搜索 / 榜单 / 封面 / 歌词', '旧版搜索接口 + lyric fallback'],
   ['GD Studio', 'JOOX 扩展源', GD_STUDIO_RATE_LIMIT_HINT],
-  ['Pollinations AI', '本地 AI 大模型降级推荐', '完全免 Key 本地闭环的意境大语言模型接口'],
+  ['OpenAI 兼容模型', '可选智能推荐增强', '通过用户配置的 Chat Completions 兼容接口重排本地候选'],
+  ['Pollinations AI', 'GD 意境搜歌降级', '仅用于外部意境搜歌兜底，不参与本地画像推荐'],
 ];
 
 const aboutLinks = [
@@ -89,7 +93,7 @@ export default function AboutView() {
         <img className="about-app-icon" src="/icon.svg" alt="TuneFree" />
         <div className="about-hero-copy">
           <h3>TuneFree Desktop</h3>
-          <p>基于 Tauri 2.11、Next.js 16、React 19、TypeScript 6 与 Rust/Axum 本地服务的桌面音乐播放器。当前版本聚焦多源搜索、跨源播放兜底、多轨歌词、桌面歌词、离线缓存、本地资料库、桌宠与系统托盘集成。</p>
+          <p>基于 Tauri 2.11、Next.js 16、React 19、TypeScript 6 与 Rust/Axum 本地服务的桌面音乐播放器。当前版本聚焦多源搜索、跨源播放兜底、多轨歌词、桌面歌词、离线缓存、本地资料库、本地与云端混合推荐、桌宠与系统托盘集成。</p>
           <div className="about-hero-actions">
             <span className="about-version">Tauri Desktop · v{appVersion}</span>
             <button
@@ -145,7 +149,7 @@ export default function AboutView() {
                 </span>
               ))}
             </div>
-            <p>前端通过 Next.js 静态导出运行在 Tauri WebView 中；Rust 侧提供下载、自动更新、外部链接、托盘生命周期，以及 Axum 本地接口与代理。</p>
+            <p>前端通过 Next.js 静态导出运行在 Tauri WebView 中；Rust 侧提供下载、自动更新、外部链接、托盘生命周期、Axum 本地接口代理，以及 SQLite 推荐数据库与 OpenAI 兼容模型调用。</p>
           </div>
 
           <div className="about-card about-api-card glass-panel">

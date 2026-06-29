@@ -4,6 +4,14 @@ import { BoxesIcon, SettingsIcon, UploadIcon } from '../../../core/components/Ic
 import { useLibrary, type LibraryImportMode, type LibraryImportPreview } from '../../../core/contexts/LibraryContext';
 import { useDesktopPreferences, type CloseBehavior } from '../../../core/contexts/DesktopPreferencesContext';
 import { useTheme } from '../../../core/contexts/ThemeContext';
+import {
+  clearRecommendationData,
+  getLlmConfig,
+  rebuildRecommendationIndex,
+  saveLlmConfig,
+  testLlmProvider,
+  type LlmConfigView,
+} from '../../../core/services/recommendation';
 import { useToast } from '../../components/ToastHost';
 import CustomSelect from './components/CustomSelect';
 import ColorPalette from './components/ColorPalette';
@@ -13,6 +21,27 @@ const closeBehaviorOptions: Array<{ label: string; value: CloseBehavior; hint: s
   { label: '最小化到托盘', value: 'tray', hint: '关闭主窗口后继续后台播放，可从托盘恢复。' },
   { label: '退出应用', value: 'exit', hint: '关闭主窗口时彻底退出，桌面歌词也会关闭。' },
 ];
+
+const defaultLlmConfig: LlmConfigView = {
+  enabled: false,
+  baseUrl: '',
+  model: '',
+  timeoutMs: 8000,
+  maxCandidates: 80,
+  maxResults: 30,
+  cacheTtlSeconds: 86400,
+  uploadRecentEvents: false,
+  hasApiKey: false,
+  databaseSizeBytes: 0,
+  llmCacheEntries: 0,
+  lastError: null,
+};
+
+const formatBytes = (bytes: number): string => {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${bytes} B`;
+};
 
 export default function SettingsView() {
   const { closeBehavior, setCloseBehavior } = useDesktopPreferences();
@@ -37,11 +66,31 @@ export default function SettingsView() {
   const [tempShowPet, setTempShowPet] = useState(true);
   const [downloadPath, setDownloadPath] = useState('');
   const [pendingImport, setPendingImport] = useState<LibraryImportPreview | null>(null);
+  const [localRecommendationEnabled, setLocalRecommendationEnabled] = useState(true);
+  const [llmConfig, setLlmConfig] = useState<LlmConfigView>(defaultLlmConfig);
+  const [apiKey, setApiKey] = useState('');
+  const [clearApiKey, setClearApiKey] = useState(false);
+  const [testingLlm, setTestingLlm] = useState(false);
+  const [savingLlm, setSavingLlm] = useState(false);
+  const [maintainingRecommendation, setMaintainingRecommendation] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setTempShowPet(localStorage.getItem('tunefree_desktop_show_pet') !== 'false');
+      setLocalRecommendationEnabled(localStorage.getItem('tunefree_local_recommendation_enabled') !== 'false');
     }
+  }, []);
+
+  const refreshLlmConfig = async () => {
+    try {
+      setLlmConfig(await getLlmConfig());
+    } catch {
+      setLlmConfig(defaultLlmConfig);
+    }
+  };
+
+  useEffect(() => {
+    void refreshLlmConfig();
   }, []);
 
   useEffect(() => {
@@ -135,6 +184,82 @@ export default function SettingsView() {
         showToast('已撤销导入', 'success');
       },
     });
+  };
+
+  const handleSaveRecommendationSettings = async () => {
+    setSavingLlm(true);
+    try {
+      localStorage.setItem('tunefree_local_recommendation_enabled', localRecommendationEnabled ? 'true' : 'false');
+      await saveLlmConfig({
+        enabled: llmConfig.enabled,
+        baseUrl: llmConfig.baseUrl,
+        model: llmConfig.model,
+        timeoutMs: llmConfig.timeoutMs,
+        maxCandidates: llmConfig.maxCandidates,
+        maxResults: llmConfig.maxResults,
+        cacheTtlSeconds: llmConfig.cacheTtlSeconds,
+        uploadRecentEvents: llmConfig.uploadRecentEvents,
+        apiKey: apiKey.trim() || undefined,
+        clearApiKey,
+      });
+      setApiKey('');
+      setClearApiKey(false);
+      await refreshLlmConfig();
+      showToast('推荐系统配置已保存', 'success');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : '保存推荐配置失败';
+      showToast(message, 'error');
+    } finally {
+      setSavingLlm(false);
+    }
+  };
+
+  const handleTestLlmProvider = async () => {
+    setTestingLlm(true);
+    try {
+      const result = await testLlmProvider();
+      showToast(
+        result.ok
+          ? `模型连接成功${result.latencyMs ? `，${result.latencyMs}ms` : ''}`
+          : result.error || '模型连接失败',
+        result.ok ? 'success' : 'error',
+      );
+      await refreshLlmConfig();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : '模型连接失败';
+      showToast(message, 'error');
+    } finally {
+      setTestingLlm(false);
+    }
+  };
+
+  const handleRebuildRecommendationIndex = async () => {
+    setMaintainingRecommendation(true);
+    try {
+      await rebuildRecommendationIndex();
+      await refreshLlmConfig();
+      showToast('推荐索引已重建', 'success');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : '重建推荐索引失败';
+      showToast(message, 'error');
+    } finally {
+      setMaintainingRecommendation(false);
+    }
+  };
+
+  const handleClearRecommendationData = async () => {
+    if (!window.confirm('清空推荐数据会删除推荐事件、画像、缓存和反馈，不会删除收藏、歌单或下载文件。是否继续？')) return;
+    setMaintainingRecommendation(true);
+    try {
+      await clearRecommendationData();
+      await refreshLlmConfig();
+      showToast('推荐数据已清空', 'success');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : '清空推荐数据失败';
+      showToast(message, 'error');
+    } finally {
+      setMaintainingRecommendation(false);
+    }
   };
 
   return (
@@ -336,6 +461,143 @@ export default function SettingsView() {
           <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '8px', lineHeight: 1.4 }}>
             锁定状态下鼠标将 100% 穿透歌词悬浮窗。若要解锁，请右击底部播放栏的「LRC」按钮。
           </p>
+        </div>
+      </div>
+
+      <div className="settings-card settings-core-card glass-panel">
+        <h3><SettingsIcon size={18} /> 推荐系统</h3>
+        <div className="panel-field">
+          <label>本地推荐</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="checkbox"
+              id="local-recommendation-toggle"
+              style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent)' }}
+              checked={localRecommendationEnabled}
+              onChange={(event) => setLocalRecommendationEnabled(event.target.checked)}
+            />
+            <label htmlFor="local-recommendation-toggle" style={{ fontSize: '14px', cursor: 'pointer', userSelect: 'none', color: 'var(--text)', textTransform: 'none', letterSpacing: 0 }}>
+              启用本地推荐
+            </label>
+          </div>
+        </div>
+
+        <div className="panel-field">
+          <label>云端智能增强</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="checkbox"
+              id="llm-recommendation-toggle"
+              style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent)' }}
+              checked={llmConfig.enabled}
+              onChange={(event) => setLlmConfig((prev) => ({ ...prev, enabled: event.target.checked }))}
+            />
+            <label htmlFor="llm-recommendation-toggle" style={{ fontSize: '14px', cursor: 'pointer', userSelect: 'none', color: 'var(--text)', textTransform: 'none', letterSpacing: 0 }}>
+              启用 OpenAI 兼容模型重排
+            </label>
+          </div>
+        </div>
+
+        <div className="panel-field">
+          <label>API 根地址</label>
+          <input
+            className="panel-input"
+            placeholder="https://api.openai.com/v1"
+            value={llmConfig.baseUrl}
+            onChange={(event) => setLlmConfig((prev) => ({ ...prev, baseUrl: event.target.value }))}
+          />
+        </div>
+
+        <div className="panel-field">
+          <label>模型名</label>
+          <input
+            className="panel-input"
+            placeholder="例如 gpt-4.1-mini"
+            value={llmConfig.model}
+            onChange={(event) => setLlmConfig((prev) => ({ ...prev, model: event.target.value }))}
+          />
+        </div>
+
+        <div className="panel-field">
+          <label>API Key</label>
+          <input
+            className="panel-input"
+            type="password"
+            placeholder={llmConfig.hasApiKey ? '已保存，留空保持不变' : '保存到系统凭据管理器'}
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="checkbox"
+              id="clear-llm-key"
+              style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--accent)' }}
+              checked={clearApiKey}
+              onChange={(event) => setClearApiKey(event.target.checked)}
+            />
+            <label htmlFor="clear-llm-key" style={{ fontSize: '12px', cursor: 'pointer', userSelect: 'none', color: 'var(--text-soft)', textTransform: 'none', letterSpacing: 0 }}>
+              清除已保存密钥
+            </label>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px' }}>
+          <div className="panel-field">
+            <label>超时 ms</label>
+            <input className="panel-input" type="number" min={1000} max={60000} value={llmConfig.timeoutMs} onChange={(event) => setLlmConfig((prev) => ({ ...prev, timeoutMs: Number(event.target.value) }))} />
+          </div>
+          <div className="panel-field">
+            <label>候选上限</label>
+            <input className="panel-input" type="number" min={1} max={120} value={llmConfig.maxCandidates} onChange={(event) => setLlmConfig((prev) => ({ ...prev, maxCandidates: Number(event.target.value) }))} />
+          </div>
+          <div className="panel-field">
+            <label>缓存秒数</label>
+            <input className="panel-input" type="number" min={60} value={llmConfig.cacheTtlSeconds} onChange={(event) => setLlmConfig((prev) => ({ ...prev, cacheTtlSeconds: Number(event.target.value) }))} />
+          </div>
+        </div>
+
+        <div className="panel-field">
+          <label>隐私</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="checkbox"
+              id="upload-recent-events"
+              style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--accent)' }}
+              checked={llmConfig.uploadRecentEvents}
+              onChange={(event) => setLlmConfig((prev) => ({ ...prev, uploadRecentEvents: event.target.checked }))}
+            />
+            <label htmlFor="upload-recent-events" style={{ fontSize: '12px', cursor: 'pointer', userSelect: 'none', color: 'var(--text-soft)', textTransform: 'none', letterSpacing: 0 }}>
+              允许上传最近少量事件摘要
+            </label>
+          </div>
+          <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '6px', lineHeight: 1.4 }}>
+            云端增强只发送候选歌曲元数据和画像摘要；关闭后只使用本地推荐。
+          </p>
+        </div>
+
+        <div className="backup-detail-list" style={{ margin: '10px 0 14px' }}>
+          <span>推荐数据库：{formatBytes(llmConfig.databaseSizeBytes)}</span>
+          <span>智能缓存：{llmConfig.llmCacheEntries} 条</span>
+          <span>密钥状态：{llmConfig.hasApiKey ? '已保存到系统凭据' : '未保存'}</span>
+        </div>
+
+        {llmConfig.lastError && (
+          <p style={{ color: 'var(--danger)', fontSize: '12px', margin: '0 0 12px' }}>{llmConfig.lastError}</p>
+        )}
+
+        <div className="panel-actions backup-actions" style={{ marginTop: 'auto' }}>
+          <button type="button" className="primary-button" onClick={handleSaveRecommendationSettings} disabled={savingLlm}>
+            {savingLlm ? '保存中' : '保存推荐配置'}
+          </button>
+          <button type="button" className="soft-button" onClick={handleTestLlmProvider} disabled={testingLlm}>
+            {testingLlm ? '测试中' : '测试连接'}
+          </button>
+          <button type="button" className="soft-button" onClick={handleRebuildRecommendationIndex} disabled={maintainingRecommendation}>
+            重建索引
+          </button>
+          <button type="button" className="soft-button" onClick={handleClearRecommendationData} disabled={maintainingRecommendation}>
+            清空推荐数据
+          </button>
         </div>
       </div>
 
