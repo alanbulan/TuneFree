@@ -1,9 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { BoxesIcon, SettingsIcon, UploadIcon } from '../../../core/components/Icons';
 import { useLibrary, type LibraryImportMode, type LibraryImportPreview } from '../../../core/contexts/LibraryContext';
 import { useDesktopPreferences, type CloseBehavior } from '../../../core/contexts/DesktopPreferencesContext';
 import { useTheme } from '../../../core/contexts/ThemeContext';
+import {
+  listOfflineDownloads,
+  subscribeOfflineDownloads,
+  type OfflineDownloadMeta,
+} from '../../../core/services/offlineDownloads';
 import {
   clearRecommendationData,
   getLlmConfig,
@@ -15,6 +20,11 @@ import {
 import { useToast } from '../../components/ToastHost';
 import CustomSelect from './components/CustomSelect';
 import ColorPalette from './components/ColorPalette';
+import RecommendationTaskProgressCard from './components/RecommendationTaskProgressCard';
+import StorageOverviewCard, {
+  type StorageOverviewSegment,
+  type StorageOverviewStat,
+} from './components/StorageOverviewCard';
 
 const closeBehaviorOptions: Array<{ label: string; value: CloseBehavior; hint: string }> = [
   { label: '每次询问', value: 'ask', hint: '关闭时弹出选择，可临时决定后台运行或退出。' },
@@ -41,6 +51,11 @@ const formatBytes = (bytes: number): string => {
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${bytes} B`;
+};
+
+const getJsonByteLength = (value: unknown): number => {
+  const content = JSON.stringify(value, null, 2);
+  return new TextEncoder().encode(content).length;
 };
 
 export default function SettingsView() {
@@ -73,6 +88,7 @@ export default function SettingsView() {
   const [testingLlm, setTestingLlm] = useState(false);
   const [savingLlm, setSavingLlm] = useState(false);
   const [maintainingRecommendation, setMaintainingRecommendation] = useState(false);
+  const [offlineDownloads, setOfflineDownloads] = useState<OfflineDownloadMeta[]>([]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -91,6 +107,22 @@ export default function SettingsView() {
 
   useEffect(() => {
     void refreshLlmConfig();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshOfflineDownloads = async () => {
+      const items = await listOfflineDownloads();
+      if (!cancelled) setOfflineDownloads(items);
+    };
+    void refreshOfflineDownloads();
+    const unsubscribe = subscribeOfflineDownloads(() => {
+      void refreshOfflineDownloads();
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -272,6 +304,79 @@ export default function SettingsView() {
       setMaintainingRecommendation(false);
     }
   };
+
+  const storageOverview = useMemo(() => {
+    const userPlaylists = playlists.filter((playlist) => playlist.id !== 'favorites');
+    const playlistSongCount = userPlaylists.reduce((total, playlist) => total + playlist.songs.length, 0);
+    const offlineAudioBytes = offlineDownloads.reduce((total, item) => total + Math.max(0, item.size || 0), 0);
+    const downloadsJsonBytes = getJsonByteLength(offlineDownloads);
+    const jsonBackupBytes = getJsonByteLength({
+      version: 4,
+      favorites,
+      playlists: userPlaylists,
+      exportDate: new Date().toISOString(),
+    });
+    const recommendationDbBytes = Math.max(0, llmConfig.databaseSizeBytes || 0);
+    const totalBytes = offlineAudioBytes + recommendationDbBytes + jsonBackupBytes + downloadsJsonBytes;
+    const segments: StorageOverviewSegment[] = [
+      {
+        id: 'offline-audio',
+        label: '离线歌曲',
+        value: offlineAudioBytes,
+        formattedValue: formatBytes(offlineAudioBytes),
+        color: '#2563eb',
+      },
+      {
+        id: 'recommendation-db',
+        label: '推荐数据库',
+        value: recommendationDbBytes,
+        formattedValue: formatBytes(recommendationDbBytes),
+        color: '#10b981',
+      },
+      {
+        id: 'library-backup',
+        label: '收藏歌单备份',
+        value: jsonBackupBytes,
+        formattedValue: formatBytes(jsonBackupBytes),
+        color: '#f59e0b',
+      },
+      {
+        id: 'downloads-json',
+        label: '下载索引 JSON',
+        value: downloadsJsonBytes,
+        formattedValue: formatBytes(downloadsJsonBytes),
+        color: '#8b5cf6',
+      },
+    ];
+    const stats: StorageOverviewStat[] = [
+      {
+        label: '离线歌曲',
+        value: `${offlineDownloads.length} 首`,
+        detail: formatBytes(offlineAudioBytes),
+      },
+      {
+        label: '收藏',
+        value: `${favorites.length} 首`,
+        detail: `备份 ${formatBytes(jsonBackupBytes)}`,
+      },
+      {
+        label: '歌单',
+        value: `${userPlaylists.length} 个`,
+        detail: `${playlistSongCount} 首歌`,
+      },
+      {
+        label: '模型缓存',
+        value: `${llmConfig.llmCacheEntries} 条`,
+        detail: `推荐库 ${formatBytes(recommendationDbBytes)}`,
+      },
+    ];
+    return {
+      totalLabel: '总占用',
+      totalValue: formatBytes(totalBytes),
+      segments,
+      stats,
+    };
+  }, [favorites, llmConfig.databaseSizeBytes, llmConfig.llmCacheEntries, offlineDownloads, playlists]);
 
   return (
     <section className="settings-grid">
@@ -494,7 +599,7 @@ export default function SettingsView() {
         </div>
 
         <div className="panel-field">
-          <label>云端智能增强</label>
+          <label>云端发现与重排</label>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <input
               type="checkbox"
@@ -504,7 +609,7 @@ export default function SettingsView() {
               onChange={(event) => setLlmConfig((prev) => ({ ...prev, enabled: event.target.checked }))}
             />
             <label htmlFor="llm-recommendation-toggle" style={{ fontSize: '14px', cursor: 'pointer', userSelect: 'none', color: 'var(--text)', textTransform: 'none', letterSpacing: 0 }}>
-              启用 OpenAI 兼容模型重排
+              启用 OpenAI 兼容模型发现与重排
             </label>
           </div>
         </div>
@@ -582,13 +687,13 @@ export default function SettingsView() {
             </label>
           </div>
           <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '6px', lineHeight: 1.4 }}>
-            云端增强只发送候选歌曲元数据和画像摘要；关闭后只使用本地推荐。
+            云端发现与重排会发送候选歌曲元数据和画像摘要；关闭后只使用本地推荐。
           </p>
         </div>
 
         <div className="backup-detail-list" style={{ margin: '10px 0 14px' }}>
           <span>推荐数据库：{formatBytes(llmConfig.databaseSizeBytes)}</span>
-          <span>智能缓存：{llmConfig.llmCacheEntries} 条</span>
+          <span>模型缓存：{llmConfig.llmCacheEntries} 条</span>
           <span>密钥状态：{llmConfig.hasApiKey ? '已保存到本地配置' : '未保存'}</span>
         </div>
 
@@ -612,41 +717,45 @@ export default function SettingsView() {
         </div>
       </div>
 
-      <div className="settings-card settings-backup-card glass-panel">
-        <span className="settings-card-icon"><UploadIcon size={22} /></span>
-        <h3>数据备份</h3>
-        <p>收藏与本地歌单都保存在浏览器本地；导出的 JSON 会包含版本号、导出时间、收藏列表和歌单列表。</p>
-        <div className="backup-detail-list">
-          <span>同一 localStorage key 可在桌面端与移动 PWA 间迁移</span>
-          <span>导入前会先校验 JSON 并展示预览，不会静默覆盖现有数据</span>
-        </div>
-        {pendingImport && (
-          <div className="import-preview-card">
-            <strong>导入预览</strong>
-            <p>当前：{favorites.length} 首收藏 / {playlists.length} 个歌单</p>
-            <p>文件：{pendingImport.favoriteCount} 首收藏 / {pendingImport.playlistCount} 个歌单 / {pendingImport.playlistSongCount} 首歌单歌曲</p>
-            <div className="panel-actions backup-actions">
-              <button type="button" className="primary-button" onClick={() => applyPendingImport('replace')}>覆盖导入</button>
-              <button type="button" className="soft-button" onClick={() => applyPendingImport('merge')}>合并导入</button>
-              <button type="button" className="soft-button" onClick={() => setPendingImport(null)}>取消</button>
+      <div className="settings-side-column">
+        <div className="settings-card settings-backup-card glass-panel">
+          <div className="settings-backup-heading">
+            <span className="settings-card-icon"><UploadIcon size={18} /></span>
+            <div>
+              <h3>数据备份</h3>
+              <p>导出收藏、歌单与版本信息；导入前会先校验并展示预览。</p>
             </div>
           </div>
-        )}
-        <div className="panel-actions backup-actions">
-          <button type="button" className="soft-button" onClick={handleExport}>导出 JSON</button>
-          <label className="soft-button">
-            导入数据
-            <input
-              type="file"
-              accept=".json"
-              style={{ display: 'none' }}
-              onChange={(event) => {
-                handleFileImport(event.target.files?.[0]);
-                event.currentTarget.value = '';
-              }}
-            />
-          </label>
+          {pendingImport && (
+            <div className="import-preview-card">
+              <strong>导入预览</strong>
+              <p>当前：{favorites.length} 首收藏 / {playlists.length} 个歌单</p>
+              <p>文件：{pendingImport.favoriteCount} 首收藏 / {pendingImport.playlistCount} 个歌单 / {pendingImport.playlistSongCount} 首歌单歌曲</p>
+              <div className="panel-actions backup-actions">
+                <button type="button" className="primary-button" onClick={() => applyPendingImport('replace')}>覆盖导入</button>
+                <button type="button" className="soft-button" onClick={() => applyPendingImport('merge')}>合并导入</button>
+                <button type="button" className="soft-button" onClick={() => setPendingImport(null)}>取消</button>
+              </div>
+            </div>
+          )}
+          <div className="panel-actions backup-actions">
+            <button type="button" className="soft-button" onClick={handleExport}>导出 JSON</button>
+            <label className="soft-button">
+              导入数据
+              <input
+                type="file"
+                accept=".json"
+                style={{ display: 'none' }}
+                onChange={(event) => {
+                  handleFileImport(event.target.files?.[0]);
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
         </div>
+        <RecommendationTaskProgressCard />
+        <StorageOverviewCard {...storageOverview} />
       </div>
     </section>
   );

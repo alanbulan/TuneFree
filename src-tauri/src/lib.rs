@@ -16,8 +16,8 @@ use tauri_plugin_dialog::DialogExt;
 
 use recommendation::{
     LibrarySnapshot, LlmConfigInput, LlmConfigView, LlmProviderTestResult, RecSong,
-    RecommendationEvent, RecommendationFeedback, RecommendationItem, RecommendationMaintenanceStats,
-    RecommendationQuery, RecommendationService,
+    RecommendationEvent, RecommendationFeedback, RecommendationItem, RecommendationJob,
+    RecommendationMaintenanceStats, RecommendationQuery, RecommendationService,
 };
 
 /// Progress payload emitted during file downloads.
@@ -114,17 +114,24 @@ async fn get_similar_songs(
     state: State<'_, RecommendationService>,
     song: RecSong,
     limit: Option<usize>,
-    use_llm: Option<bool>,
 ) -> Result<Vec<RecommendationItem>, String> {
-    state.similar_songs(song, limit, use_llm).await
+    state.similar_songs(song, limit)
 }
 
 #[tauri::command]
-async fn get_llm_enhanced_recommendations(
+async fn start_recommendation_job(
     state: State<'_, RecommendationService>,
     query: RecommendationQuery,
-) -> Result<Vec<RecommendationItem>, String> {
-    state.llm_enhanced_recommendations(query).await
+) -> Result<RecommendationJob, String> {
+    state.start_recommendation_job(query)
+}
+
+#[tauri::command]
+async fn get_recommendation_job(
+    state: State<'_, RecommendationService>,
+    job_id: String,
+) -> Result<Option<RecommendationJob>, String> {
+    Ok(state.get_recommendation_job(job_id))
 }
 
 #[tauri::command]
@@ -152,9 +159,7 @@ async fn rebuild_recommendation_index(
 }
 
 #[tauri::command]
-async fn get_llm_config(
-    state: State<'_, RecommendationService>,
-) -> Result<LlmConfigView, String> {
+async fn get_llm_config(state: State<'_, RecommendationService>) -> Result<LlmConfigView, String> {
     state.get_llm_config()
 }
 
@@ -243,8 +248,8 @@ async fn download_with_progress(
     let mut downloaded: u64 = 0;
 
     // Create file before streaming (avoids buffering entire file in memory)
-    let mut file = std::fs::File::create(file_path)
-        .map_err(|e| format!("创建本地文件失败: {}", e))?;
+    let mut file =
+        std::fs::File::create(file_path).map_err(|e| format!("创建本地文件失败: {}", e))?;
 
     // Send 0% initial progress
     let _ = app_handle.emit(
@@ -372,12 +377,14 @@ fn read_downloads_json(dir: &std::path::Path) -> Vec<DownloadMetaEntry> {
 }
 
 /// Writes the downloads.json sidecar file.
-fn write_downloads_json(dir: &std::path::Path, entries: &[DownloadMetaEntry]) -> Result<(), String> {
+fn write_downloads_json(
+    dir: &std::path::Path,
+    entries: &[DownloadMetaEntry],
+) -> Result<(), String> {
     let path = dir.join("downloads.json");
     let json = serde_json::to_string_pretty(entries)
         .map_err(|e| format!("序列化 downloads.json 失败: {}", e))?;
-    std::fs::write(&path, json)
-        .map_err(|e| format!("写入 downloads.json 失败: {}", e))
+    std::fs::write(&path, json).map_err(|e| format!("写入 downloads.json 失败: {}", e))
 }
 
 /// Scans the download directory and returns all downloads with metadata.
@@ -413,7 +420,11 @@ fn scan_download_dir(
     }
 
     // Sort by create_time descending (newest first)
-    entries.sort_by(|a, b| b.create_time.partial_cmp(&a.create_time).unwrap_or(std::cmp::Ordering::Equal));
+    entries.sort_by(|a, b| {
+        b.create_time
+            .partial_cmp(&a.create_time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     Ok(entries)
 }
@@ -464,8 +475,7 @@ fn delete_download_file(
     // Delete the file from disk (use trash if possible, otherwise remove)
     let file_path = dir.join(&filename);
     if file_path.exists() {
-        std::fs::remove_file(&file_path)
-            .map_err(|e| format!("删除文件失败: {}", e))?;
+        std::fs::remove_file(&file_path).map_err(|e| format!("删除文件失败: {}", e))?;
     }
 
     // Remove from downloads.json
@@ -529,7 +539,8 @@ fn resolve_local_playback(
         matches.iter().find(|e| e.quality == *q)
     } else {
         None
-    }.or_else(|| matches.first());
+    }
+    .or_else(|| matches.first());
 
     if let Some(entry) = chosen {
         let file_path = dir.join(&entry.filename);
@@ -779,7 +790,8 @@ pub fn run() {
             sync_recommendation_library,
             get_home_recommendations,
             get_similar_songs,
-            get_llm_enhanced_recommendations,
+            start_recommendation_job,
+            get_recommendation_job,
             dismiss_recommendation,
             save_recommendation_feedback,
             rebuild_recommendation_index,
@@ -835,7 +847,8 @@ pub fn run() {
                     TrayIconEvent::Click {
                         button: MouseButton::Left,
                         ..
-                    } | TrayIconEvent::DoubleClick {
+                    }
+                    | TrayIconEvent::DoubleClick {
                         button: MouseButton::Left,
                         ..
                     } => show_main_window(tray.app_handle()),

@@ -1,5 +1,6 @@
 pub mod catalog;
 pub mod db;
+pub mod discovery;
 pub mod events;
 pub mod llm;
 pub mod llm_config;

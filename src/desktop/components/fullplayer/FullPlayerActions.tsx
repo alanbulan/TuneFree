@@ -65,7 +65,7 @@ export default function FullPlayerActions({
     if (!currentSong || loadingSimilar) return;
     setLoadingSimilar(true);
     try {
-      const items = await getSimilarSongs(currentSong, { limit: 20, useLlm: true });
+      const items = await getSimilarSongs(currentSong, { limit: 20 });
       const songs = attachRecommendationMeta(items);
       if (songs.length === 0) {
         showToast('未找到相似歌曲，换首其它歌曲试试', 'info');
