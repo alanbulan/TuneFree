@@ -49,7 +49,7 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
   const searchRequestIdRef = useRef(0);
   const lastSearchedTermRef = useRef('');
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const { playSong } = usePlayerActions();
+  const { playQueue } = usePlayerActions();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
   const { toggleFavorite, isFavorite } = useLibrary();
   const { showToast } = useToast();
@@ -168,7 +168,7 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
   }, [includeExtendedSources, searchMode, selectedSource]);
 
   const handlePlay = (song: Song) => {
-    playSong(song);
+    void playQueue(results, song);
   };
 
   const handleFavorite = (song: Song) => {

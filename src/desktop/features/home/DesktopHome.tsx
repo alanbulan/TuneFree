@@ -48,7 +48,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
   const [lastAiSearch, setLastAiSearch] = useState('');
   const requestIdRef = useRef(0);
   const detailRequestIdRef = useRef(0);
-  const { playSong } = usePlayerActions();
+  const { playQueue } = usePlayerActions();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
   const { favorites, playlists, toggleFavorite, isFavorite } = useLibrary();
   const { showToast } = useToast();
@@ -355,7 +355,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
         context: song.recommendationSource || 'recommendation',
       }).catch(() => {});
     }
-    void playSong(song);
+    void playQueue(featuredSongs, song);
   };
 
   const handleDismissRecommendation = (song: Song) => {

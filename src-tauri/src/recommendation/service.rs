@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
         Arc,
     },
 };
@@ -29,7 +29,11 @@ const DISCOVERY_RESULTS_PER_SOURCE: usize = 4;
 const DISCOVERY_CANDIDATE_LIMIT: usize = 48;
 const LOCAL_HEAD_CANDIDATE_LIMIT: usize = 20;
 const MERGED_CANDIDATE_LIMIT: usize = 100;
+const DYNAMIC_REFRESH_DEBOUNCE_MS: u64 = 20 * 1000;
+const DYNAMIC_REFRESH_MIN_INTERVAL_MS: i64 = 3 * 60 * 1000;
+const DYNAMIC_REFRESH_RUNNING_RETRY_MS: u64 = 30 * 1000;
 
+#[derive(Clone)]
 pub struct RecommendationService {
     conn: Arc<Mutex<Connection>>,
     db_path: PathBuf,
@@ -37,6 +41,8 @@ pub struct RecommendationService {
     provider: OpenAiCompatibleProvider,
     last_llm_error: Arc<Mutex<Option<String>>>,
     recommendation_jobs: Arc<Mutex<HashMap<String, RecommendationJob>>>,
+    dynamic_refresh_pending: Arc<AtomicBool>,
+    last_dynamic_refresh_at: Arc<AtomicI64>,
 }
 
 impl RecommendationService {
@@ -62,56 +68,70 @@ impl RecommendationService {
             provider: OpenAiCompatibleProvider::new(client),
             last_llm_error: Arc::new(Mutex::new(None)),
             recommendation_jobs: Arc::new(Mutex::new(HashMap::new())),
+            dynamic_refresh_pending: Arc::new(AtomicBool::new(false)),
+            last_dynamic_refresh_at: Arc::new(AtomicI64::new(0)),
         })
     }
 
     pub fn log_event(&self, event: RecommendationEvent) -> Result<(), String> {
-        let conn = self.conn.lock();
-        let weight = events::event_weight(&event.event_type);
-        events::insert_event(&conn, &event).map_err(|e| format!("写入推荐事件失败: {}", e))?;
-        if let Some(song) = &event.song {
-            profile::update_profile_for_song(&conn, song, weight, event.quality.as_deref())
-                .map_err(|e| format!("更新推荐画像失败: {}", e))?;
+        let event_type = event.event_type.clone();
+        {
+            let conn = self.conn.lock();
+            let weight = events::event_weight(&event.event_type);
+            events::insert_event(&conn, &event).map_err(|e| format!("写入推荐事件失败: {}", e))?;
+            if let Some(song) = &event.song {
+                profile::update_profile_for_song(&conn, song, weight, event.quality.as_deref())
+                    .map_err(|e| format!("更新推荐画像失败: {}", e))?;
+            }
+        }
+        if should_trigger_dynamic_refresh(&event_type) {
+            self.schedule_dynamic_recommendation_refresh("用户行为更新");
         }
         Ok(())
     }
 
     pub fn sync_library(&self, snapshot: LibrarySnapshot) -> Result<(), String> {
-        let conn = self.conn.lock();
-        for song in &snapshot.favorites {
-            catalog::upsert_track(&conn, song).map_err(|e| format!("同步收藏歌曲失败: {}", e))?;
-            profile::update_profile_for_song(
-                &conn,
-                song,
-                events::event_weight("favorite_add") * 0.3,
-                None,
-            )
-            .map_err(|e| format!("同步收藏画像失败: {}", e))?;
-        }
-
-        for playlist in &snapshot.playlists {
-            for song in &playlist.songs {
+        {
+            let conn = self.conn.lock();
+            for song in &snapshot.favorites {
                 catalog::upsert_track(&conn, song)
-                    .map_err(|e| format!("同步歌单歌曲失败: {}", e))?;
+                    .map_err(|e| format!("同步收藏歌曲失败: {}", e))?;
                 profile::update_profile_for_song(
                     &conn,
                     song,
-                    events::event_weight("playlist_add") * 0.2,
+                    events::event_weight("favorite_add") * 0.3,
                     None,
                 )
-                .map_err(|e| format!("同步歌单画像失败: {}", e))?;
+                .map_err(|e| format!("同步收藏画像失败: {}", e))?;
             }
-            update_playlist_cooccurrence(&conn, &playlist.songs)
-                .map_err(|e| format!("同步歌单共现失败: {}", e))?;
+
+            for playlist in &snapshot.playlists {
+                for song in &playlist.songs {
+                    catalog::upsert_track(&conn, song)
+                        .map_err(|e| format!("同步歌单歌曲失败: {}", e))?;
+                    profile::update_profile_for_song(
+                        &conn,
+                        song,
+                        events::event_weight("playlist_add") * 0.2,
+                        None,
+                    )
+                    .map_err(|e| format!("同步歌单画像失败: {}", e))?;
+                }
+                update_playlist_cooccurrence(&conn, &playlist.songs)
+                    .map_err(|e| format!("同步歌单共现失败: {}", e))?;
+            }
+
+            for song in &snapshot.queue {
+                catalog::upsert_track(&conn, song)
+                    .map_err(|e| format!("同步播放队列失败: {}", e))?;
+            }
+            if let Some(song) = &snapshot.current_song {
+                catalog::upsert_track(&conn, song)
+                    .map_err(|e| format!("同步当前歌曲失败: {}", e))?;
+            }
         }
 
-        for song in &snapshot.queue {
-            catalog::upsert_track(&conn, song).map_err(|e| format!("同步播放队列失败: {}", e))?;
-        }
-        if let Some(song) = &snapshot.current_song {
-            catalog::upsert_track(&conn, song).map_err(|e| format!("同步当前歌曲失败: {}", e))?;
-        }
-
+        self.schedule_dynamic_recommendation_refresh("曲库同步");
         Ok(())
     }
 
@@ -201,6 +221,8 @@ impl RecommendationService {
         if !can_use_cloud {
             return Ok(job);
         }
+        self.last_dynamic_refresh_at
+            .store(catalog::now_ms(), Ordering::SeqCst);
 
         let conn = Arc::clone(&self.conn);
         let provider = self.provider.clone();
@@ -345,7 +367,7 @@ impl RecommendationService {
         if !self.is_recommendation_enabled() {
             return Ok(None);
         }
-        if let Some(job) = self.latest_recommendation_job() {
+        if let Some(job) = self.running_recommendation_job() {
             return Ok(Some(job));
         }
         self.start_recommendation_job(RecommendationQuery {
@@ -385,52 +407,59 @@ impl RecommendationService {
     }
 
     pub fn dismiss(&self, song: RecSong, reason: Option<String>) -> Result<(), String> {
-        let conn = self.conn.lock();
-        let key = catalog::upsert_track(&conn, &song)
-            .map_err(|e| format!("保存不感兴趣歌曲失败: {}", e))?;
-        let now = catalog::now_ms();
-        let expires_at = now + 14 * 24 * 60 * 60 * 1000;
-        conn.execute(
-            r#"
-            INSERT INTO dismissed_recommendations (track_key, reason, created_at, expires_at)
-            VALUES (?1, ?2, ?3, ?4)
-            ON CONFLICT(track_key) DO UPDATE SET
-              reason = excluded.reason,
-              created_at = excluded.created_at,
-              expires_at = excluded.expires_at
-            "#,
-            params![key, reason, now, expires_at],
-        )
-        .map_err(|e| format!("保存不感兴趣失败: {}", e))?;
+        {
+            let conn = self.conn.lock();
+            let key = catalog::upsert_track(&conn, &song)
+                .map_err(|e| format!("保存不感兴趣歌曲失败: {}", e))?;
+            let now = catalog::now_ms();
+            let expires_at = now + 14 * 24 * 60 * 60 * 1000;
+            conn.execute(
+                r#"
+                INSERT INTO dismissed_recommendations (track_key, reason, created_at, expires_at)
+                VALUES (?1, ?2, ?3, ?4)
+                ON CONFLICT(track_key) DO UPDATE SET
+                  reason = excluded.reason,
+                  created_at = excluded.created_at,
+                  expires_at = excluded.expires_at
+                "#,
+                params![key, reason, now, expires_at],
+            )
+            .map_err(|e| format!("保存不感兴趣失败: {}", e))?;
 
-        let event = RecommendationEvent {
-            event_type: "dismiss".to_string(),
-            song: Some(song),
-            position_seconds: None,
-            duration_seconds: None,
-            quality: None,
-            context: Some("recommendation".to_string()),
-        };
-        events::insert_event(&conn, &event).map_err(|e| format!("写入不感兴趣事件失败: {}", e))?;
+            let event = RecommendationEvent {
+                event_type: "dismiss".to_string(),
+                song: Some(song),
+                position_seconds: None,
+                duration_seconds: None,
+                quality: None,
+                context: Some("recommendation".to_string()),
+            };
+            events::insert_event(&conn, &event)
+                .map_err(|e| format!("写入不感兴趣事件失败: {}", e))?;
+        }
+        self.schedule_dynamic_recommendation_refresh("不感兴趣反馈");
         Ok(())
     }
 
     pub fn save_feedback(&self, feedback: RecommendationFeedback) -> Result<(), String> {
-        let conn = self.conn.lock();
-        conn.execute(
-            r#"
-            INSERT INTO recommendation_feedback (request_id, track_key, action, recommendation_source, created_at)
-            VALUES (?1, ?2, ?3, ?4, ?5)
-            "#,
-            params![
-                feedback.request_id,
-                feedback.track_key,
-                feedback.action,
-                feedback.recommendation_source,
-                catalog::now_ms(),
-            ],
-        )
-        .map_err(|e| format!("保存推荐反馈失败: {}", e))?;
+        {
+            let conn = self.conn.lock();
+            conn.execute(
+                r#"
+                INSERT INTO recommendation_feedback (request_id, track_key, action, recommendation_source, created_at)
+                VALUES (?1, ?2, ?3, ?4, ?5)
+                "#,
+                params![
+                    feedback.request_id,
+                    feedback.track_key,
+                    feedback.action,
+                    feedback.recommendation_source,
+                    catalog::now_ms(),
+                ],
+            )
+            .map_err(|e| format!("保存推荐反馈失败: {}", e))?;
+        }
+        self.schedule_dynamic_recommendation_refresh("推荐反馈");
         Ok(())
     }
 
@@ -564,6 +593,70 @@ impl RecommendationService {
             .max_by_key(|job| job.updated_at)
     }
 
+    fn running_recommendation_job(&self) -> Option<RecommendationJob> {
+        self.recommendation_jobs
+            .lock()
+            .values()
+            .filter(|job| matches!(&job.status, RecommendationJobStatus::Running))
+            .cloned()
+            .max_by_key(|job| job.updated_at)
+    }
+
+    fn has_running_recommendation_job(&self) -> bool {
+        self.recommendation_jobs
+            .lock()
+            .values()
+            .any(|job| matches!(&job.status, RecommendationJobStatus::Running))
+    }
+
+    fn schedule_dynamic_recommendation_refresh(&self, reason: &'static str) {
+        if !self.is_recommendation_enabled() {
+            return;
+        }
+        if self.dynamic_refresh_pending.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
+        let service = self.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut delay_ms = DYNAMIC_REFRESH_DEBOUNCE_MS;
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                service.prune_recommendation_jobs();
+
+                if !service.is_recommendation_enabled() {
+                    break;
+                }
+                if service.has_running_recommendation_job() {
+                    delay_ms = DYNAMIC_REFRESH_RUNNING_RETRY_MS;
+                    continue;
+                }
+
+                let now = catalog::now_ms();
+                let last_refresh = service.last_dynamic_refresh_at.load(Ordering::SeqCst);
+                let elapsed = now.saturating_sub(last_refresh);
+                if elapsed < DYNAMIC_REFRESH_MIN_INTERVAL_MS {
+                    delay_ms = (DYNAMIC_REFRESH_MIN_INTERVAL_MS - elapsed) as u64;
+                    continue;
+                }
+
+                if let Err(e) = service.start_recommendation_job(RecommendationQuery {
+                    limit: Some(30),
+                    seed: None,
+                    context: Some("home".to_string()),
+                }) {
+                    log::error!("动态刷新智能推荐失败({}): {}", reason, e);
+                } else {
+                    log::info!("已触发动态智能推荐刷新: {}", reason);
+                }
+                break;
+            }
+            service
+                .dynamic_refresh_pending
+                .store(false, Ordering::SeqCst);
+        });
+    }
+
     fn latest_cloud_recommendation_items(&self, context: &str) -> Option<Vec<RecommendationItem>> {
         let conn = self.conn.lock();
         load_latest_cloud_recommendation_job(&conn, context)
@@ -622,6 +715,21 @@ fn new_job_id() -> String {
         "rec-job-{}-{}",
         catalog::now_ms(),
         JOB_SEQ.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
+fn should_trigger_dynamic_refresh(event_type: &str) -> bool {
+    matches!(
+        event_type,
+        "play_30s"
+            | "play_complete"
+            | "skip_early"
+            | "favorite_add"
+            | "favorite_remove"
+            | "playlist_add"
+            | "download"
+            | "llm_recommend_click"
+            | "similar_click"
     )
 }
 
@@ -917,6 +1025,16 @@ mod tests {
             .count();
 
         assert_eq!(discovery_count, 5);
+    }
+
+    #[test]
+    fn dynamic_refresh_ignores_play_start_noise() {
+        assert!(!should_trigger_dynamic_refresh("play_start"));
+        assert!(should_trigger_dynamic_refresh("play_30s"));
+        assert!(should_trigger_dynamic_refresh("play_complete"));
+        assert!(should_trigger_dynamic_refresh("skip_early"));
+        assert!(should_trigger_dynamic_refresh("favorite_add"));
+        assert!(should_trigger_dynamic_refresh("llm_recommend_click"));
     }
 }
 
