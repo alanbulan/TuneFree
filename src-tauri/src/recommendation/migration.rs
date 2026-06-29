@@ -96,6 +96,7 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
           max_results INTEGER NOT NULL DEFAULT 30,
           cache_ttl_seconds INTEGER NOT NULL DEFAULT 86400,
           upload_recent_events INTEGER NOT NULL DEFAULT 0,
+          api_key TEXT NOT NULL DEFAULT '',
           updated_at INTEGER NOT NULL
         );
 
@@ -134,5 +135,23 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
         [],
     )?;
 
+    if !column_exists(conn, "llm_config", "api_key")? {
+        conn.execute(
+            "ALTER TABLE llm_config ADD COLUMN api_key TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+
     Ok(())
+}
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> rusqlite::Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    for item in columns {
+        if item? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }

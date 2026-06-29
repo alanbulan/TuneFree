@@ -534,7 +534,7 @@ export default function SettingsView() {
           <input
             className="panel-input"
             type="password"
-            placeholder={llmConfig.hasApiKey ? '已保存，留空保持不变' : '保存到系统凭据管理器'}
+            placeholder={llmConfig.hasApiKey ? '已保存，留空保持不变' : '保存到本地配置'}
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
           />
@@ -589,7 +589,7 @@ export default function SettingsView() {
         <div className="backup-detail-list" style={{ margin: '10px 0 14px' }}>
           <span>推荐数据库：{formatBytes(llmConfig.databaseSizeBytes)}</span>
           <span>智能缓存：{llmConfig.llmCacheEntries} 条</span>
-          <span>密钥状态：{llmConfig.hasApiKey ? '已保存到系统凭据' : '未保存'}</span>
+          <span>密钥状态：{llmConfig.hasApiKey ? '已保存到本地配置' : '未保存'}</span>
         </div>
 
         {llmConfig.lastError && (

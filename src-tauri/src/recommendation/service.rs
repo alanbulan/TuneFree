@@ -235,7 +235,10 @@ impl RecommendationService {
                     .filter(|value| !value.is_empty())
                 {
                     Some(api_key) => api_key.to_string(),
-                    None => llm_config::get_api_key()?,
+                    None => {
+                        let conn = self.conn.lock();
+                        llm_config::get_api_key(&conn)?
+                    }
                 }
             };
             (config, api_key)

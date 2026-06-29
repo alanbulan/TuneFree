@@ -5,9 +5,6 @@ use super::{
     model::{LlmConfig, LlmConfigInput, LlmConfigView},
 };
 
-const KEYRING_SERVICE: &str = "TuneFree";
-const KEYRING_USER: &str = "openai-compatible-api-key";
-
 pub fn load_config(conn: &Connection) -> rusqlite::Result<LlmConfig> {
     conn.query_row(
         "SELECT enabled, base_url, model, timeout_ms, max_candidates, max_results, cache_ttl_seconds, upload_recent_events FROM llm_config WHERE id = 1",
@@ -46,7 +43,9 @@ pub fn view_config(
     last_error: Option<String>,
 ) -> Result<LlmConfigView, String> {
     let config = load_config(conn).map_err(|e| format!("读取模型配置失败: {}", e))?;
-    let has_api_key = get_api_key().map(|key| !key.is_empty()).unwrap_or(false);
+    let has_api_key = get_api_key(conn)
+        .map(|key| !key.trim().is_empty())
+        .map_err(|e| format!("读取 API Key 状态失败: {}", e))?;
     let llm_cache_entries = conn
         .query_row("SELECT COUNT(*) FROM llm_recommendation_cache", [], |row| row.get::<_, i64>(0))
         .unwrap_or(0)
@@ -102,14 +101,14 @@ pub fn save_config(conn: &Connection, input: LlmConfigInput) -> Result<(), Strin
     .map_err(|e| format!("保存模型配置失败: {}", e))?;
 
     if input.clear_api_key.unwrap_or(false) {
-        delete_api_key()?;
+        delete_api_key(conn)?;
     } else if let Some(api_key) = input.api_key {
         let api_key = api_key.trim();
         if !api_key.is_empty() {
-            set_api_key(api_key)?;
-            let saved_api_key = get_api_key()?;
+            set_api_key(conn, api_key)?;
+            let saved_api_key = get_api_key(conn)?;
             if saved_api_key.trim() != api_key {
-                return Err("API Key 已提交保存，但系统凭据校验失败".to_string());
+                return Err("API Key 已提交保存，但本地配置校验失败".to_string());
             }
         }
     }
@@ -117,29 +116,25 @@ pub fn save_config(conn: &Connection, input: LlmConfigInput) -> Result<(), Strin
     Ok(())
 }
 
-pub fn get_api_key() -> Result<String, String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("打开系统凭据失败: {}", e))?;
-    match entry.get_password() {
-        Ok(password) => Ok(password),
-        Err(keyring::Error::NoEntry) => Ok(String::new()),
-        Err(e) => Err(format!("读取系统凭据失败: {}", e)),
-    }
+pub fn get_api_key(conn: &Connection) -> Result<String, String> {
+    conn.query_row("SELECT api_key FROM llm_config WHERE id = 1", [], |row| row.get(0))
+        .map_err(|e| format!("读取 API Key 失败: {}", e))
 }
 
-fn set_api_key(api_key: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("打开系统凭据失败: {}", e))?;
-    entry
-        .set_password(api_key)
-        .map_err(|e| format!("保存系统凭据失败: {}", e))
+fn set_api_key(conn: &Connection, api_key: &str) -> Result<(), String> {
+    conn.execute(
+        "UPDATE llm_config SET api_key = ?1, updated_at = ?2 WHERE id = 1",
+        params![api_key, catalog::now_ms()],
+    )
+    .map(|_| ())
+    .map_err(|e| format!("保存 API Key 失败: {}", e))
 }
 
-fn delete_api_key() -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("打开系统凭据失败: {}", e))?;
-    match entry.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(format!("删除系统凭据失败: {}", e)),
-    }
+fn delete_api_key(conn: &Connection) -> Result<(), String> {
+    conn.execute(
+        "UPDATE llm_config SET api_key = '', updated_at = ?1 WHERE id = 1",
+        params![catalog::now_ms()],
+    )
+    .map(|_| ())
+    .map_err(|e| format!("删除 API Key 失败: {}", e))
 }
