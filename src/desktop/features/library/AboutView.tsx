@@ -20,15 +20,17 @@ import { GD_STUDIO_ATTRIBUTION, GD_STUDIO_RATE_LIMIT_HINT } from '../../../core/
 import { useUpdateChecker } from './hooks/useUpdateChecker';
 
 const desktopTechStack = [
-  { name: 'Tauri v2.11', detail: '原生桌面容器 / 托盘', icon: <BoxesIcon size={18} /> },
+  { name: 'Tauri 2.11.3', detail: '原生桌面容器 / 托盘', icon: <BoxesIcon size={18} /> },
   { name: 'Rust 2021', detail: '命令、更新与下载服务', icon: <ServerIcon size={18} /> },
-  { name: 'Next.js 15', detail: 'App Router / 静态导出', icon: <RocketIcon size={18} /> },
-  { name: 'React 18', detail: '桌面端交互组件', icon: <CodeIcon size={18} /> },
-  { name: 'TypeScript 5', detail: '核心播放与 UI 类型', icon: <FileCodeIcon size={18} /> },
-  { name: 'Axum 0.7', detail: '本地音源 API 服务', icon: <DatabaseIcon size={18} /> },
-  { name: 'Reqwest', detail: 'Rust 网络请求代理', icon: <CloudIcon size={18} /> },
+  { name: 'Next.js 16.2', detail: 'Turbopack / 静态导出', icon: <RocketIcon size={18} /> },
+  { name: 'React 19.2', detail: '桌面端交互组件', icon: <CodeIcon size={18} /> },
+  { name: 'TypeScript 6.0', detail: '核心播放与 UI 类型', icon: <FileCodeIcon size={18} /> },
+  { name: 'Axum 0.8.9', detail: '本地音源 API 服务', icon: <DatabaseIcon size={18} /> },
+  { name: 'Tower HTTP 0.7', detail: '本地 CORS 与中间件', icon: <SettingsIcon size={18} /> },
+  { name: 'Reqwest 0.12', detail: 'Rust 网络请求代理', icon: <CloudIcon size={18} /> },
+  { name: 'Framer Motion 12', detail: '播放器与面板动效', icon: <RocketIcon size={18} /> },
+  { name: 'Lucide React 1', detail: '桌面端图标组件', icon: <CodeIcon size={18} /> },
   { name: 'Web Audio API', detail: 'AnalyserNode 音频频谱', icon: <WaveformIcon size={18} /> },
-  { name: 'Pollinations AI', detail: '本地 AI 意境大模型推荐', icon: <CloudIcon size={18} /> },
   { name: 'Canvas', detail: '实时波形背景渲染', icon: <PanelsIcon size={18} /> },
 ];
 
@@ -87,7 +89,7 @@ export default function AboutView() {
         <img className="about-app-icon" src="/icon.svg" alt="TuneFree" />
         <div className="about-hero-copy">
           <h3>TuneFree Desktop</h3>
-          <p>基于 Tauri v2、Next.js 15、React 18 与 Rust 本地服务的桌面音乐播放器。当前版本聚焦多源搜索、跨源播放兜底、多轨歌词、桌面歌词、离线缓存、本地资料库、桌宠与系统托盘集成。</p>
+          <p>基于 Tauri 2.11、Next.js 16、React 19、TypeScript 6 与 Rust/Axum 本地服务的桌面音乐播放器。当前版本聚焦多源搜索、跨源播放兜底、多轨歌词、桌面歌词、离线缓存、本地资料库、桌宠与系统托盘集成。</p>
           <div className="about-hero-actions">
             <span className="about-version">Tauri Desktop · v{appVersion}</span>
             <button
