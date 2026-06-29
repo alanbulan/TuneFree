@@ -16,6 +16,7 @@ interface SongTableProps {
   onFavorite?: (song: Song) => void;
   isFavorite?: (song: Song) => boolean;
   onMore?: (song: Song) => void;
+  onDismiss?: (song: Song) => void;
   onDelete?: (song: Song) => void;
   deleteLabel?: string;
 }
@@ -32,6 +33,7 @@ export default function SongTable({
   onFavorite,
   isFavorite,
   onMore,
+  onDismiss,
   onDelete,
   deleteLabel = '删除歌曲',
 }: SongTableProps) {
@@ -99,6 +101,7 @@ export default function SongTable({
           const artist = typeof song.artist === 'string' ? song.artist : '未知歌手';
           const album = typeof song.album === 'string' && song.album ? song.album : '未知专辑';
           const favoriteActive = Boolean(isFavorite?.(song));
+          const recommendationReason = song.recommendationReasons?.[0];
           return (
             <div
               role="button"
@@ -126,7 +129,9 @@ export default function SongTable({
                 </span>
                 <span className="song-info">
                   <span className="song-title">{title}</span>
-                  <span className="song-artist">{artist}</span>
+                  <span className="song-artist">
+                    {recommendationReason ? `${artist} · ${recommendationReason}` : artist}
+                  </span>
                 </span>
               </span>
               <span className="song-album">{album}</span>
@@ -154,6 +159,17 @@ export default function SongTable({
                 {onMore && (
                   <button type="button" className="table-action" aria-label="更多操作" onClick={() => onMore(song)}>
                     <MoreIcon size={16} />
+                  </button>
+                )}
+                {onDismiss && (
+                  <button
+                    type="button"
+                    className="table-action table-action-danger"
+                    aria-label="不感兴趣"
+                    title="不感兴趣"
+                    onClick={() => onDismiss(song)}
+                  >
+                    <TrashIcon size={16} />
                   </button>
                 )}
                 {onDelete && (

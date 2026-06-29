@@ -9,7 +9,14 @@ import {
   ShareIcon,
 } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
-import { usePlayerNowPlaying, usePlayerSettings } from '../../../core/contexts/PlayerContext';
+import { usePlayerActions, usePlayerNowPlaying, usePlayerSettings } from '../../../core/contexts/PlayerContext';
+import {
+  attachRecommendationMeta,
+  getSimilarSongs,
+  logRecommendationEvent,
+  recommendationFeedbackFromSong,
+  saveRecommendationFeedback,
+} from '../../../core/services/recommendation';
 import { getSongKey, type AudioQuality } from '../../../core/types';
 import { useSongDownload, qualityOptions, getDownloadMeta } from '../../hooks/useSongDownload';
 import { useToast } from '../ToastHost';
@@ -27,10 +34,12 @@ export default function FullPlayerActions({
 }: FullPlayerActionsProps) {
   const { currentSong } = usePlayerNowPlaying();
   const { audioQuality } = usePlayerSettings();
+  const { playQueue } = usePlayerActions();
   const { toggleFavorite, isFavorite, playlists, addToPlaylist, createPlaylist } = useLibrary();
   const { showToast } = useToast();
   const { downloadQuality, downloadProgress, handleDownload } = useSongDownload();
   const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [loadingSimilar, setLoadingSimilar] = useState(false);
 
   const hasSong = !!currentSong;
   const favoriteActive = hasSong && isFavorite(currentSong.id, currentSong.source);
@@ -50,6 +59,35 @@ export default function FullPlayerActions({
   const handleOfflineCache = async () => {
     if (!currentSong || downloadQuality) return;
     await handleDownload(currentSong, audioQuality);
+  };
+
+  const handleSimilarSongs = async () => {
+    if (!currentSong || loadingSimilar) return;
+    setLoadingSimilar(true);
+    try {
+      const items = await getSimilarSongs(currentSong, { limit: 20, useLlm: true });
+      const songs = attachRecommendationMeta(items);
+      if (songs.length === 0) {
+        showToast('未找到相似歌曲，换首其它歌曲试试', 'info');
+        return;
+      }
+      const first = songs[0];
+      const feedback = first ? recommendationFeedbackFromSong(first, 'play') : null;
+      if (feedback) void saveRecommendationFeedback(feedback).catch(() => {});
+      if (first) {
+        void logRecommendationEvent({
+          eventType: first.recommendationSource === 'hybrid' ? 'llm_recommend_click' : 'similar_click',
+          song: first,
+          context: 'similar',
+        }).catch(() => {});
+      }
+      await playQueue(songs, first);
+      showToast(`已载入 ${songs.length} 首相似歌曲`, 'success');
+    } catch {
+      showToast('相似歌曲暂不可用', 'error');
+    } finally {
+      setLoadingSimilar(false);
+    }
   };
 
   const handleShare = async () => {
@@ -101,6 +139,15 @@ export default function FullPlayerActions({
         >
           <MoreIcon size={18} />
           更多
+        </button>
+        <button
+          type="button"
+          className="full-action-button"
+          disabled={!currentSong || loadingSimilar}
+          onClick={handleSimilarSongs}
+        >
+          <SearchIcon size={18} />
+          {loadingSimilar ? '计算中' : '相似歌曲'}
         </button>
         <div className="download-action-group" aria-label="下载音质">
           <button

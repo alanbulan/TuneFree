@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import { Song, Playlist, getSongKey } from "../types";
+import { logRecommendationEvent } from "../services/recommendation";
 
 export interface LibraryBackup {
   favorites: Song[];
@@ -250,10 +251,16 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const toggleFavorite = useCallback((song: Song) => {
+    const normalizedSong = normalizeSong(song);
+    if (!normalizedSong) return;
+    const songKey = getSongKey(normalizedSong);
+    const wasFavorite = favoritesRef.current.some((s) => getSongKey(s) === songKey);
+    void logRecommendationEvent({
+      eventType: wasFavorite ? "favorite_remove" : "favorite_add",
+      song: normalizedSong,
+      context: "library",
+    }).catch(() => {});
     setFavorites((prev) => {
-      const normalizedSong = normalizeSong(song);
-      if (!normalizedSong) return prev;
-      const songKey = getSongKey(normalizedSong);
       if (prev.find((s) => getSongKey(s) === songKey)) {
         return prev.filter((s) => getSongKey(s) !== songKey);
       }
@@ -298,18 +305,34 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
   const addToPlaylist = useCallback((playlistId: string, song: Song) => {
     const normalizedSong = normalizeSong(song);
     if (!normalizedSong) return;
+    const songKey = getSongKey(normalizedSong);
     if (playlistId === "favorites") {
+      const alreadyFavorite = favoritesRef.current.some((s) => getSongKey(s) === songKey);
+      if (!alreadyFavorite) {
+        void logRecommendationEvent({
+          eventType: "favorite_add",
+          song: normalizedSong,
+          context: "library",
+        }).catch(() => {});
+      }
       setFavorites((prev) => {
-        const songKey = getSongKey(normalizedSong);
         if (prev.find((s) => getSongKey(s) === songKey)) return prev;
         return [normalizedSong, ...prev];
       });
       return;
     }
+    const targetPlaylist = playlistsRef.current.find((playlist) => playlist.id === playlistId);
+    const alreadyInPlaylist = targetPlaylist?.songs.some((item) => getSongKey(item) === songKey);
+    if (!alreadyInPlaylist) {
+      void logRecommendationEvent({
+        eventType: "playlist_add",
+        song: normalizedSong,
+        context: `playlist:${playlistId}`,
+      }).catch(() => {});
+    }
     setPlaylistsState((prev) =>
       prev.map((p) => {
         if (p.id !== playlistId) return p;
-        const songKey = getSongKey(normalizedSong);
         if (p.songs.find((s) => getSongKey(s) === songKey)) return p;
         return { ...p, songs: [...p.songs, normalizedSong] };
       }),

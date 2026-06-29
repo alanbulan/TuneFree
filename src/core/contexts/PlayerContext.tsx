@@ -16,6 +16,7 @@ import {
 } from "../types";
 import { getLyrics, parseSongFull } from "../services/api";
 import { resolveOfflinePlayback } from "../services/offlineDownloads";
+import { logRecommendationEvent } from "../services/recommendation";
 import {
   loadStoredAudioQuality,
   loadStoredCurrentSong,
@@ -206,10 +207,52 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const activeQualityRef = useRef<AudioQuality>(audioQuality);
   const progressFrameRef = useRef<number | null>(null);
   const lastProgressTimeRef = useRef(0);
+  const play30LoggedKeyRef = useRef<string | null>(null);
+  const completeLoggedKeyRef = useRef<string | null>(null);
 
   // Track error retry to prevent loops
   const retryCountRef = useRef(0);
   const forceNoCorsPlaybackRef = useRef(false);
+
+  const resetRecommendationPlaybackState = useCallback((song: Song) => {
+    const key = getSongKey(song);
+    play30LoggedKeyRef.current = null;
+    completeLoggedKeyRef.current = null;
+    return key;
+  }, []);
+
+  const logPlaybackRecommendationEvent = useCallback((
+    eventType: string,
+    song: Song | null | undefined = currentSongRef.current,
+    positionSeconds?: number,
+    durationSeconds?: number,
+    quality?: AudioQuality,
+  ) => {
+    if (!song) return;
+    void logRecommendationEvent({
+      eventType,
+      song,
+      positionSeconds,
+      durationSeconds,
+      quality: quality || audioQualityRef.current,
+      context: "playback",
+    }).catch(() => {});
+  }, []);
+
+  const logEarlySkipIfNeeded = useCallback(() => {
+    const song = currentSongRef.current;
+    const audio = audioRef.current;
+    if (!song || !audio || audio.ended) return;
+    const position = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+    if (position > 0 && position < 30) {
+      logPlaybackRecommendationEvent(
+        "skip_early",
+        song,
+        position,
+        getFiniteAudioDuration(audio),
+      );
+    }
+  }, [logPlaybackRecommendationEvent]);
 
   const showPlayerNotice = useCallback(
     (message: string, tone: PlayerNotice["tone"] = "info") => {
@@ -342,6 +385,23 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       timeupdate: () => {
         syncPlaybackTime(true);
         syncMediaPosition();
+        const song = currentSongRef.current;
+        if (!song) return;
+        const key = getSongKey(song);
+        const position = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+        const totalDuration = getFiniteAudioDuration(audio);
+        if (position >= 30 && play30LoggedKeyRef.current !== key) {
+          play30LoggedKeyRef.current = key;
+          logPlaybackRecommendationEvent("play_30s", song, position, totalDuration);
+        }
+        if (
+          totalDuration > 0 &&
+          position / totalDuration >= 0.8 &&
+          completeLoggedKeyRef.current !== key
+        ) {
+          completeLoggedKeyRef.current = key;
+          logPlaybackRecommendationEvent("play_complete", song, position, totalDuration);
+        }
       },
       loadedmetadata: () => {
         syncPlaybackTime(true);
@@ -353,6 +413,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         syncDuration();
       },
       ended: () => {
+        const song = currentSongRef.current;
+        if (song) {
+          const key = getSongKey(song);
+          if (completeLoggedKeyRef.current !== key) {
+            completeLoggedKeyRef.current = key;
+            logPlaybackRecommendationEvent(
+              "play_complete",
+              song,
+              getFiniteAudioDuration(audio),
+              getFiniteAudioDuration(audio),
+            );
+          }
+        }
         if (playNextRef.current) playNextRef.current(false);
       },
       error: (_e: Event) => {
@@ -410,7 +483,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     handlersRef.current = handlers;
     audioRef.current = audio;
     return audio;
-  }, [showPlayerNotice, syncAudioQualityState, syncPlaybackTime]);
+  }, [logPlaybackRecommendationEvent, showPlayerNotice, syncAudioQualityState, syncPlaybackTime]);
 
   // --- Audio Element 初始化（不预设 crossOrigin，由 playSong 根据源动态决定） ---
   useEffect(() => {
@@ -850,11 +923,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           try {
             await activeAudio.play();
             if (requestId !== playRequestIdRef.current) return;
+            const recommendationKey = resetRecommendationPlaybackState(fullSong);
+            play30LoggedKeyRef.current = null;
+            completeLoggedKeyRef.current = null;
             syncPlaybackTime(true);
             setIsPlaying(true);
             setIsLoading(false);
             updateMediaSession(fullSong, "playing");
             preloadNextSong(fullSong);
+            logPlaybackRecommendationEvent("play_start", fullSong, 0, getFiniteAudioDuration(activeAudio), targetQuality);
+            if (recommendationKey !== getSongKey(fullSong)) {
+              resetRecommendationPlaybackState(fullSong);
+            }
           } catch (error: unknown) {
             if (requestId !== playRequestIdRef.current) return;
             if (error instanceof Error && error.name === "AbortError") return;
@@ -925,8 +1005,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       createAudioElement,
       getParsedSongCacheKey,
       initAudioContext,
+      logPlaybackRecommendationEvent,
       preloadNextSong,
       resolveParsedSong,
+      resetRecommendationPlaybackState,
       resumePlayback,
       showPlayerNotice,
       syncAudioQualityState,
@@ -1001,6 +1083,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     const mode = playModeRef.current;
 
     if (q.length === 0) return;
+    if (force) logEarlySkipIfNeeded();
 
     if (!force && mode === "loop") {
       if (audioRef.current) {
@@ -1025,7 +1108,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     playSongRef.current(nextSong);
-  }, [updateCurrentTimeState]);
+  }, [logEarlySkipIfNeeded, updateCurrentTimeState]);
 
   const playPrev = useCallback(() => {
     const activeAudio = audioRef.current;
@@ -1041,12 +1124,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     const mode = playModeRef.current;
 
     if (q.length === 0) return;
+    logEarlySkipIfNeeded();
 
     const prevIndex = getPrevQueueIndex(q, c, mode);
     if (prevIndex < 0) return;
 
     playSongRef.current(q[prevIndex]);
-  }, [updateCurrentTimeState, updatePositionState]);
+  }, [logEarlySkipIfNeeded, updateCurrentTimeState, updatePositionState]);
 
   useEffect(() => {
     playNextRef.current = playNext;
@@ -1184,6 +1268,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const setAudioQuality = useCallback((q: AudioQuality) => {
     syncAudioQualityState(q);
+    logPlaybackRecommendationEvent(
+      "quality_change",
+      currentSongRef.current,
+      audioRef.current?.currentTime,
+      audioRef.current ? getFiniteAudioDuration(audioRef.current) : undefined,
+      q,
+    );
     // 使用 ref 避免 stale closure，不依赖 currentSong/isPlaying state
     if (
       currentSongRef.current &&
@@ -1192,7 +1283,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     ) {
       playSongRef.current(currentSongRef.current, q);
     }
-  }, [syncAudioQualityState]);
+  }, [logPlaybackRecommendationEvent, syncAudioQualityState]);
 
   const actionsValue = useMemo(
     () => ({
