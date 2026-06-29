@@ -13,8 +13,7 @@ node_modules
 .next
 out
 
-# Cloudflare / local tooling
-.wrangler
+# Local tooling
 .playwright-mcp
 .reference
 
