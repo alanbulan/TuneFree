@@ -10,12 +10,6 @@ const nextConfig = {
   trailingSlash: true,
   reactStrictMode: true,
   poweredByHeader: false,
-  webpack(config, { isServer }) {
-    if (isServer) {
-      config.output.chunkFilename = 'chunks/[name].js';
-    }
-    return config;
-  },
   // images.unoptimized is true (static export), so remotePatterns is not needed.
   // Next.js skips image optimization entirely when unoptimized is enabled.
 };

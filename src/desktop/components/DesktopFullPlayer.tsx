@@ -119,9 +119,9 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
       <motion.div
         className="full-player-backdrop"
         onClick={onClose}
-        initial={{ opacity: 0, backdropFilter: 'blur(0px)', WebkitBackdropFilter: 'blur(0px)' }}
-        animate={{ opacity: 1, backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)' }}
-        exit={{ opacity: 0, backdropFilter: 'blur(0px)', WebkitBackdropFilter: 'blur(0px)' }}
+        initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
+        animate={{ opacity: 1, backdropFilter: 'blur(18px)' }}
+        exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
         transition={{ duration: 0.35, ease: 'easeInOut' }}
         style={{ transition: 'none' }}
       />

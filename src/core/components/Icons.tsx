@@ -1,10 +1,8 @@
-
-import React from 'react';
 import {
   Play, Pause, SkipForward, SkipBack, Search, Home,
   ListMusic, MoreHorizontal, ChevronDown, Music2, AlertCircle,
   Heart, Plus, Share, Download, Upload, Trash2, Settings, Folder,
-  Repeat, Repeat1, Shuffle, List, PanelLeftClose, PanelLeftOpen, Key, Info, ExternalLink, Github, X,
+  Repeat, Repeat1, Shuffle, List, PanelLeftClose, PanelLeftOpen, Key, Info, ExternalLink, GitBranch, X,
   Code2, Boxes, FileCode2, Rocket, Cloud, Server, AudioWaveform, PanelsTopLeft, Database, RefreshCw
 } from 'lucide-react';
 
@@ -41,7 +39,7 @@ export const SidebarExpandIcon = ({ size = 24, className = "" }) => <PanelLeftOp
 export const KeyIcon = ({ size = 24, className = "" }) => <Key size={size} className={className} />;
 export const InfoIcon = ({ size = 24, className = "" }) => <Info size={size} className={className} />;
 export const ExternalLinkIcon = ({ size = 24, className = "" }) => <ExternalLink size={size} className={className} />;
-export const GithubIcon = ({ size = 24, className = "" }) => <Github size={size} className={className} />;
+export const GithubIcon = ({ size = 24, className = "" }) => <GitBranch size={size} className={className} />;
 export const CloseIcon = ({ size = 24, className = "" }) => <X size={size} className={className} />;
 export const CodeIcon = ({ size = 24, className = "" }) => <Code2 size={size} className={className} />;
 export const BoxesIcon = ({ size = 24, className = "" }) => <Boxes size={size} className={className} />;

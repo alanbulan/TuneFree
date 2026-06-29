@@ -1,32 +1,34 @@
 {
   "name": "tunefree-desktop",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start -p 3001",
-    "lint": "next lint",
+    "lint": "tsc --noEmit",
     "test": "vitest",
     "tauri": "node bump-version.js && tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.0",
-    "framer-motion": "^11.0.8",
-    "lucide-react": "^0.344.0",
-    "next": "^15.5.6",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "@tauri-apps/api": "^2.11.1",
+    "framer-motion": "^12.42.0",
+    "lucide-react": "^1.22.0",
+    "next": "^16.2.9",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.2",
-    "@types/node": "^22.15.3",
-    "@types/react": "^18.2.64",
-    "@types/react-dom": "^18.2.21",
-    "@vitest/ui": "^4.1.9",
-    "typescript": "^5.2.2",
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/node": "^26.0.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },
-  "//framer-motion": "Tip: for better tree-shaking, import from framer-motion subpaths (e.g. 'framer-motion/m' for motion components) if bundle size becomes a concern."
+  "//framer-motion": "Tip: for better tree-shaking, import from framer-motion subpaths (e.g. 'framer-motion/m' for motion components) if bundle size becomes a concern.",
+  "overrides": {
+    "postcss": "^8.5.10"
+  }
 }

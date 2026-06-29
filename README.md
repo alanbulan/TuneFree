@@ -1,6 +1,6 @@
 # TuneFree Desktop
 
-TuneFree Desktop 是一款基于 Tauri v2、Next.js 15 和 React 18 构建的现代化高性能桌面音乐播放器。项目致力于在桌面端提供统一、流畅且极具质感的音乐流媒体聚合体验。
+TuneFree Desktop 是一款基于 Tauri v2、Next.js 16 和 React 19 构建的现代化高性能桌面音乐播放器。项目致力于在桌面端提供统一、流畅且极具质感的音乐流媒体聚合体验。
 
 本分支（tauri 分支）代表 TuneFree 的原生桌面客户端实现，核心业务层由 Rust 构建的本地服务承载，包含 API 代理及音源解密模块，以解决跨域及网络限制问题。
 
@@ -9,9 +9,9 @@ TuneFree Desktop 是一款基于 Tauri v2、Next.js 15 和 React 18 构建的现
 项目在架构设计上采用前后端分离的混编模式：
 
 *   **容器层**：Tauri v2 运行时，提供原生系统 API 调用能力及轻量化 Webview 容器。
-*   **前端渲染层**：Next.js 15 (静态导出) 与 React 18，负责核心 UI 组件渲染与播放状态管理。
+*   **前端渲染层**：Next.js 16 (静态导出) 与 React 19，负责核心 UI 组件渲染与播放状态管理。
 *   **本地服务层**：Rust (基于 Axum 异步框架)，用于处理高并发的解密请求与本地音频接口代理。
-*   **动效与交互**：Framer Motion 11，用于构建界面的物理阻尼过渡以及平滑转场动画。
+*   **动效与交互**：Framer Motion 12，用于构建界面的物理阻尼过渡以及平滑转场动画。
 *   **音效可视化**：基于 Web Audio API 获取音频时域/频域数据，结合 HTML5 Canvas 进行实时频谱绘制。
 
 ## 核心特性
@@ -29,10 +29,6 @@ TuneFree Desktop 是一款基于 Tauri v2、Next.js 15 和 React 18 构建的现
 │   ├── desktop-lyric/    # 桌面歌词窗口路由
 │   ├── library/          # 音乐库页面
 │   └── search/           # 搜索页面
-├── functions/            # Cloudflare Pages Functions（CORS 代理 / 音源解析）
-│   └── api/
-│       ├── cors-proxy.ts # CORS 代理（白名单转发）
-│       └── url.ts        # 音源 URL 解析（网易云 / QQ / 酷我）
 ├── src/
 │   ├── core/             # 音乐服务、上下文管理器与核心类型定义
 │   └── desktop/          # 桌面端专用交互组件与主视图
@@ -53,7 +49,7 @@ TuneFree Desktop 是一款基于 Tauri v2、Next.js 15 和 React 18 构建的现
 
 运行本项目前，请确保您的开发环境已安装以下工具：
 
-*   Node.js (建议 v18.0 或以上)
+*   Node.js (建议 v20.9 或以上)
 *   Rust 工具链 (包括 cargo 及 rustc compiler)
 *   C++ 构建环境 (Windows 平台下需安装 Visual Studio 生成工具)
 
