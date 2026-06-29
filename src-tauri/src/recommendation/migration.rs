@@ -67,6 +67,25 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
           generated_at INTEGER NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS recommendation_result_snapshots (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          context TEXT NOT NULL,
+          result_source TEXT NOT NULL,
+          job_id TEXT NOT NULL,
+          detail TEXT NOT NULL,
+          items_json TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_rec_result_snapshots_latest
+          ON recommendation_result_snapshots(context, result_source, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS recommendation_settings (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          enabled INTEGER NOT NULL DEFAULT 1,
+          updated_at INTEGER NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS dismissed_recommendations (
           track_key TEXT PRIMARY KEY,
           reason TEXT,
@@ -132,6 +151,13 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
             id, enabled, base_url, model, timeout_ms, max_candidates, max_results,
             cache_ttl_seconds, upload_recent_events, updated_at
          ) VALUES (1, 0, '', '', 8000, 80, 30, 86400, 0, strftime('%s','now') * 1000)",
+        [],
+    )?;
+
+    conn.execute(
+        "INSERT OR IGNORE INTO recommendation_settings (
+            id, enabled, updated_at
+         ) VALUES (1, 1, strftime('%s','now') * 1000)",
         [],
     )?;
 

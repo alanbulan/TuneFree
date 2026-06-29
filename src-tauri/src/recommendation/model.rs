@@ -140,6 +140,7 @@ pub struct ProfileToken {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmConfigView {
+    pub local_recommendation_enabled: bool,
     pub enabled: bool,
     pub base_url: String,
     pub model: String,
@@ -169,6 +170,7 @@ pub struct LlmConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmConfigInput {
+    pub local_recommendation_enabled: Option<bool>,
     pub enabled: bool,
     pub base_url: String,
     pub model: String,
