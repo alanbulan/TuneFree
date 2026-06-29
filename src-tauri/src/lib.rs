@@ -135,6 +135,13 @@ async fn get_recommendation_job(
 }
 
 #[tauri::command]
+async fn get_latest_recommendation_job(
+    state: State<'_, RecommendationService>,
+) -> Result<Option<RecommendationJob>, String> {
+    Ok(state.get_latest_recommendation_job())
+}
+
+#[tauri::command]
 async fn dismiss_recommendation(
     state: State<'_, RecommendationService>,
     song: RecSong,
@@ -792,6 +799,7 @@ pub fn run() {
             get_similar_songs,
             start_recommendation_job,
             get_recommendation_job,
+            get_latest_recommendation_job,
             dismiss_recommendation,
             save_recommendation_feedback,
             rebuild_recommendation_index,
@@ -817,6 +825,9 @@ pub fn run() {
             let recommendation_service =
                 RecommendationService::new(app.handle().clone(), client.clone())
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            if let Err(e) = recommendation_service.start_startup_recommendation_job() {
+                log::error!("启动智能推荐预热失败: {}", e);
+            }
             app.manage(recommendation_service);
 
             if cfg!(debug_assertions) {

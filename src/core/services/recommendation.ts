@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Song, Playlist } from '../types';
 import { getSongKey } from '../types';
+import { normalizeMusicUrl } from './utils';
 
 const isTauri = (): boolean =>
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -47,6 +48,7 @@ export interface RecommendationFeedback {
 }
 
 export interface LlmConfigView {
+  localRecommendationEnabled: boolean;
   enabled: boolean;
   baseUrl: string;
   model: string;
@@ -62,6 +64,7 @@ export interface LlmConfigView {
 }
 
 export interface LlmConfigInput {
+  localRecommendationEnabled?: boolean;
   enabled: boolean;
   baseUrl: string;
   model: string;
@@ -108,13 +111,17 @@ export interface RecommendationJob {
   updatedAt: number;
 }
 
-const toRecommendedSong = (item: RecommendationItem): Song => ({
-  ...item.song,
-  recommendationReasons: item.reasons,
-  recommendationSource: item.recommendationSource,
-  recommendationRequestId: item.requestId,
-  recommendationScore: item.score,
-});
+const toRecommendedSong = (item: RecommendationItem): Song => {
+  const pic = normalizeMusicUrl(item.song.pic);
+  return {
+    ...item.song,
+    ...(pic ? { pic } : {}),
+    recommendationReasons: item.reasons,
+    recommendationSource: item.recommendationSource,
+    recommendationRequestId: item.requestId,
+    recommendationScore: item.score,
+  };
+};
 
 export const attachRecommendationMeta = (items: RecommendationItem[]): Song[] =>
   items.map(toRecommendedSong);
@@ -156,8 +163,13 @@ export async function startRecommendationJob(
 }
 
 export async function getRecommendationJob(jobId: string): Promise<RecommendationJob | null> {
-  if (!isTauri() || !isLocalRecommendationEnabled()) return null;
+  if (!isTauri()) return null;
   return invoke<RecommendationJob | null>('get_recommendation_job', { jobId });
+}
+
+export async function getLatestRecommendationJob(): Promise<RecommendationJob | null> {
+  if (!isTauri()) return null;
+  return invoke<RecommendationJob | null>('get_latest_recommendation_job');
 }
 
 export async function getSimilarSongs(
@@ -191,6 +203,7 @@ export async function rebuildRecommendationIndex(): Promise<void> {
 export async function getLlmConfig(): Promise<LlmConfigView> {
   if (!isTauri()) {
     return {
+      localRecommendationEnabled: true,
       enabled: false,
       baseUrl: '',
       model: '',

@@ -32,7 +32,10 @@ pub fn config_from_input(input: &LlmConfigInput) -> LlmConfig {
         timeout_ms: input.timeout_ms.unwrap_or(8000).clamp(1000, 60000),
         max_candidates: input.max_candidates.unwrap_or(80).clamp(1, 120),
         max_results: input.max_results.unwrap_or(30).clamp(1, 50),
-        cache_ttl_seconds: input.cache_ttl_seconds.unwrap_or(86400).clamp(60, 7 * 24 * 60 * 60),
+        cache_ttl_seconds: input
+            .cache_ttl_seconds
+            .unwrap_or(86400)
+            .clamp(60, 7 * 24 * 60 * 60),
         upload_recent_events: input.upload_recent_events.unwrap_or(false),
     }
 }
@@ -43,14 +46,19 @@ pub fn view_config(
     last_error: Option<String>,
 ) -> Result<LlmConfigView, String> {
     let config = load_config(conn).map_err(|e| format!("读取模型配置失败: {}", e))?;
+    let local_recommendation_enabled =
+        load_recommendation_enabled(conn).map_err(|e| format!("读取推荐开关失败: {}", e))?;
     let has_api_key = get_api_key(conn)
         .map(|key| !key.trim().is_empty())
         .map_err(|e| format!("读取 API Key 状态失败: {}", e))?;
     let llm_cache_entries = conn
-        .query_row("SELECT COUNT(*) FROM llm_recommendation_cache", [], |row| row.get::<_, i64>(0))
+        .query_row("SELECT COUNT(*) FROM llm_recommendation_cache", [], |row| {
+            row.get::<_, i64>(0)
+        })
         .unwrap_or(0)
         .max(0) as usize;
     Ok(LlmConfigView {
+        local_recommendation_enabled,
         enabled: config.enabled,
         base_url: config.base_url,
         model: config.model,
@@ -68,6 +76,7 @@ pub fn view_config(
 
 pub fn save_config(conn: &Connection, input: LlmConfigInput) -> Result<(), String> {
     let config = config_from_input(&input);
+    let local_recommendation_enabled = input.local_recommendation_enabled;
 
     conn.execute(
         r#"
@@ -100,6 +109,10 @@ pub fn save_config(conn: &Connection, input: LlmConfigInput) -> Result<(), Strin
     )
     .map_err(|e| format!("保存模型配置失败: {}", e))?;
 
+    if let Some(enabled) = local_recommendation_enabled {
+        save_recommendation_enabled(conn, enabled)?;
+    }
+
     if input.clear_api_key.unwrap_or(false) {
         delete_api_key(conn)?;
     } else if let Some(api_key) = input.api_key {
@@ -116,9 +129,34 @@ pub fn save_config(conn: &Connection, input: LlmConfigInput) -> Result<(), Strin
     Ok(())
 }
 
+pub fn load_recommendation_enabled(conn: &Connection) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT enabled FROM recommendation_settings WHERE id = 1",
+        [],
+        |row| Ok(row.get::<_, i64>(0)? != 0),
+    )
+}
+
+fn save_recommendation_enabled(conn: &Connection, enabled: bool) -> Result<(), String> {
+    conn.execute(
+        r#"
+        INSERT INTO recommendation_settings (id, enabled, updated_at)
+        VALUES (1, ?1, ?2)
+        ON CONFLICT(id) DO UPDATE SET
+          enabled = excluded.enabled,
+          updated_at = excluded.updated_at
+        "#,
+        params![if enabled { 1 } else { 0 }, catalog::now_ms()],
+    )
+    .map(|_| ())
+    .map_err(|e| format!("保存推荐开关失败: {}", e))
+}
+
 pub fn get_api_key(conn: &Connection) -> Result<String, String> {
-    conn.query_row("SELECT api_key FROM llm_config WHERE id = 1", [], |row| row.get(0))
-        .map_err(|e| format!("读取 API Key 失败: {}", e))
+    conn.query_row("SELECT api_key FROM llm_config WHERE id = 1", [], |row| {
+        row.get(0)
+    })
+    .map_err(|e| format!("读取 API Key 失败: {}", e))
 }
 
 fn set_api_key(conn: &Connection, api_key: &str) -> Result<(), String> {

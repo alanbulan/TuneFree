@@ -715,6 +715,11 @@ img { display: block; }
 .source-chip.active,
 .segment-button.active,
 .quality-button.active { color: #fff; background: var(--accent); }
+.source-chip-icon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+}
 
 .toplist-grid,
 .playlist-grid,
@@ -2548,7 +2553,41 @@ input, textarea, [contenteditable="true"], .panel-input {
   100% { background-position: 0% 50%; }
 }
 
-/* 首页 AI 推荐音源 Chip - 1px 彩虹边框 + 极简淡雅底色 */
+/* 首页智能推荐 Chip - 彩色流光填充 + 图标 */
+.source-chip.smart-source-chip {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 42, 95, .18) !important;
+  color: #ff2a5f !important;
+  background:
+    linear-gradient(135deg, rgba(255,42,95,.12), rgba(121,40,202,.10) 48%, rgba(0,223,216,.10)),
+    var(--surface-2) !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.34), 0 6px 14px rgba(255,42,95,.08);
+}
+.source-chip.smart-source-chip::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent);
+  transform: translateX(-120%);
+  transition: transform .42s ease;
+}
+.source-chip.smart-source-chip:hover::before,
+.source-chip.smart-source-chip.active::before { transform: translateX(120%); }
+.source-chip.smart-source-chip > * { position: relative; z-index: 1; }
+.source-chip.smart-source-chip .source-chip-icon {
+  color: #ff2a5f;
+  filter: drop-shadow(0 0 6px rgba(255,42,95,.28));
+}
+.source-chip.smart-source-chip.active {
+  color: #fff !important;
+  background:
+    linear-gradient(135deg, #ff2a5f, #a855f7 54%, #06b6d4) !important;
+  box-shadow: 0 8px 18px rgba(168,85,247,.20);
+}
+.source-chip.smart-source-chip.active .source-chip-icon { color: #fff; }
+
+/* 首页语境搜歌 Chip - 1px 彩虹边框 + 极简淡雅底色 */
 .source-chip.ai-source-chip {
   border: 1px solid transparent !important;
   background-image: 
@@ -2566,11 +2605,13 @@ input, textarea, [contenteditable="true"], .panel-input {
   box-shadow: 0 4px 10px rgba(121, 40, 202, 0.08);
 }
 .source-chip.ai-source-chip.active {
-  background-image: 
-    linear-gradient(var(--accent), var(--accent)), 
-    linear-gradient(90deg, #ff2a5f, #7928ca, #00dfd8, #ff2a5f) !important;
+  background-image:
+    linear-gradient(#111827, #111827),
+    linear-gradient(90deg, #00dfd8, #7c3aed, #f59e0b, #00dfd8) !important;
   color: #ffffff !important;
 }
+.source-chip.ai-source-chip .source-chip-icon { color: #7c3aed; }
+.source-chip.ai-source-chip.active .source-chip-icon { color: #00dfd8; }
 
 /* AI 推荐面板容器 - 1.5px 极细流动彩虹边框 + 极简主体底色 */
 .ai-rainbow-flow-border {

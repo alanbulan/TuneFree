@@ -8,7 +8,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{
     catalog, db, discovery, events, llm, llm_config, migration,
@@ -23,7 +23,7 @@ use super::{
     rank, recall, rerank,
 };
 
-const RECOMMENDATION_JOB_TTL_MS: i64 = 10 * 60 * 1000;
+const RECOMMENDATION_JOB_TTL_MS: i64 = 2 * 60 * 60 * 1000;
 const DISCOVERY_QUERY_LIMIT: usize = 6;
 const DISCOVERY_RESULTS_PER_SOURCE: usize = 4;
 const DISCOVERY_CANDIDATE_LIMIT: usize = 48;
@@ -128,6 +128,19 @@ impl RecommendationService {
         query: RecommendationQuery,
     ) -> Result<RecommendationJob, String> {
         self.prune_recommendation_jobs();
+        if !self.is_recommendation_enabled() {
+            return Ok(RecommendationJob {
+                job_id: new_job_id(),
+                status: RecommendationJobStatus::Done,
+                stage: RecommendationJobStage::Done,
+                detail: "智能推荐未启用".to_string(),
+                items: Vec::new(),
+                error: None,
+                updated_at: catalog::now_ms(),
+            });
+        }
+        let context = recommendation_context(&query);
+        let persisted_cloud_items = self.latest_cloud_recommendation_items(&context);
         let (local, request_id) = {
             let conn = self.conn.lock();
             let items = self.local_recommendations(&conn, &query, "local")?;
@@ -138,6 +151,19 @@ impl RecommendationService {
             (items, request_id)
         };
         let can_use_cloud = self.has_cloud_recommendation_config();
+        let llm_candidate_window = if can_use_cloud {
+            let conn = self.conn.lock();
+            llm_config::load_config(&conn)
+                .map(|config| config.max_candidates)
+                .unwrap_or(MERGED_CANDIDATE_LIMIT)
+        } else {
+            0
+        };
+        let visible_items = if can_use_cloud {
+            persisted_cloud_items.clone().unwrap_or_default()
+        } else {
+            local.clone()
+        };
         let job_id = new_job_id();
         let job = RecommendationJob {
             job_id: job_id.clone(),
@@ -153,7 +179,9 @@ impl RecommendationService {
             } else {
                 RecommendationJobStage::LocalOnly
             },
-            detail: if can_use_cloud && local.is_empty() {
+            detail: if can_use_cloud && !visible_items.is_empty() {
+                "已加载最近一次云端智能推荐，后台正在刷新".to_string()
+            } else if can_use_cloud && local.is_empty() {
                 "本地候选为空，云端正在生成发现方向".to_string()
             } else if can_use_cloud {
                 "本地候选已返回，云端正在生成发现方向".to_string()
@@ -162,7 +190,7 @@ impl RecommendationService {
             } else {
                 "云端发现与重排未启用，已返回本地推荐".to_string()
             },
-            items: local.clone(),
+            items: visible_items.clone(),
             error: None,
             updated_at: catalog::now_ms(),
         };
@@ -179,6 +207,7 @@ impl RecommendationService {
         let client = self.client.clone();
         let jobs = Arc::clone(&self.recommendation_jobs);
         let last_llm_error = Arc::clone(&self.last_llm_error);
+        let fallback_items = visible_items;
         tauri::async_runtime::spawn(async move {
             update_recommendation_job(
                 &jobs,
@@ -225,7 +254,12 @@ impl RecommendationService {
                 .await
             };
 
-            let merged = merge_discovery_candidates(local.clone(), discovered, &request_id);
+            let merged = merge_discovery_candidates(
+                local.clone(),
+                discovered,
+                &request_id,
+                llm_candidate_window,
+            );
             if merged.is_empty() {
                 let error =
                     plan_error.unwrap_or_else(|| "平台搜索未找到可验证的新歌候选".to_string());
@@ -235,8 +269,8 @@ impl RecommendationService {
                     &job_id,
                     RecommendationJobStatus::Error,
                     RecommendationJobStage::Error,
-                    "没有可用于重排的真实候选",
-                    Some(Vec::new()),
+                    "没有可用于重排的真实候选，保留最近一次云端结果",
+                    Some(fallback_items.clone()),
                     Some(error),
                 );
                 return;
@@ -262,30 +296,73 @@ impl RecommendationService {
             .await;
             if let Some(error) = result.error.clone() {
                 *last_llm_error.lock() = Some(error.clone());
+                let items = if fallback_items.is_empty() {
+                    result.items
+                } else {
+                    fallback_items
+                };
                 update_recommendation_job(
                     &jobs,
                     &job_id,
                     RecommendationJobStatus::Error,
                     RecommendationJobStage::Error,
-                    "云端重排失败，保留已验证候选",
-                    Some(result.items),
+                    "云端重排失败，保留最近一次可用结果",
+                    Some(items),
                     Some(error),
                 );
                 return;
             }
 
+            let final_items = result.items;
+            {
+                let guard = conn.lock();
+                if let Err(e) = save_cloud_recommendation_result(
+                    &guard,
+                    &context,
+                    &job_id,
+                    "已完成本地召回、新歌发现和云端重排",
+                    &final_items,
+                ) {
+                    *last_llm_error.lock() = Some(e);
+                }
+            }
             update_recommendation_job(
                 &jobs,
                 &job_id,
                 RecommendationJobStatus::Done,
                 RecommendationJobStage::Done,
                 "已完成本地召回、新歌发现和云端重排",
-                Some(result.items),
+                Some(final_items),
                 None,
             );
         });
 
         Ok(job)
+    }
+
+    pub fn start_startup_recommendation_job(&self) -> Result<Option<RecommendationJob>, String> {
+        self.prune_recommendation_jobs();
+        if !self.is_recommendation_enabled() {
+            return Ok(None);
+        }
+        if let Some(job) = self.latest_recommendation_job() {
+            return Ok(Some(job));
+        }
+        self.start_recommendation_job(RecommendationQuery {
+            limit: Some(30),
+            seed: None,
+            context: Some("home".to_string()),
+        })
+        .map(Some)
+    }
+
+    pub fn get_latest_recommendation_job(&self) -> Option<RecommendationJob> {
+        self.prune_recommendation_jobs();
+        if !self.is_recommendation_enabled() {
+            return None;
+        }
+        self.latest_recommendation_job()
+            .or_else(|| self.latest_cloud_recommendation_job("home"))
     }
 
     pub fn get_recommendation_job(&self, job_id: String) -> Option<RecommendationJob> {
@@ -474,6 +551,34 @@ impl RecommendationService {
             .unwrap_or(false)
     }
 
+    fn is_recommendation_enabled(&self) -> bool {
+        let conn = self.conn.lock();
+        llm_config::load_recommendation_enabled(&conn).unwrap_or(true)
+    }
+
+    fn latest_recommendation_job(&self) -> Option<RecommendationJob> {
+        self.recommendation_jobs
+            .lock()
+            .values()
+            .cloned()
+            .max_by_key(|job| job.updated_at)
+    }
+
+    fn latest_cloud_recommendation_items(&self, context: &str) -> Option<Vec<RecommendationItem>> {
+        let conn = self.conn.lock();
+        load_latest_cloud_recommendation_job(&conn, context)
+            .ok()
+            .flatten()
+            .map(|job| job.items)
+    }
+
+    fn latest_cloud_recommendation_job(&self, context: &str) -> Option<RecommendationJob> {
+        let conn = self.conn.lock();
+        load_latest_cloud_recommendation_job(&conn, context)
+            .ok()
+            .flatten()
+    }
+
     fn prune_recommendation_jobs(&self) {
         let now = catalog::now_ms();
         self.recommendation_jobs.lock().retain(|_, job| {
@@ -520,6 +625,74 @@ fn new_job_id() -> String {
     )
 }
 
+fn recommendation_context(query: &RecommendationQuery) -> String {
+    query
+        .context
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(if query.seed.is_some() {
+            "similar"
+        } else {
+            "home"
+        })
+        .to_string()
+}
+
+fn load_latest_cloud_recommendation_job(
+    conn: &Connection,
+    context: &str,
+) -> rusqlite::Result<Option<RecommendationJob>> {
+    conn.query_row(
+        r#"
+        SELECT job_id, detail, items_json, created_at
+        FROM recommendation_result_snapshots
+        WHERE context = ?1 AND result_source = 'cloud'
+        ORDER BY created_at DESC
+        LIMIT 1
+        "#,
+        params![context],
+        |row| {
+            let job_id: String = row.get(0)?;
+            let detail: String = row.get(1)?;
+            let items_json: String = row.get(2)?;
+            let updated_at: i64 = row.get(3)?;
+            let items =
+                serde_json::from_str::<Vec<RecommendationItem>>(&items_json).unwrap_or_default();
+            Ok(RecommendationJob {
+                job_id,
+                status: RecommendationJobStatus::Done,
+                stage: RecommendationJobStage::Done,
+                detail,
+                items,
+                error: None,
+                updated_at,
+            })
+        },
+    )
+    .optional()
+}
+
+fn save_cloud_recommendation_result(
+    conn: &Connection,
+    context: &str,
+    job_id: &str,
+    detail: &str,
+    items: &[RecommendationItem],
+) -> Result<(), String> {
+    let items_json =
+        serde_json::to_string(items).map_err(|e| format!("序列化云端推荐结果失败: {}", e))?;
+    conn.execute(
+        r#"
+        INSERT INTO recommendation_result_snapshots (
+          context, result_source, job_id, detail, items_json, created_at
+        ) VALUES (?1, 'cloud', ?2, ?3, ?4, ?5)
+        "#,
+        params![context, job_id, detail, items_json, catalog::now_ms()],
+    )
+    .map(|_| ())
+    .map_err(|e| format!("保存云端推荐结果失败: {}", e))
+}
+
 fn update_recommendation_job(
     jobs: &Arc<Mutex<HashMap<String, RecommendationJob>>>,
     job_id: &str,
@@ -545,12 +718,41 @@ fn merge_discovery_candidates(
     local_items: Vec<RecommendationItem>,
     discovered: Vec<discovery::DiscoveredSong>,
     request_id: &str,
+    llm_candidate_window: usize,
 ) -> Vec<RecommendationItem> {
     let mut merged = Vec::new();
     let mut seen_track_keys = std::collections::HashSet::new();
     let mut seen_identities = std::collections::HashSet::new();
 
-    for item in local_items.iter().take(LOCAL_HEAD_CANDIDATE_LIMIT) {
+    let discovery_items: Vec<RecommendationItem> = discovered
+        .into_iter()
+        .map(|item| {
+            let reason = discovery::discovery_reason(&item.reason);
+            RecommendationItem {
+                song: item.song,
+                score: 0.45,
+                reasons: vec![reason, "平台搜索验证".to_string()],
+                recommendation_source: "discovery".to_string(),
+                request_id: request_id.to_string(),
+            }
+        })
+        .collect();
+    let candidate_window = llm_candidate_window.max(1).min(MERGED_CANDIDATE_LIMIT);
+    let discovery_window_target = if discovery_items.is_empty() {
+        0
+    } else {
+        (candidate_window / 2).max(1).min(discovery_items.len())
+    };
+    let local_anchor_limit = if discovery_window_target == 0 {
+        LOCAL_HEAD_CANDIDATE_LIMIT.min(candidate_window)
+    } else {
+        candidate_window
+            .saturating_sub(discovery_window_target)
+            .min(LOCAL_HEAD_CANDIDATE_LIMIT)
+    };
+
+    // Keep verified discovery candidates inside the LLM rerank window even when max_candidates is small.
+    for item in local_items.iter().take(local_anchor_limit) {
         push_candidate(
             &mut merged,
             &mut seen_track_keys,
@@ -559,20 +761,40 @@ fn merge_discovery_candidates(
         );
     }
 
-    for item in discovered {
-        let reason = discovery::discovery_reason(&item.reason);
-        let candidate = RecommendationItem {
-            song: item.song,
-            score: 0.45,
-            reasons: vec![reason, "平台搜索验证".to_string()],
-            recommendation_source: "discovery".to_string(),
-            request_id: request_id.to_string(),
-        };
+    for item in discovery_items.iter().take(discovery_window_target) {
         push_candidate(
             &mut merged,
             &mut seen_track_keys,
             &mut seen_identities,
-            candidate,
+            item.clone(),
+        );
+        if merged.len() >= MERGED_CANDIDATE_LIMIT {
+            return merged;
+        }
+    }
+
+    for item in local_items
+        .iter()
+        .skip(local_anchor_limit)
+        .take(LOCAL_HEAD_CANDIDATE_LIMIT.saturating_sub(local_anchor_limit))
+    {
+        push_candidate(
+            &mut merged,
+            &mut seen_track_keys,
+            &mut seen_identities,
+            item.clone(),
+        );
+        if merged.len() >= MERGED_CANDIDATE_LIMIT {
+            return merged;
+        }
+    }
+
+    for item in discovery_items.into_iter().skip(discovery_window_target) {
+        push_candidate(
+            &mut merged,
+            &mut seen_track_keys,
+            &mut seen_identities,
+            item,
         );
         if merged.len() >= MERGED_CANDIDATE_LIMIT {
             return merged;
@@ -629,6 +851,73 @@ fn update_playlist_cooccurrence(conn: &Connection, songs: &[RecSong]) -> rusqlit
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::Value;
+
+    use super::*;
+
+    fn recommendation_item(source: &str, id: &str, name: &str) -> RecommendationItem {
+        RecommendationItem {
+            song: RecSong {
+                id: Value::String(id.to_string()),
+                source: source.to_string(),
+                name: name.to_string(),
+                artist: "测试歌手".to_string(),
+                album: "测试专辑".to_string(),
+                pic: None,
+                pic_id: None,
+                url_id: None,
+                lyric_id: None,
+                types: None,
+            },
+            score: 0.8,
+            reasons: vec!["本地候选".to_string()],
+            recommendation_source: "local".to_string(),
+            request_id: "req-test".to_string(),
+        }
+    }
+
+    fn discovered_song(id: &str, name: &str) -> discovery::DiscoveredSong {
+        discovery::DiscoveredSong {
+            song: RecSong {
+                id: Value::String(id.to_string()),
+                source: "netease".to_string(),
+                name: name.to_string(),
+                artist: "新歌手".to_string(),
+                album: "新专辑".to_string(),
+                pic: None,
+                pic_id: None,
+                url_id: None,
+                lyric_id: None,
+                types: None,
+            },
+            reason: "云端发现".to_string(),
+        }
+    }
+
+    #[test]
+    fn merge_keeps_discovery_candidates_inside_llm_window() {
+        let local_items: Vec<_> = (0..20)
+            .map(|index| {
+                recommendation_item("local", &index.to_string(), &format!("本地歌{index}"))
+            })
+            .collect();
+        let discovered: Vec<_> = (0..5)
+            .map(|index| discovered_song(&format!("new-{index}"), &format!("新歌{index}")))
+            .collect();
+
+        let merged = merge_discovery_candidates(local_items, discovered, "req-test", 12);
+        let first_window = merged.iter().take(12).collect::<Vec<_>>();
+        let discovery_count = first_window
+            .iter()
+            .filter(|item| item.recommendation_source == "discovery")
+            .count();
+
+        assert_eq!(discovery_count, 5);
+    }
 }
 
 fn insert_cooccurrence(

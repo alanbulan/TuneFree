@@ -33,6 +33,7 @@ const closeBehaviorOptions: Array<{ label: string; value: CloseBehavior; hint: s
 ];
 
 const defaultLlmConfig: LlmConfigView = {
+  localRecommendationEnabled: true,
   enabled: false,
   baseUrl: '',
   model: '',
@@ -99,7 +100,15 @@ export default function SettingsView() {
 
   const refreshLlmConfig = async () => {
     try {
-      setLlmConfig(await getLlmConfig());
+      const config = await getLlmConfig();
+      setLlmConfig(config);
+      setLocalRecommendationEnabled(config.localRecommendationEnabled);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          'tunefree_local_recommendation_enabled',
+          config.localRecommendationEnabled ? 'true' : 'false',
+        );
+      }
     } catch {
       setLlmConfig(defaultLlmConfig);
     }
@@ -223,6 +232,7 @@ export default function SettingsView() {
     try {
       localStorage.setItem('tunefree_local_recommendation_enabled', localRecommendationEnabled ? 'true' : 'false');
       await saveLlmConfig({
+        localRecommendationEnabled,
         enabled: llmConfig.enabled,
         baseUrl: llmConfig.baseUrl,
         model: llmConfig.model,
@@ -250,6 +260,7 @@ export default function SettingsView() {
     setTestingLlm(true);
     try {
       const result = await testLlmProvider({
+        localRecommendationEnabled,
         enabled: llmConfig.enabled,
         baseUrl: llmConfig.baseUrl,
         model: llmConfig.model,

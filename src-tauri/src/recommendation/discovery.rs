@@ -264,7 +264,7 @@ async fn search_kuwo(client: &Client, keyword: &str, limit: usize) -> Vec<RecSon
         Ok(value) => value,
         Err(_) => return Vec::new(),
     };
-    value
+    let mut songs: Vec<RecSong> = value
         .get("abslist")
         .and_then(Value::as_array)
         .map(|items| {
@@ -304,7 +304,42 @@ async fn search_kuwo(client: &Client, keyword: &str, limit: usize) -> Vec<RecSon
                 })
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+
+    for song in &mut songs {
+        if song.pic.is_none() {
+            song.pic = fetch_kuwo_cover(client, value_id(&song.id)).await;
+        }
+    }
+
+    songs
+}
+
+async fn fetch_kuwo_cover(client: &Client, song_id: String) -> Option<String> {
+    if song_id.trim().is_empty() {
+        return None;
+    }
+    let params = [
+        ("corp", "kuwo".to_string()),
+        ("type", "rid_pic".to_string()),
+        ("pictype", "500".to_string()),
+        ("size", "500".to_string()),
+        ("rid", song_id),
+    ];
+    let response = client
+        .get("http://artistpicserver.kuwo.cn/pic.web")
+        .query(&params)
+        .header("User-Agent", desktop_user_agent())
+        .header("Referer", "http://kuwo.cn/")
+        .send()
+        .await
+        .ok()?;
+    let text = response.text().await.ok()?.trim().to_string();
+    if text.starts_with("http") {
+        Some(text)
+    } else {
+        None
+    }
 }
 
 fn join_names(items: &[Value]) -> String {

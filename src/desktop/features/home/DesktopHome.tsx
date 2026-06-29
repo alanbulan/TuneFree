@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { BrainCircuit, Sparkles, WandSparkles } from 'lucide-react';
 import { ErrorIcon, MusicIcon, PlayIcon } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
@@ -8,11 +8,11 @@ import { getAIRecommendedSongs } from '../../../core/services/gdStudio';
 import {
   attachRecommendationMeta,
   dismissRecommendation,
+  getLatestRecommendationJob,
   getRecommendationJob,
   logRecommendationEvent,
   recommendationFeedbackFromSong,
   saveRecommendationFeedback,
-  startRecommendationJob,
 } from '../../../core/services/recommendation';
 import { updateRecommendationTaskProgress } from '../../../core/services/recommendationTaskProgress';
 import type { Song, TopList } from '../../../core/types';
@@ -26,7 +26,7 @@ const topListCache = new Map<string, { lists: TopList[]; ts: number }>();
 const detailCache = new Map<string, { songs: Song[]; ts: number }>();
 const cacheTtl = 3 * 60 * 1000;
 const recommendationJobPollMs = 1200;
-const recommendationJobMaxPolls = 25;
+const recommendationJobMaxPolls = 50;
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
 interface DesktopHomeProps {
@@ -55,7 +55,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
   const isRecommendationSource = activeSource === 'recommendation';
 
   const activeSourceLabel = useMemo(() => {
-    if (activeSource === 'recommendation') return '推荐';
+    if (activeSource === 'recommendation') return '智能推荐';
     if (activeSource === 'embeat') return '语境搜歌';
     return getMusicSourceLabel(activeSource);
   }, [activeSource]);
@@ -96,7 +96,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
     const startedAt = Date.now();
     setTopLists([]);
     setSelectedTopListId(null);
-    setSelectedTopListName('为你推荐');
+    setSelectedTopListName('智能推荐');
     setError('');
     setLoadingLists(false);
     setLoadingSongs(true);
@@ -104,33 +104,33 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       local: {
         label: '本地 worker',
         status: 'running',
-        detail: '正在召回和排序推荐候选',
+        detail: '正在读取启动预热候选',
         updatedAt: startedAt,
       },
       cloud: {
         label: '云端 worker',
         status: 'idle',
-        detail: '等待本地候选',
+        detail: '等待启动预热任务状态',
         updatedAt: startedAt,
       },
     });
 
     let keepLoadingForCloud = false;
     try {
-      const job = await startRecommendationJob({ limit: 30, context: 'home' });
+      const job = await getLatestRecommendationJob();
       if (requestId !== detailRequestIdRef.current) return;
       if (!job) {
         setFeaturedSongs([]);
-        setError('推荐仅支持桌面端本地推荐数据库。');
+        setError('智能推荐任务尚未启动，请在设置中启用推荐后重启应用。');
         updateRecommendationTaskProgress({
           local: {
-            status: 'error',
-            detail: '桌面端推荐数据库不可用',
+            status: 'idle',
+            detail: '未发现启动预热任务',
             updatedAt: Date.now(),
           },
           cloud: {
-            status: 'disabled',
-            detail: '当前环境不支持云端任务',
+            status: 'idle',
+            detail: '未发现启动预热任务',
             updatedAt: Date.now(),
           },
         });
@@ -139,12 +139,24 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
 
       const hasInitialItems = job.items.length > 0;
       const isCloudRunning = job.status === 'running';
-      keepLoadingForCloud = isCloudRunning && !hasInitialItems;
-      setFeaturedSongs(attachRecommendationMeta(job.items));
+      const hasCloudItems = job.items.some((item) => item.recommendationSource === 'hybrid');
+      const shouldShowImmediateItems =
+        job.status === 'done' ||
+        job.status === 'error' ||
+        job.stage === 'local_only' ||
+        (isCloudRunning && hasCloudItems);
+      keepLoadingForCloud = isCloudRunning && !hasCloudItems;
+      setFeaturedSongs(shouldShowImmediateItems ? attachRecommendationMeta(job.items) : []);
       updateRecommendationTaskProgress({
         local: {
           status: 'done',
-          detail: hasInitialItems ? `已生成 ${job.items.length} 首候选` : '本地候选为空，等待云端发现',
+          detail: hasCloudItems
+            ? `已读取 ${job.items.length} 首最近一次云端结果`
+            : hasInitialItems
+            ? `已生成 ${job.items.length} 首候选`
+            : isCloudRunning
+              ? '本地候选为空，等待云端发现'
+              : job.detail,
           updatedAt: Date.now(),
         },
         cloud: {
@@ -200,6 +212,9 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
             }
           }
           setLoadingSongs(false);
+          if (job.items.length > 0) {
+            setFeaturedSongs(attachRecommendationMeta(job.items));
+          }
           updateRecommendationTaskProgress({
             cloud: {
               status: 'error',
@@ -211,6 +226,9 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
           if (requestId !== detailRequestIdRef.current) return;
           console.error(err);
           setLoadingSongs(false);
+          if (job.items.length > 0) {
+            setFeaturedSongs(attachRecommendationMeta(job.items));
+          }
           updateRecommendationTaskProgress({
             cloud: {
               status: 'error',
@@ -388,15 +406,17 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
             { key: 'netease', label: getMusicSourceLabel('netease') },
             { key: 'qq', label: getMusicSourceLabel('qq') },
             { key: 'kuwo', label: getMusicSourceLabel('kuwo') },
-            { key: 'recommendation', label: '推荐' },
+            { key: 'recommendation', label: '智能推荐' },
             { key: 'embeat', label: '语境搜歌' },
           ].map((source) => (
             <button
               type="button"
               key={source.key}
-              className={`source-chip ${activeSource === source.key ? 'active' : ''} ${source.key === 'embeat' ? 'ai-source-chip' : ''}`}
+              className={`source-chip ${activeSource === source.key ? 'active' : ''} ${source.key === 'recommendation' ? 'smart-source-chip' : ''} ${source.key === 'embeat' ? 'ai-source-chip' : ''}`}
               onClick={() => setActiveSource(source.key)}
             >
+              {source.key === 'recommendation' && <BrainCircuit className="source-chip-icon" size={13} />}
+              {source.key === 'embeat' && <WandSparkles className="source-chip-icon" size={13} />}
               <span>{source.label}</span>
             </button>
           ))}
@@ -560,7 +580,7 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
           {activeSource === 'embeat'
             ? (lastAiSearch ? `“${lastAiSearch}” 的语境歌单` : '语境搜歌歌单')
             : activeSource === 'recommendation'
-              ? '为你推荐'
+              ? '智能推荐'
             : (selectedTopListName ? `${selectedTopListName} · 热歌` : '榜单热歌')
           }
         </h2>
@@ -570,12 +590,12 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       </div>
 
       {loadingSongs && featuredSongs.length === 0 ? (
-        <SongTable songs={[]} currentSong={currentSong} isPlaying={isPlaying} isLoading skeletonRows={7} emptyText={isRecommendationSource ? '正在生成推荐...' : '正在分析语境...'} onPlay={handleRecommendationPlay} onFavorite={handleFavorite} isFavorite={(song) => isFavorite(song.id, song.source)} />
+        <SongTable songs={[]} currentSong={currentSong} isPlaying={isPlaying} isLoading skeletonRows={7} emptyText={isRecommendationSource ? '正在读取智能推荐...' : '正在分析语境...'} onPlay={handleRecommendationPlay} onFavorite={handleFavorite} isFavorite={(song) => isFavorite(song.id, song.source)} />
       ) : featuredSongs.length === 0 ? (
         <div className="empty-state">
           <p>
             {isRecommendationSource
-              ? '多播放或收藏几首歌后，推荐会更准确。'
+              ? '智能推荐还没有准备好，请多播放或收藏几首歌，或确认设置中已启用推荐。'
               : activeSource === 'embeat'
               ? '请在上方输入想听的内容，或者点击提示词开启语境音乐流。'
               : '选择上方任意榜单后，这里会加载完整热歌列表。'
