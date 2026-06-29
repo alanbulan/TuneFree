@@ -211,28 +211,32 @@ impl RecommendationService {
         input: Option<LlmConfigInput>,
     ) -> Result<LlmProviderTestResult, String> {
         let (config, api_key) = {
+            let input_ref = input.as_ref();
             let config = if let Some(input) = input.clone() {
                 llm_config::config_from_input(&input)
             } else {
                 let conn = self.conn.lock();
                 llm_config::load_config(&conn).map_err(|e| format!("读取模型配置失败: {}", e))?
             };
-            let api_key = if input
-                .as_ref()
+            let api_key = if input_ref
                 .and_then(|value| value.clear_api_key)
                 .unwrap_or(false)
             {
-                input
-                    .and_then(|value| value.api_key)
-                    .map(|value| value.trim().to_string())
+                input_ref
+                    .and_then(|value| value.api_key.as_deref())
+                    .map(str::trim)
                     .filter(|value| !value.is_empty())
-                    .unwrap_or_default()
+                    .unwrap_or("")
+                    .to_string()
             } else {
-                input
-                    .and_then(|value| value.api_key)
-                    .map(|value| value.trim().to_string())
+                match input_ref
+                    .and_then(|value| value.api_key.as_deref())
+                    .map(str::trim)
                     .filter(|value| !value.is_empty())
-                    .unwrap_or_else(|| llm_config::get_api_key().unwrap_or_default())
+                {
+                    Some(api_key) => api_key.to_string(),
+                    None => llm_config::get_api_key()?,
+                }
             };
             (config, api_key)
         };

@@ -2046,16 +2046,19 @@ img { display: block; }
   to { transform: scale(1); opacity: 1; }
 }
 
-/* 交互控件禁用文本选中，提升原生桌面软件质感 */
+/* 桌面内容禁用文本选中和长按复制菜单 */
+html, body, .desktop-app, .desktop-shell,
 button, .nav-item, .sidebar, .transport-bar, .window-controls, .window-bar {
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
-/* 内容区域允许选择文本 */
-body, .lyric-text, .song-info, .about-content, input, textarea, [contenteditable="true"], .panel-input {
+/* 输入类控件保留编辑能力 */
+input, textarea, [contenteditable="true"], .panel-input {
   user-select: text;
   -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 /* 统一关于页面里的版本与检查更新按钮的高度与对齐 */
