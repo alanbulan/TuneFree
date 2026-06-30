@@ -533,7 +533,7 @@ fn resolve_local_playback(
             e.song
                 .get("source")
                 .and_then(|v| v.as_str())
-                .map_or(false, |s| s == source)
+                .is_some_and(|s| s == source)
         })
         .collect();
 
@@ -824,7 +824,7 @@ pub fn run() {
             app.handle().plugin(tauri_plugin_dialog::init())?;
             let recommendation_service =
                 RecommendationService::new(app.handle().clone(), client.clone())
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    .map_err(std::io::Error::other)?;
             if let Err(e) = recommendation_service.start_startup_recommendation_job() {
                 log::error!("启动智能推荐预热失败: {}", e);
             }

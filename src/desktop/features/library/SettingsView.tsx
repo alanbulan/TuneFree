@@ -17,6 +17,7 @@ import {
   testLlmProvider,
   type LlmConfigView,
 } from '../../../core/services/recommendation';
+import { useDesktopDialog } from '../../components/DialogHost';
 import { useToast } from '../../components/ToastHost';
 import CustomSelect from './components/CustomSelect';
 import ColorPalette from './components/ColorPalette';
@@ -76,6 +77,7 @@ export default function SettingsView() {
     setLockDesktopLyric,
   } = useTheme();
   const { corsProxy, setCorsProxy, favorites, playlists, exportData, parseImportData, applyImportData, restoreData } = useLibrary();
+  const { confirmDialog } = useDesktopDialog();
   const { showToast } = useToast();
 
   const [tempProxy, setTempProxy] = useState(corsProxy);
@@ -202,13 +204,17 @@ export default function SettingsView() {
     reader.readAsText(file);
   };
 
-  const applyPendingImport = (mode: LibraryImportMode) => {
+  const applyPendingImport = async (mode: LibraryImportMode) => {
     if (!pendingImport) return;
-    const confirmed = window.confirm(
-      mode === 'replace'
-        ? '覆盖导入会替换当前收藏和歌单，是否继续？'
-        : '合并导入会把文件内容加入当前资料库，是否继续？',
-    );
+    const isReplace = mode === 'replace';
+    const confirmed = await confirmDialog({
+      title: isReplace ? '覆盖导入资料库' : '合并导入资料库',
+      message: isReplace
+        ? '覆盖导入会替换当前收藏和歌单，操作后可通过提示撤销。是否继续？'
+        : '合并导入会把文件内容加入当前资料库，重复歌曲会按现有规则处理。是否继续？',
+      confirmLabel: isReplace ? '覆盖导入' : '合并导入',
+      tone: isReplace ? 'danger' : 'default',
+    });
     if (!confirmed) return;
 
     const result = applyImportData(pendingImport, mode);
@@ -302,7 +308,13 @@ export default function SettingsView() {
   };
 
   const handleClearRecommendationData = async () => {
-    if (!window.confirm('清空推荐数据会删除推荐事件、画像、缓存和反馈，不会删除收藏、歌单或下载文件。是否继续？')) return;
+    const confirmed = await confirmDialog({
+      title: '清空推荐数据',
+      message: '这会删除推荐事件、画像、缓存、历史云端结果和反馈，不会删除收藏、歌单或下载文件。是否继续？',
+      confirmLabel: '清空',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
     setMaintainingRecommendation(true);
     try {
       await clearRecommendationData();
@@ -743,8 +755,8 @@ export default function SettingsView() {
               <p>当前：{favorites.length} 首收藏 / {playlists.length} 个歌单</p>
               <p>文件：{pendingImport.favoriteCount} 首收藏 / {pendingImport.playlistCount} 个歌单 / {pendingImport.playlistSongCount} 首歌单歌曲</p>
               <div className="panel-actions backup-actions">
-                <button type="button" className="primary-button" onClick={() => applyPendingImport('replace')}>覆盖导入</button>
-                <button type="button" className="soft-button" onClick={() => applyPendingImport('merge')}>合并导入</button>
+                <button type="button" className="primary-button" onClick={() => void applyPendingImport('replace')}>覆盖导入</button>
+                <button type="button" className="soft-button" onClick={() => void applyPendingImport('merge')}>合并导入</button>
                 <button type="button" className="soft-button" onClick={() => setPendingImport(null)}>取消</button>
               </div>
             </div>

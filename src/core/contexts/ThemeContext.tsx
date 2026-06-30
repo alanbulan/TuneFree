@@ -35,6 +35,40 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+type DesktopLyricBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+const readDesktopLyricBounds = (storage: Storage): DesktopLyricBounds | null => {
+  try {
+    const raw = storage.getItem(THEME_STORAGE_KEYS.desktopLyricBounds);
+    if (!raw) return null;
+
+    const bounds = JSON.parse(raw) as Partial<DesktopLyricBounds>;
+    const valid =
+      Number.isFinite(bounds.x) &&
+      Number.isFinite(bounds.y) &&
+      Number.isFinite(bounds.width) &&
+      Number.isFinite(bounds.height) &&
+      Number(bounds.width) >= 400 &&
+      Number(bounds.height) >= 200;
+
+    if (!valid) return null;
+
+    return {
+      x: Number(bounds.x),
+      y: Number(bounds.y),
+      width: Number(bounds.width),
+      height: Number(bounds.height),
+    };
+  } catch {
+    return null;
+  }
+};
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [themeMode, setThemeModeState] = useState<ThemeMode>(DEFAULT_THEME_PREFERENCES.themeMode);
   const [themeColor, setThemeColorState] = useState<ThemeColor>(DEFAULT_THEME_PREFERENCES.themeColor);
@@ -144,6 +178,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
         if (active && lyricWindow) {
           if (showDesktopLyric) {
+            const bounds = readDesktopLyricBounds(localStorage);
+            if (bounds) {
+              const { PhysicalPosition, PhysicalSize } = await import('@tauri-apps/api/dpi');
+              await lyricWindow.setSize(new PhysicalSize(bounds.width, bounds.height));
+              await lyricWindow.setPosition(new PhysicalPosition(bounds.x, bounds.y));
+            }
             await lyricWindow.show();
             // 应用穿透属性
             await lyricWindow.setIgnoreCursorEvents(lockDesktopLyric);

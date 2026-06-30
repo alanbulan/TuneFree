@@ -173,7 +173,7 @@ flowchart LR
 | OpenAI 兼容调用 | `src-tauri/src/recommendation/provider.rs` | 调用 `/chat/completions`，兼容 `base_url` 是否包含 `/v1` |
 | Prompt | `src-tauri/src/recommendation/prompt.rs` | 构造发现关键词 prompt 和候选重排 prompt |
 | LLM 解析 | `src-tauri/src/recommendation/llm.rs` | 解析发现计划、解析重排结果、校验候选 `track_key` |
-| 平台发现 | `src-tauri/src/recommendation/discovery.rs` | 按关键词搜索网易云、QQ、酷我；酷我补封面；返回真实 `RecSong` |
+| 平台发现 | `src-tauri/src/recommendation/discovery.rs` | 并发按关键词搜索网易云、QQ、酷我；酷我补封面；返回真实 `RecSong` |
 | 隐私处理 | `src-tauri/src/recommendation/privacy.rs` | 截断理由、清理 base URL，避免日志和 UI 暴露敏感内容 |
 
 ### IPC 与前端入口
@@ -192,7 +192,7 @@ flowchart LR
 | `get_llm_config` | `getLlmConfig` | 设置页读取模型配置、推荐开关、缓存状态 |
 | `save_llm_config` | `saveLlmConfig` | 设置页保存推荐开关、模型、API Key、超时和缓存配置 |
 | `test_llm_provider` | `testLlmProvider` | 测试 OpenAI 兼容模型连接 |
-| `clear_recommendation_data` | `clearRecommendationData` | 清空推荐画像、事件、缓存和反馈 |
+| `clear_recommendation_data` | `clearRecommendationData` | 清空推荐画像、事件、缓存、历史云端结果和反馈 |
 
 ### SQLite 表清单
 
@@ -399,7 +399,7 @@ sequenceDiagram
 *   API Key 只保存在本地 SQLite 的配置表中，不写入日志、不提交仓库、不返回给普通前端状态。
 *   云端请求只上传候选歌曲元数据、画像摘要和场景，不上传音频文件、下载路径、完整播放历史或歌词全文。
 *   `llm_calls` 只记录模型名、状态、延迟、候选数量、结果数量和错误摘要。
-*   清空推荐数据只删除推荐事件、画像、缓存和反馈，不删除收藏、歌单和下载文件。
+*   清空推荐数据只删除推荐事件、画像、缓存、历史云端结果和反馈，不删除收藏、歌单和下载文件。
 
 ## 目录结构
 

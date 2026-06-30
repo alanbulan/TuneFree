@@ -89,13 +89,15 @@ pub async fn build_discovery_plan(
                 let error = e.to_string();
                 log_llm_call(
                     &guard,
-                    request_id,
-                    "",
-                    "discovery_config_error",
-                    None,
-                    local_items.len(),
-                    0,
-                    Some(&error),
+                    LlmCallLog {
+                        request_id,
+                        model: "",
+                        status: "discovery_config_error",
+                        latency_ms: None,
+                        candidate_count: local_items.len(),
+                        result_count: 0,
+                        error_code: Some(&error),
+                    },
                 );
                 return DiscoveryPlanResult {
                     queries: Vec::new(),
@@ -122,13 +124,15 @@ pub async fn build_discovery_plan(
             Err(e) => {
                 log_llm_call(
                     &guard,
-                    request_id,
-                    &config.model,
-                    "discovery_key_error",
-                    None,
-                    local_items.len(),
-                    0,
-                    Some(&e),
+                    LlmCallLog {
+                        request_id,
+                        model: &config.model,
+                        status: "discovery_key_error",
+                        latency_ms: None,
+                        candidate_count: local_items.len(),
+                        result_count: 0,
+                        error_code: Some(&e),
+                    },
                 );
                 return DiscoveryPlanResult {
                     queries: Vec::new(),
@@ -159,13 +163,15 @@ pub async fn build_discovery_plan(
                 let guard = conn.lock();
                 log_llm_call(
                     &guard,
-                    request_id,
-                    &config.model,
-                    "discovery_request_failed",
-                    Some(started.elapsed().as_millis() as i64),
-                    local_candidates.len(),
-                    0,
-                    Some(&e),
+                    LlmCallLog {
+                        request_id,
+                        model: &config.model,
+                        status: "discovery_request_failed",
+                        latency_ms: Some(started.elapsed().as_millis() as i64),
+                        candidate_count: local_candidates.len(),
+                        result_count: 0,
+                        error_code: Some(&e),
+                    },
                 );
                 return DiscoveryPlanResult {
                     queries: Vec::new(),
@@ -181,13 +187,15 @@ pub async fn build_discovery_plan(
             let guard = conn.lock();
             log_llm_call(
                 &guard,
-                request_id,
-                &config.model,
-                "discovery_invalid_json",
-                Some(started.elapsed().as_millis() as i64),
-                local_candidates.len(),
-                0,
-                None,
+                LlmCallLog {
+                    request_id,
+                    model: &config.model,
+                    status: "discovery_invalid_json",
+                    latency_ms: Some(started.elapsed().as_millis() as i64),
+                    candidate_count: local_candidates.len(),
+                    result_count: 0,
+                    error_code: None,
+                },
             );
             return DiscoveryPlanResult {
                 queries: Vec::new(),
@@ -199,13 +207,15 @@ pub async fn build_discovery_plan(
     let guard = conn.lock();
     log_llm_call(
         &guard,
-        request_id,
-        &config.model,
-        "discovery_ok",
-        Some(started.elapsed().as_millis() as i64),
-        local_candidates.len(),
-        parsed.len(),
-        None,
+        LlmCallLog {
+            request_id,
+            model: &config.model,
+            status: "discovery_ok",
+            latency_ms: Some(started.elapsed().as_millis() as i64),
+            candidate_count: local_candidates.len(),
+            result_count: parsed.len(),
+            error_code: None,
+        },
     );
     DiscoveryPlanResult {
         queries: parsed,
@@ -228,13 +238,15 @@ pub async fn enhance_recommendations(
                 let error = e.to_string();
                 log_llm_call(
                     &guard,
-                    request_id,
-                    "",
-                    "config_error",
-                    None,
-                    local_items.len(),
-                    0,
-                    Some(&error),
+                    LlmCallLog {
+                        request_id,
+                        model: "",
+                        status: "config_error",
+                        latency_ms: None,
+                        candidate_count: local_items.len(),
+                        result_count: 0,
+                        error_code: Some(&error),
+                    },
                 );
                 return LlmEnhancementResult::failed(local_items, error);
             }
@@ -255,13 +267,15 @@ pub async fn enhance_recommendations(
             Err(e) => {
                 log_llm_call(
                     &guard,
-                    request_id,
-                    &config.model,
-                    "key_error",
-                    None,
-                    local_items.len(),
-                    0,
-                    Some(&e),
+                    LlmCallLog {
+                        request_id,
+                        model: &config.model,
+                        status: "key_error",
+                        latency_ms: None,
+                        candidate_count: local_items.len(),
+                        result_count: 0,
+                        error_code: Some(&e),
+                    },
                 );
                 return LlmEnhancementResult::failed(local_items, e);
             }
@@ -290,13 +304,15 @@ pub async fn enhance_recommendations(
             let guard = conn.lock();
             log_llm_call(
                 &guard,
-                request_id,
-                &config.model,
-                "cache_hit",
-                Some(0),
-                candidates.len(),
-                items.len(),
-                None,
+                LlmCallLog {
+                    request_id,
+                    model: &config.model,
+                    status: "cache_hit",
+                    latency_ms: Some(0),
+                    candidate_count: candidates.len(),
+                    result_count: items.len(),
+                    error_code: None,
+                },
             );
             return LlmEnhancementResult::ok(items);
         }
@@ -315,13 +331,15 @@ pub async fn enhance_recommendations(
                 let guard = conn.lock();
                 log_llm_call(
                     &guard,
-                    request_id,
-                    &config.model,
-                    "request_failed",
-                    Some(started.elapsed().as_millis() as i64),
-                    candidates.len(),
-                    0,
-                    Some(&e),
+                    LlmCallLog {
+                        request_id,
+                        model: &config.model,
+                        status: "request_failed",
+                        latency_ms: Some(started.elapsed().as_millis() as i64),
+                        candidate_count: candidates.len(),
+                        result_count: 0,
+                        error_code: Some(&e),
+                    },
                 );
                 return LlmEnhancementResult::failed(local_items, e);
             }
@@ -335,13 +353,15 @@ pub async fn enhance_recommendations(
             let _ = save_cache(&guard, &cache_key, &config, &content);
             log_llm_call(
                 &guard,
-                request_id,
-                &config.model,
-                "ok",
-                Some(latency_ms),
-                candidates.len(),
-                items.len(),
-                None,
+                LlmCallLog {
+                    request_id,
+                    model: &config.model,
+                    status: "ok",
+                    latency_ms: Some(latency_ms),
+                    candidate_count: candidates.len(),
+                    result_count: items.len(),
+                    error_code: None,
+                },
             );
             LlmEnhancementResult::ok(items)
         }
@@ -349,13 +369,15 @@ pub async fn enhance_recommendations(
             let guard = conn.lock();
             log_llm_call(
                 &guard,
-                request_id,
-                &config.model,
-                "invalid_json",
-                Some(latency_ms),
-                candidates.len(),
-                0,
-                None,
+                LlmCallLog {
+                    request_id,
+                    model: &config.model,
+                    status: "invalid_json",
+                    latency_ms: Some(latency_ms),
+                    candidate_count: candidates.len(),
+                    result_count: 0,
+                    error_code: None,
+                },
             );
             LlmEnhancementResult::failed(local_items, "模型响应 JSON 不符合推荐格式".to_string())
         }
@@ -559,16 +581,17 @@ fn apply_llm_response(
     ))
 }
 
-fn log_llm_call(
-    conn: &Connection,
-    request_id: &str,
-    model: &str,
-    status: &str,
+struct LlmCallLog<'a> {
+    request_id: &'a str,
+    model: &'a str,
+    status: &'a str,
     latency_ms: Option<i64>,
     candidate_count: usize,
     result_count: usize,
-    error_code: Option<&str>,
-) {
+    error_code: Option<&'a str>,
+}
+
+fn log_llm_call(conn: &Connection, call: LlmCallLog<'_>) {
     let _ = conn.execute(
         r#"
         INSERT INTO llm_calls (
@@ -576,13 +599,13 @@ fn log_llm_call(
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         "#,
         params![
-            request_id,
-            model,
-            status,
-            latency_ms,
-            candidate_count as i64,
-            result_count as i64,
-            error_code.map(|value| privacy::short_reason(value)),
+            call.request_id,
+            call.model,
+            call.status,
+            call.latency_ms,
+            call.candidate_count as i64,
+            call.result_count as i64,
+            call.error_code.map(privacy::short_reason),
             catalog::now_ms(),
         ],
     );

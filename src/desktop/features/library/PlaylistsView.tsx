@@ -6,6 +6,7 @@ import {
 } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
+import { useDesktopDialog } from '../../components/DialogHost';
 import { useToast } from '../../components/ToastHost';
 import {
   importPlaylist,
@@ -45,6 +46,7 @@ export default function PlaylistsView() {
   } = useLibrary();
   const { playQueue } = usePlayerActions();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
+  const { confirmDialog, promptDialog } = useDesktopDialog();
   const { showToast } = useToast();
 
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
@@ -90,6 +92,33 @@ export default function PlaylistsView() {
     }
   };
 
+  const handleRenamePlaylist = async (playlist: Playlist) => {
+    const nextName = await promptDialog({
+      title: '重命名歌单',
+      message: `为「${playlist.name || '未命名歌单'}」输入新的名称。`,
+      defaultValue: playlist.name,
+      placeholder: '歌单名称',
+      confirmLabel: '保存',
+    });
+    const name = nextName?.trim();
+    if (!name || name === playlist.name) return;
+    renamePlaylist(playlist.id, name);
+    showToast(`已重命名为「${name}」`, 'success');
+  };
+
+  const handleDeletePlaylist = async (playlist: Playlist) => {
+    const confirmed = await confirmDialog({
+      title: '删除歌单',
+      message: `确定删除「${playlist.name || '未命名歌单'}」？歌单内歌曲不会从收藏或本地下载中删除。`,
+      confirmLabel: '删除',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
+    deletePlaylist(playlist.id);
+    setSelectedPlaylistId(null);
+    showToast('歌单已删除', 'success');
+  };
+
   const renderPlaylistSongs = (playlist: Playlist) => (
     <div>
       <button type="button" className="soft-button" onClick={() => setSelectedPlaylistId(null)}>
@@ -108,22 +137,14 @@ export default function PlaylistsView() {
                 <button
                   type="button"
                   className="soft-button"
-                  onClick={() => {
-                    const nextName = window.prompt('重命名歌单', playlist.name);
-                    if (nextName?.trim()) renamePlaylist(playlist.id, nextName.trim());
-                  }}
+                  onClick={() => void handleRenamePlaylist(playlist)}
                 >
                   重命名
                 </button>
                 <button
                   type="button"
                   className="danger-button"
-                  onClick={() => {
-                    if (window.confirm('确定删除这个歌单？')) {
-                      deletePlaylist(playlist.id);
-                      setSelectedPlaylistId(null);
-                    }
-                  }}
+                  onClick={() => void handleDeletePlaylist(playlist)}
                 >
                   删除歌单
                 </button>

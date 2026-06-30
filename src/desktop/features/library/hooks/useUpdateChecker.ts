@@ -36,7 +36,7 @@ interface UseUpdateCheckerResult {
  */
 export function useUpdateChecker(): UseUpdateCheckerResult {
   const { showToast } = useToast();
-  const [appVersion, setAppVersion] = useState('1.1.9');
+  const [appVersion, setAppVersion] = useState('1.1.10');
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const [updateDownloadProgress, setUpdateDownloadProgress] = useState<number | null>(null);
