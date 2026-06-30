@@ -43,6 +43,7 @@ pub struct RecommendationService {
     recommendation_jobs: Arc<Mutex<HashMap<String, RecommendationJob>>>,
     dynamic_refresh_pending: Arc<AtomicBool>,
     last_dynamic_refresh_at: Arc<AtomicI64>,
+    recommendation_generation: Arc<AtomicU64>,
 }
 
 impl RecommendationService {
@@ -70,6 +71,7 @@ impl RecommendationService {
             recommendation_jobs: Arc::new(Mutex::new(HashMap::new())),
             dynamic_refresh_pending: Arc::new(AtomicBool::new(false)),
             last_dynamic_refresh_at: Arc::new(AtomicI64::new(0)),
+            recommendation_generation: Arc::new(AtomicU64::new(1)),
         })
     }
 
@@ -229,6 +231,8 @@ impl RecommendationService {
         let client = self.client.clone();
         let jobs = Arc::clone(&self.recommendation_jobs);
         let last_llm_error = Arc::clone(&self.last_llm_error);
+        let recommendation_generation = Arc::clone(&self.recommendation_generation);
+        let generation = recommendation_generation.load(Ordering::SeqCst);
         let fallback_items = visible_items;
         tauri::async_runtime::spawn(async move {
             update_recommendation_job(
@@ -250,6 +254,9 @@ impl RecommendationService {
                 DISCOVERY_QUERY_LIMIT,
             )
             .await;
+            if recommendation_generation.load(Ordering::SeqCst) != generation {
+                return;
+            }
             if let Some(error) = &plan.error {
                 *last_llm_error.lock() = Some(error.clone());
             }
@@ -275,6 +282,9 @@ impl RecommendationService {
                 )
                 .await
             };
+            if recommendation_generation.load(Ordering::SeqCst) != generation {
+                return;
+            }
 
             let merged = merge_discovery_candidates(
                 local.clone(),
@@ -316,6 +326,9 @@ impl RecommendationService {
                 &request_id,
             )
             .await;
+            if recommendation_generation.load(Ordering::SeqCst) != generation {
+                return;
+            }
             if let Some(error) = result.error.clone() {
                 *last_llm_error.lock() = Some(error.clone());
                 let items = if fallback_items.is_empty() {
@@ -338,6 +351,9 @@ impl RecommendationService {
             let final_items = result.items;
             {
                 let guard = conn.lock();
+                if recommendation_generation.load(Ordering::SeqCst) != generation {
+                    return;
+                }
                 if let Err(e) = save_cloud_recommendation_result(
                     &guard,
                     &context,
@@ -528,22 +544,16 @@ impl RecommendationService {
     }
 
     pub fn clear_data(&self) -> Result<RecommendationMaintenanceStats, String> {
-        {
+        self.recommendation_generation
+            .fetch_add(1, Ordering::SeqCst);
+        let clear_result = {
             let conn = self.conn.lock();
-            conn.execute_batch(
-                r#"
-                DELETE FROM play_events;
-                DELETE FROM user_profile;
-                DELETE FROM item_cooccurrence;
-                DELETE FROM recommendation_cache;
-                DELETE FROM dismissed_recommendations;
-                DELETE FROM recommendation_feedback;
-                DELETE FROM llm_recommendation_cache;
-                DELETE FROM llm_calls;
-                "#,
-            )
-            .map_err(|e| format!("清空推荐数据失败: {}", e))?;
-        }
+            clear_recommendation_storage(&conn)
+        };
+        self.recommendation_jobs.lock().clear();
+        self.dynamic_refresh_pending.store(false, Ordering::SeqCst);
+        *self.last_llm_error.lock() = None;
+        clear_result.map_err(|e| format!("清空推荐数据失败: {}", e))?;
         Ok(self.maintenance_stats())
     }
 
@@ -618,12 +628,16 @@ impl RecommendationService {
         }
 
         let service = self.clone();
+        let generation = self.recommendation_generation.load(Ordering::SeqCst);
         tauri::async_runtime::spawn(async move {
             let mut delay_ms = DYNAMIC_REFRESH_DEBOUNCE_MS;
             loop {
                 tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                 service.prune_recommendation_jobs();
 
+                if service.recommendation_generation.load(Ordering::SeqCst) != generation {
+                    break;
+                }
                 if !service.is_recommendation_enabled() {
                     break;
                 }
@@ -651,9 +665,14 @@ impl RecommendationService {
                 }
                 break;
             }
-            service
-                .dynamic_refresh_pending
-                .store(false, Ordering::SeqCst);
+            if is_current_generation(
+                generation,
+                service.recommendation_generation.load(Ordering::SeqCst),
+            ) {
+                service
+                    .dynamic_refresh_pending
+                    .store(false, Ordering::SeqCst);
+            }
         });
     }
 
@@ -730,7 +749,12 @@ fn should_trigger_dynamic_refresh(event_type: &str) -> bool {
             | "download"
             | "llm_recommend_click"
             | "similar_click"
+            | "dismiss"
     )
+}
+
+fn is_current_generation(task_generation: u64, current_generation: u64) -> bool {
+    task_generation == current_generation
 }
 
 fn recommendation_context(query: &RecommendationQuery) -> String {
@@ -801,6 +825,22 @@ fn save_cloud_recommendation_result(
     .map_err(|e| format!("保存云端推荐结果失败: {}", e))
 }
 
+fn clear_recommendation_storage(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        r#"
+        DELETE FROM play_events;
+        DELETE FROM user_profile;
+        DELETE FROM item_cooccurrence;
+        DELETE FROM recommendation_cache;
+        DELETE FROM recommendation_result_snapshots;
+        DELETE FROM dismissed_recommendations;
+        DELETE FROM recommendation_feedback;
+        DELETE FROM llm_recommendation_cache;
+        DELETE FROM llm_calls;
+        "#,
+    )
+}
+
 fn update_recommendation_job(
     jobs: &Arc<Mutex<HashMap<String, RecommendationJob>>>,
     job_id: &str,
@@ -845,7 +885,7 @@ fn merge_discovery_candidates(
             }
         })
         .collect();
-    let candidate_window = llm_candidate_window.max(1).min(MERGED_CANDIDATE_LIMIT);
+    let candidate_window = llm_candidate_window.clamp(1, MERGED_CANDIDATE_LIMIT);
     let discovery_window_target = if discovery_items.is_empty() {
         0
     } else {
@@ -961,6 +1001,73 @@ fn update_playlist_cooccurrence(conn: &Connection, songs: &[RecSong]) -> rusqlit
     Ok(())
 }
 
+fn insert_cooccurrence(
+    conn: &Connection,
+    track_key: &str,
+    related_track_key: &str,
+    score: f64,
+    updated_at: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        r#"
+        INSERT INTO item_cooccurrence (track_key, related_track_key, score, updated_at)
+        VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(track_key, related_track_key) DO UPDATE SET
+          score = item_cooccurrence.score + excluded.score,
+          updated_at = excluded.updated_at
+        "#,
+        params![track_key, related_track_key, score, updated_at],
+    )?;
+    Ok(())
+}
+
+fn rebuild_session_cooccurrence(conn: &Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT session_id, track_key
+        FROM play_events
+        WHERE track_key IS NOT NULL AND weight > 0
+        ORDER BY session_id, created_at
+        "#,
+    )?;
+    let mut rows = stmt.query([])?;
+    let mut session_tracks: Vec<String> = Vec::new();
+    let mut current_session = String::new();
+
+    while let Some(row) = rows.next()? {
+        let session_id: String = row.get(0)?;
+        let track_key: String = row.get(1)?;
+        if current_session.is_empty() {
+            current_session = session_id.clone();
+        }
+        if session_id != current_session {
+            update_keys_cooccurrence(conn, &session_tracks)?;
+            session_tracks.clear();
+            current_session = session_id;
+        }
+        if !session_tracks.iter().any(|key| key == &track_key) {
+            session_tracks.push(track_key);
+        }
+    }
+    update_keys_cooccurrence(conn, &session_tracks)?;
+    Ok(())
+}
+
+fn update_keys_cooccurrence(conn: &Connection, keys: &[String]) -> rusqlite::Result<()> {
+    if keys.len() < 2 {
+        return Ok(());
+    }
+    let score = 1.0 / ((2 + keys.len()) as f64).ln();
+    let now = catalog::now_ms();
+    for (index, key) in keys.iter().enumerate() {
+        for related in keys.iter().skip(index + 1) {
+            insert_cooccurrence(conn, key, related, score, now)?;
+            insert_cooccurrence(conn, related, key, score, now)?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
@@ -1035,72 +1142,29 @@ mod tests {
         assert!(should_trigger_dynamic_refresh("skip_early"));
         assert!(should_trigger_dynamic_refresh("favorite_add"));
         assert!(should_trigger_dynamic_refresh("llm_recommend_click"));
+        assert!(should_trigger_dynamic_refresh("dismiss"));
     }
-}
 
-fn insert_cooccurrence(
-    conn: &Connection,
-    track_key: &str,
-    related_track_key: &str,
-    score: f64,
-    updated_at: i64,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        r#"
-        INSERT INTO item_cooccurrence (track_key, related_track_key, score, updated_at)
-        VALUES (?1, ?2, ?3, ?4)
-        ON CONFLICT(track_key, related_track_key) DO UPDATE SET
-          score = item_cooccurrence.score + excluded.score,
-          updated_at = excluded.updated_at
-        "#,
-        params![track_key, related_track_key, score, updated_at],
-    )?;
-    Ok(())
-}
-
-fn rebuild_session_cooccurrence(conn: &Connection) -> rusqlite::Result<()> {
-    let mut stmt = conn.prepare(
-        r#"
-        SELECT session_id, track_key
-        FROM play_events
-        WHERE track_key IS NOT NULL AND weight > 0
-        ORDER BY session_id, created_at
-        "#,
-    )?;
-    let mut rows = stmt.query([])?;
-    let mut session_tracks: Vec<String> = Vec::new();
-    let mut current_session = String::new();
-
-    while let Some(row) = rows.next()? {
-        let session_id: String = row.get(0)?;
-        let track_key: String = row.get(1)?;
-        if current_session.is_empty() {
-            current_session = session_id.clone();
-        }
-        if session_id != current_session {
-            update_keys_cooccurrence(conn, &session_tracks)?;
-            session_tracks.clear();
-            current_session = session_id;
-        }
-        if !session_tracks.iter().any(|key| key == &track_key) {
-            session_tracks.push(track_key);
-        }
+    #[test]
+    fn stale_dynamic_refresh_task_does_not_clear_new_generation() {
+        assert!(is_current_generation(2, 2));
+        assert!(!is_current_generation(1, 2));
     }
-    update_keys_cooccurrence(conn, &session_tracks)?;
-    Ok(())
-}
 
-fn update_keys_cooccurrence(conn: &Connection, keys: &[String]) -> rusqlite::Result<()> {
-    if keys.len() < 2 {
-        return Ok(());
+    #[test]
+    fn clear_recommendation_storage_removes_cloud_snapshots() {
+        let conn = Connection::open_in_memory().unwrap();
+        migration::run_migrations(&conn).unwrap();
+        let items = vec![recommendation_item("netease", "1", "云端歌")];
+
+        save_cloud_recommendation_result(&conn, "home", "job-1", "done", &items).unwrap();
+        assert!(load_latest_cloud_recommendation_job(&conn, "home")
+            .unwrap()
+            .is_some());
+
+        clear_recommendation_storage(&conn).unwrap();
+        assert!(load_latest_cloud_recommendation_job(&conn, "home")
+            .unwrap()
+            .is_none());
     }
-    let score = 1.0 / ((2 + keys.len()) as f64).ln();
-    let now = catalog::now_ms();
-    for (index, key) in keys.iter().enumerate() {
-        for related in keys.iter().skip(index + 1) {
-            insert_cooccurrence(conn, key, related, score, now)?;
-            insert_cooccurrence(conn, related, key, score, now)?;
-        }
-    }
-    Ok(())
 }

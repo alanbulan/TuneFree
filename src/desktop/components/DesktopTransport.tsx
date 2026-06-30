@@ -107,6 +107,40 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
     ) : (
       <RepeatIcon size={17} />
     );
+  const desktopLyricState = !showDesktopLyric ? 'off' : lockDesktopLyric ? 'locked' : 'floating';
+  const desktopLyricButtonLabel =
+    desktopLyricState === 'off' ? 'LRC' : desktopLyricState === 'floating' ? '浮动' : '锁定';
+  const desktopLyricButtonTitle =
+    desktopLyricState === 'off'
+      ? '打开桌面歌词'
+      : desktopLyricState === 'floating'
+        ? '锁定桌面歌词（鼠标穿透）'
+        : '关闭桌面歌词';
+  const desktopLyricButtonAria =
+    desktopLyricState === 'off'
+      ? '打开桌面歌词'
+      : desktopLyricState === 'floating'
+        ? '锁定桌面歌词'
+        : '关闭桌面歌词';
+
+  const handleCycleDesktopLyric = () => {
+    if (desktopLyricState === 'off') {
+      setLockDesktopLyric(false);
+      setShowDesktopLyric(true);
+      showToast('桌面歌词已打开', 'info');
+      return;
+    }
+
+    if (desktopLyricState === 'floating') {
+      setLockDesktopLyric(true);
+      showToast('桌面歌词已锁定（鼠标穿透）', 'info');
+      return;
+    }
+
+    setLockDesktopLyric(false);
+    setShowDesktopLyric(false);
+    showToast('桌面歌词已关闭', 'info');
+  };
 
   const handleToggleFavorite = () => {
     if (!currentSong) return;
@@ -297,12 +331,18 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
         <QualitySelector audioQuality={audioQuality} onQualityChange={(q: AudioQuality) => setAudioQuality(q)} />
         <button
           type="button"
-          className={`lyric-toggle-btn ${showDesktopLyric ? 'active' : ''}`}
-          title="左击：开/关桌面歌词&#10;右击：锁/开鼠标穿透"
-          aria-label="桌面歌词"
-          onClick={() => setShowDesktopLyric(!showDesktopLyric)}
+          className={`lyric-toggle-btn ${showDesktopLyric ? 'active' : ''} ${lockDesktopLyric ? 'locked' : ''}`}
+          title={`${desktopLyricButtonTitle}；右击可单独${lockDesktopLyric ? '解锁' : '锁定'}`}
+          aria-label={desktopLyricButtonAria}
+          onClick={handleCycleDesktopLyric}
           onContextMenu={(e) => {
             e.preventDefault();
+            if (!showDesktopLyric) {
+              setLockDesktopLyric(false);
+              setShowDesktopLyric(true);
+              showToast('桌面歌词已打开', 'info');
+              return;
+            }
             const nextLock = !lockDesktopLyric;
             setLockDesktopLyric(nextLock);
             showToast(nextLock ? '桌面歌词已锁定（鼠标穿透）' : '桌面歌词已解锁', 'info');
@@ -311,10 +351,10 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
             background: 'transparent',
             fontSize: '11px',
             fontWeight: 800,
-            padding: '4px 8px',
+            padding: '4px 7px',
             borderRadius: '6px',
-            color: showDesktopLyric ? 'var(--ios-card)' : 'var(--muted)',
-            backgroundColor: showDesktopLyric ? 'var(--accent)' : 'transparent',
+            color: showDesktopLyric ? (lockDesktopLyric ? 'var(--ios-card)' : 'var(--accent)') : 'var(--muted)',
+            backgroundColor: showDesktopLyric ? (lockDesktopLyric ? 'var(--accent)' : 'rgba(var(--accent-rgb), 0.10)') : 'transparent',
             border: showDesktopLyric ? '1px solid var(--accent)' : '1px solid var(--line)',
             cursor: 'pointer',
             transition: 'all 0.2s',
@@ -322,6 +362,7 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
             alignItems: 'center',
             justifyContent: 'center',
             height: '24px',
+            minWidth: '38px',
             marginLeft: '6px',
             boxShadow: showDesktopLyric ? '0 2px 8px rgba(var(--accent-rgb), 0.35)' : 'none',
           }}
@@ -329,7 +370,7 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
           {showDesktopLyric && lockDesktopLyric && (
             <Lock size={10} style={{ marginRight: '3px', display: 'inline-block', verticalAlign: 'middle' }} />
           )}
-          <span style={{ verticalAlign: 'middle' }}>LRC</span>
+          <span style={{ verticalAlign: 'middle' }}>{desktopLyricButtonLabel}</span>
         </button>
       </div>
     </div>

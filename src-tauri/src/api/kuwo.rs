@@ -114,8 +114,7 @@ const SBOX: [[u8; 64]; 8] = [
 /// position `arr[i]` in `val` is placed at position `i` in the result.
 fn apply_mask(arr: &[i64], len: usize, val: u64) -> u64 {
     let mut res = 0u64;
-    for i in 0..len {
-        let mask_idx = arr[i];
+    for (i, mask_idx) in arr.iter().copied().take(len).enumerate() {
         if mask_idx < 0 {
             continue;
         }
@@ -133,8 +132,8 @@ fn encrypt_block(key_arr: &[u64], data: u64) -> u64 {
     let res = apply_mask(&C1, 64, data);
     let mut blocks = [res & 0xffffffff, (res >> 32) & 0xffffffff];
 
-    for i in 0..16 {
-        let right_block = apply_mask(&C0, 64, blocks[1]) ^ key_arr[i];
+    for key in key_arr.iter().take(16) {
+        let right_block = apply_mask(&C0, 64, blocks[1]) ^ *key;
         let mut sbox_out = 0u64;
         for j in (0..=7).rev() {
             let b = ((right_block >> (j * 8)) & 0xff) as usize;
