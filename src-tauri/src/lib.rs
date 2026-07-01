@@ -49,6 +49,22 @@ struct AppLifecycleState {
     shutdown_tx: tokio::sync::watch::Sender<bool>,
 }
 
+fn acquire_process_instance() -> Option<single_instance::SingleInstance> {
+    let instance = match single_instance::SingleInstance::new("com.alanbulan.tunefree.desktop") {
+        Ok(instance) => instance,
+        Err(e) => {
+            eprintln!("failed to initialize single-instance guard: {}", e);
+            return None;
+        }
+    };
+
+    if instance.is_single() {
+        Some(instance)
+    } else {
+        None
+    }
+}
+
 /// Shows and focuses the main application window.
 fn show_main_window(app_handle: &tauri::AppHandle) {
     if let Some(window) = app_handle.get_webview_window("main") {
@@ -761,6 +777,11 @@ async fn download_and_install_update(
 /// Uses `.build()?.run()` to handle `RunEvent` callbacks for graceful shutdown.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let process_instance = match acquire_process_instance() {
+        Some(instance) => instance,
+        None => return,
+    };
+
     // Create shutdown signal channel for graceful server shutdown
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
@@ -779,6 +800,7 @@ pub fn run() {
     let window_lifecycle = lifecycle.clone();
 
     let app = tauri::Builder::default()
+        .manage(process_instance)
         .manage(lifecycle)
         .manage(client.clone())
         .invoke_handler(tauri::generate_handler![
@@ -822,6 +844,7 @@ pub fn run() {
         })
         .setup(move |app| {
             app.handle().plugin(tauri_plugin_dialog::init())?;
+
             let recommendation_service =
                 RecommendationService::new(app.handle().clone(), client.clone())
                     .map_err(std::io::Error::other)?;
