@@ -361,16 +361,20 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            gap: '3px',
+            flex: '0 0 auto',
             height: '24px',
-            minWidth: '38px',
+            width: lockDesktopLyric ? '54px' : '42px',
             marginLeft: '6px',
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
             boxShadow: showDesktopLyric ? '0 2px 8px rgba(var(--accent-rgb), 0.35)' : 'none',
           }}
         >
           {showDesktopLyric && lockDesktopLyric && (
-            <Lock size={10} style={{ marginRight: '3px', display: 'inline-block', verticalAlign: 'middle' }} />
+            <Lock size={10} style={{ flex: '0 0 auto' }} />
           )}
-          <span style={{ verticalAlign: 'middle' }}>{desktopLyricButtonLabel}</span>
+          <span style={{ flex: '0 0 auto' }}>{desktopLyricButtonLabel}</span>
         </button>
       </div>
     </div>
