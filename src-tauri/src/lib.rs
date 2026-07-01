@@ -13,6 +13,7 @@ use tauri::{
     Emitter, Manager, State, WindowEvent,
 };
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_window_state::StateFlags;
 
 use recommendation::{
     LibrarySnapshot, LlmConfigInput, LlmConfigView, LlmProviderTestResult, RecSong,
@@ -800,6 +801,12 @@ pub fn run() {
     let window_lifecycle = lifecycle.clone();
 
     let app = tauri::Builder::default()
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(StateFlags::POSITION | StateFlags::SIZE)
+                .with_filter(|label| label == "desktop-lyric")
+                .build(),
+        )
         .manage(process_instance)
         .manage(lifecycle)
         .manage(client.clone())

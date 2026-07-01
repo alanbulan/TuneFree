@@ -25,7 +25,6 @@ export const THEME_STORAGE_KEYS = {
   lyricFont: 'tunefree_lyric_font',
   showDesktopLyric: 'tunefree_show_desktop_lyric',
   lockDesktopLyric: 'tunefree_lock_desktop_lyric',
-  desktopLyricBounds: 'tunefree_desktop_lyric_bounds_v1',
 } as const;
 
 export const DEFAULT_ACCENT_COLOR = '#fa233b';

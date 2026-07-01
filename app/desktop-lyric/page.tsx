@@ -1,78 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { DesktopLyricResizeHandles } from './_components/DesktopLyricResizeHandles';
 import { DesktopLyricStage } from './_components/DesktopLyricStage';
 import { DesktopLyricToolbar } from './_components/DesktopLyricToolbar';
 import { useDesktopLyricBridge } from './_core/useDesktopLyricBridge';
-import { THEME_STORAGE_KEYS } from '../../src/core/utils/theme';
 
 export default function DesktopLyricPage() {
   const [isHovered, setIsHovered] = useState(false);
   const { playerState, styleState, controls } = useDesktopLyricBridge();
   const showToolbar = isHovered && !styleState.lock;
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !(window as any).__TAURI_INTERNALS__) return;
-
-    let cancelled = false;
-    let saveTimer: number | null = null;
-    let unlistenMoved: (() => void) | null = null;
-    let unlistenResized: (() => void) | null = null;
-
-    const setupBoundsPersistence = async () => {
-      try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const currentWindow = getCurrentWindow();
-
-        const saveBounds = async () => {
-          if (cancelled) return;
-
-          try {
-            const [position, size] = await Promise.all([
-              currentWindow.outerPosition(),
-              currentWindow.outerSize(),
-            ]);
-            if (cancelled) return;
-
-            localStorage.setItem(
-              THEME_STORAGE_KEYS.desktopLyricBounds,
-              JSON.stringify({
-                x: position.x,
-                y: position.y,
-                width: size.width,
-                height: size.height,
-              }),
-            );
-          } catch (e) {
-            console.warn('Failed to save desktop lyric bounds:', e);
-          }
-        };
-
-        const scheduleSave = () => {
-          if (saveTimer) window.clearTimeout(saveTimer);
-          saveTimer = window.setTimeout(() => {
-            void saveBounds();
-          }, 120);
-        };
-
-        unlistenMoved = await currentWindow.onMoved(scheduleSave);
-        unlistenResized = await currentWindow.onResized(scheduleSave);
-        await saveBounds();
-      } catch (e) {
-        console.warn('Failed to setup desktop lyric bounds persistence:', e);
-      }
-    };
-
-    void setupBoundsPersistence();
-
-    return () => {
-      cancelled = true;
-      if (saveTimer) window.clearTimeout(saveTimer);
-      unlistenMoved?.();
-      unlistenResized?.();
-    };
-  }, []);
 
   return (
     <div
