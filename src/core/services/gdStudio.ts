@@ -114,8 +114,6 @@ const fetchGDStudioData = async <T = any>(
   }
   bodyParams.set("s", calculatedS);
 
-  console.log(`[GDStudio] POST types=${params.types}, body:`, bodyParams.toString());
-
   let response;
   try {
     response = await proxyFetch(GD_STUDIO_API_BASE, {
@@ -125,18 +123,15 @@ const fetchGDStudioData = async <T = any>(
       },
       body: bodyParams.toString()
     } as any, 12000);
-  } catch (err) {
-    console.error("[GDStudio] proxyFetch POST network error:", err);
+  } catch {
     throw new Error("GD_STUDIO_UNAVAILABLE");
   }
 
   if (!response) {
-    console.error(`[GDStudio] proxyFetch returned null for types=${params.types}`);
     throw new Error("GD_STUDIO_UNAVAILABLE");
   }
 
   const text = decodeResponseText(await response.arrayBuffer());
-  console.log(`[GDStudio] Response status:`, response.status, `Body preview:`, text.slice(0, 500));
   const data = tryParseJson(text);
 
   if (!response.ok) {
@@ -326,6 +321,9 @@ export const getGDStudioLyrics = async (
       pronunciation?: string;
       qrc?: string;
       yrc?: string;
+      krc?: string;
+      klyric?: string;
+      mrc?: string;
       karaoke?: string;
     }>({
       types: "lyric",
@@ -342,7 +340,7 @@ export const getGDStudioLyrics = async (
       .find((value): value is string => typeof value === "string" && value.trim().length > 0)
       ?.trim() || "";
     const pronunciation = typeof data?.pronunciation === "string" ? data.pronunciation.trim() : "";
-    const karaoke = [data?.qrc, data?.yrc, data?.karaoke]
+    const karaoke = [data?.qrc, data?.yrc, data?.krc, data?.klyric, data?.mrc, data?.karaoke]
       .find((value): value is string => typeof value === "string" && value.trim().length > 0)
       ?.trim() || "";
     const lrc = mergeLyricTracks({
@@ -502,6 +500,14 @@ export const resolveAutosource = async (
       pic?: string;
       lyric?: string;
       tlyric?: string;
+      trans?: string;
+      translation?: string;
+      qrc?: string;
+      yrc?: string;
+      krc?: string;
+      klyric?: string;
+      mrc?: string;
+      karaoke?: string;
       source?: string;
       id?: string | number;
     }>({
@@ -512,10 +518,20 @@ export const resolveAutosource = async (
 
     const url = fixUrl(typeof data?.url === "string" ? data.url : "");
     const pic = fixUrl(typeof data?.pic === "string" ? data.pic : "");
-    let lrc = typeof data?.lyric === "string" ? data.lyric : "";
-    if (data?.tlyric) {
-      lrc = mergeLyricTracks({ main: lrc, translation: data.tlyric });
-    }
+    const main = typeof data?.lyric === "string" ? data.lyric : "";
+    const translation = [data?.tlyric, data?.trans, data?.translation]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .map((value) => value.trim())
+      .join("\n");
+    const karaoke = [data?.qrc, data?.yrc, data?.krc, data?.klyric, data?.mrc, data?.karaoke]
+      .find((value): value is string => typeof value === "string" && value.trim().length > 0)
+      ?.trim() || "";
+    const lrc = mergeLyricTracks({
+      main,
+      translation,
+      karaoke,
+      source: data?.source || song.source,
+    });
 
     if (!url) return null;
 

@@ -28,6 +28,7 @@ const FALLBACK_SEARCH_LIMIT = 6;
 const FALLBACK_CANDIDATE_LIMIT = 3;
 const FALLBACK_SOURCES = ["netease", "qq", "kuwo", "joox", "bilibili"] as const;
 const KUWO_FALLBACK_SOURCES = ["qq", "netease", "joox", "bilibili"] as const;
+const NATIVE_LYRIC_SOURCES = new Set(["netease", "qq", "kuwo"]);
 
 const hasPlayableId = (id: string | number | undefined | null): boolean => {
   const normalized = id === null || id === undefined ? "" : String(id).trim();
@@ -146,17 +147,24 @@ export const fetchFallbackLyrics = async (
 export const getLyrics = async (
   id: string | number,
   source: string,
+  songMeta?: SongMeta,
 ): Promise<string> => {
+  const lyricId = songMeta?.lyricId || id;
+
   if (isGDStudioOnlySource(source)) {
-    return getGDStudioLyrics(id, source);
+    return getGDStudioLyrics(lyricId, source);
+  }
+
+  if (NATIVE_LYRIC_SOURCES.has(source)) {
+    return fetchFallbackLyrics(lyricId, source);
   }
 
   if (isGDStudioSource(source)) {
-    const gdLyrics = await getGDStudioLyrics(id, source);
+    const gdLyrics = await getGDStudioLyrics(lyricId, source);
     if (gdLyrics) return gdLyrics;
   }
 
-  return fetchFallbackLyrics(id, source);
+  return fetchFallbackLyrics(lyricId, source);
 };
 
 const getDirectSongUrl = async (
@@ -212,7 +220,7 @@ const resolveDirectSongFull = async (
 
   const [url, lrc] = await Promise.all([
     getDirectSongUrl(id, platform, quality),
-    getLyrics(id, platform),
+    getLyrics(id, platform, songMeta),
   ]);
   const pic = songMeta?.pic ? normalizeMusicUrl(songMeta.pic) : "";
 

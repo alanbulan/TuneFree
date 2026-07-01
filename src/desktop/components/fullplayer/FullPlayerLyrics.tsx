@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MusicIcon } from '../../../core/components/Icons';
+import { KaraokeLyricText } from '../../../core/components/KaraokeLyricText';
 import {
   usePlayerActions,
   usePlayerNowPlaying,
   usePlayerProgress,
 } from '../../../core/contexts/PlayerContext';
+import { useLyricDisplayMode } from '../../../core/hooks/useLyricDisplayMode';
 import { findActiveLyricIndex, parseLyrics, type ParsedLyric } from '../../../core/utils/lyrics';
 import {
   buildScoreNotes,
@@ -18,10 +20,13 @@ interface FullPlayerLyricsProps {
   isOpen: boolean;
 }
 
+const LYRIC_WINDOW_RADIUS = 8;
+
 export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
   const { currentSong, isLoading } = usePlayerNowPlaying();
   const { currentTime, lyricOffsetSeconds } = usePlayerProgress();
   const { seek } = usePlayerActions();
+  const lyricDisplayMode = useLyricDisplayMode();
 
   const lyricListRef = useRef<HTMLDivElement>(null);
   const lyricScrollKeyRef = useRef('');
@@ -30,11 +35,18 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
   const rawLyrics = currentSong?.lrc;
   const lyricRows = useMemo(() => parseLyrics(rawLyrics), [rawLyrics]);
   const activeLyricIndex = findActiveLyricIndex(lyricRows, currentTime, lyricOffsetSeconds);
+  const lyricClock = currentTime + lyricOffsetSeconds;
   const activeLyric = activeLyricIndex >= 0 ? lyricRows[activeLyricIndex] : null;
-  const lyricWindow = useMemo(
-    () => lyricRows.map((row, index) => ({ row, index })),
-    [lyricRows],
-  );
+  const lyricWindow = useMemo(() => {
+    if (lyricRows.length === 0) return [];
+    if (activeLyricIndex < 0) {
+      return lyricRows.slice(0, LYRIC_WINDOW_RADIUS * 2 + 1).map((row, index) => ({ row, index }));
+    }
+
+    const start = Math.max(0, activeLyricIndex - LYRIC_WINDOW_RADIUS);
+    const end = Math.min(lyricRows.length, activeLyricIndex + LYRIC_WINDOW_RADIUS + 1);
+    return lyricRows.slice(start, end).map((row, offset) => ({ row, index: start + offset }));
+  }, [activeLyricIndex, lyricRows]);
   const scoreText = activeLyric?.text || currentSong?.name || 'TuneFree Desktop';
   const scoreNotes = useMemo(
     () => buildScoreNotes(scoreText, currentTime),
@@ -45,7 +57,7 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
 
   // P3-12: Only trigger scroll when activeLyricIndex actually changes.
   // Use 'smooth' for subsequent scrolls, 'auto' only for the initial scroll.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isOpen) {
       lyricScrollKeyRef.current = '';
       prevActiveIndexRef.current = -1;
@@ -78,27 +90,19 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
       container.scrollTo({ top, behavior });
     };
 
-    let frame = 0;
-    let secondFrame = 0;
     let timeout = 0;
 
-    // P3-12: Use 'smooth' for normal scrolls, 'auto' only for initial.
     const behavior: ScrollBehavior = isInitialScroll ? 'auto' : 'smooth';
-
-    frame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => scrollActiveLyric(behavior));
-    });
+    scrollActiveLyric(behavior);
 
     if (isInitialScroll) {
-      timeout = window.setTimeout(() => scrollActiveLyric('auto'), 380);
+      timeout = window.setTimeout(() => scrollActiveLyric('auto'), 180);
     }
 
     return () => {
-      window.cancelAnimationFrame(frame);
-      window.cancelAnimationFrame(secondFrame);
       if (timeout) window.clearTimeout(timeout);
     };
-  }, [activeLyricIndex, lyricRows, rawLyrics, isOpen, currentSong]);
+  }, [activeLyricIndex, lyricRows.length, lyricWindow, rawLyrics, isOpen, currentSong]);
 
   return (
     <div className="full-lyrics-stage">
@@ -158,7 +162,7 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
                       }
                     }}
                   >
-                    <span>{row.text}</span>
+                    <span>{offset === 0 && lyricDisplayMode === 'karaoke' ? <KaraokeLyricText line={row} currentTime={lyricClock} source={currentSong?.source} /> : row.text}</span>
                     {getLyricExtensionLines(row).map((line, lineIndex) => (
                       <em key={`${row.time}-${lineIndex}-${line}`}>{line}</em>
                     ))}

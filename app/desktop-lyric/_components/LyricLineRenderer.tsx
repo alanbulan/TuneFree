@@ -1,4 +1,5 @@
 import type { ParsedLyric } from '../../../src/core/utils/lyrics';
+import { KaraokeLyricText } from '../../../src/core/components/KaraokeLyricText';
 
 interface LyricLineRendererProps {
   line: ParsedLyric;
@@ -7,6 +8,9 @@ interface LyricLineRendererProps {
   shadow: string;
   align?: 'left' | 'center' | 'right';
   depth?: number;
+  currentTime?: number;
+  source?: string;
+  enableKaraoke?: boolean;
 }
 
 const getExtensionLines = (line: ParsedLyric): string[] => [
@@ -16,7 +20,7 @@ const getExtensionLines = (line: ParsedLyric): string[] => [
   ...(line.extra || []).map((item) => item.text),
 ].filter((text): text is string => !!text);
 
-export function LyricLineRenderer({ line, active = false, size, shadow, align = 'center', depth = 1 }: LyricLineRendererProps) {
+export function LyricLineRenderer({ line, active = false, size, shadow, align = 'center', depth = 1, currentTime = 0, source, enableKaraoke = false }: LyricLineRendererProps) {
   const extensionSize = Math.max(12, Math.round(size * (active ? 0.68 : 0.56)));
   const contextOpacity = Math.max(0.12, 0.7 - Math.max(0, depth - 1) * 0.055);
   const extensionLines = getExtensionLines(line);
@@ -48,7 +52,7 @@ export function LyricLineRenderer({ line, active = false, size, shadow, align = 
           lineHeight: active ? 1.24 : 1.18,
         }}
       >
-        {line.text}
+        {active && enableKaraoke ? <KaraokeLyricText line={line} currentTime={currentTime} source={source} dragRegion /> : line.text}
       </span>
       {extensionLines.map((text, index) => (
         <em
