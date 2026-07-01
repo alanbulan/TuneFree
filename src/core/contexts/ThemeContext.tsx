@@ -139,16 +139,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     const manageWindow = async () => {
       try {
-        const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-        const lyricWindow = await WebviewWindow.getByLabel('desktop-lyric');
+        const { invoke } = await import('@tauri-apps/api/core');
 
-        if (active && lyricWindow) {
+        if (active) {
           if (showDesktopLyric) {
-            await lyricWindow.show();
-            // 应用穿透属性
-            await lyricWindow.setIgnoreCursorEvents(lockDesktopLyric);
+            await invoke('show_desktop_lyric_window', { lock: lockDesktopLyric });
           } else {
-            await lyricWindow.hide();
+            await invoke('hide_desktop_lyric_window');
           }
         }
       } catch (err) {
