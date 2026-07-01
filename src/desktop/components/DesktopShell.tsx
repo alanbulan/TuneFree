@@ -7,6 +7,7 @@ import { Sun, Moon, Laptop } from 'lucide-react';
 import { useDesktopPreferences } from '../../core/contexts/DesktopPreferencesContext';
 import { usePlayerNotice, usePlayerNowPlaying, usePlayerProgress } from '../../core/contexts/PlayerContext';
 import { useTheme } from '../../core/contexts/ThemeContext';
+import { useLyricDisplayMode } from '../../core/hooks/useLyricDisplayMode';
 import DesktopHome from '../features/home/DesktopHome';
 import type { DesktopView, LibraryView } from '../types';
 import DesktopFullPlayer from './DesktopFullPlayer';
@@ -68,6 +69,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   const { showToast } = useToast();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
   const { currentTime, duration, lyricOffsetSeconds } = usePlayerProgress();
+  const lyricDisplayMode = useLyricDisplayMode();
   const {
     showDesktopLyric,
     lockDesktopLyric,
@@ -236,6 +238,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
           isPlaying,
           playbackRate: 1,
           lyricOffsetSeconds,
+          lyricDisplayMode,
           sentAt: Date.now(),
         });
       } catch (e) {
@@ -244,7 +247,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
     };
 
     syncLyric();
-  }, [currentSong, isPlaying, currentTime, duration, lyricOffsetSeconds, showDesktopLyric]);
+  }, [currentSong, isPlaying, currentTime, duration, lyricOffsetSeconds, lyricDisplayMode, showDesktopLyric]);
 
   const submitSearch = (query: string) => {
     const clean = query.trim();

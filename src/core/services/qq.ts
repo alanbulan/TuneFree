@@ -1,5 +1,6 @@
 import { Song, TopList } from "../types";
 import { mergeLyricTracks } from "../utils/lyrics";
+import { decryptQrc } from "qrc-decoder";
 import { SELF_HOSTED_PROXY } from "./config";
 import { getProxies } from "./proxy";
 import { fixUrl } from "./utils";
@@ -22,6 +23,43 @@ const QQ_COMM = {
 } as const;
 
 const MUSICU_URL = "https://u.y.qq.com/cgi-bin/musicu.fcg";
+
+const decodeQQBase64 = (value: unknown): string => {
+  if (typeof value !== "string" || !value) return "";
+
+  try {
+    const binary = atob(value);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder("utf-8").decode(bytes);
+  } catch {
+    return "";
+  }
+};
+
+const decodeXmlEntities = (value: string): string =>
+  value
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+
+const extractQrcLyricContent = (xml: string): string => {
+  const content = xml.match(/\bLyricContent="([\s\S]*?)"\s*\/?>/)?.[1];
+  return content ? decodeXmlEntities(content) : xml;
+};
+
+const decodeQQEncryptedQrc = (value: unknown): string => {
+  if (typeof value !== "string" || !value) return "";
+
+  try {
+    if (!/^[a-fA-F0-9]+$/.test(value) || value.length % 16 !== 0) return "";
+    const decrypted = decryptQrc(value);
+    return decrypted ? extractQrcLyricContent(decrypted) : "";
+  } catch {
+    return "";
+  }
+};
 
 /**
  * 通用 QQ 音乐 musicu.fcg 请求封装。
@@ -92,6 +130,7 @@ export const searchQQ = async (
 
   return songs.map((s: any) => ({
     id: s.mid || String(s.id),
+    lyricId: s.id ? String(s.id) : undefined,
     name: s.name || "",
     artist: s.singer?.map((si: any) => si.name).join(", ") || "",
     album: s.album?.name || "",
@@ -167,6 +206,7 @@ export const getQQTopListDetail = async (
 
   return songs.map((s: any) => ({
     id: s.mid || String(s.id || ""),
+    lyricId: s.id ? String(s.id) : undefined,
     name: s.title || s.name || "",
     artist: s.singer?.map((si: any) => si.name).join(", ") || "",
     album: s.album?.title || s.album?.name || "",
@@ -196,35 +236,33 @@ export const fetchQQLyrics = async (
   id: string | number,
 ): Promise<string> => {
   try {
+    const numericId = /^\d+$/.test(String(id)) ? Number(id) : 0;
     const data = await qqMusicuFetch({
       module: "music.musichallSong.PlayLyricInfo",
       method: "GetPlayLyricInfo",
-      param: { songMID: String(id), songID: 0 },
+      param: {
+        songMID: String(id),
+        songID: numericId,
+        crypt: 0,
+        qrc: 1,
+        trans: 1,
+        roma: 1,
+      },
     });
 
     if (!data) return "";
 
-    const lyricB64: string = data.lyric || "";
-    const transB64: string = data.trans || "";
-    const romanizationB64: string = data.roma || "";
-
-    // QQ 歌词 API 返回 Base64 编码的 LRC 文本
-    const decode = (b64: string): string => {
-      try {
-        return b64 ? decodeURIComponent(escape(atob(b64))) : "";
-      } catch {
-        return "";
-      }
-    };
-
-    const main = decode(lyricB64);
-    const trans = decode(transB64);
-    const romanization = decode(romanizationB64);
+    const encryptedQrc = typeof data.qrc === "number" && data.qrc === 1;
+    const karaoke = encryptedQrc ? decodeQQEncryptedQrc(data.lyric) : "";
+    const main = karaoke || decodeQQBase64(data.lyric);
+    const trans = decodeQQBase64(data.trans);
+    const romanization = decodeQQBase64(data.roma);
 
     return mergeLyricTracks({
       main,
       translation: trans,
       romanization,
+      karaoke,
       source: "qq",
     });
   } catch {

@@ -1038,11 +1038,14 @@ img { display: block; }
 .playlist-source-options { display: grid; grid-template-columns: 1fr; gap: 8px; }
 .playlist-source-options .source-option { min-height: 43px; flex-basis: auto; border-radius: 15px; font-size: 13px; font-weight: 900; }
 .playlist-card-button { width: 100%; min-height: 44px; border-radius: 15px; font-size: 13px; font-weight: 900; }
-.settings-grid { grid-template-columns: minmax(0, 1.15fr) minmax(330px, .85fr); align-items: start; }
+.settings-grid { grid-template-columns: minmax(0, 1.15fr) minmax(330px, .85fr); align-items: stretch; }
 .settings-core-card {
   min-height: 100%;
   display: flex;
   flex-direction: column;
+}
+.settings-theme-card {
+  min-height: 100%;
 }
 .settings-side-column {
   display: grid;
@@ -1839,6 +1842,36 @@ img { display: block; }
 .lyric-line:hover { background: var(--glass-bg-faint); color: var(--text-dim); }
 .lyric-line span,
 .lyric-line em { display: block; overflow-wrap: anywhere; }
+.karaoke-line {
+  display: inline-flex !important;
+  flex-wrap: wrap;
+  justify-content: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.karaoke-word {
+  display: inline-block;
+  transform-origin: 50% 72%;
+  transition: color .12s ease, opacity .12s ease, filter .12s ease;
+  will-change: transform, opacity;
+}
+.karaoke-word.pending {
+  color: var(--muted);
+  opacity: .46;
+}
+.karaoke-word.done {
+  color: var(--accent);
+  opacity: .92;
+}
+.karaoke-word.active {
+  color: var(--accent);
+  opacity: 1;
+  filter: drop-shadow(0 0 10px rgba(var(--accent-rgb), .24));
+  animation: karaokeWordPop .26s cubic-bezier(.2,.9,.2,1) both;
+}
+.desktop-lyric-current-line .karaoke-word.pending { opacity: .38; }
+.desktop-lyric-current-line .karaoke-word.done,
+.desktop-lyric-current-line .karaoke-word.active { opacity: 1; }
 .lyric-line em { margin-top: 6px; color: var(--text-tertiary); font-size: .66em; font-style: normal; font-weight: 760; }
 .lyric-line.active { color: var(--accent); font-size: clamp(30px, 3.45vw, 54px); letter-spacing: -.045em; opacity: 1; transform: translateY(0) scale(1); }
 .lyric-line.active em { color: var(--text-dim); font-size: .43em; letter-spacing: 0; }
@@ -1960,6 +1993,11 @@ img { display: block; }
 @keyframes scoreNoteFloat {
   0%, 100% { opacity: .28; transform: translate3d(-50%, 7px, 0) scale(.88) rotate(-8deg); }
   45% { opacity: .78; transform: translate3d(calc(-50% + var(--note-drift)), -12px, 0) scale(1.08) rotate(7deg); }
+}
+@keyframes karaokeWordPop {
+  0% { transform: translateY(0) scale(1); }
+  42% { transform: translateY(-0.18em) scale(1.12); }
+  100% { transform: translateY(0) scale(1); }
 }
 @keyframes lyricFloat { 0%, 100% { transform: translateY(-8px) scale(1); } 50% { transform: translateY(12px) scale(1.04); } }
 @keyframes ambientFloat { 0%, 100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(18px,-14px,0) scale(1.06); } }

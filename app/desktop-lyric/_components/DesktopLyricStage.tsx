@@ -19,6 +19,8 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
   const [stageHeight, setStageHeight] = useState(0);
   const { song, rows, activeIndex, currentLine } = player;
   const { size } = styleState;
+  const lyricClock = player.currentTime + player.lyricOffsetSeconds;
+  const enableKaraoke = player.lyricDisplayMode === 'karaoke';
   const isDarkTheme = typeof document !== 'undefined' && document.documentElement.classList.contains('dark-theme');
   const activeShadow = getLyricTextShadow(true, isDarkTheme);
   const contextShadow = getLyricTextShadow(false, isDarkTheme);
@@ -128,7 +130,7 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
       </div>
 
       <div className="desktop-lyric-focus" data-tauri-drag-region>
-        {currentLine && <LyricLineRenderer line={currentLine} active size={size} shadow={activeShadow} />}
+        {currentLine && <LyricLineRenderer line={currentLine} active size={size} shadow={activeShadow} currentTime={lyricClock} source={song?.source} enableKaraoke={enableKaraoke} />}
       </div>
 
       <div className="desktop-lyric-context desktop-lyric-context-bottom" data-tauri-drag-region>

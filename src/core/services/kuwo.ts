@@ -1,4 +1,6 @@
 import { Song, TopList } from "../types";
+import { mergeLyricTracks } from "../utils/lyrics";
+import { inflate } from "pako";
 import { SELF_HOSTED_PROXY } from "./config";
 import { getProxies, proxyFetchJson } from "./proxy";
 import { fixUrl } from "./utils";
@@ -185,6 +187,144 @@ export const getKuwoTopListDetail = async (
 // 酷我歌词
 // ==============================
 
+const KUWO_LRCX_KEY = new TextEncoder().encode("yeelion");
+
+const bytesToBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+};
+
+const base64ToBytes = (value: string): Uint8Array => {
+  const binary = atob(value);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+};
+
+const buildKuwoNewLyricToken = (id: string | number): string => {
+  const rid = /^\d+$/.test(String(id)) ? `MUSIC_${id}` : String(id);
+  const params = `user=313928,MUSIC_9.1.1.8_W6,kwmusic_web_6 (1).exe,KwMusic&requester=localhost&req=1&rid=${rid}&lrcx=1&olrc=1`;
+  const input = new TextEncoder().encode(params);
+  const output = new Uint8Array(input.length);
+
+  for (let index = 0; index < input.length; index++) {
+    output[index] = input[index] ^ KUWO_LRCX_KEY[index % KUWO_LRCX_KEY.length];
+  }
+
+  return bytesToBase64(output);
+};
+
+const findByteSequence = (bytes: Uint8Array, sequence: number[]): number => {
+  for (let index = 0; index <= bytes.length - sequence.length; index++) {
+    if (sequence.every((byte, offset) => bytes[index + offset] === byte)) {
+      return index;
+    }
+  }
+  return -1;
+};
+
+const decryptKuwoLrcx = (payload: ArrayBuffer): string => {
+  try {
+    const bytes = new Uint8Array(payload);
+    const separatorIndex = findByteSequence(bytes, [13, 10, 13, 10]);
+    const body = separatorIndex >= 0 ? bytes.slice(separatorIndex + 4) : bytes;
+    const base64Text = new TextDecoder("utf-8").decode(inflate(body));
+    const content = base64ToBytes(base64Text.trim());
+
+    for (let index = 0; index < content.length; index++) {
+      content[index] ^= KUWO_LRCX_KEY[index % KUWO_LRCX_KEY.length];
+    }
+
+    return new TextDecoder("gb18030").decode(content);
+  } catch {
+    return "";
+  }
+};
+
+const parseKuwoLrcxAsKaraoke = (lrcx: string): string => {
+  const kuwoMarker = lrcx.match(/^\[kuwo:([0-7]+)\]/m)?.[1];
+  if (!kuwoMarker) return "";
+
+  const kuwo = parseInt(kuwoMarker, 8);
+  const k1 = Math.floor(kuwo / 10);
+  const k2 = kuwo % 10;
+  if (!k1 || !k2) return "";
+
+  const output: string[] = [];
+
+  for (const rawLine of lrcx.split(/\r?\n/)) {
+    const lineMatch = rawLine.trim().match(/^\[(\d+):(\d+)\.(\d+)\](.*)$/);
+    if (!lineMatch) continue;
+
+    const lineStart =
+      Number(lineMatch[1]) * 60 * 1000 +
+      Number(lineMatch[2]) * 1000 +
+      Number(lineMatch[3].padEnd(3, "0").slice(0, 3));
+    const content = lineMatch[4] || "";
+    const words: Array<{ start: number; duration: number; text: string }> = [];
+
+    for (const wordMatch of content.matchAll(/<(\d+),(-?\d+)>([^<]+)/g)) {
+      const v1 = Number(wordMatch[1]);
+      const v2 = Number(wordMatch[2]);
+      const start = (v1 + v2) / (k1 * 2);
+      const duration = (v1 - v2) / (k2 * 2);
+      const text = wordMatch[3] || "";
+
+      if (
+        text &&
+        Number.isFinite(start) &&
+        Number.isFinite(duration) &&
+        duration > 0
+      ) {
+        words.push({ start, duration, text });
+      }
+    }
+
+    if (words.length === 0) continue;
+
+    const lineDuration = Math.max(
+      ...words.map((word) => word.start + word.duration),
+    );
+    const lyricText = words
+      .map((word) => `(${Math.round(lineStart + word.start)},${Math.round(word.duration)},0)${word.text}`)
+      .join("");
+    output.push(`[${Math.round(lineStart)},${Math.round(lineDuration)}]${lyricText}`);
+  }
+
+  return output.join("\n");
+};
+
+const fetchKuwoLrcxKaraoke = async (
+  id: string | number,
+): Promise<string> => {
+  const rawUrl = `http://newlyric.kuwo.cn/newlyric.lrc?${buildKuwoNewLyricToken(id)}`;
+
+  for (const proxy of getProxies()) {
+    try {
+      const finalUrl = `${proxy}${encodeURIComponent(rawUrl)}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const isSelfProxy = proxy === SELF_HOSTED_PROXY;
+
+      const resp = await fetch(finalUrl, {
+        ...(isSelfProxy ? {} : { mode: "cors" as RequestMode }),
+        credentials: "omit",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!resp.ok) continue;
+
+      const lrcx = decryptKuwoLrcx(await resp.arrayBuffer());
+      const karaoke = parseKuwoLrcxAsKaraoke(lrcx);
+      if (karaoke) return karaoke;
+    } catch {
+      /* 继续下一个代理 */
+    }
+  }
+
+  return "";
+};
+
 /**
  * 酷我歌词获取：
  * 1. 优先使用 openapi/v1/www/lyric/getlyric（兼容性更好）
@@ -198,6 +338,7 @@ export const fetchKuwoLyrics = async (
 ): Promise<string> => {
   try {
     let lrcList: any[] | null = null;
+    const karaokePromise = fetchKuwoLrcxKaraoke(id);
 
     // 优先：openapi 端点（兼容性更好）
     const openApiResp = await proxyFetchJson(
@@ -215,16 +356,22 @@ export const fetchKuwoLyrics = async (
       }
     }
 
-    if (!Array.isArray(lrcList)) return "";
-
-    return lrcList
-      .map((l: any) => {
+    const main = Array.isArray(lrcList)
+      ? lrcList.map((l: any) => {
         const t = parseFloat(l.time || "0");
         const min = Math.floor(t / 60).toString().padStart(2, "0");
         const sec = (t % 60).toFixed(2).padStart(5, "0");
         return `[${min}:${sec}]${l.lineLyric || ""}`;
       })
-      .join("\n");
+      .join("\n")
+      : "";
+    const karaoke = await karaokePromise;
+
+    return mergeLyricTracks({
+      main,
+      karaoke,
+      source: "kuwo",
+    });
   } catch {
     return "";
   }

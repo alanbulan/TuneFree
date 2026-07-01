@@ -1,4 +1,5 @@
 import type { ParsedLyric } from '../../../src/core/utils/lyrics';
+import type { LyricDisplayMode } from '../../../src/core/utils/lyricDisplayMode';
 
 export interface DesktopLyricSong {
   id: string | number;
@@ -16,6 +17,7 @@ export interface LyricUpdateEvent {
   isPlaying: boolean;
   playbackRate?: number;
   lyricOffsetSeconds?: number;
+  lyricDisplayMode?: LyricDisplayMode;
   sentAt?: number;
 }
 
@@ -31,6 +33,8 @@ export interface DesktopLyricPlayerState {
   activeIndex: number;
   currentLine: ParsedLyric | null;
   currentTime: number;
+  lyricOffsetSeconds: number;
+  lyricDisplayMode: LyricDisplayMode;
   isPlaying: boolean;
 }
 

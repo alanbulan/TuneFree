@@ -10,6 +10,11 @@ import {
   type OfflineDownloadMeta,
 } from '../../../core/services/offlineDownloads';
 import {
+  readLyricDisplayMode,
+  saveLyricDisplayMode,
+  type LyricDisplayMode,
+} from '../../../core/utils/lyricDisplayMode';
+import {
   clearRecommendationData,
   getLlmConfig,
   rebuildRecommendationIndex,
@@ -82,6 +87,7 @@ export default function SettingsView() {
 
   const [tempProxy, setTempProxy] = useState(corsProxy);
   const [tempShowPet, setTempShowPet] = useState(true);
+  const [tempLyricDisplayMode, setTempLyricDisplayMode] = useState<LyricDisplayMode>('line');
   const [downloadPath, setDownloadPath] = useState('');
   const [pendingImport, setPendingImport] = useState<LibraryImportPreview | null>(null);
   const [localRecommendationEnabled, setLocalRecommendationEnabled] = useState(true);
@@ -96,6 +102,7 @@ export default function SettingsView() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setTempShowPet(localStorage.getItem('tunefree_desktop_show_pet') !== 'false');
+      setTempLyricDisplayMode(readLyricDisplayMode(localStorage));
       setLocalRecommendationEnabled(localStorage.getItem('tunefree_local_recommendation_enabled') !== 'false');
     }
   }, []);
@@ -566,6 +573,41 @@ export default function SettingsView() {
               onChange={(val) => setLyricFont(val)}
             />
           </div>
+        </div>
+
+        <div className="panel-field" style={{ marginTop: '14px' }}>
+          <label>歌词显示方式</label>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+            {[
+              { label: '逐行显示', value: 'line' as const },
+              { label: '逐字动态', value: 'karaoke' as const },
+            ].map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`soft-button ${tempLyricDisplayMode === option.value ? 'active' : ''}`}
+                style={{
+                  flex: '1 1 120px',
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  backgroundColor: tempLyricDisplayMode === option.value ? 'var(--accent)' : 'transparent',
+                  color: tempLyricDisplayMode === option.value ? 'var(--ios-card)' : 'var(--text)',
+                  border: tempLyricDisplayMode === option.value ? '1px solid var(--accent)' : '1px solid var(--line)',
+                  fontWeight: tempLyricDisplayMode === option.value ? 700 : 500,
+                }}
+                onClick={() => {
+                  setTempLyricDisplayMode(option.value);
+                  saveLyricDisplayMode(option.value);
+                  showMessage(`歌词显示方式已切换为：${option.label}`, 'success');
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '6px', lineHeight: 1.4 }}>
+            逐行显示为原有歌词加载方式；逐字动态只在歌词源提供真实逐字时间轴时生效。
+          </p>
         </div>
 
         <div className="panel-field" style={{ marginTop: '16px', borderTop: '1px solid var(--line)', paddingTop: '14px' }}>

@@ -103,9 +103,8 @@ export const proxyFetch = async (
       }
 
       lastResp = resp;
-      console.warn(`[Proxy] Proxy ${proxy} returned non-ok status ${resp.status} for url: ${url}, trying next...`);
-    } catch (err) {
-      console.warn(`[Proxy] Proxy ${proxy} fetch failed for url: ${url}, trying next...`, err);
+    } catch {
+      /* 继续下一个代理 */
     }
   }
 

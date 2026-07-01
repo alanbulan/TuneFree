@@ -47,7 +47,10 @@ const timeTagPattern = /\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
 const metadataPattern = /^\s*\[(ar|al|ti|by|length|re|ve|kana):.*\]\s*$/i;
 const offsetPattern = /^\s*\[offset:([+-]?\d+)\]\s*$/i;
 const trackMarkerPattern = /^\s*\[(?:tunefree:)?([a-z_-]+)\]\s*$/i;
-const inlineWordTimePattern = /<(?:(?:\d{1,3}:)?\d{1,2}[.:]\d{1,3}|\d+,\d+)(?:,[^>]*)?>/g;
+const inlineWordTimePattern = /<((?:(?:\d{1,3}:)?\d{1,2}[.:]\d{1,3}|\d+)(?:,\d+)?)(?:,[^>]*)?>/g;
+const durationLinePattern = /^\s*\[(\d+),(\d+)\](.*)$/;
+const durationTimingMarkerPattern = /\((\d+),(\d+)(?:,[^)]*)?\)/g;
+const durationWordPattern = /\((\d+),(\d+)(?:,[^)]*)?\)([^()]*)/g;
 const TRANSLATED_FALLBACK_SOURCES = new Set(['netease', 'qq']);
 
 /**
@@ -63,6 +66,7 @@ const BLOCK_RESET_TOLERANCE_SECONDS = 2;
  * 微小编码差异，又不会错误地将不同行的翻译匹配到一起。
  */
 const EXTENDED_TRACK_MATCH_TOLERANCE_SECONDS = 0.1;
+const KARAOKE_TRACK_MATCH_TOLERANCE_SECONDS = 1.2;
 
 /**
  * 容差：用于旧版（无显式轨道标记）自动推断轨道的行匹配。
@@ -99,6 +103,7 @@ type RawLyricLine = {
   text: string;
   order: number;
   key: string;
+  words?: ParsedLyricWord[];
 };
 
 type LyricBlock = {
@@ -117,6 +122,7 @@ type TimedLineGroup = {
   time: number;
   order: number;
   values: string[];
+  words?: ParsedLyricWord[];
 };
 
 type ExtensionTrack = {
@@ -132,9 +138,127 @@ const parseTimeMatch = (match: RegExpMatchArray): number => {
   return minutes * 60 + seconds + fraction / 1000;
 };
 
+const parseInlineWordTime = (value: string): { start: number; duration?: number } | null => {
+  const commaParts = value.split(',');
+  if (commaParts.length >= 2 && /^\d+$/.test(commaParts[0]) && /^\d+$/.test(commaParts[1])) {
+    return {
+      start: Number(commaParts[0]) / 1000,
+      duration: Number(commaParts[1]) / 1000,
+    };
+  }
+
+  const match = value.match(/^(?:(\d{1,3}):)?(\d{1,2})[.:](\d{1,3})$/);
+  if (!match) return null;
+
+  const minutes = Number(match[1] || 0);
+  const seconds = Number(match[2]);
+  const fraction = Number((match[3] || '0').padEnd(3, '0').slice(0, 3));
+  return { start: minutes * 60 + seconds + fraction / 1000 };
+};
+
+const cleanWordText = (value: string): string => value.replace(/\s+/g, ' ');
+
+const normalizeWordStart = (start: number, lineStart: number): number => {
+  // YRC/QRC 里有的平台给绝对毫秒，有的平台给相对行首毫秒。
+  // 只有在词时间明显早于行时间时才按相对值处理。
+  if (lineStart > 0 && start + 0.05 < lineStart) return lineStart + start;
+  return start;
+};
+
+type ParsedTimedContent = {
+  text: string;
+  words?: ParsedLyricWord[];
+};
+
+const parseDurationWords = (
+  text: string,
+  lineStart: number,
+): ParsedLyricWord[] => {
+  const words: ParsedLyricWord[] = [];
+  const firstTimingIndex = text.search(durationTimingMarkerPattern);
+
+  if (firstTimingIndex > 0 && text.slice(0, firstTimingIndex).trim()) {
+    let cursor = 0;
+    for (const match of text.matchAll(durationTimingMarkerPattern)) {
+      const markerIndex = match.index || 0;
+      const rawText = cleanWordText(text.slice(cursor, markerIndex));
+      cursor = markerIndex + match[0].length;
+      if (!rawText) continue;
+
+      const start = normalizeWordStart(Number(match[1]) / 1000, lineStart);
+      const duration = Number(match[2]) / 1000;
+      if (!Number.isFinite(start) || !Number.isFinite(duration) || duration <= 0) continue;
+
+      words.push({ start, duration, text: rawText });
+    }
+
+    return words;
+  }
+
+  for (const match of text.matchAll(durationWordPattern)) {
+    const rawText = cleanWordText(match[3] || '');
+    if (!rawText) continue;
+
+    const start = normalizeWordStart(Number(match[1]) / 1000, lineStart);
+    const duration = Number(match[2]) / 1000;
+    if (!Number.isFinite(start) || !Number.isFinite(duration) || duration <= 0) continue;
+
+    words.push({ start, duration, text: rawText });
+  }
+
+  return words;
+};
+
+const parseInlineWords = (text: string): ParsedLyricWord[] => {
+  const matches = Array.from(text.matchAll(inlineWordTimePattern));
+  if (matches.length === 0) return [];
+
+  const words: ParsedLyricWord[] = [];
+  for (let index = 0; index < matches.length; index++) {
+    const match = matches[index];
+    const timing = parseInlineWordTime(match[1]);
+    if (!timing) continue;
+
+    const contentStart = (match.index || 0) + match[0].length;
+    const contentEnd = index + 1 < matches.length ? matches[index + 1].index || text.length : text.length;
+    const wordText = cleanWordText(text.slice(contentStart, contentEnd));
+    if (!wordText.trim()) continue;
+
+    const nextTiming = index + 1 < matches.length ? parseInlineWordTime(matches[index + 1][1]) : null;
+    const duration = timing.duration ?? (nextTiming ? Math.max(0, nextTiming.start - timing.start) : 0);
+    if (!Number.isFinite(timing.start) || duration <= 0) continue;
+
+    words.push({
+      start: timing.start,
+      duration,
+      text: wordText,
+    });
+  }
+
+  return words;
+};
+
+const parseTimedContent = (
+  text: string,
+  lineStart = 0,
+): ParsedTimedContent => {
+  const durationWords = parseDurationWords(text, lineStart);
+  const inlineWords = durationWords.length > 0 ? [] : parseInlineWords(text);
+  const words = durationWords.length > 0 ? durationWords : inlineWords;
+  const normalizedText = normalizeLyricText(text);
+
+  return {
+    text: normalizedText || words.map((word) => word.text).join('').replace(/\s+/g, ' ').trim(),
+    words: words.length > 0 ? words : undefined,
+  };
+};
+
 const normalizeLyricText = (line: string): string =>
   line
     .replace(timeTagPattern, '')
+    .replace(durationLinePattern, '$3')
+    .replace(durationWordPattern, '$3')
+    .replace(durationTimingMarkerPattern, '')
     .replace(inlineWordTimePattern, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -192,8 +316,36 @@ const parseLyricDocument = (
 
     if (metadataPattern.test(line)) continue;
 
+    const durationLineMatch = line.match(durationLinePattern);
+    if (durationLineMatch) {
+      const time = Math.max(0, Number(durationLineMatch[1]) / 1000 + offsetSeconds);
+      const content = parseTimedContent(durationLineMatch[3] || '', time);
+      if (!content.text) continue;
+
+      if (
+        previousLineTime !== null &&
+        time + BLOCK_RESET_TOLERANCE_SECONDS < previousLineTime
+      ) {
+        blocks.push(createBlock('auto'));
+      }
+      previousLineTime = time;
+
+      const block = blocks[blocks.length - 1];
+      block.lines.push({
+        time,
+        text: content.text,
+        words: content.words,
+        order,
+        key: getTimeKey(time),
+      });
+      order += 1;
+      continue;
+    }
+
     const matches = Array.from(line.matchAll(timeTagPattern));
-    const text = normalizeLyricText(line);
+    const firstLineTime = matches.length > 0 ? parseTimeMatch(matches[0]) + offsetSeconds : 0;
+    const content = parseTimedContent(line, firstLineTime);
+    const text = content.text;
     if (!text) continue;
 
     if (matches.length === 0) {
@@ -213,7 +365,7 @@ const parseLyricDocument = (
     const block = blocks[blocks.length - 1];
     for (const match of matches) {
       const time = Math.max(0, parseTimeMatch(match) + offsetSeconds);
-      block.lines.push({ time, text, order, key: getTimeKey(time) });
+      block.lines.push({ time, text, words: content.words, order, key: getTimeKey(time) });
     }
     order += 1;
   }
@@ -240,12 +392,18 @@ const groupTimedLines = (lines: RawLyricLine[]): TimedLineGroup[] => {
       groups.push(group);
     }
     pushUnique(group.values, line.text);
+    if (!group.words && line.words && line.words.length > 0) {
+      group.words = line.words;
+    }
   }
 
   return groups.sort((a, b) => a.time - b.time || a.order - b.order);
 };
 
 const joinTrackValues = (values: string[]): string => values.join('\n');
+
+const normalizeComparableLyricText = (value: string): string =>
+  value.replace(/\s+/g, '').trim();
 
 const getMainTexts = (row: ParsedLyric): string[] =>
   row.mainTexts && row.mainTexts.length > 0 ? row.mainTexts : row.text.split('\n').filter(Boolean);
@@ -260,7 +418,19 @@ const setRowTrack = (
   type: Exclude<LyricTrackType, 'main'>,
   values: string[],
   sourceTime?: number,
+  words?: ParsedLyricWord[],
 ) => {
+  if (type === 'karaoke') {
+    if (words && words.length > 0) {
+      row.words = words;
+      const firstWordStart = words[0]?.start;
+      if (Number.isFinite(firstWordStart) && firstWordStart < row.time) {
+        row.time = firstWordStart;
+      }
+    }
+    return;
+  }
+
   const filtered = filterExtensionValues(row, values);
   if (filtered.length === 0) return;
 
@@ -309,6 +479,7 @@ const buildRowsFromPrimaryAndTracks = (
       time: group.time,
       text: joinTrackValues(group.values),
       mainTexts: group.values.length > 1 ? group.values : undefined,
+      words: group.words,
     }));
   }
 
@@ -316,6 +487,7 @@ const buildRowsFromPrimaryAndTracks = (
     time: group.time,
     text: joinTrackValues(group.values),
     mainTexts: group.values.length > 1 ? group.values : undefined,
+    words: group.words,
   } satisfies ParsedLyric));
 
   for (const track of tracks) {
@@ -328,7 +500,7 @@ const buildRowsFromPrimaryAndTracks = (
       const exactGroup = groupByKey.get(primaryGroup.key);
       if (!exactGroup) return;
 
-      setRowTrack(row, track.type, exactGroup.values, exactGroup.time);
+      setRowTrack(row, track.type, exactGroup.values, exactGroup.time, exactGroup.words);
       usedKeys.add(exactGroup.key);
     });
 
@@ -336,6 +508,7 @@ const buildRowsFromPrimaryAndTracks = (
       const primaryGroup = primaryGroups[rowIndex];
       let bestGroup: TimedLineGroup | null = null;
       let bestScore = Number.POSITIVE_INFINITY;
+      const rowText = normalizeComparableLyricText(row.text);
 
       for (const group of groups) {
         if (usedKeys.has(group.key)) continue;
@@ -343,7 +516,9 @@ const buildRowsFromPrimaryAndTracks = (
         const timeDiff = Math.abs(group.time - row.time);
         if (timeDiff > track.toleranceSeconds) continue;
 
-        const score = timeDiff + Math.abs(group.order - primaryGroup.order) * 0.02;
+        const groupText = normalizeComparableLyricText(joinTrackValues(group.values));
+        const textBonus = track.type === 'karaoke' && rowText && groupText === rowText ? -0.45 : 0;
+        const score = timeDiff + Math.abs(group.order - primaryGroup.order) * 0.02 + textBonus;
         if (score < bestScore) {
           bestScore = score;
           bestGroup = group;
@@ -351,7 +526,7 @@ const buildRowsFromPrimaryAndTracks = (
       }
 
       if (bestGroup) {
-        setRowTrack(row, track.type, bestGroup.values, bestGroup.time);
+        setRowTrack(row, track.type, bestGroup.values, bestGroup.time, bestGroup.words);
         usedKeys.add(bestGroup.key);
       }
     });
@@ -391,7 +566,9 @@ export const normalizeLyrics = (bundle: LyricTrackBundle): NormalizedLyrics => {
     tracks.push({
       type,
       lines,
-      toleranceSeconds: EXTENDED_TRACK_MATCH_TOLERANCE_SECONDS,
+      toleranceSeconds: type === 'karaoke'
+        ? KARAOKE_TRACK_MATCH_TOLERANCE_SECONDS
+        : EXTENDED_TRACK_MATCH_TOLERANCE_SECONDS,
     });
   };
 
@@ -482,7 +659,9 @@ export const parseLyrics = (lrc?: string): ParsedLyric[] => {
     tracks.push({
       type,
       lines: block.lines,
-      toleranceSeconds: block.type === 'auto'
+      toleranceSeconds: type === 'karaoke'
+        ? KARAOKE_TRACK_MATCH_TOLERANCE_SECONDS
+        : block.type === 'auto'
         ? LEGACY_TRACK_MATCH_TOLERANCE_SECONDS
         : EXTENDED_TRACK_MATCH_TOLERANCE_SECONDS,
     });

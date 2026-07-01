@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { findActiveLyricIndex, parseLyrics } from '../../../src/core/utils/lyrics';
+import { normalizeLyricDisplayMode, type LyricDisplayMode } from '../../../src/core/utils/lyricDisplayMode';
 import type { DesktopLyricCommand, DesktopLyricPlayerState, DesktopLyricSong, DesktopLyricStyleState, LyricUpdateEvent } from './types';
 import { forceTransparentDocument, readAndApplyDesktopLyricTheme } from './theme';
 
@@ -9,6 +10,7 @@ type PlaybackSnapshot = {
   isPlaying: boolean;
   playbackRate: number;
   lyricOffsetSeconds: number;
+  lyricDisplayMode: LyricDisplayMode;
   receivedAt: number;
 };
 
@@ -26,6 +28,7 @@ export const useDesktopLyricBridge = () => {
     isPlaying: false,
     playbackRate: 1,
     lyricOffsetSeconds: 0,
+    lyricDisplayMode: 'line',
     receivedAt: getNowSeconds(),
   });
   const [projectedTime, setProjectedTime] = useState(0);
@@ -49,7 +52,7 @@ export const useDesktopLyricBridge = () => {
       try {
         const { listen } = await import('@tauri-apps/api/event');
         lyricUnlisten = await listen<LyricUpdateEvent>('lyric-update', (event) => {
-          const { song, currentTime, isPlaying, playbackRate, lyricOffsetSeconds, sentAt } = event.payload;
+          const { song, currentTime, isPlaying, playbackRate, lyricOffsetSeconds, lyricDisplayMode, sentAt } = event.payload;
           const now = getNowSeconds();
           const transportDelay = isPlaying && sentAt ? Math.max(0, Date.now() - sentAt) / 1000 : 0;
           const baseTime = currentTime + Math.min(0.25, transportDelay);
@@ -60,6 +63,7 @@ export const useDesktopLyricBridge = () => {
             isPlaying,
             playbackRate: playbackRate && Number.isFinite(playbackRate) ? playbackRate : 1,
             lyricOffsetSeconds: Number.isFinite(lyricOffsetSeconds) ? lyricOffsetSeconds || 0 : 0,
+            lyricDisplayMode: normalizeLyricDisplayMode(lyricDisplayMode),
             receivedAt: now,
           });
           setProjectedTime(baseTime);
@@ -147,6 +151,8 @@ export const useDesktopLyricBridge = () => {
     activeIndex,
     currentLine,
     currentTime: projectedTime,
+    lyricOffsetSeconds: snapshot.lyricOffsetSeconds,
+    lyricDisplayMode: snapshot.lyricDisplayMode,
     isPlaying: snapshot.isPlaying,
   };
 

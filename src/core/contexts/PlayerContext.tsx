@@ -29,6 +29,7 @@ import {
 } from "./playerPersistence";
 import { getNextQueueIndex, getPrevQueueIndex } from "./playerQueue";
 import { hasTranslatedLyrics, parseLyrics, supportsTranslatedLyricFallback } from "../utils/lyrics";
+import { LYRIC_DISPLAY_MODE_CHANGE_EVENT } from "../utils/lyricDisplayMode";
 
 export interface PlayerNotice {
   id: number;
@@ -142,6 +143,7 @@ const getLyricStats = (lrc?: string) => {
   return {
     hasRows: rows.length > 0,
     hasTranslation: hasTranslatedLyrics(rows),
+    hasTimedWords: rows.some((row) => (row.words?.length || 0) > 1),
   };
 };
 
@@ -153,12 +155,25 @@ const shouldUseLyricCandidate = (existingLrc?: string, candidateLrc?: string): b
 
   const existingStats = getLyricStats(existingLrc);
   if (!existingStats.hasRows) return true;
+  if (!existingStats.hasTimedWords && candidateStats.hasTimedWords) return true;
   return !existingStats.hasTranslation && candidateStats.hasTranslation;
 };
 
+const TIMED_WORD_LYRIC_SOURCES = new Set(["netease", "qq", "kuwo", "joox", "bilibili", "embeat"]);
+
+const supportsTimedWordLyricFallback = (source?: string): boolean =>
+  !!source && TIMED_WORD_LYRIC_SOURCES.has(source);
+
 const shouldFetchBetterLyrics = (song: Pick<Song, "source">, lrc?: string): boolean => {
   const stats = getLyricStats(lrc);
-  return !stats.hasRows || (supportsTranslatedLyricFallback(song.source) && !stats.hasTranslation);
+  if (!stats.hasRows) return true;
+
+  const needsTimedWords =
+    supportsTimedWordLyricFallback(song.source) && !stats.hasTimedWords;
+  const needsTranslation =
+    supportsTranslatedLyricFallback(song.source) && !stats.hasTranslation;
+
+  return needsTimedWords || needsTranslation;
 };
 
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -180,6 +195,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     loadStoredAudioQuality(),
   );
   const [playerNotice, setPlayerNotice] = useState<PlayerNotice | null>(null);
+  const [lyricRefreshNonce, setLyricRefreshNonce] = useState(0);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
 
@@ -209,6 +225,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const lastProgressTimeRef = useRef(0);
   const play30LoggedKeyRef = useRef<string | null>(null);
   const completeLoggedKeyRef = useRef<string | null>(null);
+  const lyricRefreshKeyRef = useRef<string | null>(null);
 
   // Track error retry to prevent loops
   const retryCountRef = useRef(0);
@@ -276,6 +293,54 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     persistCurrentSong(currentSong);
     currentSongRef.current = currentSong;
   }, [currentSong]);
+
+  useEffect(() => {
+    const requestLyricRefresh = () => setLyricRefreshNonce((value) => value + 1);
+    window.addEventListener(LYRIC_DISPLAY_MODE_CHANGE_EVENT, requestLyricRefresh);
+    window.addEventListener('storage', requestLyricRefresh);
+
+    return () => {
+      window.removeEventListener(LYRIC_DISPLAY_MODE_CHANGE_EVENT, requestLyricRefresh);
+      window.removeEventListener('storage', requestLyricRefresh);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!currentSong || !shouldFetchBetterLyrics(currentSong, currentSong.lrc)) return;
+
+    const refreshKey = `${getSongKey(currentSong)}:${currentSong.lrc?.length || 0}:${lyricRefreshNonce}`;
+    if (lyricRefreshKeyRef.current === refreshKey) return;
+    lyricRefreshKeyRef.current = refreshKey;
+
+    let cancelled = false;
+    void getLyrics(currentSong.id, currentSong.source, currentSong).then((lrc) => {
+      if (cancelled || !shouldUseLyricCandidate(currentSongRef.current?.lrc, lrc)) return;
+
+      parsedSongCacheRef.current.clear();
+      setCurrentSong((prev) => {
+        if (!prev || !isSameSong(prev, currentSong) || !shouldUseLyricCandidate(prev.lrc, lrc)) {
+          return prev;
+        }
+
+        const nextSong = { ...prev, lrc };
+        currentSongRef.current = nextSong;
+        return nextSong;
+      });
+      setQueue((prev) => {
+        const next = prev.map((song) =>
+          isSameSong(song, currentSong) && shouldUseLyricCandidate(song.lrc, lrc)
+            ? { ...song, lrc }
+            : song,
+        );
+        queueRef.current = next;
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSong, lyricRefreshNonce]);
 
   useEffect(() => {
     persistPlayMode(playMode);
@@ -842,7 +907,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           }
 
           if (shouldFetchBetterLyrics(song, fullSong.lrc)) {
-            void getLyrics(song.id, song.source).then((lrc) => {
+            void getLyrics(song.id, song.source, song).then((lrc) => {
               if (
                 !isSameSong(currentSongRef.current, song) ||
                 !shouldUseLyricCandidate(currentSongRef.current?.lrc, lrc)
