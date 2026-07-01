@@ -3,6 +3,7 @@ pub mod recommendation;
 pub mod server;
 
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -10,10 +11,9 @@ use std::sync::{
 use tauri::{
     menu::MenuBuilder,
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager, State, WindowEvent,
+    Emitter, Manager, PhysicalPosition, PhysicalSize, Runtime, State, Window, WindowEvent,
 };
 use tauri_plugin_dialog::DialogExt;
-use tauri_plugin_window_state::StateFlags;
 
 use recommendation::{
     LibrarySnapshot, LlmConfigInput, LlmConfigView, LlmProviderTestResult, RecSong,
@@ -48,6 +48,74 @@ struct UpdateProgress {
 struct AppLifecycleState {
     is_quitting: Arc<AtomicBool>,
     shutdown_tx: tokio::sync::watch::Sender<bool>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct DesktopLyricWindowBounds {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+const DESKTOP_LYRIC_BOUNDS_FILE: &str = "desktop-lyric-window.json";
+
+fn desktop_lyric_bounds_path<R: Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+) -> Result<PathBuf, String> {
+    let app_dir = app_handle
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("无法解析应用配置目录: {}", e))?;
+    std::fs::create_dir_all(&app_dir).map_err(|e| format!("无法创建应用配置目录: {}", e))?;
+    Ok(app_dir.join(DESKTOP_LYRIC_BOUNDS_FILE))
+}
+
+fn is_valid_desktop_lyric_bounds(bounds: &DesktopLyricWindowBounds) -> bool {
+    bounds.width >= 400 && bounds.height >= 200
+}
+
+fn read_desktop_lyric_bounds<R: Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+) -> Option<DesktopLyricWindowBounds> {
+    let path = desktop_lyric_bounds_path(app_handle).ok()?;
+    let raw = std::fs::read_to_string(path).ok()?;
+    let bounds = serde_json::from_str::<DesktopLyricWindowBounds>(&raw).ok()?;
+    is_valid_desktop_lyric_bounds(&bounds).then_some(bounds)
+}
+
+fn save_desktop_lyric_bounds<R: Runtime>(window: &Window<R>) {
+    if !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(false) {
+        return;
+    }
+
+    let (Ok(position), Ok(size)) = (window.outer_position(), window.outer_size()) else {
+        return;
+    };
+
+    let bounds = DesktopLyricWindowBounds {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+    };
+
+    if !is_valid_desktop_lyric_bounds(&bounds) {
+        return;
+    }
+
+    if let Ok(path) = desktop_lyric_bounds_path(window.app_handle()) {
+        if let Ok(json) = serde_json::to_string_pretty(&bounds) {
+            let _ = std::fs::write(path, json);
+        }
+    }
+}
+
+fn apply_desktop_lyric_bounds<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    if let Some(bounds) = read_desktop_lyric_bounds(window.app_handle()) {
+        let _ = window.set_size(PhysicalSize::new(bounds.width, bounds.height));
+        let _ = window.set_position(PhysicalPosition::new(bounds.x, bounds.y));
+    }
 }
 
 fn acquire_process_instance() -> Option<single_instance::SingleInstance> {
@@ -97,6 +165,56 @@ fn quit_app_inner(app_handle: &tauri::AppHandle) {
 #[tauri::command]
 fn quit_app(app_handle: tauri::AppHandle) {
     quit_app_inner(&app_handle);
+}
+
+#[tauri::command]
+async fn show_desktop_lyric_window(app_handle: tauri::AppHandle, lock: bool) -> Result<(), String> {
+    let lyric_window = app_handle
+        .get_webview_window("desktop-lyric")
+        .ok_or_else(|| "找不到桌面歌词窗口".to_string())?;
+
+    apply_desktop_lyric_bounds(&lyric_window);
+    lyric_window
+        .show()
+        .map_err(|e| format!("显示桌面歌词失败: {}", e))?;
+    apply_desktop_lyric_bounds(&lyric_window);
+    lyric_window
+        .set_ignore_cursor_events(lock)
+        .map_err(|e| format!("设置桌面歌词锁定状态失败: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn hide_desktop_lyric_window(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let lyric_window = app_handle
+        .get_webview_window("desktop-lyric")
+        .ok_or_else(|| "找不到桌面歌词窗口".to_string())?;
+
+    if lyric_window.is_visible().unwrap_or(false) {
+        if let (Ok(position), Ok(size)) = (lyric_window.outer_position(), lyric_window.outer_size())
+        {
+            let bounds = DesktopLyricWindowBounds {
+                x: position.x,
+                y: position.y,
+                width: size.width,
+                height: size.height,
+            };
+
+            if is_valid_desktop_lyric_bounds(&bounds) {
+                let path = desktop_lyric_bounds_path(&app_handle)?;
+                let json = serde_json::to_string_pretty(&bounds)
+                    .map_err(|e| format!("序列化桌面歌词窗口位置失败: {}", e))?;
+                std::fs::write(path, json)
+                    .map_err(|e| format!("保存桌面歌词窗口位置失败: {}", e))?;
+            }
+        }
+    }
+
+    lyric_window
+        .hide()
+        .map_err(|e| format!("隐藏桌面歌词失败: {}", e))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -801,12 +919,6 @@ pub fn run() {
     let window_lifecycle = lifecycle.clone();
 
     let app = tauri::Builder::default()
-        .plugin(
-            tauri_plugin_window_state::Builder::default()
-                .with_state_flags(StateFlags::POSITION | StateFlags::SIZE)
-                .with_filter(|label| label == "desktop-lyric")
-                .build(),
-        )
         .manage(process_instance)
         .manage(lifecycle)
         .manage(client.clone())
@@ -836,16 +948,25 @@ pub fn run() {
             save_llm_config,
             test_llm_provider,
             clear_recommendation_data,
-            quit_app
+            quit_app,
+            show_desktop_lyric_window,
+            hide_desktop_lyric_window
         ])
         .on_window_event(move |window, event| {
             if window.label() == "desktop-lyric" {
-                if let WindowEvent::CloseRequested { api, .. } = event {
-                    if !window_lifecycle.is_quitting.load(Ordering::SeqCst) {
-                        api.prevent_close();
-                        let _ = window.hide();
-                        let _ = window.emit_to("main", "desktop-lyric-closed", ());
+                match event {
+                    WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+                        save_desktop_lyric_bounds(window);
                     }
+                    WindowEvent::CloseRequested { api, .. } => {
+                        save_desktop_lyric_bounds(window);
+                        if !window_lifecycle.is_quitting.load(Ordering::SeqCst) {
+                            api.prevent_close();
+                            let _ = window.hide();
+                            let _ = window.emit_to("main", "desktop-lyric-closed", ());
+                        }
+                    }
+                    _ => {}
                 }
             }
         })
