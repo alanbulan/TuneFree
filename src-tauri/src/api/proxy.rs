@@ -1,12 +1,65 @@
+use crate::server::ServerState;
 use axum::{
     body::Bytes,
     extract::{Query, State},
     http::{HeaderMap, HeaderName, Method, StatusCode},
     response::{IntoResponse, Response},
 };
-use reqwest::Client;
 use serde::Deserialize;
-use std::str::FromStr;
+use std::collections::HashSet;
+
+const FORWARDED_REQUEST_HEADERS: [&str; 6] = [
+    "content-type",
+    "accept",
+    "range",
+    "if-range",
+    "if-none-match",
+    "if-modified-since",
+];
+
+const BLOCKED_RESPONSE_HEADERS: [&str; 13] = [
+    "connection",
+    "keep-alive",
+    "proxy-connection",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "set-cookie",
+    "set-cookie2",
+    "access-control-allow-origin",
+    "access-control-allow-credentials",
+];
+
+fn collect_forwarded_request_headers(headers: &HeaderMap) -> HeaderMap {
+    let mut forwarded = HeaderMap::new();
+    for name in FORWARDED_REQUEST_HEADERS {
+        if let Some(value) = headers.get(name) {
+            forwarded.insert(HeaderName::from_static(name), value.clone());
+        }
+    }
+    forwarded
+}
+
+fn connection_header_tokens(headers: &HeaderMap) -> HashSet<String> {
+    headers
+        .get_all("connection")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+fn should_forward_response_header(name: &HeaderName, connection_tokens: &HashSet<String>) -> bool {
+    let normalized = name.as_str();
+    !BLOCKED_RESPONSE_HEADERS.contains(&normalized)
+        && !connection_tokens.contains(normalized)
+        && !normalized.starts_with("access-control-")
+}
 
 /// Whitelist of host domains allowed through the CORS proxy.
 ///
@@ -41,7 +94,7 @@ const ALLOWED_HOSTS: [&str; 22] = [
 ///
 /// Matches exact hostnames and subdomains (e.g. "sub.kuwo.cn" matches "kuwo.cn").
 /// Uses byte-level comparison to avoid string allocation per check.
-fn is_allowed(host: &str) -> bool {
+pub(crate) fn is_allowed_host(host: &str) -> bool {
     ALLOWED_HOSTS.iter().any(|&allowed| {
         if host == allowed {
             return true;
@@ -77,7 +130,7 @@ pub struct ProxyQuery {
 /// # Returns
 /// A streaming `Response` with CORS headers, or an error response.
 pub async fn handle_cors_proxy(
-    State(client): State<Client>,
+    State(state): State<ServerState>,
     method: Method,
     headers: HeaderMap,
     Query(query): Query<ProxyQuery>,
@@ -96,29 +149,22 @@ pub async fn handle_cors_proxy(
 
     let host = match parsed_url.host_str() {
         Some(h) => h,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                "Target URL missing host",
-            )
-                .into_response()
-        }
+        None => return (StatusCode::BAD_REQUEST, "Target URL missing host").into_response(),
     };
 
-    if !is_allowed(host) {
-        return (
-            StatusCode::FORBIDDEN,
-            format!("Host not allowed: {}", host),
-        )
-            .into_response();
+    if !is_allowed_host(host) {
+        return (StatusCode::FORBIDDEN, format!("Host not allowed: {}", host)).into_response();
     }
 
     // Prepare forward request
-    let mut req_builder = client.request(method.clone(), parsed_url.clone());
+    let mut req_builder = state
+        .proxy_client
+        .request(method.clone(), parsed_url.clone());
 
-    // Pass through Content-Type if present
-    if let Some(ct) = headers.get("content-type") {
-        req_builder = req_builder.header("content-type", ct);
+    for (name, value) in collect_forwarded_request_headers(&headers) {
+        if let Some(name) = name {
+            req_builder = req_builder.header(name, value);
+        }
     }
 
     // Generic desktop user agent
@@ -141,7 +187,10 @@ pub async fn handle_cors_proxy(
 
     req_builder = req_builder.header("Referer", &referer);
 
-    if host == "music-api.gdstudio.xyz" || host == "music.gdstudio.org" || host == "music-api.gdstudio.org" {
+    if host == "music-api.gdstudio.xyz"
+        || host == "music.gdstudio.org"
+        || host == "music-api.gdstudio.org"
+    {
         req_builder = req_builder.header("Accept", "application/json,text/plain,*/*");
     }
 
@@ -154,13 +203,13 @@ pub async fn handle_cors_proxy(
         Ok(resp) => {
             let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::OK);
 
-            // Collect downstream response headers (skip encoding/length for streaming)
+            // Preserve media/cache headers while excluding hop-by-hop, cookie,
+            // and upstream CORS headers. The local CorsLayer owns CORS policy.
             let mut response_headers = HeaderMap::new();
+            let connection_tokens = connection_header_tokens(resp.headers());
             for (k, v) in resp.headers().iter() {
-                if k != "content-encoding" && k != "content-length" {
-                    if let Ok(name) = HeaderName::from_str(k.as_str()) {
-                        response_headers.insert(name, v.clone());
-                    }
+                if should_forward_response_header(k, &connection_tokens) {
+                    response_headers.insert(k.clone(), v.clone());
                 }
             }
 
@@ -185,5 +234,64 @@ pub async fn handle_cors_proxy(
             format!("Proxy fetch failed: {}", e),
         )
             .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    #[test]
+    fn forwards_media_range_and_condition_headers_only() {
+        let mut headers = HeaderMap::new();
+        headers.insert("range", HeaderValue::from_static("bytes=1024-2047"));
+        headers.insert("if-range", HeaderValue::from_static("etag-value"));
+        headers.insert("cookie", HeaderValue::from_static("session=secret"));
+        headers.insert("host", HeaderValue::from_static("127.0.0.1:3002"));
+
+        let forwarded = collect_forwarded_request_headers(&headers);
+
+        assert_eq!(forwarded.get("range").unwrap(), "bytes=1024-2047");
+        assert_eq!(forwarded.get("if-range").unwrap(), "etag-value");
+        assert!(forwarded.get("cookie").is_none());
+        assert!(forwarded.get("host").is_none());
+    }
+
+    #[test]
+    fn preserves_partial_content_headers_and_filters_hop_by_hop_headers() {
+        let connection_tokens = HashSet::new();
+        assert!(should_forward_response_header(
+            &HeaderName::from_static("content-range"),
+            &connection_tokens,
+        ));
+        assert!(should_forward_response_header(
+            &HeaderName::from_static("accept-ranges"),
+            &connection_tokens,
+        ));
+        assert!(!should_forward_response_header(
+            &HeaderName::from_static("transfer-encoding"),
+            &connection_tokens,
+        ));
+        assert!(!should_forward_response_header(
+            &HeaderName::from_static("set-cookie"),
+            &connection_tokens,
+        ));
+        assert!(!should_forward_response_header(
+            &HeaderName::from_static("access-control-allow-origin"),
+            &connection_tokens,
+        ));
+    }
+
+    #[test]
+    fn filters_headers_named_by_connection() {
+        let mut headers = HeaderMap::new();
+        headers.insert("connection", HeaderValue::from_static("keep-alive, x-internal"));
+        let tokens = connection_header_tokens(&headers);
+
+        assert!(!should_forward_response_header(
+            &HeaderName::from_static("x-internal"),
+            &tokens,
+        ));
     }
 }

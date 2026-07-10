@@ -140,8 +140,13 @@ export const useDesktopLyricBridge = () => {
   const rawLyrics = snapshot.song?.lrc || '';
   const rows = useMemo(() => parseLyrics(rawLyrics), [rawLyrics]);
   const activeIndex = useMemo(
-    () => findActiveLyricIndex(rows, projectedTime, snapshot.lyricOffsetSeconds),
-    [rows, projectedTime, snapshot.lyricOffsetSeconds],
+    () => findActiveLyricIndex(
+      rows,
+      projectedTime,
+      snapshot.lyricOffsetSeconds,
+      snapshot.lyricDisplayMode,
+    ),
+    [rows, projectedTime, snapshot.lyricOffsetSeconds, snapshot.lyricDisplayMode],
   );
   const currentLine = activeIndex >= 0 ? rows[activeIndex] : rows[0] ?? null;
 

@@ -1,4 +1,4 @@
-# 🎵 TuneFree Desktop 安装与运行指引 (Tauri v2 + Next.js)
+# 🎵 TuneFree Desktop 安装与运行指引 (Tauri v2 + Vite)
 
 感谢使用 **TuneFree Desktop** 桌面定制版！
 本项目由 **AlanBulan** 专为桌面端打造，基于 **Tauri v2** 容器与 **Rust (Axum)** 本地后端，支持网易云、QQ音乐、酷我等多源聚合解析，完美复刻 TuneFree 的红白色系、玻璃卡片风格，并加入大厂级过渡动画与可爱的 **安和昴（486）** 桌宠。
@@ -10,11 +10,17 @@
 由于此版本已由 **AlanBulan** 进行了深度定制并使用 Tauri 正式打包，您可以直接通过安装包进行一键安装：
 
 ### 第一步：获取安装包
-编译完成后，安装程序会输出在以下路径：
-- **安装包路径**：`src-tauri/target/release/bundle/nsis/TuneFree_{version}_x64-setup.exe`
+
+普通用户请前往 [GitHub Releases](https://github.com/alanbulan/TuneFree_Mobile/releases) 下载最新版本的 `TuneFree_{version}_x64-setup.exe`。
+
+- 当前官方发布目标：Windows x64。
+- `.sig` 和 `latest.json` 是应用自动更新使用的签名元数据，普通安装时无需手动下载。
+- macOS、Linux 当前没有官方安装包。
+
+开发者在本地编译后，安装程序会输出到：`src-tauri/target/release/bundle/nsis/TuneFree_{version}_x64-setup.exe`。
 
 ### 第二步：安装向导 (简体中文)
-1. 双击运行 `TuneFree_{version}_x64-setup.exe`（其中 `{version}` 为当前版本号，如 `1.0.25`）。
+1. 双击运行 `TuneFree_{version}_x64-setup.exe`（其中 `{version}` 为当前版本号）。
 2. 安装向导已由 **AlanBulan** 强制指定为 **简体中文**，引导步骤清晰无碍。
 3. 按照引导选择您的安装路径，并点击 **安装** 按钮。
 4. 安装完成后，勾选 **运行 TuneFree**，点击完成即可立即启动！
@@ -27,7 +33,7 @@
 
 ### 1. 环境准备
 本地开发需要安装以下运行环境：
-- **Node.js**：建议使用 20.9 或以上版本。
+- **Node.js**：使用 20.19 以上版本，或 22.12 以上版本。
 - **Rust (Cargo)**：由于后端使用 Rust 编写，需本地有 Rust 编译链。
 - **Git**：拉取和维护分支代码。
 
@@ -38,10 +44,10 @@
 # 1. 安装前端及编译依赖
 npm install
 
-# 2. 启动 Tauri 开发调试服务器 (前端 3001 端口 + Rust 后端 3002 端口 + Tauri 容器)
+# 2. 启动 Tauri 开发调试服务器 (前端 3101 端口 + Rust 后端 3002 端口 + Tauri 容器)
 npm run tauri dev
 ```
-启动后，调试窗口会自动弹出，此时支持前端热重载（Next.js Fast Refresh），Rust 代码修改后 Tauri 会自动重新编译。
+启动后，调试窗口会自动弹出，此时支持前端热重载（Vite Fast Refresh），Rust 代码修改后 Tauri 会自动重新编译。
 
 ### 3. 正式版打包编译
 当您修改了代码，需要自己输出新的安装包时，运行：

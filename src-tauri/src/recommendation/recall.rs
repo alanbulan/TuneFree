@@ -74,7 +74,13 @@ pub fn collect_candidates(
             if catalog::track_key(seed_song) == key {
                 continue;
             }
-            ensure_candidate(&mut by_key, key, song, last_seen_at, "和当前播放歌曲风格相近");
+            ensure_candidate(
+                &mut by_key,
+                key,
+                song,
+                last_seen_at,
+                "和当前播放歌曲风格相近",
+            );
         }
 
         let seed_key = catalog::track_key(seed_song);
@@ -92,11 +98,63 @@ pub fn collect_candidates(
             let key: String = row.get("track_key")?;
             let last_seen_at: i64 = row.get("last_seen_at")?;
             let itemcf_score: f64 = row.get("itemcf_score")?;
-            Ok((key, catalog::song_from_row(row)?, last_seen_at, itemcf_score))
+            Ok((
+                key,
+                catalog::song_from_row(row)?,
+                last_seen_at,
+                itemcf_score,
+            ))
         })?;
         for row in rows {
             let (key, song, last_seen_at, itemcf_score) = row?;
-            ensure_candidate(&mut by_key, key.clone(), song, last_seen_at, "来自你的歌单共现");
+            ensure_candidate(
+                &mut by_key,
+                key.clone(),
+                song,
+                last_seen_at,
+                "来自你的连续播放偏好",
+            );
+            if let Some(candidate) = by_key.get_mut(&key) {
+                candidate.itemcf_score = candidate.itemcf_score.max(itemcf_score);
+            }
+        }
+
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT t.*, COUNT(DISTINCT related.container_id) AS itemcf_score
+            FROM library_membership seed_membership
+            JOIN library_membership related
+              ON related.container_type = 'playlist'
+             AND related.container_id = seed_membership.container_id
+             AND related.track_key != seed_membership.track_key
+            JOIN tracks t ON t.track_key = related.track_key
+            WHERE seed_membership.container_type = 'playlist'
+              AND seed_membership.track_key = ?1
+            GROUP BY related.track_key
+            ORDER BY itemcf_score DESC, t.last_seen_at DESC
+            LIMIT 100
+            "#,
+        )?;
+        let rows = stmt.query_map([catalog::track_key(seed_song)], |row| {
+            let key: String = row.get("track_key")?;
+            let last_seen_at: i64 = row.get("last_seen_at")?;
+            let itemcf_score: f64 = row.get("itemcf_score")?;
+            Ok((
+                key,
+                catalog::song_from_row(row)?,
+                last_seen_at,
+                itemcf_score,
+            ))
+        })?;
+        for row in rows {
+            let (key, song, last_seen_at, itemcf_score) = row?;
+            ensure_candidate(
+                &mut by_key,
+                key.clone(),
+                song,
+                last_seen_at,
+                "来自你的歌单共现",
+            );
             if let Some(candidate) = by_key.get_mut(&key) {
                 candidate.itemcf_score = candidate.itemcf_score.max(itemcf_score);
             }
@@ -107,7 +165,13 @@ pub fn collect_candidates(
     positive_tracks.truncate(120);
     for key in positive_tracks {
         if let Some(song) = catalog::get_track(conn, &key)? {
-            ensure_candidate(&mut by_key, key, song, catalog::now_ms(), "来自你的播放和收藏偏好");
+            ensure_candidate(
+                &mut by_key,
+                key,
+                song,
+                catalog::now_ms(),
+                "来自你的播放和收藏偏好",
+            );
         }
     }
 
@@ -162,9 +226,8 @@ fn recent_positive_track_keys(conn: &Connection, limit: usize) -> rusqlite::Resu
 
 pub fn dismissed_track_keys(conn: &Connection) -> rusqlite::Result<HashSet<String>> {
     let now = catalog::now_ms();
-    let mut stmt = conn.prepare(
-        "SELECT track_key FROM dismissed_recommendations WHERE expires_at > ?1",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT track_key FROM dismissed_recommendations WHERE expires_at > ?1")?;
     let rows = stmt.query_map([now], |row| row.get::<_, String>(0))?;
     rows.collect()
 }

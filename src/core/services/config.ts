@@ -21,11 +21,28 @@ export const FORBIDDEN_HEADERS = [
 
 
 
-const proxyBase = "http://127.0.0.1:3002";
+const DEFAULT_LOCAL_SERVER_PORT = 3002;
 
-export const API_PREFIX = proxyBase;
-export const SELF_HOSTED_PROXY = `${proxyBase}/api/cors-proxy?url=`;
+const buildProxyBase = (port: number): string => `http://127.0.0.1:${port}`;
+
+let proxyBase = buildProxyBase(DEFAULT_LOCAL_SERVER_PORT);
+
+export let API_PREFIX = proxyBase;
+export let SELF_HOSTED_PROXY = `${proxyBase}/api/cors-proxy?url=`;
 
 export const DEFAULT_PROXIES: string[] = [
   SELF_HOSTED_PROXY,
 ];
+
+export const setLocalServerPort = (port: number): void => {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid local server port: ${port}`);
+  }
+
+  proxyBase = buildProxyBase(port);
+  API_PREFIX = proxyBase;
+  SELF_HOSTED_PROXY = `${proxyBase}/api/cors-proxy?url=`;
+  DEFAULT_PROXIES.splice(0, DEFAULT_PROXIES.length, SELF_HOSTED_PROXY);
+};
+
+export const getLocalServerBase = (): string => proxyBase;

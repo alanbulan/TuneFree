@@ -24,10 +24,11 @@ import {
 import type { AudioQuality } from '../../core/types';
 import CoverArt from './CoverArt';
 import { useToast } from './ToastHost';
-import { formatTime, type CoverPanelStyle } from '../utils/formatting';
+import { type CoverPanelStyle } from '../utils/formatting';
 import FullPlayerLyrics from './fullplayer/FullPlayerLyrics';
 import FullPlayerQueue from './fullplayer/FullPlayerQueue';
 import FullPlayerActions from './fullplayer/FullPlayerActions';
+import PlayerProgressSlider from './PlayerProgressSlider';
 import QualitySelector from './QualitySelector';
 
 interface DesktopFullPlayerProps {
@@ -44,10 +45,6 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
   const { toggleFavorite, isFavorite } = useLibrary();
   const { showToast } = useToast();
   const [showMorePanel, setShowMorePanel] = useState(false);
-
-  // P3-11: Progress bar drag state
-  const [isDragging, setIsDragging] = useState(false);
-  const [previewTime, setPreviewTime] = useState(0);
 
   const {
     playPrev,
@@ -104,9 +101,6 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
       onClick: () => currentSong && toggleFavorite(currentSong),
     });
   };
-
-  // P3-11: Display preview time during drag, actual time otherwise
-  const displayTime = isDragging ? previewTime : currentTime;
 
   return (
     <motion.div
@@ -209,29 +203,7 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
                 <NextIcon size={19} />
               </button>
             </div>
-            <div className="progress-row">
-              <span>{formatTime(displayTime)}</span>
-              <input
-                className="progress-bar"
-                aria-label="播放进度"
-                type="range"
-                min={0}
-                max={duration || 0}
-                value={duration ? Math.min(displayTime, duration) : 0}
-                onInput={(event) => {
-                  const target = event.target as HTMLInputElement;
-                  setIsDragging(true);
-                  setPreviewTime(Number(target.value));
-                }}
-                onChange={(event) => {
-                  const target = event.target as HTMLInputElement;
-                  const value = Number(target.value);
-                  setIsDragging(false);
-                  seek(value);
-                }}
-              />
-              <span>{formatTime(duration)}</span>
-            </div>
+            <PlayerProgressSlider currentTime={currentTime} duration={duration} onSeek={seek} />
           </div>
           <div className="transport-tools">
             <button

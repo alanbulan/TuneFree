@@ -1,5 +1,5 @@
 use crate::api::{ApiError, MusicProvider};
-use aes::cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit};
+use aes::cipher::{Array, BlockCipherEncrypt, KeyInit};
 use aes::Aes128;
 use async_trait::async_trait;
 use reqwest::Client;
@@ -9,15 +9,15 @@ use serde_json::Value;
 ///
 /// This is used to encrypt the request parameters for the Netease EAPI.
 fn aes128_ecb_encrypt(data: &[u8], key: &[u8]) -> Vec<u8> {
-    let cipher = Aes128::new(GenericArray::from_slice(key));
+    let cipher = Aes128::new_from_slice(key).expect("AES-128 key must be 16 bytes");
     let block_size = 16;
     let padding_len = block_size - (data.len() % block_size);
     let mut padded = data.to_vec();
-    padded.extend(std::iter::repeat(padding_len as u8).take(padding_len));
+    padded.extend(std::iter::repeat_n(padding_len as u8, padding_len));
 
     let mut encrypted = Vec::with_capacity(padded.len());
     for chunk in padded.chunks_exact(block_size) {
-        let mut block = GenericArray::clone_from_slice(chunk);
+        let mut block = Array::from(<[u8; 16]>::try_from(chunk).expect("AES block is 16 bytes"));
         cipher.encrypt_block(&mut block);
         encrypted.extend_from_slice(&block);
     }

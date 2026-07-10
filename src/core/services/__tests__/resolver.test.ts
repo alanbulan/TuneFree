@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Mock the service modules to isolate resolver logic
 vi.mock('../netease', () => ({
   searchNetease: vi.fn(),
-  fetchNeteaselyrics: vi.fn(),
+  fetchNeteaseLyrics: vi.fn(),
 }));
 vi.mock('../qq', () => ({
   searchQQ: vi.fn(),
@@ -24,8 +24,8 @@ vi.mock('../gdStudio', () => ({
   searchGDStudio: vi.fn(),
 }));
 
-import { fetchNativeUrl, getSongUrl } from '../resolver';
-import { searchNetease } from '../netease';
+import { fetchFallbackLyrics, fetchNativeUrl, getSongUrl } from '../resolver';
+import { fetchNeteaseLyrics, searchNetease } from '../netease';
 import { searchQQ } from '../qq';
 
 describe('fetchNativeUrl', () => {
@@ -88,6 +88,84 @@ describe('fetchNativeUrl', () => {
     await fetchNativeUrl('test&id', 'netease', '128k');
     const calledUrl = mockFetch.mock.calls[0][0] as string;
     expect(calledUrl).toContain('id=test%26id');
+  });
+
+  it('should abort native URL resolution after the request timeout', async () => {
+    vi.useFakeTimers();
+    let requestSignal: AbortSignal | undefined;
+    globalThis.fetch = vi.fn((_url, init) => {
+      requestSignal = init?.signal as AbortSignal;
+      return new Promise((_resolve, reject) => {
+        requestSignal?.addEventListener('abort', () => {
+          const error = new Error('aborted');
+          error.name = 'AbortError';
+          reject(error);
+        });
+      });
+    }) as any;
+
+    try {
+      const request = fetchNativeUrl('timeout', 'netease', '320k');
+      await vi.advanceTimersByTimeAsync(8_000);
+
+      await expect(request).resolves.toBeNull();
+      expect(requestSignal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('fetchFallbackLyrics', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('does not permanently cache an empty lyric result', async () => {
+    vi.mocked(fetchNeteaseLyrics)
+      .mockResolvedValueOnce('')
+      .mockResolvedValueOnce('[00:01.00]retry succeeded');
+
+    await expect(fetchFallbackLyrics('empty-retry', 'netease')).resolves.toBe('');
+    await expect(fetchFallbackLyrics('empty-retry', 'netease')).resolves.toBe(
+      '[00:01.00]retry succeeded',
+    );
+    expect(fetchNeteaseLyrics).toHaveBeenCalledTimes(2);
+  });
+
+  it('caches a successful lyric result', async () => {
+    vi.mocked(fetchNeteaseLyrics).mockResolvedValue('[00:01.00]cached');
+
+    await expect(fetchFallbackLyrics('successful-cache', 'netease')).resolves.toBe(
+      '[00:01.00]cached',
+    );
+    await expect(fetchFallbackLyrics('successful-cache', 'netease')).resolves.toBe(
+      '[00:01.00]cached',
+    );
+    expect(fetchNeteaseLyrics).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares an in-flight lyric request and clears it after failure', async () => {
+    let rejectRequest: ((reason?: unknown) => void) | undefined;
+    vi.mocked(fetchNeteaseLyrics).mockImplementationOnce(
+      () => new Promise((_resolve, reject) => {
+        rejectRequest = reject;
+      }),
+    );
+
+    const first = fetchFallbackLyrics('pending-failure', 'netease');
+    const second = fetchFallbackLyrics('pending-failure', 'netease');
+    expect(fetchNeteaseLyrics).toHaveBeenCalledTimes(1);
+
+    rejectRequest?.(new Error('network failure'));
+    await expect(first).resolves.toBe('');
+    await expect(second).resolves.toBe('');
+
+    vi.mocked(fetchNeteaseLyrics).mockResolvedValueOnce('[00:02.00]recovered');
+    await expect(fetchFallbackLyrics('pending-failure', 'netease')).resolves.toBe(
+      '[00:02.00]recovered',
+    );
+    expect(fetchNeteaseLyrics).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -259,5 +337,66 @@ describe('isLikelySameSong (indirect via getSongUrl)', () => {
 
     const result = await getSongUrl('temp_0', 'netease', '320k', songMeta);
     expect(result).toBe('https://example.com/duet.mp3');
+  });
+
+  it('resolves a fast fallback source without waiting for a slow source', async () => {
+    const songMeta = {
+      name: 'Concurrent Song',
+      artist: 'Concurrent Artist',
+      pic: '',
+      picId: '',
+      urlId: '',
+      lyricId: '',
+    };
+    let resolveSlowSearch: ((songs: []) => void) | undefined;
+    vi.mocked(searchQQ).mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveSlowSearch = resolve;
+      }),
+    );
+    vi.mocked(searchNetease).mockResolvedValueOnce([
+      {
+        id: 'fast-netease-id',
+        name: 'Concurrent Song',
+        artist: 'Concurrent Artist',
+        album: '',
+        pic: '',
+        source: 'netease',
+      },
+    ]);
+    vi.mocked(fetchNeteaseLyrics).mockResolvedValueOnce('');
+    globalThis.fetch = vi.fn((url: string) => Promise.resolve({
+      ok: url.includes('platform=netease'),
+      json: () => Promise.resolve({ url: 'https://example.com/concurrent.mp3' }),
+    })) as any;
+
+    const result = await getSongUrl('temp_concurrent', 'kuwo', '320k', songMeta);
+    expect(result).toBe('https://example.com/concurrent.mp3');
+    expect(searchQQ).toHaveBeenCalledTimes(1);
+    expect(searchNetease).toHaveBeenCalledTimes(1);
+    resolveSlowSearch?.([]);
+  });
+
+  it('stops fallback resolution at the total timeout', async () => {
+    vi.useFakeTimers();
+    const never = new Promise<never>(() => {});
+    vi.mocked(searchQQ).mockReturnValue(never);
+    vi.mocked(searchNetease).mockReturnValue(never);
+
+    try {
+      const request = getSongUrl('temp_timeout', 'kuwo', '320k', {
+        name: 'Timeout Song',
+        artist: 'Timeout Artist',
+        pic: '',
+        picId: '',
+        urlId: '',
+        lyricId: '',
+      });
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      await expect(request).resolves.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

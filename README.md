@@ -1,15 +1,21 @@
 # TuneFree Desktop
 
-TuneFree Desktop 是一款基于 Tauri v2、Next.js 16 和 React 19 构建的现代化高性能桌面音乐播放器。项目致力于在桌面端提供统一、流畅且极具质感的音乐流媒体聚合体验。
+TuneFree Desktop 是一款基于 Tauri v2、Vite 8 和 React 19 构建的现代化高性能桌面音乐播放器。项目致力于在桌面端提供统一、流畅且极具质感的音乐流媒体聚合体验。
 
 本分支（tauri 分支）代表 TuneFree 的原生桌面客户端实现，核心业务层由 Rust 构建的本地服务承载，包含 API 代理及音源解密模块，以解决跨域及网络限制问题。
+
+## 下载与安装
+
+正式版本通过 [GitHub Releases](https://github.com/alanbulan/TuneFree_Mobile/releases) 发布。当前提供 Windows x64 的 NSIS 中文安装包；每个正式版本同时发布自动更新所需的签名和 `latest.json`。macOS、Linux 尚未提供官方安装包，不应使用 Windows 安装包跨平台安装。
+
+安装、开发运行及本地构建步骤见 [INSTALL_GUIDE.md](./INSTALL_GUIDE.md)，签名发布流程见 [RELEASE.md](./RELEASE.md)。
 
 ## 技术架构
 
 项目在架构设计上采用前后端分离的混编模式：
 
 *   **容器层**：Tauri v2 运行时，提供原生系统 API 调用能力及轻量化 Webview 容器。
-*   **前端渲染层**：Next.js 16 (静态导出) 与 React 19，负责核心 UI 组件渲染与播放状态管理。
+*   **前端渲染层**：Vite 8（多页静态构建）与 React 19，负责核心 UI 组件渲染与播放状态管理。
 *   **本地服务层**：Rust (基于 Axum 异步框架)，用于处理高并发的解密请求与本地音频接口代理。
 *   **动效与交互**：Framer Motion 12，用于构建界面的物理阻尼过渡以及平滑转场动画。
 *   **音效可视化**：基于 Web Audio API 获取音频时域/频域数据，结合 HTML5 Canvas 进行实时频谱绘制。
@@ -21,7 +27,7 @@ TuneFree Desktop 是一款基于 Tauri v2、Next.js 16 和 React 19 构建的现
 *   **原生拖拽标题栏**：采用无边框窗口设计，通过 Tauri 原生窗口控制 API，在前端构建支持鼠标物理拖动及高斯模糊视觉的自定义窗口控制条。
 *   **大厂级交互动效**：使用 Framer Motion 实现迷你播放栏与全屏播放面板之间的三维阻尼收放过渡，同时在歌曲切换时应用 Slide Up 与 Cross-Fade 歌词渐显机制。
 *   **智能桌面挂件**：内置可拖动的交互式“安和昴（486）”桌面宠物，实时监听播放器加载、播放、暂停等生命周期，其位置数据支持本地持久化存储。
-*   **双语歌词系统**：支持 LRC 滚动歌词，能自动对齐双语翻译并提供点击精确定位播放进度的交互。
+*   **双语与逐字歌词系统**：支持 LRC 滚动歌词、网易云 YRC 逐字歌词和双语翻译，并提供点击精确定位播放进度的交互。
 
 ## 智能推荐系统架构
 
@@ -404,10 +410,9 @@ sequenceDiagram
 ## 目录结构
 
 ```text
-├── app/                  # Next.js App Router 路由与页面配置
-│   ├── desktop-lyric/    # 桌面歌词窗口路由
-│   ├── library/          # 音乐库页面
-│   └── search/           # 搜索页面
+├── app/                  # 全局样式与桌面歌词页面模块
+│   └── desktop-lyric/    # 桌面歌词窗口组件与桥接逻辑
+├── desktop-lyric/        # 桌面歌词独立 HTML 入口
 ├── src/
 │   ├── core/             # 音乐服务、上下文管理器与核心类型定义
 │   └── desktop/          # 桌面端专用交互组件与主视图
@@ -417,6 +422,8 @@ sequenceDiagram
 │   ├── Cargo.toml        # Rust 依赖与 crate 配置
 │   └── tauri.conf.json   # Tauri 容器配置文件
 ├── public/               # 静态前端资源
+├── index.html            # 主窗口 Vite HTML 入口
+├── vite.config.ts        # Vite 多页构建配置
 ├── bump-version.js       # 统一版本号自增脚本（tauri.conf.json / package.json / Cargo.toml）
 ├── vitest.config.ts      # Vitest 测试配置
 └── package.json          # 前端依赖与构建脚本
@@ -443,7 +450,7 @@ sequenceDiagram
     ```bash
     npm run tauri dev
     ```
-    该命令会自动运行 Next.js 前端开发服务（端口 3001）并拉起 Tauri 容器，同时在 Rust 后端初始化本地 Axum 代理服务（端口 3002）。
+    该命令会自动运行 Vite 前端开发服务（端口 3101）并拉起 Tauri 容器，同时在 Rust 后端初始化本地 Axum 代理服务（端口 3002）。
 
 ### 生产打包
 
@@ -456,9 +463,9 @@ npm run tauri build
 构建完成后，程序将输出在以下路径：
 *   **NSIS 安装程序 (Windows EXE)**: `src-tauri/target/release/bundle/nsis/TuneFree_{version}_x64-setup.exe`
 
-> 其中 `{version}` 为 `tauri.conf.json` 中配置的当前版本号（如 `1.0.25`）。
+> 其中 `{version}` 为 `tauri.conf.json` 中配置的当前版本号。正式发布包应从 GitHub Releases 下载；此目录仅是本地构建输出。
 
 ## 声明
 
-*   本项目仅作为 Next.js、Tauri 与 Rust 混编的交互技术研究使用。
+*   本项目仅作为 React、Vite、Tauri 与 Rust 混编的交互技术研究使用。
 *   音乐资源均来源于第三方 API，本项目不存储、不分发任何音频实体，请支持正版音乐。

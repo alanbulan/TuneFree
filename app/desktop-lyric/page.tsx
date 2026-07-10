@@ -34,10 +34,10 @@ export default function DesktopLyricPage() {
       <DesktopLyricStage player={playerState} styleState={styleState} />
       <DesktopLyricResizeHandles disabled={styleState.lock} />
 
-      <style jsx global>{`
+      <style>{`
         html,
         body,
-        #__next,
+        #root,
         body > div:first-child {
           height: 100% !important;
           max-height: 100vh !important;

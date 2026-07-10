@@ -2,18 +2,21 @@ pub mod api;
 pub mod recommendation;
 pub mod server;
 
-use std::io::Write;
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{
     menu::MenuBuilder,
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, PhysicalPosition, PhysicalSize, Runtime, State, Window, WindowEvent,
 };
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_updater::UpdaterExt;
+use tokio::io::AsyncWriteExt;
 
 use recommendation::{
     LibrarySnapshot, LlmConfigInput, LlmConfigView, LlmProviderTestResult, RecSong,
@@ -26,7 +29,9 @@ use recommendation::{
 /// Contains the source URL and a 0–100 progress percentage.
 /// Emitted via the `download-progress` event.
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct DownloadProgress {
+    task_id: String,
     url: String,
     progress: u8,
 }
@@ -39,6 +44,79 @@ struct UpdateProgress {
     progress: u8,
 }
 
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AvailableUpdate {
+    version: String,
+    notes: Option<String>,
+}
+
+#[derive(Clone)]
+struct DownloadClient(reqwest::Client);
+
+#[derive(Default)]
+struct DownloadCancellation {
+    cancelled: AtomicBool,
+    notify: tokio::sync::Notify,
+}
+
+impl DownloadCancellation {
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        self.notify.notify_one();
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    async fn cancelled(&self) {
+        if self.is_cancelled() {
+            return;
+        }
+        self.notify.notified().await;
+    }
+}
+
+#[derive(Default)]
+struct DownloadTaskRegistry(parking_lot::Mutex<HashMap<String, Arc<DownloadCancellation>>>);
+
+impl DownloadTaskRegistry {
+    fn register(&self, task_id: &str) -> Result<Arc<DownloadCancellation>, String> {
+        let mut tasks = self.0.lock();
+        if tasks.contains_key(task_id) {
+            return Err("下载任务已存在".to_string());
+        }
+        let cancellation = Arc::new(DownloadCancellation::default());
+        tasks.insert(task_id.to_string(), cancellation.clone());
+        Ok(cancellation)
+    }
+
+    fn cancel(&self, task_id: &str) -> bool {
+        let tasks = self.0.lock();
+        let Some(cancellation) = tasks.get(task_id) else {
+            return false;
+        };
+        cancellation.cancel();
+        true
+    }
+
+    fn finish(&self, task_id: &str) {
+        self.0.lock().remove(task_id);
+    }
+}
+
+#[derive(Clone)]
+struct LocalServerState {
+    port: u16,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct DownloadedFile {
+    filepath: String,
+    filename: String,
+}
+
 /// Application lifecycle state shared across the app.
 ///
 /// Tracks whether the app is quitting (to prevent the desktop-lyric window
@@ -48,6 +126,11 @@ struct UpdateProgress {
 struct AppLifecycleState {
     is_quitting: Arc<AtomicBool>,
     shutdown_tx: tokio::sync::watch::Sender<bool>,
+}
+
+#[tauri::command]
+fn get_local_server_port(state: State<'_, LocalServerState>) -> u16 {
+    state.port
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -217,15 +300,28 @@ async fn hide_desktop_lyric_window(app_handle: tauri::AppHandle) -> Result<(), S
     Ok(())
 }
 
+async fn run_recommendation_blocking<T, F>(operation: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(operation)
+        .await
+        .map_err(|error| format!("推荐后台任务异常: {}", error))?
+}
+
 #[tauri::command]
 async fn log_recommendation_event(
     state: State<'_, RecommendationService>,
     event: RecommendationEvent,
 ) -> Result<(), String> {
-    state.log_event(event).map_err(|e| {
-        log::error!("{}", e);
-        e
-    })
+    let service = state.inner().clone();
+    run_recommendation_blocking(move || service.log_event(event))
+        .await
+        .map_err(|e| {
+            log::error!("{}", e);
+            e
+        })
 }
 
 #[tauri::command]
@@ -233,7 +329,8 @@ async fn sync_recommendation_library(
     state: State<'_, RecommendationService>,
     snapshot: LibrarySnapshot,
 ) -> Result<(), String> {
-    state.sync_library(snapshot)
+    let service = state.inner().clone();
+    run_recommendation_blocking(move || service.sync_library(snapshot)).await
 }
 
 #[tauri::command]
@@ -241,7 +338,8 @@ async fn get_home_recommendations(
     state: State<'_, RecommendationService>,
     query: RecommendationQuery,
 ) -> Result<Vec<RecommendationItem>, String> {
-    state.home_recommendations(query)
+    let service = state.inner().clone();
+    run_recommendation_blocking(move || service.home_recommendations(query)).await
 }
 
 #[tauri::command]
@@ -250,7 +348,8 @@ async fn get_similar_songs(
     song: RecSong,
     limit: Option<usize>,
 ) -> Result<Vec<RecommendationItem>, String> {
-    state.similar_songs(song, limit)
+    let service = state.inner().clone();
+    run_recommendation_blocking(move || service.similar_songs(song, limit)).await
 }
 
 #[tauri::command]
@@ -258,7 +357,8 @@ async fn start_recommendation_job(
     state: State<'_, RecommendationService>,
     query: RecommendationQuery,
 ) -> Result<RecommendationJob, String> {
-    state.start_recommendation_job(query)
+    let service = state.inner().clone();
+    run_recommendation_blocking(move || service.start_recommendation_job(query)).await
 }
 
 #[tauri::command]
@@ -282,7 +382,8 @@ async fn dismiss_recommendation(
     song: RecSong,
     reason: Option<String>,
 ) -> Result<(), String> {
-    state.dismiss(song, reason)
+    let service = state.inner().clone();
+    run_recommendation_blocking(move || service.dismiss(song, reason)).await
 }
 
 #[tauri::command]
@@ -290,19 +391,22 @@ async fn save_recommendation_feedback(
     state: State<'_, RecommendationService>,
     feedback: RecommendationFeedback,
 ) -> Result<(), String> {
-    state.save_feedback(feedback)
+    let service = state.inner().clone();
+    run_recommendation_blocking(move || service.save_feedback(feedback)).await
 }
 
 #[tauri::command]
 async fn rebuild_recommendation_index(
     state: State<'_, RecommendationService>,
 ) -> Result<(), String> {
-    state.rebuild_index()
+    let service = state.inner().clone();
+    run_recommendation_blocking(move || service.rebuild_index()).await
 }
 
 #[tauri::command]
 async fn get_llm_config(state: State<'_, RecommendationService>) -> Result<LlmConfigView, String> {
-    state.get_llm_config()
+    let service = state.inner().clone();
+    run_recommendation_blocking(move || service.get_llm_config()).await
 }
 
 #[tauri::command]
@@ -310,7 +414,8 @@ async fn save_llm_config(
     state: State<'_, RecommendationService>,
     config: LlmConfigInput,
 ) -> Result<(), String> {
-    state.save_llm_config(config)
+    let service = state.inner().clone();
+    run_recommendation_blocking(move || service.save_llm_config(config)).await
 }
 
 #[tauri::command]
@@ -325,7 +430,8 @@ async fn test_llm_provider(
 async fn clear_recommendation_data(
     state: State<'_, RecommendationService>,
 ) -> Result<RecommendationMaintenanceStats, String> {
-    state.clear_data()
+    let service = state.inner().clone();
+    run_recommendation_blocking(move || service.clear_data()).await
 }
 
 /// Resolves the download directory for saving files.
@@ -337,7 +443,7 @@ async fn clear_recommendation_data(
 fn resolve_download_dir(
     app_handle: &tauri::AppHandle,
     use_default: bool,
-) -> Result<std::path::PathBuf, String> {
+) -> Result<PathBuf, String> {
     if use_default {
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(parent) = exe_path.parent() {
@@ -351,87 +457,465 @@ fn resolve_download_dir(
         .map_err(|e| format!("Cannot determine download dir: {}", e))
 }
 
+const AUDIO_FILE_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "m4a", "aac", "ogg"];
+const DOWNLOAD_DIR_CONFIG_FILE: &str = "download-dir.txt";
+const DOWNLOAD_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_AUDIO_DOWNLOAD_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_DOWNLOAD_TASK_ID_LEN: usize = 128;
+
+fn validate_download_task_id(task_id: &str) -> Result<String, String> {
+    let task_id = task_id.trim();
+    if task_id.is_empty() || task_id.len() > MAX_DOWNLOAD_TASK_ID_LEN {
+        return Err("下载任务 ID 无效".to_string());
+    }
+    if !task_id
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'-' | b'_'))
+    {
+        return Err("下载任务 ID 包含非法字符".to_string());
+    }
+    Ok(task_id.to_string())
+}
+
+fn validate_download_size(size: u64, max_bytes: u64) -> Result<(), String> {
+    if size > max_bytes {
+        return Err(format!(
+            "下载文件超过大小限制（最大 {} MiB）",
+            max_bytes / 1024 / 1024
+        ));
+    }
+    Ok(())
+}
+
+fn checked_downloaded_size(
+    downloaded: u64,
+    chunk_size: usize,
+    max_bytes: u64,
+) -> Result<u64, String> {
+    let next = downloaded
+        .checked_add(chunk_size as u64)
+        .ok_or_else(|| "下载文件大小溢出".to_string())?;
+    validate_download_size(next, max_bytes)?;
+    Ok(next)
+}
+
+fn ensure_download_not_cancelled(cancellation: &DownloadCancellation) -> Result<(), String> {
+    if cancellation.is_cancelled() {
+        return Err("下载已取消".to_string());
+    }
+    Ok(())
+}
+
+fn download_dir_config_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let app_dir = app_handle
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("无法解析应用配置目录: {}", e))?;
+    std::fs::create_dir_all(&app_dir).map_err(|e| format!("无法创建应用配置目录: {}", e))?;
+    Ok(app_dir.join(DOWNLOAD_DIR_CONFIG_FILE))
+}
+
+fn save_approved_download_dir(app_handle: &tauri::AppHandle, dir: &Path) -> Result<(), String> {
+    let path = download_dir_config_path(app_handle)?;
+    std::fs::write(path, dir.to_string_lossy().as_ref())
+        .map_err(|e| format!("保存下载目录配置失败: {}", e))
+}
+
+fn read_approved_download_dir(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
+    let path = download_dir_config_path(app_handle).ok()?;
+    let raw = std::fs::read_to_string(path).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    PathBuf::from(trimmed).canonicalize().ok()
+}
+
+fn canonicalize_dir(path: PathBuf) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(&path).map_err(|e| format!("无法创建下载目录: {}", e))?;
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("无法解析下载目录: {}", e))?;
+    if !canonical.is_dir() {
+        return Err("下载路径不是有效目录".to_string());
+    }
+    Ok(canonical)
+}
+
+fn resolve_safe_download_dir(
+    app_handle: &tauri::AppHandle,
+    custom_dir: Option<&str>,
+) -> Result<PathBuf, String> {
+    let dir = match custom_dir.map(str::trim).filter(|d| !d.is_empty()) {
+        Some(dir) => {
+            let canonical = canonicalize_dir(PathBuf::from(dir))?;
+            if let Some(approved) = read_approved_download_dir(app_handle) {
+                if canonical != approved {
+                    return Err("下载目录未授权，请在设置中重新选择下载目录".to_string());
+                }
+            } else {
+                // Migration path for users who already had a custom directory in localStorage.
+                save_approved_download_dir(app_handle, &canonical)?;
+            }
+            canonical
+        }
+        None => canonicalize_dir(resolve_download_dir(app_handle, true)?)?,
+    };
+    Ok(dir)
+}
+
+fn has_windows_drive_prefix(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
+fn is_windows_reserved_basename(stem: &str) -> bool {
+    let upper = stem.trim_matches('_').to_ascii_uppercase();
+    matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || upper
+            .strip_prefix("COM")
+            .is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"))
+        || upper
+            .strip_prefix("LPT")
+            .is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"))
+}
+
+fn sanitize_filename(
+    input: &str,
+    fallback_ext: Option<&str>,
+    allowed_exts: &[&str],
+) -> Result<String, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() || trimmed == "." || trimmed == ".." {
+        return Err("文件名不能为空".to_string());
+    }
+    if trimmed.contains('/') || trimmed.contains('\\') || Path::new(trimmed).is_absolute() {
+        return Err("文件名不能包含路径".to_string());
+    }
+    if has_windows_drive_prefix(trimmed) {
+        return Err("文件名不能包含 Windows 盘符前缀".to_string());
+    }
+
+    let mut sanitized: String = trimmed
+        .chars()
+        .map(|ch| {
+            if ch.is_control() || matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*') {
+                '_'
+            } else {
+                ch
+            }
+        })
+        .collect();
+    sanitized = sanitized
+        .trim()
+        .trim_end_matches(&[' ', '.'][..])
+        .to_string();
+
+    if sanitized.is_empty() || sanitized == "." || sanitized == ".." {
+        return Err("文件名不能为空".to_string());
+    }
+
+    let (mut stem, ext) = match sanitized.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() && !ext.is_empty() => {
+            (stem.to_string(), ext.to_ascii_lowercase())
+        }
+        _ => {
+            let fallback = fallback_ext.ok_or_else(|| "文件名缺少扩展名".to_string())?;
+            (sanitized, fallback.to_ascii_lowercase())
+        }
+    };
+
+    if !allowed_exts.iter().any(|allowed| *allowed == ext) {
+        return Err(format!("不支持的文件扩展名: {}", ext));
+    }
+
+    stem = stem.trim().trim_end_matches(&[' ', '.'][..]).to_string();
+    if stem.is_empty() || stem == "." || stem == ".." {
+        return Err("文件名不能为空".to_string());
+    }
+    if is_windows_reserved_basename(&stem) {
+        stem = format!("_{}", stem);
+    }
+
+    if stem.chars().count() > 160 {
+        stem = stem.chars().take(160).collect();
+    }
+
+    Ok(format!("{}.{}", stem, ext))
+}
+
+fn split_filename(filename: &str) -> (String, String) {
+    filename
+        .rsplit_once('.')
+        .map(|(stem, ext)| (stem.to_string(), ext.to_string()))
+        .unwrap_or_else(|| (filename.to_string(), "".to_string()))
+}
+
+fn safe_join_download_dir(
+    dir: &Path,
+    filename: &str,
+    fallback_ext: Option<&str>,
+    allowed_exts: &[&str],
+) -> Result<(PathBuf, String), String> {
+    let canonical_dir = canonicalize_dir(dir.to_path_buf())?;
+    let safe_filename = sanitize_filename(filename, fallback_ext, allowed_exts)?;
+    let path = canonical_dir.join(&safe_filename);
+    if path.parent() != Some(canonical_dir.as_path()) {
+        return Err("文件路径越界".to_string());
+    }
+    Ok((path, safe_filename))
+}
+
+fn unique_download_path(
+    dir: &Path,
+    filename: &str,
+    fallback_ext: Option<&str>,
+    allowed_exts: &[&str],
+) -> Result<(PathBuf, String), String> {
+    let (initial_path, safe_filename) =
+        safe_join_download_dir(dir, filename, fallback_ext, allowed_exts)?;
+    if !initial_path.exists() {
+        return Ok((initial_path, safe_filename));
+    }
+
+    let (stem, ext) = split_filename(&safe_filename);
+    for counter in 1..10_000 {
+        let candidate_filename = format!("{} ({}).{}", stem, counter, ext);
+        let (candidate, candidate_filename) =
+            safe_join_download_dir(dir, &candidate_filename, fallback_ext, allowed_exts)?;
+        if !candidate.exists() {
+            return Ok((candidate, candidate_filename));
+        }
+    }
+
+    Err("无法生成不重复的文件名".to_string())
+}
+
+fn verified_existing_download_path(
+    dir: &Path,
+    filename: &str,
+    allowed_exts: &[&str],
+) -> Result<PathBuf, String> {
+    let (path, _) = safe_join_download_dir(dir, filename, None, allowed_exts)?;
+    if !path.exists() {
+        return Err("文件不存在".to_string());
+    }
+    let canonical_dir = canonicalize_dir(dir.to_path_buf())?;
+    let canonical_file = path
+        .canonicalize()
+        .map_err(|e| format!("无法解析本地文件: {}", e))?;
+    if !canonical_file.starts_with(&canonical_dir) {
+        return Err("文件路径越界".to_string());
+    }
+    Ok(canonical_file)
+}
+
+fn now_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+fn partial_path_for(file_path: &Path) -> Result<PathBuf, String> {
+    let filename = file_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| "无法生成临时下载文件名".to_string())?;
+    Ok(file_path.with_file_name(format!("{}.partial-{}", filename, now_millis())))
+}
+
+fn cleanup_stale_partials(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if name.contains(".partial-") {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+fn emit_download_progress(
+    app_handle: &tauri::AppHandle,
+    event_name: &str,
+    task_id: &str,
+    url: &str,
+    progress: u8,
+) {
+    let _ = app_handle.emit(
+        event_name,
+        DownloadProgress {
+            task_id: task_id.to_string(),
+            url: url.to_string(),
+            progress,
+        },
+    );
+}
+
+fn validate_external_url(raw_url: &str) -> Result<String, String> {
+    let parsed = url::Url::parse(raw_url).map_err(|e| format!("无效 URL: {}", e))?;
+    if parsed.scheme() != "https" {
+        return Err("仅允许打开 https 链接".to_string());
+    }
+    if parsed.host_str().is_none() {
+        return Err("URL 缺少 host".to_string());
+    }
+    Ok(parsed.to_string())
+}
+
+async fn persist_download_response<F>(
+    mut response: reqwest::Response,
+    file_path: &Path,
+    idle_timeout: Duration,
+    max_bytes: u64,
+    cancellation: &DownloadCancellation,
+    mut on_progress: F,
+) -> Result<(), String>
+where
+    F: FnMut(u8),
+{
+    ensure_download_not_cancelled(cancellation)?;
+    if let Some(parent) = file_path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("创建下载目录失败: {}", e))?;
+    }
+    let partial_path = partial_path_for(file_path)?;
+
+    let result = async {
+        ensure_download_not_cancelled(cancellation)?;
+        let total_size = response.content_length().unwrap_or(0);
+        if total_size > 0 {
+            validate_download_size(total_size, max_bytes)?;
+        }
+
+        let mut downloaded: u64 = 0;
+        let mut last_progress: u8 = 0;
+        ensure_download_not_cancelled(cancellation)?;
+        let mut file = tokio::fs::File::create(&partial_path)
+            .await
+            .map_err(|e| format!("创建本地文件失败: {}", e))?;
+
+        on_progress(0);
+
+        loop {
+            ensure_download_not_cancelled(cancellation)?;
+            let chunk = tokio::select! {
+                result = tokio::time::timeout(idle_timeout, response.chunk()) => {
+                    result
+                        .map_err(|_| "下载数据读取超时".to_string())?
+                        .map_err(|e| format!("读取文件块失败: {}", e))?
+                }
+                _ = cancellation.cancelled() => return Err("下载已取消".to_string()),
+            };
+            ensure_download_not_cancelled(cancellation)?;
+            let Some(chunk) = chunk else {
+                break;
+            };
+
+            downloaded = checked_downloaded_size(downloaded, chunk.len(), max_bytes)?;
+            ensure_download_not_cancelled(cancellation)?;
+            file.write_all(&chunk)
+                .await
+                .map_err(|e| format!("保存文件数据失败: {}", e))?;
+
+            if total_size > 0 {
+                let progress = downloaded
+                    .saturating_mul(100)
+                    .checked_div(total_size)
+                    .unwrap_or(0)
+                    .min(99) as u8;
+                if progress != last_progress {
+                    last_progress = progress;
+                    on_progress(progress);
+                }
+            }
+        }
+
+        ensure_download_not_cancelled(cancellation)?;
+        file.flush()
+            .await
+            .map_err(|e| format!("刷新本地文件失败: {}", e))?;
+        drop(file);
+
+        ensure_download_not_cancelled(cancellation)?;
+        if let Err(error) = tokio::fs::remove_file(file_path).await {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!("替换旧文件失败: {}", error));
+            }
+        }
+        ensure_download_not_cancelled(cancellation)?;
+        tokio::fs::rename(&partial_path, file_path)
+            .await
+            .map_err(|e| format!("完成下载文件写入失败: {}", e))?;
+        if let Err(error) = ensure_download_not_cancelled(cancellation) {
+            let _ = tokio::fs::remove_file(file_path).await;
+            return Err(error);
+        }
+        on_progress(100);
+        Ok(())
+    }
+    .await;
+
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&partial_path).await;
+    }
+
+    result
+}
+
 /// Downloads a file with streaming writes and progress reporting.
 ///
 /// Streams response chunks directly to disk (avoiding loading the entire
 /// file into memory) and emits progress events via `app_handle.emit()`.
-///
-/// # Arguments
-/// * `client` - Shared HTTP client.
-/// * `url` - Source URL to download from.
-/// * `file_path` - Destination file path on disk.
-/// * `event_name` - Tauri event name for progress updates (e.g. "download-progress").
-/// * `app_handle` - Tauri app handle for emitting events.
-///
-/// # Returns
-/// `Ok(())` on success, or an error string on failure.
+/// The transfer is written to a temporary `.partial-*` file and renamed only
+/// after the full response is saved.
 async fn download_with_progress(
     client: &reqwest::Client,
     url: &str,
-    file_path: &std::path::Path,
+    file_path: &Path,
     event_name: &str,
+    task_id: &str,
+    cancellation: &DownloadCancellation,
     app_handle: &tauri::AppHandle,
 ) -> Result<(), String> {
-    let mut response = client
-        .get(url)
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        )
-        .send()
-        .await
+    ensure_download_not_cancelled(cancellation)?;
+    let response = tokio::select! {
+        result = tokio::time::timeout(
+            DOWNLOAD_IDLE_TIMEOUT,
+            client
+                .get(url)
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                )
+                .send(),
+        ) => result,
+        _ = cancellation.cancelled() => return Err("下载已取消".to_string()),
+    };
+    let response = response
+        .map_err(|_| "下载响应超时".to_string())?
         .map_err(|e| format!("下载网络文件失败: {}", e))?;
+    ensure_download_not_cancelled(cancellation)?;
 
     if !response.status().is_success() {
         return Err(format!("网络请求失败，响应码: {}", response.status()));
     }
 
-    let total_size = response.content_length().unwrap_or(0);
-    let mut downloaded: u64 = 0;
-
-    // Create file before streaming (avoids buffering entire file in memory)
-    let mut file =
-        std::fs::File::create(file_path).map_err(|e| format!("创建本地文件失败: {}", e))?;
-
-    // Send 0% initial progress
-    let _ = app_handle.emit(
-        event_name,
-        DownloadProgress {
-            url: url.to_string(),
-            progress: 0,
-        },
-    );
-
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|e| format!("读取文件块失败: {}", e))?
-    {
-        file.write_all(&chunk)
-            .map_err(|e| format!("保存文件数据失败: {}", e))?;
-        downloaded += chunk.len() as u64;
-        if total_size > 0 {
-            let progress = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
-            let _ = app_handle.emit(
-                event_name,
-                DownloadProgress {
-                    url: url.to_string(),
-                    progress,
-                },
-            );
-        }
-    }
-
-    // Send 100% completion progress
-    let _ = app_handle.emit(
-        event_name,
-        DownloadProgress {
-            url: url.to_string(),
-            progress: 100,
-        },
-    );
-
-    Ok(())
+    persist_download_response(
+        response,
+        file_path,
+        DOWNLOAD_IDLE_TIMEOUT,
+        MAX_AUDIO_DOWNLOAD_BYTES,
+        cancellation,
+        |progress| emit_download_progress(app_handle, event_name, task_id, url, progress),
+    )
+    .await
 }
 
 /// Tauri command to download a song to the local filesystem.
@@ -439,52 +923,54 @@ async fn download_with_progress(
 /// Streams the download to disk with progress events, avoiding loading
 /// the entire file into memory. If `custom_dir` is provided and non-empty,
 /// uses it; otherwise defaults to the executable's parent directory.
-///
-/// # Arguments
-/// * `app_handle` - Tauri app handle.
-/// * `client` - Shared HTTP client (injected via Tauri State).
-/// * `url` - Source URL of the audio file.
-/// * `filename` - Desired filename (with extension).
-/// * `custom_dir` - Optional custom download directory.
-///
-/// # Returns
-/// The full path to the saved file, or an error string.
 #[tauri::command]
 async fn download_song_to_local(
     app_handle: tauri::AppHandle,
-    client: State<'_, reqwest::Client>,
+    client: State<'_, DownloadClient>,
+    registry: State<'_, DownloadTaskRegistry>,
     url: String,
     filename: String,
     custom_dir: Option<String>,
-) -> Result<String, String> {
-    let download_dir = match &custom_dir {
-        Some(dir) if !dir.trim().is_empty() => std::path::PathBuf::from(dir),
-        _ => resolve_download_dir(&app_handle, true)?,
-    };
-
-    let file_stem = std::path::Path::new(&filename)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_string();
-    let file_ext = std::path::Path::new(&filename)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("mp3")
-        .to_string();
-
-    let mut file_path = download_dir.join(&filename);
-
-    let mut counter = 1;
-    while file_path.exists() {
-        let new_filename = format!("{} ({}).{}", file_stem, counter, file_ext);
-        file_path = download_dir.join(new_filename);
-        counter += 1;
+    task_id: String,
+) -> Result<DownloadedFile, String> {
+    let task_id = validate_download_task_id(&task_id)?;
+    let parsed_url = url::Url::parse(&url).map_err(|e| format!("无效下载地址: {}", e))?;
+    if !matches!(parsed_url.scheme(), "http" | "https") {
+        return Err("下载地址必须是 http 或 https".to_string());
     }
 
-    download_with_progress(&client, &url, &file_path, "download-progress", &app_handle).await?;
+    let download_dir = resolve_safe_download_dir(&app_handle, custom_dir.as_deref())?;
+    cleanup_stale_partials(&download_dir);
+    let (file_path, actual_filename) =
+        unique_download_path(&download_dir, &filename, Some("mp3"), AUDIO_FILE_EXTENSIONS)?;
 
-    Ok(file_path.to_string_lossy().to_string())
+    let cancellation = registry.register(&task_id)?;
+    let result = download_with_progress(
+        &client.0,
+        &url,
+        &file_path,
+        "download-progress",
+        &task_id,
+        &cancellation,
+        &app_handle,
+    )
+    .await;
+    registry.finish(&task_id);
+    result?;
+
+    Ok(DownloadedFile {
+        filepath: file_path.to_string_lossy().to_string(),
+        filename: actual_filename,
+    })
+}
+
+#[tauri::command]
+fn cancel_download(
+    registry: State<'_, DownloadTaskRegistry>,
+    task_id: String,
+) -> Result<bool, String> {
+    let task_id = validate_download_task_id(&task_id)?;
+    Ok(registry.cancel(&task_id))
 }
 
 /// Metadata entry stored in downloads.json for each downloaded song.
@@ -519,14 +1005,17 @@ fn read_downloads_json(dir: &std::path::Path) -> Vec<DownloadMetaEntry> {
 }
 
 /// Writes the downloads.json sidecar file.
-fn write_downloads_json(
-    dir: &std::path::Path,
-    entries: &[DownloadMetaEntry],
-) -> Result<(), String> {
+fn write_downloads_json(dir: &Path, entries: &[DownloadMetaEntry]) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("创建下载目录失败: {}", e))?;
     let path = dir.join("downloads.json");
+    let temp_path = dir.join(format!("downloads.json.partial-{}", now_millis()));
     let json = serde_json::to_string_pretty(entries)
         .map_err(|e| format!("序列化 downloads.json 失败: {}", e))?;
-    std::fs::write(&path, json).map_err(|e| format!("写入 downloads.json 失败: {}", e))
+    std::fs::write(&temp_path, json).map_err(|e| format!("写入 downloads.json 失败: {}", e))?;
+    if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+    std::fs::rename(&temp_path, &path).map_err(|e| format!("更新 downloads.json 失败: {}", e))
 }
 
 /// Scans the download directory and returns all downloads with metadata.
@@ -538,30 +1027,34 @@ fn scan_download_dir(
     app_handle: tauri::AppHandle,
     custom_dir: Option<String>,
 ) -> Result<Vec<DownloadMetaEntry>, String> {
-    let dir = match &custom_dir {
-        Some(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
-        _ => resolve_download_dir(&app_handle, true)?,
-    };
+    let dir = resolve_safe_download_dir(&app_handle, custom_dir.as_deref())?;
+    cleanup_stale_partials(&dir);
 
     let mut entries = read_downloads_json(&dir);
 
-    // Retain only entries where the file still exists on disk
+    // Retain only entries whose sanitized filename still resolves inside the download directory.
     let before = entries.len();
-    entries.retain(|e| dir.join(&e.filename).exists());
+    entries.retain(|e| {
+        verified_existing_download_path(&dir, &e.filename, AUDIO_FILE_EXTENSIONS).is_ok()
+    });
 
-    // If entries were removed (files deleted externally), update the JSON
+    // If entries were removed (files deleted externally or metadata was invalid), update the JSON.
     if entries.len() != before {
         write_downloads_json(&dir, &entries)?;
     }
 
-    // Populate file size from disk metadata
+    // Populate file size from disk metadata.
     for entry in &mut entries {
-        if let Ok(meta) = std::fs::metadata(dir.join(&entry.filename)) {
-            entry.size = meta.len();
+        if let Ok(path) =
+            verified_existing_download_path(&dir, &entry.filename, AUDIO_FILE_EXTENSIONS)
+        {
+            if let Ok(meta) = std::fs::metadata(path) {
+                entry.size = meta.len();
+            }
         }
     }
 
-    // Sort by create_time descending (newest first)
+    // Sort by create_time descending (newest first).
     entries.sort_by(|a, b| {
         b.create_time
             .partial_cmp(&a.create_time)
@@ -581,22 +1074,25 @@ fn save_download_meta(
     create_time: f64,
     custom_dir: Option<String>,
 ) -> Result<(), String> {
-    let dir = match &custom_dir {
-        Some(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
-        _ => resolve_download_dir(&app_handle, true)?,
-    };
+    let dir = resolve_safe_download_dir(&app_handle, custom_dir.as_deref())?;
+    let safe_filename = sanitize_filename(&filename, None, AUDIO_FILE_EXTENSIONS)?;
+    let size = verified_existing_download_path(&dir, &safe_filename, AUDIO_FILE_EXTENSIONS)
+        .ok()
+        .and_then(|path| std::fs::metadata(path).ok())
+        .map(|meta| meta.len())
+        .unwrap_or(0);
 
     let mut entries = read_downloads_json(&dir);
 
-    // Remove any existing entry with the same filename
-    entries.retain(|e| e.filename != filename);
+    // Remove any existing entry with the same filename.
+    entries.retain(|e| e.filename != safe_filename);
 
     entries.push(DownloadMetaEntry {
-        filename,
+        filename: safe_filename,
         song,
         quality,
         create_time,
-        size: 0,
+        size,
     });
 
     write_downloads_json(&dir, &entries)
@@ -609,21 +1105,19 @@ fn delete_download_file(
     filename: String,
     custom_dir: Option<String>,
 ) -> Result<(), String> {
-    let dir = match &custom_dir {
-        Some(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
-        _ => resolve_download_dir(&app_handle, true)?,
-    };
+    let dir = resolve_safe_download_dir(&app_handle, custom_dir.as_deref())?;
+    let safe_filename = sanitize_filename(&filename, None, AUDIO_FILE_EXTENSIONS)?;
 
-    // Delete the file from disk (use trash if possible, otherwise remove)
-    let file_path = dir.join(&filename);
-    if file_path.exists() {
+    if let Ok(file_path) =
+        verified_existing_download_path(&dir, &safe_filename, AUDIO_FILE_EXTENSIONS)
+    {
         std::fs::remove_file(&file_path).map_err(|e| format!("删除文件失败: {}", e))?;
     }
 
-    // Remove from downloads.json
+    // Remove from downloads.json.
     let mut entries = read_downloads_json(&dir);
     let before = entries.len();
-    entries.retain(|e| e.filename != filename);
+    entries.retain(|e| e.filename != safe_filename);
 
     if entries.len() != before {
         write_downloads_json(&dir, &entries)?;
@@ -645,15 +1139,10 @@ fn resolve_local_playback(
     quality: Option<String>,
     custom_dir: Option<String>,
 ) -> Result<Option<ResolvedPlayback>, String> {
-    let dir = match &custom_dir {
-        Some(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
-        _ => resolve_download_dir(&app_handle, true)?,
-    };
-
+    let dir = resolve_safe_download_dir(&app_handle, custom_dir.as_deref())?;
     let entries = read_downloads_json(&dir);
 
-    // Find entries matching song ID and source
-    let matches: Vec<&DownloadMetaEntry> = entries
+    let mut matches: Vec<&DownloadMetaEntry> = entries
         .iter()
         .filter(|e| {
             if let Some(id) = e.song.get("id").and_then(|v| v.as_str()) {
@@ -676,17 +1165,18 @@ fn resolve_local_playback(
         return Ok(None);
     }
 
-    // Prefer exact quality match, otherwise use first available
-    let chosen = if let Some(ref q) = quality {
-        matches.iter().find(|e| e.quality == *q)
-    } else {
-        None
+    if let Some(ref q) = quality {
+        matches.sort_by_key(|e| if e.quality == *q { 0 } else { 1 });
     }
-    .or_else(|| matches.first());
 
-    if let Some(entry) = chosen {
-        let file_path = dir.join(&entry.filename);
-        if file_path.exists() {
+    for entry in matches {
+        if let Ok(file_path) =
+            verified_existing_download_path(&dir, &entry.filename, AUDIO_FILE_EXTENSIONS)
+        {
+            app_handle
+                .asset_protocol_scope()
+                .allow_file(&file_path)
+                .map_err(|e| format!("授权本地音频播放失败: {}", e))?;
             return Ok(Some(ResolvedPlayback {
                 filepath: file_path.to_string_lossy().to_string(),
                 song: entry.song.clone(),
@@ -728,18 +1218,15 @@ async fn relay_player_control(
 
 /// Tauri command to open an external URL in the system's default browser.
 ///
-/// On Windows, uses `cmd /C start "" <url>` where the empty string
-/// serves as the window title, preventing command injection when the URL
-/// contains special characters (e.g. `&`).
-///
-/// # Arguments
-/// * `url` - The URL to open.
+/// Only HTTPS URLs are accepted. Local filesystem paths are handled by
+/// `open_download_dir` so renderer input cannot select arbitrary files.
 #[tauri::command]
 async fn open_external_url(url: String) -> Result<(), String> {
+    let url = validate_external_url(&url)?;
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &url])
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", &url])
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -754,6 +1241,36 @@ async fn open_external_url(url: String) -> Result<(), String> {
     {
         std::process::Command::new("xdg-open")
             .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_download_dir(
+    app_handle: tauri::AppHandle,
+    custom_dir: Option<String>,
+) -> Result<(), String> {
+    let dir = resolve_safe_download_dir(&app_handle, custom_dir.as_deref())?;
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&dir)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -816,77 +1333,74 @@ async fn select_download_dir(app_handle: tauri::AppHandle) -> Result<Option<Stri
         let _ = tx.send(path);
     });
 
-    // 5-minute timeout to prevent indefinite blocking
-    match tokio::time::timeout(std::time::Duration::from_secs(300), rx).await {
-        Ok(Ok(result)) => Ok(result),
-        Ok(Err(e)) => Err(format!("对话框通道错误: {}", e)),
-        Err(_) => Err("选择下载目录超时（5分钟）".to_string()),
+    // 5-minute timeout to prevent indefinite blocking.
+    let selected = match tokio::time::timeout(std::time::Duration::from_secs(300), rx).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(e)) => return Err(format!("对话框通道错误: {}", e)),
+        Err(_) => return Err("选择下载目录超时（5分钟）".to_string()),
+    };
+
+    if let Some(path) = selected {
+        let canonical = canonicalize_dir(PathBuf::from(path))?;
+        save_approved_download_dir(&app_handle, &canonical)?;
+        Ok(Some(canonical.to_string_lossy().into_owned()))
+    } else {
+        Ok(None)
     }
 }
 
-/// Tauri command to download and install an application update.
-///
-/// Validates that the update URL is from `github.com` or `githubusercontent.com`,
-/// streams the download to disk with progress events, then launches the
-/// installer using the platform-appropriate command.
-///
-/// # Arguments
-/// * `app_handle` - Tauri app handle.
-/// * `client` - Shared HTTP client (injected via Tauri State).
-/// * `url` - Update package URL (must be from GitHub domains).
-///
-/// # Returns
-/// `Ok(())` on success (the app exits after launching the installer).
 #[tauri::command]
-async fn download_and_install_update(
-    app_handle: tauri::AppHandle,
-    client: State<'_, reqwest::Client>,
-    url: String,
-) -> Result<(), String> {
-    // URL whitelist: only allow GitHub domains
-    let parsed = url::Url::parse(&url).map_err(|e| format!("Invalid URL: {}", e))?;
-    let host = parsed.host_str().unwrap_or("");
-    if !host.ends_with("github.com") && !host.ends_with("githubusercontent.com") {
-        return Err("Update URL must be from github.com or githubusercontent.com".into());
-    }
+async fn check_for_update(app_handle: tauri::AppHandle) -> Result<Option<AvailableUpdate>, String> {
+    let update = app_handle
+        .updater()
+        .map_err(|e| format!("初始化更新器失败: {}", e))?
+        .check()
+        .await
+        .map_err(|e| format!("检查更新失败: {}", e))?;
 
-    // Extract filename from URL path, fall back to platform default
-    let update_filename = parsed
-        .path_segments()
-        .and_then(|mut s| s.next_back())
-        .unwrap_or("TuneFree_update.exe");
-    let temp_dir = std::env::temp_dir();
-    let file_path = temp_dir.join(update_filename);
+    Ok(update.map(|update| AvailableUpdate {
+        version: update.version,
+        notes: update.body,
+    }))
+}
 
-    download_with_progress(&client, &url, &file_path, "update-progress", &app_handle).await?;
+fn calculate_update_progress(downloaded: u64, total: Option<u64>) -> u8 {
+    total
+        .filter(|total| *total > 0)
+        .map(|total| ((downloaded.saturating_mul(100) / total).min(99)) as u8)
+        .unwrap_or(0)
+}
+
+/// Downloads, verifies and installs the update selected by the official
+/// Tauri updater for the current platform and CPU architecture.
+#[tauri::command]
+async fn download_and_install_update(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let update = app_handle
+        .updater()
+        .map_err(|e| format!("初始化更新器失败: {}", e))?
+        .check()
+        .await
+        .map_err(|e| format!("检查更新失败: {}", e))?
+        .ok_or_else(|| "当前没有可安装的更新".to_string())?;
+
+    let progress_handle = app_handle.clone();
+    let mut downloaded = 0_u64;
+    let _ = app_handle.emit("update-progress", UpdateProgress { progress: 0 });
+
+    update
+        .download_and_install(
+            move |chunk_length, content_length| {
+                downloaded = downloaded.saturating_add(chunk_length as u64);
+                let progress = calculate_update_progress(downloaded, content_length);
+                let _ = progress_handle.emit("update-progress", UpdateProgress { progress });
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| format!("下载或安装更新失败: {}", e))?;
 
     let _ = app_handle.emit("update-progress", UpdateProgress { progress: 100 });
-
-    // Launch installer using platform-appropriate command
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &file_path.to_string_lossy()])
-            .spawn()
-            .map_err(|e| format!("拉起安装程序失败: {}", e))?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&file_path)
-            .spawn()
-            .map_err(|e| format!("拉起安装程序失败: {}", e))?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&file_path)
-            .spawn()
-            .map_err(|e| format!("拉起安装程序失败: {}", e))?;
-    }
-
-    quit_app_inner(&app_handle);
-    Ok(())
+    app_handle.restart()
 }
 
 /// Entry point for the Tauri application.
@@ -904,13 +1418,59 @@ pub fn run() {
     // Create shutdown signal channel for graceful server shutdown
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
-    // Create shared HTTP client with sensible defaults
+    // Bind the local server before the frontend starts so the actual port can
+    // be read synchronously through Tauri state, even when 3002 is occupied.
+    let server_listener = server::bind_local_listener(3002)
+        .expect("Failed to bind local API server to a loopback port");
+    let local_server_port = server_listener
+        .local_addr()
+        .map(|addr| addr.port())
+        .expect("Failed to determine local API server port");
+    if local_server_port != 3002 {
+        log::warn!(
+            "Local API port 3002 is unavailable; using 127.0.0.1:{}",
+            local_server_port
+        );
+    }
+
+    // Create shared HTTP client with sensible defaults for API calls.
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .connect_timeout(std::time::Duration::from_secs(10))
         .pool_max_idle_per_host(20)
         .build()
         .expect("Failed to build HTTP client");
+
+    // Downloads can legitimately take longer than API calls. Avoid a short
+    // whole-request timeout; keep connect timeout so broken networks fail fast.
+    let download_client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .pool_max_idle_per_host(8)
+        .build()
+        .expect("Failed to build download HTTP client");
+
+    // Streaming proxy requests must not inherit the API client's 30-second
+    // whole-request timeout, otherwise long audio streams can be truncated.
+    let proxy_client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .read_timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            let url = attempt.url();
+            let allowed = matches!(url.scheme(), "http" | "https")
+                && url
+                    .host_str()
+                    .is_some_and(crate::api::proxy::is_allowed_host);
+            if !allowed {
+                return attempt.error("proxy redirect target is not allowed");
+            }
+            if attempt.previous().len() >= 10 {
+                return attempt.error("too many proxy redirects");
+            }
+            attempt.follow()
+        }))
+        .pool_max_idle_per_host(20)
+        .build()
+        .expect("Failed to build streaming proxy HTTP client");
 
     let lifecycle = AppLifecycleState {
         is_quitting: Arc::new(AtomicBool::new(false)),
@@ -919,21 +1479,31 @@ pub fn run() {
     let window_lifecycle = lifecycle.clone();
 
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(process_instance)
         .manage(lifecycle)
+        .manage(LocalServerState {
+            port: local_server_port,
+        })
         .manage(client.clone())
+        .manage(DownloadClient(download_client.clone()))
+        .manage(DownloadTaskRegistry::default())
         .invoke_handler(tauri::generate_handler![
             download_song_to_local,
+            cancel_download,
             scan_download_dir,
             save_download_meta,
             delete_download_file,
             resolve_local_playback,
             relay_player_control,
             open_external_url,
+            open_download_dir,
             get_download_dir,
             get_default_download_dir,
             select_download_dir,
+            check_for_update,
             download_and_install_update,
+            get_local_server_port,
             log_recommendation_event,
             sync_recommendation_library,
             get_home_recommendations,
@@ -1025,7 +1595,11 @@ pub fn run() {
             // Start the local Axum web server for resolving APIs
             tauri::async_runtime::spawn(server::start_server(
                 app.handle().clone(),
-                client.clone(),
+                server::ServerState {
+                    api_client: client.clone(),
+                    proxy_client: proxy_client.clone(),
+                },
+                server_listener,
                 shutdown_rx,
             ));
 
@@ -1042,4 +1616,275 @@ pub fn run() {
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::AsyncReadExt;
+
+    #[tokio::test]
+    async fn recommendation_database_work_runs_on_blocking_pool() {
+        let value = run_recommendation_blocking(|| Ok::<_, String>(42))
+            .await
+            .unwrap();
+        assert_eq!(value, 42);
+    }
+
+    async fn test_http_response(
+        content_length: Option<usize>,
+        body: Vec<u8>,
+        body_delay: Duration,
+    ) -> reqwest::Response {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = socket.read(&mut request).await;
+
+            let content_length_header = content_length
+                .map(|size| format!("Content-Length: {}\r\n", size))
+                .unwrap_or_default();
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\n{}Connection: close\r\n\r\n",
+                content_length_header
+            );
+            socket.write_all(headers.as_bytes()).await.unwrap();
+            socket.flush().await.unwrap();
+            if !body_delay.is_zero() {
+                tokio::time::sleep(body_delay).await;
+            }
+            let _ = socket.write_all(&body).await;
+        });
+
+        reqwest::Client::new()
+            .get(format!("http://{}/audio", address))
+            .send()
+            .await
+            .unwrap()
+    }
+
+    fn temp_download_path(test_name: &str) -> PathBuf {
+        std::env::temp_dir()
+            .join(format!(
+                "tunefree-download-test-{}-{}-{}",
+                test_name,
+                std::process::id(),
+                now_millis()
+            ))
+            .join("track.mp3")
+    }
+
+    fn assert_no_partial_file(file_path: &Path) {
+        let parent = file_path.parent().unwrap();
+        let has_partial = std::fs::read_dir(parent)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|entry| entry.file_name().to_string_lossy().contains(".partial-"));
+        assert!(!has_partial);
+    }
+
+    #[test]
+    fn sanitize_filename_rejects_path_traversal() {
+        assert!(sanitize_filename("../evil.mp3", Some("mp3"), AUDIO_FILE_EXTENSIONS).is_err());
+        assert!(sanitize_filename("..\\evil.mp3", Some("mp3"), AUDIO_FILE_EXTENSIONS).is_err());
+        assert!(
+            sanitize_filename("C:\\Windows\\win.ini", Some("mp3"), AUDIO_FILE_EXTENSIONS).is_err()
+        );
+    }
+
+    #[test]
+    fn sanitize_filename_keeps_apostrophes_and_handles_reserved_names() {
+        assert_eq!(
+            sanitize_filename("Rock 'n' Roll.mp3", Some("mp3"), AUDIO_FILE_EXTENSIONS).unwrap(),
+            "Rock 'n' Roll.mp3"
+        );
+        assert_eq!(
+            sanitize_filename("CON.mp3", Some("mp3"), AUDIO_FILE_EXTENSIONS).unwrap(),
+            "_CON.mp3"
+        );
+    }
+
+    #[test]
+    fn download_progress_serializes_task_id_for_the_frontend() {
+        let payload = serde_json::to_value(DownloadProgress {
+            task_id: "download:test".to_string(),
+            url: "https://example.com/audio.mp3".to_string(),
+            progress: 42,
+        })
+        .unwrap();
+
+        assert_eq!(payload["taskId"], "download:test");
+        assert!(payload.get("task_id").is_none());
+        assert_eq!(payload["progress"], 42);
+    }
+
+    #[test]
+    fn download_limits_and_task_ids_are_validated() {
+        assert!(validate_download_task_id("download:valid-id_1").is_ok());
+        assert!(validate_download_task_id("").is_err());
+        assert!(validate_download_task_id("download:invalid/id").is_err());
+        assert!(validate_download_size(MAX_AUDIO_DOWNLOAD_BYTES, MAX_AUDIO_DOWNLOAD_BYTES).is_ok());
+        assert!(
+            validate_download_size(MAX_AUDIO_DOWNLOAD_BYTES + 1, MAX_AUDIO_DOWNLOAD_BYTES).is_err()
+        );
+        assert!(checked_downloaded_size(4, 2, 5).is_err());
+    }
+
+    #[test]
+    fn download_task_registry_registers_cancels_and_finishes_tasks() {
+        let registry = DownloadTaskRegistry::default();
+        let cancellation = registry.register("download:test").unwrap();
+
+        assert!(registry.register("download:test").is_err());
+        assert!(!cancellation.is_cancelled());
+        assert!(registry.cancel("download:test"));
+        assert!(cancellation.is_cancelled());
+        registry.finish("download:test");
+        assert!(!registry.cancel("download:test"));
+    }
+
+    #[tokio::test]
+    async fn persist_download_response_writes_and_renames_the_partial_file() {
+        let file_path = temp_download_path("success");
+        let response = test_http_response(Some(5), b"audio".to_vec(), Duration::ZERO).await;
+        let mut progress = Vec::new();
+        let cancellation = DownloadCancellation::default();
+
+        persist_download_response(
+            response,
+            &file_path,
+            Duration::from_secs(1),
+            16,
+            &cancellation,
+            |value| progress.push(value),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(tokio::fs::read(&file_path).await.unwrap(), b"audio");
+        assert_eq!(progress.first(), Some(&0));
+        assert_eq!(progress.last(), Some(&100));
+        assert_no_partial_file(&file_path);
+        let _ = tokio::fs::remove_dir_all(file_path.parent().unwrap()).await;
+    }
+
+    #[tokio::test]
+    async fn persist_download_response_removes_partial_when_stream_exceeds_limit() {
+        let file_path = temp_download_path("size-limit");
+        let response = test_http_response(None, b"too-large".to_vec(), Duration::ZERO).await;
+        let cancellation = DownloadCancellation::default();
+
+        let error = persist_download_response(
+            response,
+            &file_path,
+            Duration::from_secs(1),
+            4,
+            &cancellation,
+            |_| {},
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.contains("大小限制"));
+        assert!(!file_path.exists());
+        assert_no_partial_file(&file_path);
+        let _ = tokio::fs::remove_dir_all(file_path.parent().unwrap()).await;
+    }
+
+    #[tokio::test]
+    async fn persist_download_response_removes_partial_after_idle_timeout() {
+        let file_path = temp_download_path("idle-timeout");
+        let response = test_http_response(Some(1), b"x".to_vec(), Duration::from_millis(100)).await;
+        let cancellation = DownloadCancellation::default();
+
+        let error = persist_download_response(
+            response,
+            &file_path,
+            Duration::from_millis(10),
+            16,
+            &cancellation,
+            |_| {},
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.contains("读取超时"));
+        assert!(!file_path.exists());
+        assert_no_partial_file(&file_path);
+        let _ = tokio::fs::remove_dir_all(file_path.parent().unwrap()).await;
+    }
+
+    #[tokio::test]
+    async fn persist_download_response_removes_partial_after_cancellation() {
+        let file_path = temp_download_path("cancelled");
+        let response =
+            test_http_response(Some(5), b"audio".to_vec(), Duration::from_millis(100)).await;
+        let cancellation = Arc::new(DownloadCancellation::default());
+        let cancellation_trigger = cancellation.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            cancellation_trigger.cancel();
+        });
+
+        let error = persist_download_response(
+            response,
+            &file_path,
+            Duration::from_secs(1),
+            16,
+            &cancellation,
+            |_| {},
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.contains("已取消"));
+        assert!(!file_path.exists());
+        assert_no_partial_file(&file_path);
+        let _ = tokio::fs::remove_dir_all(file_path.parent().unwrap()).await;
+    }
+
+    #[test]
+    fn update_progress_is_bounded_until_signature_verification_finishes() {
+        assert_eq!(calculate_update_progress(0, Some(100)), 0);
+        assert_eq!(calculate_update_progress(50, Some(100)), 50);
+        assert_eq!(calculate_update_progress(100, Some(100)), 99);
+        assert_eq!(calculate_update_progress(200, Some(100)), 99);
+        assert_eq!(calculate_update_progress(50, None), 0);
+        assert_eq!(calculate_update_progress(50, Some(0)), 0);
+    }
+
+    #[test]
+    fn external_url_validation_rejects_non_https_schemes() {
+        assert!(validate_external_url("https://tauri.app/").is_ok());
+        assert!(validate_external_url("file:///C:/Windows/win.ini").is_err());
+        assert!(validate_external_url("javascript:alert(1)").is_err());
+        assert!(validate_external_url("http://example.com/").is_err());
+    }
+
+    #[test]
+    fn safe_join_keeps_files_inside_download_dir() {
+        let dir = std::env::temp_dir().join(format!(
+            "tunefree-safe-join-test-{}-{}",
+            std::process::id(),
+            now_millis()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (path, filename) = safe_join_download_dir(
+            &dir,
+            "Artist - Song.mp3",
+            Some("mp3"),
+            AUDIO_FILE_EXTENSIONS,
+        )
+        .unwrap();
+        assert_eq!(filename, "Artist - Song.mp3");
+        assert_eq!(
+            path.parent().unwrap(),
+            canonicalize_dir(dir.clone()).unwrap().as_path()
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

@@ -1,5 +1,23 @@
 import { DEFAULT_PROXIES, SELF_HOSTED_PROXY } from "./config";
 
+export const isLocalServerProxy = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    const isLoopback =
+      url.hostname === "127.0.0.1" ||
+      url.hostname === "localhost" ||
+      url.hostname === "[::1]";
+    return (
+      url.protocol === "http:" &&
+      isLoopback &&
+      url.pathname === "/api/cors-proxy" &&
+      url.searchParams.has("url")
+    );
+  } catch {
+    return false;
+  }
+};
+
 /**
  * 获取代理列表 — 自建代理始终排第一位。
  * 若用户未配置代理或配置了自建代理，直接返回默认列表；
@@ -11,7 +29,9 @@ export const getProxies = (): string[] => {
       ? null
       : localStorage.getItem("tunefree_cors_proxy");
   if (!stored) return DEFAULT_PROXIES;
-  if (stored === SELF_HOSTED_PROXY) return DEFAULT_PROXIES;
+  if (stored === SELF_HOSTED_PROXY || isLocalServerProxy(stored)) {
+    return DEFAULT_PROXIES;
+  }
   if (stored.includes('corsproxy.io')) return DEFAULT_PROXIES;
   return [SELF_HOSTED_PROXY, stored];
 };

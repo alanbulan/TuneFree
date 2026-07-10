@@ -7,10 +7,8 @@ import { getImgReferrerPolicy, getTopListDetail, getTopLists } from '../../../co
 import { getAIRecommendedSongs } from '../../../core/services/gdStudio';
 import {
   attachRecommendationMeta,
-  dismissRecommendation,
   getLatestRecommendationJob,
   getRecommendationJob,
-  logRecommendationEvent,
   recommendationFeedbackFromSong,
   saveRecommendationFeedback,
 } from '../../../core/services/recommendation';
@@ -346,23 +344,18 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
   };
 
   const handleRecommendationPlay = (song: Song) => {
-    const feedback = recommendationFeedbackFromSong(song, 'play');
+    const feedback = recommendationFeedbackFromSong(song, 'play', 'home');
     if (feedback) {
       void saveRecommendationFeedback(feedback).catch(() => {});
-      void logRecommendationEvent({
-        eventType: song.recommendationSource === 'hybrid' ? 'llm_recommend_click' : 'similar_click',
-        song,
-        context: song.recommendationSource || 'recommendation',
-      }).catch(() => {});
     }
     void playQueue(featuredSongs, song);
   };
 
   const handleDismissRecommendation = (song: Song) => {
-    void dismissRecommendation(song, 'not_interested')
+    const feedback = recommendationFeedbackFromSong(song, 'dismiss', 'home');
+    if (!feedback) return;
+    void saveRecommendationFeedback(feedback)
       .then(() => {
-        const feedback = recommendationFeedbackFromSong(song, 'dismiss');
-        if (feedback) void saveRecommendationFeedback(feedback).catch(() => {});
         setFeaturedSongs((prev) => prev.filter((item) => !(item.id === song.id && item.source === song.source)));
         showToast('已减少类似推荐', 'success');
       })

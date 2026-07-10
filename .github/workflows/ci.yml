@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, tauri]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+      - run: npm run version:check
+      - run: npm run lint
+      - run: npm test -- --run
+      - run: npm run build
+      - name: Check formatting of maintained Rust modules
+        shell: pwsh
+        run: |
+          rustfmt --edition 2021 --check --config skip_children=true src-tauri/src/lib.rs
+          Get-ChildItem src-tauri/src/recommendation -Filter *.rs | ForEach-Object {
+            rustfmt --edition 2021 --check --config skip_children=true $_.FullName
+          }
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: npx tauri build --no-bundle
+      - run: git diff --exit-code

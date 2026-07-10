@@ -8,7 +8,7 @@ import {
   usePlayerProgress,
 } from '../../../core/contexts/PlayerContext';
 import { useLyricDisplayMode } from '../../../core/hooks/useLyricDisplayMode';
-import { findActiveLyricIndex, parseLyrics, type ParsedLyric } from '../../../core/utils/lyrics';
+import { findActiveLyricIndex, getLyricLineTime, parseLyrics, type ParsedLyric } from '../../../core/utils/lyrics';
 import {
   buildScoreNotes,
   getLyricExtensionLines,
@@ -34,7 +34,12 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
 
   const rawLyrics = currentSong?.lrc;
   const lyricRows = useMemo(() => parseLyrics(rawLyrics), [rawLyrics]);
-  const activeLyricIndex = findActiveLyricIndex(lyricRows, currentTime, lyricOffsetSeconds);
+  const activeLyricIndex = findActiveLyricIndex(
+    lyricRows,
+    currentTime,
+    lyricOffsetSeconds,
+    lyricDisplayMode,
+  );
   const lyricClock = currentTime + lyricOffsetSeconds;
   const activeLyric = activeLyricIndex >= 0 ? lyricRows[activeLyricIndex] : null;
   const lyricWindow = useMemo(() => {
@@ -154,11 +159,11 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
                     key={`${row.time}-${row.text}`}
                     data-active={offset === 0 ? 'true' : undefined}
                     aria-live={offset === 0 ? 'polite' : undefined}
-                    onClick={() => seek(Math.max(0, row.time))}
+                    onClick={() => seek(Math.max(0, getLyricLineTime(row, lyricDisplayMode)))}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        seek(Math.max(0, row.time));
+                        seek(Math.max(0, getLyricLineTime(row, lyricDisplayMode)));
                       }
                     }}
                   >

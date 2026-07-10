@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
@@ -13,10 +13,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 use super::{
     catalog, db, discovery, events, llm, llm_config, migration,
     model::{
-        LibrarySnapshot, LlmConfigInput, LlmConfigView, LlmProviderTestResult, RecSong,
-        RecommendationEvent, RecommendationFeedback, RecommendationItem, RecommendationJob,
-        RecommendationJobStage, RecommendationJobStatus, RecommendationMaintenanceStats,
-        RecommendationQuery,
+        LibraryDelta, LibraryMembershipChange, LibrarySnapshot, LlmConfigInput, LlmConfigView,
+        LlmProviderTestResult, RecSong, RecommendationEvent, RecommendationFeedback,
+        RecommendationItem, RecommendationJob, RecommendationJobStage, RecommendationJobStatus,
+        RecommendationMaintenanceStats, RecommendationQuery,
     },
     profile,
     provider::OpenAiCompatibleProvider,
@@ -32,6 +32,22 @@ const MERGED_CANDIDATE_LIMIT: usize = 100;
 const DYNAMIC_REFRESH_DEBOUNCE_MS: u64 = 20 * 1000;
 const DYNAMIC_REFRESH_MIN_INTERVAL_MS: i64 = 3 * 60 * 1000;
 const DYNAMIC_REFRESH_RUNNING_RETRY_MS: u64 = 30 * 1000;
+const FAVORITE_PROFILE_WEIGHT: f64 = 1.5;
+const PLAYLIST_PROFILE_WEIGHT: f64 = 0.6;
+const MAINTENANCE_INTERVAL_MS: i64 = 24 * 60 * 60 * 1000;
+const MAINTENANCE_POLL_MS: u64 = 60 * 60 * 1000;
+const PLAY_EVENT_RETENTION_MS: i64 = 180 * 24 * 60 * 60 * 1000;
+const FEEDBACK_RETENTION_MS: i64 = 90 * 24 * 60 * 60 * 1000;
+const LLM_CALL_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+const RESULT_SNAPSHOT_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+const RESULT_SNAPSHOT_LIMIT: i64 = 20;
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct LibraryMembershipKey {
+    container_type: String,
+    container_id: String,
+    track_key: String,
+}
 
 #[derive(Clone)]
 pub struct RecommendationService {
@@ -62,7 +78,7 @@ impl RecommendationService {
                 }
             }
         };
-        Ok(Self {
+        let service = Self {
             conn: Arc::new(Mutex::new(database.conn)),
             db_path: database.path,
             client: client.clone(),
@@ -72,68 +88,46 @@ impl RecommendationService {
             dynamic_refresh_pending: Arc::new(AtomicBool::new(false)),
             last_dynamic_refresh_at: Arc::new(AtomicI64::new(0)),
             recommendation_generation: Arc::new(AtomicU64::new(1)),
-        })
+        };
+        service.schedule_maintenance();
+        Ok(service)
     }
 
     pub fn log_event(&self, event: RecommendationEvent) -> Result<(), String> {
         let event_type = event.event_type.clone();
+        let weight = events::event_weight(&event.event_type);
         {
             let conn = self.conn.lock();
-            let weight = events::event_weight(&event.event_type);
-            events::insert_event(&conn, &event).map_err(|e| format!("写入推荐事件失败: {}", e))?;
+            let inserted = events::insert_event(&conn, &event)
+                .map_err(|e| format!("写入推荐事件失败: {}", e))?;
             if let Some(song) = &event.song {
                 profile::update_profile_for_song(&conn, song, weight, event.quality.as_deref())
                     .map_err(|e| format!("更新推荐画像失败: {}", e))?;
             }
+            if event_type == "play_start" {
+                events::update_session_cooccurrence_for_event(&conn, &inserted)
+                    .map_err(|e| format!("更新播放共现失败: {}", e))?;
+            }
         }
-        if should_trigger_dynamic_refresh(&event_type) {
-            self.schedule_dynamic_recommendation_refresh("用户行为更新");
+        if weight != 0.0 {
+            self.invalidate_and_schedule_refresh("用户行为更新");
         }
         Ok(())
     }
 
     pub fn sync_library(&self, snapshot: LibrarySnapshot) -> Result<(), String> {
-        {
-            let conn = self.conn.lock();
-            for song in &snapshot.favorites {
-                catalog::upsert_track(&conn, song)
-                    .map_err(|e| format!("同步收藏歌曲失败: {}", e))?;
-                profile::update_profile_for_song(
-                    &conn,
-                    song,
-                    events::event_weight("favorite_add") * 0.3,
-                    None,
-                )
-                .map_err(|e| format!("同步收藏画像失败: {}", e))?;
+        let library_changed = {
+            let mut conn = self.conn.lock();
+            if let Some(delta) = snapshot.delta.as_ref() {
+                apply_library_delta(&mut conn, delta)?
+            } else {
+                sync_library_snapshot(&mut conn, &snapshot)?
             }
+        };
 
-            for playlist in &snapshot.playlists {
-                for song in &playlist.songs {
-                    catalog::upsert_track(&conn, song)
-                        .map_err(|e| format!("同步歌单歌曲失败: {}", e))?;
-                    profile::update_profile_for_song(
-                        &conn,
-                        song,
-                        events::event_weight("playlist_add") * 0.2,
-                        None,
-                    )
-                    .map_err(|e| format!("同步歌单画像失败: {}", e))?;
-                }
-                update_playlist_cooccurrence(&conn, &playlist.songs)
-                    .map_err(|e| format!("同步歌单共现失败: {}", e))?;
-            }
-
-            for song in &snapshot.queue {
-                catalog::upsert_track(&conn, song)
-                    .map_err(|e| format!("同步播放队列失败: {}", e))?;
-            }
-            if let Some(song) = &snapshot.current_song {
-                catalog::upsert_track(&conn, song)
-                    .map_err(|e| format!("同步当前歌曲失败: {}", e))?;
-            }
+        if library_changed {
+            self.invalidate_and_schedule_refresh("曲库同步");
         }
-
-        self.schedule_dynamic_recommendation_refresh("曲库同步");
         Ok(())
     }
 
@@ -291,6 +285,7 @@ impl RecommendationService {
                 discovered,
                 &request_id,
                 llm_candidate_window,
+                query.seed.as_ref(),
             );
             if merged.is_empty() {
                 let error =
@@ -424,66 +419,35 @@ impl RecommendationService {
 
     pub fn dismiss(&self, song: RecSong, reason: Option<String>) -> Result<(), String> {
         {
-            let conn = self.conn.lock();
-            let key = catalog::upsert_track(&conn, &song)
-                .map_err(|e| format!("保存不感兴趣歌曲失败: {}", e))?;
-            let now = catalog::now_ms();
-            let expires_at = now + 14 * 24 * 60 * 60 * 1000;
-            conn.execute(
-                r#"
-                INSERT INTO dismissed_recommendations (track_key, reason, created_at, expires_at)
-                VALUES (?1, ?2, ?3, ?4)
-                ON CONFLICT(track_key) DO UPDATE SET
-                  reason = excluded.reason,
-                  created_at = excluded.created_at,
-                  expires_at = excluded.expires_at
-                "#,
-                params![key, reason, now, expires_at],
-            )
-            .map_err(|e| format!("保存不感兴趣失败: {}", e))?;
-
-            let event = RecommendationEvent {
-                event_type: "dismiss".to_string(),
-                song: Some(song),
-                position_seconds: None,
-                duration_seconds: None,
-                quality: None,
-                context: Some("recommendation".to_string()),
-            };
-            events::insert_event(&conn, &event)
-                .map_err(|e| format!("写入不感兴趣事件失败: {}", e))?;
+            let mut conn = self.conn.lock();
+            let tx = conn
+                .transaction()
+                .map_err(|e| format!("开启不感兴趣事务失败: {}", e))?;
+            record_dismissal(&tx, &song, reason.as_deref(), "recommendation")?;
+            tx.commit()
+                .map_err(|e| format!("提交不感兴趣事务失败: {}", e))?;
         }
-        self.schedule_dynamic_recommendation_refresh("不感兴趣反馈");
+        self.invalidate_and_schedule_refresh("不感兴趣反馈");
         Ok(())
     }
 
     pub fn save_feedback(&self, feedback: RecommendationFeedback) -> Result<(), String> {
         {
-            let conn = self.conn.lock();
-            conn.execute(
-                r#"
-                INSERT INTO recommendation_feedback (request_id, track_key, action, recommendation_source, created_at)
-                VALUES (?1, ?2, ?3, ?4, ?5)
-                "#,
-                params![
-                    feedback.request_id,
-                    feedback.track_key,
-                    feedback.action,
-                    feedback.recommendation_source,
-                    catalog::now_ms(),
-                ],
-            )
-            .map_err(|e| format!("保存推荐反馈失败: {}", e))?;
+            let mut conn = self.conn.lock();
+            record_recommendation_feedback(&mut conn, &feedback)?;
         }
-        self.schedule_dynamic_recommendation_refresh("推荐反馈");
+        self.invalidate_and_schedule_refresh("推荐反馈");
         Ok(())
     }
 
     pub fn rebuild_index(&self) -> Result<(), String> {
-        let conn = self.conn.lock();
-        conn.execute("DELETE FROM item_cooccurrence", [])
-            .map_err(|e| format!("清空共现索引失败: {}", e))?;
-        rebuild_session_cooccurrence(&conn).map_err(|e| format!("重建播放共现失败: {}", e))?;
+        let mut conn = self.conn.lock();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("开启共现索引事务失败: {}", e))?;
+        rebuild_cooccurrence_index(&tx).map_err(|e| format!("重建共现索引失败: {}", e))?;
+        tx.commit()
+            .map_err(|e| format!("提交共现索引事务失败: {}", e))?;
         Ok(())
     }
 
@@ -498,7 +462,10 @@ impl RecommendationService {
 
     pub fn save_llm_config(&self, config: LlmConfigInput) -> Result<(), String> {
         let conn = self.conn.lock();
-        llm_config::save_config(&conn, config)
+        llm_config::save_config(&conn, config)?;
+        drop(conn);
+        self.invalidate_and_schedule_refresh("推荐配置更新");
+        Ok(())
     }
 
     pub async fn test_llm_provider(
@@ -619,6 +586,39 @@ impl RecommendationService {
             .any(|job| matches!(&job.status, RecommendationJobStatus::Running))
     }
 
+    fn schedule_maintenance(&self) {
+        let service = self.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                let conn = Arc::clone(&service.conn);
+                let result = tauri::async_runtime::spawn_blocking(move || {
+                    let mut guard = conn.lock();
+                    run_recommendation_maintenance(&mut guard)
+                })
+                .await;
+                match result {
+                    Ok(Ok(true)) => {
+                        log::info!("推荐数据库定期维护已完成并更新推荐状态");
+                        service.invalidate_and_schedule_refresh("推荐数据定期维护");
+                    }
+                    Ok(Ok(false)) => {}
+                    Ok(Err(error)) => log::error!("推荐数据库定期维护失败: {}", error),
+                    Err(error) => log::error!("推荐数据库维护任务异常: {}", error),
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(MAINTENANCE_POLL_MS)).await;
+            }
+        });
+    }
+
+    fn invalidate_and_schedule_refresh(&self, reason: &'static str) {
+        invalidate_recommendation_state(
+            &self.recommendation_generation,
+            &self.recommendation_jobs,
+            &self.dynamic_refresh_pending,
+        );
+        self.schedule_dynamic_recommendation_refresh(reason);
+    }
+
     fn schedule_dynamic_recommendation_refresh(&self, reason: &'static str) {
         if !self.is_recommendation_enabled() {
             return;
@@ -712,6 +712,9 @@ impl RecommendationService {
         }
         let mut candidates = recall::collect_candidates(conn, query.seed.as_ref(), 500)
             .map_err(|e| format!("召回推荐候选失败: {}", e))?;
+        if let Some(seed) = query.seed.as_ref() {
+            candidates.retain(|candidate| !is_seed_song(&candidate.song, seed));
+        }
         candidates = rank::rank_candidates(conn, candidates, query.seed.as_ref())
             .map_err(|e| format!("推荐排序失败: {}", e))?;
         let limit = query.limit.unwrap_or(30).clamp(1, 50);
@@ -722,6 +725,111 @@ impl RecommendationService {
             recommendation_source,
         ))
     }
+}
+
+fn record_dismissal(
+    conn: &Connection,
+    song: &RecSong,
+    reason: Option<&str>,
+    context: &str,
+) -> Result<(), String> {
+    let key =
+        catalog::upsert_track(conn, song).map_err(|e| format!("保存不感兴趣歌曲失败: {}", e))?;
+    let now = catalog::now_ms();
+    let expires_at = now + 14 * 24 * 60 * 60 * 1000;
+    conn.execute(
+        r#"
+        INSERT INTO dismissed_recommendations (track_key, reason, created_at, expires_at)
+        VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(track_key) DO UPDATE SET
+          reason = excluded.reason,
+          created_at = excluded.created_at,
+          expires_at = excluded.expires_at
+        "#,
+        params![key, reason, now, expires_at],
+    )
+    .map_err(|e| format!("保存不感兴趣失败: {}", e))?;
+
+    let event = RecommendationEvent {
+        event_type: "dismiss".to_string(),
+        song: Some(song.clone()),
+        session_id: None,
+        position_seconds: None,
+        duration_seconds: None,
+        quality: None,
+        context: Some(context.to_string()),
+    };
+    events::insert_event(conn, &event).map_err(|e| format!("写入不感兴趣事件失败: {}", e))?;
+    profile::update_profile_for_song(conn, song, events::event_weight("dismiss"), None)
+        .map_err(|e| format!("更新不感兴趣画像失败: {}", e))?;
+    Ok(())
+}
+
+fn record_recommendation_feedback(
+    conn: &mut Connection,
+    feedback: &RecommendationFeedback,
+) -> Result<(), String> {
+    let event_type = match feedback.action.as_str() {
+        "play" if feedback.recommendation_source == "hybrid" => "llm_recommend_click",
+        "play" if feedback.context.as_deref() == Some("similar") => "similar_click",
+        "play" => "recommendation_click",
+        "dismiss" => "dismiss",
+        _ => return Err("不支持的推荐反馈动作".to_string()),
+    };
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("开启推荐反馈事务失败: {}", e))?;
+    let track_key = catalog::upsert_track(&tx, &feedback.song)
+        .map_err(|e| format!("保存推荐反馈歌曲失败: {}", e))?;
+    tx.execute(
+        r#"
+        INSERT INTO recommendation_feedback
+          (request_id, track_key, action, recommendation_source, created_at)
+        VALUES (?1, ?2, ?3, ?4, ?5)
+        "#,
+        params![
+            feedback.request_id,
+            track_key,
+            feedback.action,
+            feedback.recommendation_source,
+            catalog::now_ms(),
+        ],
+    )
+    .map_err(|e| format!("保存推荐反馈失败: {}", e))?;
+
+    if event_type == "dismiss" {
+        record_dismissal(
+            &tx,
+            &feedback.song,
+            Some("not_interested"),
+            feedback.context.as_deref().unwrap_or("recommendation"),
+        )?;
+    } else {
+        let event = RecommendationEvent {
+            event_type: event_type.to_string(),
+            song: Some(feedback.song.clone()),
+            session_id: None,
+            position_seconds: None,
+            duration_seconds: None,
+            quality: None,
+            context: Some(
+                feedback
+                    .context
+                    .clone()
+                    .unwrap_or_else(|| "recommendation".to_string()),
+            ),
+        };
+        events::insert_event(&tx, &event).map_err(|e| format!("写入推荐反馈事件失败: {}", e))?;
+        profile::update_profile_for_song(
+            &tx,
+            &feedback.song,
+            events::event_weight(event_type),
+            None,
+        )
+        .map_err(|e| format!("更新推荐反馈画像失败: {}", e))?;
+    }
+    tx.commit()
+        .map_err(|e| format!("提交推荐反馈事务失败: {}", e))
 }
 
 fn new_request_id() -> String {
@@ -737,24 +845,27 @@ fn new_job_id() -> String {
     )
 }
 
-fn should_trigger_dynamic_refresh(event_type: &str) -> bool {
-    matches!(
-        event_type,
-        "play_30s"
-            | "play_complete"
-            | "skip_early"
-            | "favorite_add"
-            | "favorite_remove"
-            | "playlist_add"
-            | "download"
-            | "llm_recommend_click"
-            | "similar_click"
-            | "dismiss"
-    )
-}
-
 fn is_current_generation(task_generation: u64, current_generation: u64) -> bool {
     task_generation == current_generation
+}
+
+fn invalidate_recommendation_state(
+    generation: &AtomicU64,
+    jobs: &Mutex<HashMap<String, RecommendationJob>>,
+    refresh_pending: &AtomicBool,
+) {
+    generation.fetch_add(1, Ordering::SeqCst);
+    let now = catalog::now_ms();
+    for job in jobs.lock().values_mut() {
+        if matches!(&job.status, RecommendationJobStatus::Running) {
+            job.status = RecommendationJobStatus::Done;
+            job.stage = RecommendationJobStage::Done;
+            job.detail = "推荐数据已更新，当前任务已失效并等待重新生成".to_string();
+            job.error = None;
+            job.updated_at = now;
+        }
+    }
+    refresh_pending.store(false, Ordering::SeqCst);
 }
 
 fn recommendation_context(query: &RecommendationQuery) -> String {
@@ -830,7 +941,9 @@ fn clear_recommendation_storage(conn: &Connection) -> rusqlite::Result<()> {
         r#"
         DELETE FROM play_events;
         DELETE FROM user_profile;
+        DELETE FROM library_profile;
         DELETE FROM item_cooccurrence;
+        DELETE FROM library_membership;
         DELETE FROM recommendation_cache;
         DELETE FROM recommendation_result_snapshots;
         DELETE FROM dismissed_recommendations;
@@ -839,6 +952,120 @@ fn clear_recommendation_storage(conn: &Connection) -> rusqlite::Result<()> {
         DELETE FROM llm_calls;
         "#,
     )
+}
+
+fn run_recommendation_maintenance(conn: &mut Connection) -> Result<bool, String> {
+    run_recommendation_maintenance_at(conn, catalog::now_ms())
+}
+
+fn run_recommendation_maintenance_at(conn: &mut Connection, now: i64) -> Result<bool, String> {
+    let last_run_at = conn
+        .query_row(
+            "SELECT last_run_at FROM recommendation_maintenance WHERE id = 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|e| format!("读取推荐维护时间失败: {}", e))?
+        .unwrap_or(0);
+    if now.saturating_sub(last_run_at) < MAINTENANCE_INTERVAL_MS {
+        return Ok(false);
+    }
+
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("开启推荐维护事务失败: {}", e))?;
+    let removed_play_events = tx
+        .execute(
+            "DELETE FROM play_events WHERE created_at < ?1",
+            [now - PLAY_EVENT_RETENTION_MS],
+        )
+        .map_err(|e| format!("清理历史播放事件失败: {}", e))?;
+    tx.execute(
+        "DELETE FROM recommendation_feedback WHERE created_at < ?1",
+        [now - FEEDBACK_RETENTION_MS],
+    )
+    .map_err(|e| format!("清理历史推荐反馈失败: {}", e))?;
+    tx.execute(
+        "DELETE FROM llm_calls WHERE created_at < ?1",
+        [now - LLM_CALL_RETENTION_MS],
+    )
+    .map_err(|e| format!("清理模型调用日志失败: {}", e))?;
+    tx.execute(
+        "DELETE FROM recommendation_cache WHERE generated_at < ?1",
+        [now - RESULT_SNAPSHOT_RETENTION_MS],
+    )
+    .map_err(|e| format!("清理历史本地推荐缓存失败: {}", e))?;
+    tx.execute(
+        "DELETE FROM llm_recommendation_cache WHERE expires_at <= ?1",
+        [now],
+    )
+    .map_err(|e| format!("清理过期模型缓存失败: {}", e))?;
+    let removed_dismissals = tx
+        .execute(
+            "DELETE FROM dismissed_recommendations WHERE expires_at <= ?1",
+            [now],
+        )
+        .map_err(|e| format!("清理过期不感兴趣记录失败: {}", e))?;
+    tx.execute(
+        "DELETE FROM recommendation_result_snapshots WHERE created_at < ?1",
+        [now - RESULT_SNAPSHOT_RETENTION_MS],
+    )
+    .map_err(|e| format!("清理过期推荐结果失败: {}", e))?;
+    tx.execute(
+        r#"
+        DELETE FROM recommendation_result_snapshots
+        WHERE id IN (
+          SELECT id FROM (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY context, result_source
+                     ORDER BY created_at DESC, id DESC
+                   ) AS row_number
+            FROM recommendation_result_snapshots
+          ) ranked
+          WHERE row_number > ?1
+        )
+        "#,
+        [RESULT_SNAPSHOT_LIMIT],
+    )
+    .map_err(|e| format!("清理历史推荐结果失败: {}", e))?;
+
+    profile::rebuild_profile_from_events(&tx)
+        .map_err(|e| format!("重建保留期推荐画像失败: {}", e))?;
+    rebuild_cooccurrence_index(&tx).map_err(|e| format!("重建保留期共现失败: {}", e))?;
+    tx.execute(
+        r#"
+        DELETE FROM tracks
+        WHERE last_seen_at < ?1
+          AND NOT EXISTS (
+            SELECT 1 FROM library_membership m WHERE m.track_key = tracks.track_key
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM play_events e WHERE e.track_key = tracks.track_key
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM recommendation_feedback f WHERE f.track_key = tracks.track_key
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM dismissed_recommendations d WHERE d.track_key = tracks.track_key
+          )
+        "#,
+        [now - PLAY_EVENT_RETENTION_MS],
+    )
+    .map_err(|e| format!("清理孤立推荐歌曲失败: {}", e))?;
+    tx.execute(
+        r#"
+        INSERT INTO recommendation_maintenance (id, last_run_at)
+        VALUES (1, ?1)
+        ON CONFLICT(id) DO UPDATE SET last_run_at = excluded.last_run_at
+        "#,
+        [now],
+    )
+    .map_err(|e| format!("保存推荐维护时间失败: {}", e))?;
+    tx.commit()
+        .map_err(|e| format!("提交推荐维护事务失败: {}", e))?;
+    Ok(removed_play_events > 0 || removed_dismissals > 0)
 }
 
 fn update_recommendation_job(
@@ -851,6 +1078,9 @@ fn update_recommendation_job(
     error: Option<String>,
 ) {
     if let Some(job) = jobs.lock().get_mut(job_id) {
+        if !matches!(&job.status, RecommendationJobStatus::Running) {
+            return;
+        }
         job.status = status;
         job.stage = stage;
         job.detail = detail.to_string();
@@ -867,6 +1097,7 @@ fn merge_discovery_candidates(
     discovered: Vec<discovery::DiscoveredSong>,
     request_id: &str,
     llm_candidate_window: usize,
+    seed: Option<&RecSong>,
 ) -> Vec<RecommendationItem> {
     let mut merged = Vec::new();
     let mut seen_track_keys = std::collections::HashSet::new();
@@ -961,7 +1192,16 @@ fn merge_discovery_candidates(
         }
     }
 
+    if let Some(seed) = seed {
+        merged.retain(|item| !is_seed_song(&item.song, seed));
+    }
+
     merged
+}
+
+fn is_seed_song(song: &RecSong, seed: &RecSong) -> bool {
+    catalog::track_key(song) == catalog::track_key(seed)
+        || catalog::song_identity(song) == catalog::song_identity(seed)
 }
 
 fn push_candidate(
@@ -971,101 +1211,275 @@ fn push_candidate(
     item: RecommendationItem,
 ) {
     let track_key = catalog::track_key(&item.song);
-    let identity = format!(
-        "{}:{}",
-        catalog::normalize_text(&item.song.name),
-        catalog::normalize_text(&item.song.artist)
-    );
+    let identity = catalog::song_identity(&item.song);
     if !seen_track_keys.insert(track_key) || !seen_identities.insert(identity) {
         return;
     }
     merged.push(item);
 }
 
-fn update_playlist_cooccurrence(conn: &Connection, songs: &[RecSong]) -> rusqlite::Result<()> {
-    let keys: Vec<String> = songs
-        .iter()
-        .filter_map(|song| catalog::upsert_track(conn, song).ok())
-        .collect();
-    if keys.len() < 2 {
-        return Ok(());
-    }
-    let score = 1.0 / ((2 + keys.len()) as f64).ln();
-    let now = catalog::now_ms();
-    for (index, key) in keys.iter().enumerate() {
-        for related in keys.iter().skip(index + 1) {
-            insert_cooccurrence(conn, key, related, score, now)?;
-            insert_cooccurrence(conn, related, key, score, now)?;
+fn sync_library_snapshot(
+    conn: &mut Connection,
+    snapshot: &LibrarySnapshot,
+) -> Result<bool, String> {
+    let (new_memberships, library_tracks) = build_library_memberships(snapshot);
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("开启曲库同步事务失败: {}", e))?;
+    let old_memberships =
+        load_library_memberships(&tx).map_err(|e| format!("读取曲库成员失败: {}", e))?;
+    let added_memberships = new_memberships
+        .difference(&old_memberships)
+        .cloned()
+        .collect::<Vec<_>>();
+    let removed_memberships = old_memberships
+        .difference(&new_memberships)
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut upsert_songs = Vec::new();
+    for (track_key, song) in &library_tracks {
+        let existing =
+            catalog::get_track(&tx, track_key).map_err(|e| format!("读取曲库歌曲失败: {}", e))?;
+        if existing
+            .as_ref()
+            .map(|current| !song_metadata_equal(current, song))
+            .unwrap_or(true)
+        {
+            upsert_songs.push(song.clone());
         }
     }
-    Ok(())
+    let library_changed =
+        apply_library_changes(&tx, &upsert_songs, &added_memberships, &removed_memberships)?;
+
+    for song in &snapshot.queue {
+        catalog::upsert_track(&tx, song).map_err(|e| format!("同步播放队列失败: {}", e))?;
+    }
+    if let Some(song) = &snapshot.current_song {
+        catalog::upsert_track(&tx, song).map_err(|e| format!("同步当前歌曲失败: {}", e))?;
+    }
+
+    tx.commit()
+        .map_err(|e| format!("提交曲库同步事务失败: {}", e))?;
+    Ok(library_changed)
 }
 
-fn insert_cooccurrence(
+fn apply_library_delta(conn: &mut Connection, delta: &LibraryDelta) -> Result<bool, String> {
+    let added_memberships = delta
+        .added_memberships
+        .iter()
+        .map(library_membership_from_change)
+        .collect::<Result<Vec<_>, _>>()?;
+    let removed_memberships = delta
+        .removed_memberships
+        .iter()
+        .map(library_membership_from_change)
+        .collect::<Result<Vec<_>, _>>()?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("开启曲库增量同步事务失败: {}", e))?;
+    let changed = apply_library_changes(
+        &tx,
+        &delta.upsert_songs,
+        &added_memberships,
+        &removed_memberships,
+    )?;
+    tx.commit()
+        .map_err(|e| format!("提交曲库增量同步事务失败: {}", e))?;
+    Ok(changed)
+}
+
+fn apply_library_changes(
+    conn: &Connection,
+    upsert_songs: &[RecSong],
+    added_memberships: &[LibraryMembershipKey],
+    removed_memberships: &[LibraryMembershipKey],
+) -> Result<bool, String> {
+    if upsert_songs.is_empty() && added_memberships.is_empty() && removed_memberships.is_empty() {
+        return Ok(false);
+    }
+
+    let mut affected_keys = HashSet::new();
+    affected_keys.extend(upsert_songs.iter().map(catalog::track_key));
+    affected_keys.extend(
+        added_memberships
+            .iter()
+            .map(|membership| membership.track_key.clone()),
+    );
+    affected_keys.extend(
+        removed_memberships
+            .iter()
+            .map(|membership| membership.track_key.clone()),
+    );
+
+    for track_key in &affected_keys {
+        if let Some(song) = catalog::get_track(conn, track_key)
+            .map_err(|e| format!("读取变更前曲库歌曲失败: {}", e))?
+        {
+            apply_membership_profile(conn, track_key, &song, -1.0)?;
+        }
+    }
+
+    for membership in removed_memberships {
+        conn.execute(
+            "DELETE FROM library_membership WHERE container_type = ?1 AND container_id = ?2 AND track_key = ?3",
+            params![
+                &membership.container_type,
+                &membership.container_id,
+                &membership.track_key,
+            ],
+        )
+        .map_err(|e| format!("删除曲库成员失败: {}", e))?;
+    }
+
+    for song in upsert_songs {
+        catalog::upsert_track(conn, song).map_err(|e| format!("更新曲库歌曲失败: {}", e))?;
+    }
+
+    let now = catalog::now_ms();
+    for membership in added_memberships {
+        let track_exists = catalog::get_track(conn, &membership.track_key)
+            .map_err(|e| format!("检查曲库歌曲失败: {}", e))?
+            .is_some();
+        if !track_exists {
+            return Err(format!(
+                "新增曲库成员缺少歌曲信息: {}",
+                membership.track_key
+            ));
+        }
+        conn.execute(
+            r#"
+            INSERT OR IGNORE INTO library_membership
+              (container_type, container_id, track_key, updated_at)
+            VALUES (?1, ?2, ?3, ?4)
+            "#,
+            params![
+                &membership.container_type,
+                &membership.container_id,
+                &membership.track_key,
+                now,
+            ],
+        )
+        .map_err(|e| format!("新增曲库成员失败: {}", e))?;
+    }
+
+    for track_key in &affected_keys {
+        if let Some(song) = catalog::get_track(conn, track_key)
+            .map_err(|e| format!("读取变更后曲库歌曲失败: {}", e))?
+        {
+            apply_membership_profile(conn, track_key, &song, 1.0)?;
+        }
+    }
+    profile::prune_library_profile(conn).map_err(|e| format!("清理曲库画像失败: {}", e))?;
+    Ok(true)
+}
+
+fn apply_membership_profile(
     conn: &Connection,
     track_key: &str,
-    related_track_key: &str,
-    score: f64,
-    updated_at: i64,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        r#"
-        INSERT INTO item_cooccurrence (track_key, related_track_key, score, updated_at)
-        VALUES (?1, ?2, ?3, ?4)
-        ON CONFLICT(track_key, related_track_key) DO UPDATE SET
-          score = item_cooccurrence.score + excluded.score,
-          updated_at = excluded.updated_at
-        "#,
-        params![track_key, related_track_key, score, updated_at],
-    )?;
+    song: &RecSong,
+    direction: f64,
+) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("SELECT container_type FROM library_membership WHERE track_key = ?1")
+        .map_err(|e| format!("读取曲库成员画像失败: {}", e))?;
+    let memberships = stmt
+        .query_map([track_key], |row| row.get::<_, String>(0))
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|e| format!("读取曲库成员画像失败: {}", e))?;
+    for container_type in memberships {
+        profile::add_library_profile_for_song(
+            conn,
+            song,
+            direction * membership_profile_weight(&container_type),
+            None,
+        )
+        .map_err(|e| format!("更新曲库画像失败: {}", e))?;
+    }
     Ok(())
 }
 
-fn rebuild_session_cooccurrence(conn: &Connection) -> rusqlite::Result<()> {
-    let mut stmt = conn.prepare(
-        r#"
-        SELECT session_id, track_key
-        FROM play_events
-        WHERE track_key IS NOT NULL AND weight > 0
-        ORDER BY session_id, created_at
-        "#,
-    )?;
-    let mut rows = stmt.query([])?;
-    let mut session_tracks: Vec<String> = Vec::new();
-    let mut current_session = String::new();
-
-    while let Some(row) = rows.next()? {
-        let session_id: String = row.get(0)?;
-        let track_key: String = row.get(1)?;
-        if current_session.is_empty() {
-            current_session = session_id.clone();
-        }
-        if session_id != current_session {
-            update_keys_cooccurrence(conn, &session_tracks)?;
-            session_tracks.clear();
-            current_session = session_id;
-        }
-        if !session_tracks.iter().any(|key| key == &track_key) {
-            session_tracks.push(track_key);
-        }
+fn library_membership_from_change(
+    change: &LibraryMembershipChange,
+) -> Result<LibraryMembershipKey, String> {
+    if !matches!(change.container_type.as_str(), "favorite" | "playlist")
+        || change.container_id.trim().is_empty()
+        || change.track_key.trim().is_empty()
+    {
+        return Err("曲库增量成员参数无效".to_string());
     }
-    update_keys_cooccurrence(conn, &session_tracks)?;
-    Ok(())
+    Ok(LibraryMembershipKey {
+        container_type: change.container_type.clone(),
+        container_id: change.container_id.clone(),
+        track_key: change.track_key.clone(),
+    })
 }
 
-fn update_keys_cooccurrence(conn: &Connection, keys: &[String]) -> rusqlite::Result<()> {
-    if keys.len() < 2 {
-        return Ok(());
+fn song_metadata_equal(left: &RecSong, right: &RecSong) -> bool {
+    left.source == right.source
+        && left.name == right.name
+        && left.artist == right.artist
+        && left.album == right.album
+        && left.pic == right.pic
+        && left.url_id == right.url_id
+        && left.lyric_id == right.lyric_id
+        && left.types == right.types
+}
+
+fn build_library_memberships(
+    snapshot: &LibrarySnapshot,
+) -> (HashSet<LibraryMembershipKey>, HashMap<String, RecSong>) {
+    let mut memberships = HashSet::new();
+    let mut tracks = HashMap::new();
+
+    for song in &snapshot.favorites {
+        let track_key = catalog::track_key(song);
+        tracks.insert(track_key.clone(), song.clone());
+        memberships.insert(LibraryMembershipKey {
+            container_type: "favorite".to_string(),
+            container_id: "favorites".to_string(),
+            track_key,
+        });
     }
-    let score = 1.0 / ((2 + keys.len()) as f64).ln();
-    let now = catalog::now_ms();
-    for (index, key) in keys.iter().enumerate() {
-        for related in keys.iter().skip(index + 1) {
-            insert_cooccurrence(conn, key, related, score, now)?;
-            insert_cooccurrence(conn, related, key, score, now)?;
+
+    for playlist in &snapshot.playlists {
+        for song in &playlist.songs {
+            let track_key = catalog::track_key(song);
+            tracks.insert(track_key.clone(), song.clone());
+            memberships.insert(LibraryMembershipKey {
+                container_type: "playlist".to_string(),
+                container_id: playlist.id.clone(),
+                track_key,
+            });
         }
     }
-    Ok(())
+
+    (memberships, tracks)
+}
+
+fn load_library_memberships(conn: &Connection) -> rusqlite::Result<HashSet<LibraryMembershipKey>> {
+    let mut stmt =
+        conn.prepare("SELECT container_type, container_id, track_key FROM library_membership")?;
+    let rows = stmt.query_map([], |row| {
+        Ok(LibraryMembershipKey {
+            container_type: row.get(0)?,
+            container_id: row.get(1)?,
+            track_key: row.get(2)?,
+        })
+    })?;
+    rows.collect()
+}
+
+fn membership_profile_weight(container_type: &str) -> f64 {
+    match container_type {
+        "favorite" => FAVORITE_PROFILE_WEIGHT,
+        "playlist" => PLAYLIST_PROFILE_WEIGHT,
+        _ => 0.0,
+    }
+}
+
+fn rebuild_cooccurrence_index(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM item_cooccurrence", [])?;
+    events::rebuild_session_cooccurrence(conn)
 }
 
 #[cfg(test)]
@@ -1073,6 +1487,22 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
+    use crate::recommendation::model::{PlaylistSnapshot, RecommendationEvent};
+
+    fn song(source: &str, id: &str, name: &str, artist: &str) -> RecSong {
+        RecSong {
+            id: Value::String(id.to_string()),
+            source: source.to_string(),
+            name: name.to_string(),
+            artist: artist.to_string(),
+            album: "测试专辑".to_string(),
+            pic: None,
+            pic_id: None,
+            url_id: None,
+            lyric_id: None,
+            types: None,
+        }
+    }
 
     fn recommendation_item(source: &str, id: &str, name: &str) -> RecommendationItem {
         RecommendationItem {
@@ -1124,7 +1554,7 @@ mod tests {
             .map(|index| discovered_song(&format!("new-{index}"), &format!("新歌{index}")))
             .collect();
 
-        let merged = merge_discovery_candidates(local_items, discovered, "req-test", 12);
+        let merged = merge_discovery_candidates(local_items, discovered, "req-test", 12, None);
         let first_window = merged.iter().take(12).collect::<Vec<_>>();
         let discovery_count = first_window
             .iter()
@@ -1135,20 +1565,462 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_refresh_ignores_play_start_noise() {
-        assert!(!should_trigger_dynamic_refresh("play_start"));
-        assert!(should_trigger_dynamic_refresh("play_30s"));
-        assert!(should_trigger_dynamic_refresh("play_complete"));
-        assert!(should_trigger_dynamic_refresh("skip_early"));
-        assert!(should_trigger_dynamic_refresh("favorite_add"));
-        assert!(should_trigger_dynamic_refresh("llm_recommend_click"));
-        assert!(should_trigger_dynamic_refresh("dismiss"));
+    fn seed_identity_is_excluded_across_sources() {
+        let seed = song("netease", "1", "同一首歌", "同一歌手");
+        let same_source = song("netease", "1", "同一首歌", "同一歌手");
+        let cross_source = song("qq", "other", " 同一首歌 ", "同一歌手");
+        let other = song("qq", "2", "另一首歌", "同一歌手");
+
+        assert!(is_seed_song(&same_source, &seed));
+        assert!(is_seed_song(&cross_source, &seed));
+        assert!(!is_seed_song(&other, &seed));
+    }
+
+    #[test]
+    fn library_sync_is_idempotent_and_removal_reverses_profile() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migration::run_migrations(&conn).unwrap();
+        let favorite = song("netease", "1", "收藏歌", "收藏歌手");
+        let playlist_song = song("qq", "2", "歌单歌", "歌单歌手");
+        let snapshot = LibrarySnapshot {
+            favorites: vec![favorite.clone()],
+            playlists: vec![PlaylistSnapshot {
+                id: "playlist-1".to_string(),
+                name: "测试歌单".to_string(),
+                songs: vec![playlist_song.clone()],
+            }],
+            queue: Vec::new(),
+            current_song: None,
+            delta: None,
+        };
+
+        assert!(sync_library_snapshot(&mut conn, &snapshot).unwrap());
+        let profile_before: Vec<(String, f64)> = {
+            let mut stmt = conn
+                .prepare("SELECT key, value FROM library_profile ORDER BY key")
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        profile::update_profile_for_song(&conn, &favorite, 1.0, None).unwrap();
+        let library_profile_after_behavior: Vec<(String, f64)> = {
+            let mut stmt = conn
+                .prepare("SELECT key, value FROM library_profile ORDER BY key")
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        assert_eq!(profile_before, library_profile_after_behavior);
+        let cooccurrence_before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM item_cooccurrence", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+
+        assert!(!sync_library_snapshot(&mut conn, &snapshot).unwrap());
+        let profile_after: Vec<(String, f64)> = {
+            let mut stmt = conn
+                .prepare("SELECT key, value FROM library_profile ORDER BY key")
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        let cooccurrence_after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM item_cooccurrence", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(profile_before, profile_after);
+        assert_eq!(cooccurrence_before, cooccurrence_after);
+
+        let empty_snapshot = LibrarySnapshot {
+            favorites: Vec::new(),
+            playlists: Vec::new(),
+            queue: Vec::new(),
+            current_song: None,
+            delta: None,
+        };
+        assert!(sync_library_snapshot(&mut conn, &empty_snapshot).unwrap());
+        let favorite_artist_value: Option<f64> = conn
+            .query_row(
+                "SELECT value FROM library_profile WHERE key = 'artist:收藏歌手'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert!(favorite_artist_value.is_none());
+    }
+
+    #[test]
+    fn library_delta_updates_metadata_and_reverses_removed_membership() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migration::run_migrations(&conn).unwrap();
+        let original = song("netease", "1", "旧歌名", "旧歌手");
+        let snapshot = LibrarySnapshot {
+            favorites: vec![original.clone()],
+            playlists: Vec::new(),
+            queue: Vec::new(),
+            current_song: None,
+            delta: None,
+        };
+        sync_library_snapshot(&mut conn, &snapshot).unwrap();
+
+        let updated = song("netease", "1", "新歌名", "新歌手");
+        let update_delta = LibraryDelta {
+            upsert_songs: vec![updated.clone()],
+            added_memberships: Vec::new(),
+            removed_memberships: Vec::new(),
+        };
+        assert!(apply_library_delta(&mut conn, &update_delta).unwrap());
+        let stored = catalog::get_track(&conn, "netease:1").unwrap().unwrap();
+        assert_eq!(stored.name, "新歌名");
+        assert_eq!(stored.artist, "新歌手");
+        let old_artist: Option<f64> = conn
+            .query_row(
+                "SELECT value FROM library_profile WHERE key = 'artist:旧歌手'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert!(old_artist.is_none());
+
+        let remove_delta = LibraryDelta {
+            upsert_songs: Vec::new(),
+            added_memberships: Vec::new(),
+            removed_memberships: vec![LibraryMembershipChange {
+                container_type: "favorite".to_string(),
+                container_id: "favorites".to_string(),
+                track_key: "netease:1".to_string(),
+            }],
+        };
+        assert!(apply_library_delta(&mut conn, &remove_delta).unwrap());
+        let membership_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM library_membership", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let new_artist: Option<f64> = conn
+            .query_row(
+                "SELECT value FROM library_profile WHERE key = 'artist:新歌手'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert_eq!(membership_count, 0);
+        assert!(new_artist.is_none());
+    }
+
+    #[test]
+    fn recommendation_feedback_is_atomic_and_updates_algorithm_once() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migration::run_migrations(&conn).unwrap();
+        let recommended_song = song("netease", "1", "推荐歌", "推荐歌手");
+        let feedback = RecommendationFeedback {
+            request_id: "request-1".to_string(),
+            song: recommended_song.clone(),
+            action: "play".to_string(),
+            recommendation_source: "hybrid".to_string(),
+            context: Some("home".to_string()),
+        };
+
+        record_recommendation_feedback(&mut conn, &feedback).unwrap();
+        let feedback_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM recommendation_feedback", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let event_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM play_events WHERE event_type = 'llm_recommend_click'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let profile_value: f64 = conn
+            .query_row(
+                "SELECT value FROM user_profile WHERE key = 'artist:推荐歌手'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(feedback_count, 1);
+        assert_eq!(event_count, 1);
+        assert!(profile_value > 0.0);
+
+        let invalid = RecommendationFeedback {
+            action: "unknown".to_string(),
+            ..feedback
+        };
+        assert!(record_recommendation_feedback(&mut conn, &invalid).is_err());
+        let counts: (i64, i64) = conn
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM recommendation_feedback), (SELECT COUNT(*) FROM play_events)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(counts, (1, 1));
+    }
+
+    #[test]
+    fn generic_and_similar_recommendation_clicks_keep_distinct_semantics() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migration::run_migrations(&conn).unwrap();
+        let recommended_song = song("netease", "1", "推荐歌", "推荐歌手");
+        for (context, expected_event) in [
+            ("home", "recommendation_click"),
+            ("similar", "similar_click"),
+        ] {
+            record_recommendation_feedback(
+                &mut conn,
+                &RecommendationFeedback {
+                    request_id: format!("request-{context}"),
+                    song: recommended_song.clone(),
+                    action: "play".to_string(),
+                    recommendation_source: "local".to_string(),
+                    context: Some(context.to_string()),
+                },
+            )
+            .unwrap();
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM play_events WHERE event_type = ?1",
+                    [expected_event],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1);
+        }
+    }
+
+    #[test]
+    fn large_playlist_is_recalled_without_materialized_quadratic_pairs() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migration::run_migrations(&conn).unwrap();
+        let songs = (0..1000)
+            .map(|index| song("netease", &index.to_string(), &format!("歌{index}"), "歌手"))
+            .collect::<Vec<_>>();
+        let snapshot = LibrarySnapshot {
+            favorites: Vec::new(),
+            playlists: vec![PlaylistSnapshot {
+                id: "large".to_string(),
+                name: "大歌单".to_string(),
+                songs: songs.clone(),
+            }],
+            queue: Vec::new(),
+            current_song: None,
+            delta: None,
+        };
+        sync_library_snapshot(&mut conn, &snapshot).unwrap();
+        let pair_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM item_cooccurrence", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let candidates = recall::collect_candidates(&conn, Some(&songs[0]), 100).unwrap();
+
+        assert_eq!(pair_count, 0);
+        assert!(candidates.iter().any(|candidate| {
+            candidate.track_key != "netease:0"
+                && candidate
+                    .reasons
+                    .iter()
+                    .any(|reason| reason == "来自你的歌单共现")
+        }));
+    }
+
+    #[test]
+    fn maintenance_enforces_time_boundaries_and_snapshot_cap() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migration::run_migrations(&conn).unwrap();
+        let now = 2_000_000_000_000_i64;
+        let track = song("netease", "1", "保留歌曲", "保留歌手");
+        let track_key = catalog::upsert_track(&conn, &track).unwrap();
+        for created_at in [
+            now - PLAY_EVENT_RETENTION_MS - 1,
+            now - PLAY_EVENT_RETENTION_MS,
+        ] {
+            conn.execute(
+                "INSERT INTO play_events (event_type, track_key, session_id, weight, created_at) VALUES ('play_complete', ?1, 'playback:test', 4.0, ?2)",
+                params![track_key, created_at],
+            )
+            .unwrap();
+        }
+        for created_at in [now - FEEDBACK_RETENTION_MS - 1, now - FEEDBACK_RETENTION_MS] {
+            conn.execute(
+                "INSERT INTO recommendation_feedback (request_id, track_key, action, recommendation_source, created_at) VALUES ('r', ?1, 'play', 'local', ?2)",
+                params![track_key, created_at],
+            )
+            .unwrap();
+        }
+        for index in 0..25 {
+            conn.execute(
+                "INSERT INTO recommendation_result_snapshots (context, result_source, job_id, detail, items_json, created_at) VALUES ('home', 'cloud', ?1, '', '[]', ?2)",
+                params![format!("recent-{index}"), now - index],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO recommendation_result_snapshots (context, result_source, job_id, detail, items_json, created_at) VALUES ('boundary', 'cloud', 'boundary', '', '[]', ?1)",
+            [now - RESULT_SNAPSHOT_RETENTION_MS],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO recommendation_result_snapshots (context, result_source, job_id, detail, items_json, created_at) VALUES ('other', 'cloud', 'expired', '', '[]', ?1)",
+            [now - RESULT_SNAPSHOT_RETENTION_MS - 1],
+        )
+        .unwrap();
+
+        assert!(run_recommendation_maintenance_at(&mut conn, now).unwrap());
+        let event_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM play_events", [], |row| row.get(0))
+            .unwrap();
+        let feedback_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM recommendation_feedback", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let home_snapshot_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM recommendation_result_snapshots WHERE context = 'home'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let expired_snapshot_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM recommendation_result_snapshots WHERE job_id = 'expired'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let boundary_snapshot_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM recommendation_result_snapshots WHERE job_id = 'boundary'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(event_count, 1);
+        assert_eq!(feedback_count, 1);
+        assert_eq!(home_snapshot_count, RESULT_SNAPSHOT_LIMIT);
+        assert_eq!(expired_snapshot_count, 0);
+        assert_eq!(boundary_snapshot_count, 1);
+        assert!(!run_recommendation_maintenance_at(&mut conn, now).unwrap());
+    }
+
+    #[test]
+    fn session_cooccurrence_ignores_legacy_sessions_and_uses_bounded_window() {
+        let conn = Connection::open_in_memory().unwrap();
+        migration::run_migrations(&conn).unwrap();
+        let songs: Vec<_> = (0..7)
+            .map(|index| song("netease", &index.to_string(), &format!("歌{index}"), "歌手"))
+            .collect();
+
+        let legacy = RecommendationEvent {
+            event_type: "play_start".to_string(),
+            song: Some(songs[0].clone()),
+            session_id: None,
+            position_seconds: Some(0.0),
+            duration_seconds: None,
+            quality: None,
+            context: Some("playback".to_string()),
+        };
+        events::insert_event(&conn, &legacy).unwrap();
+
+        for item in &songs {
+            let event = RecommendationEvent {
+                event_type: "play_start".to_string(),
+                song: Some(item.clone()),
+                session_id: Some("playback:a".to_string()),
+                position_seconds: Some(0.0),
+                duration_seconds: None,
+                quality: None,
+                context: Some("playback".to_string()),
+            };
+            events::insert_event(&conn, &event).unwrap();
+        }
+        let other_session_song = song("qq", "other", "其它会话", "其它歌手");
+        let other_session = RecommendationEvent {
+            event_type: "play_start".to_string(),
+            song: Some(other_session_song.clone()),
+            session_id: Some("playback:b".to_string()),
+            position_seconds: Some(0.0),
+            duration_seconds: None,
+            quality: None,
+            context: Some("playback".to_string()),
+        };
+        events::insert_event(&conn, &other_session).unwrap();
+
+        rebuild_cooccurrence_index(&conn).unwrap();
+        let first_key = catalog::track_key(&songs[0]);
+        let second_key = catalog::track_key(&songs[1]);
+        let seventh_key = catalog::track_key(&songs[6]);
+        let other_key = catalog::track_key(&other_session_song);
+        let pair_count = |related: &str| -> i64 {
+            conn.query_row(
+                "SELECT COUNT(*) FROM item_cooccurrence WHERE track_key = ?1 AND related_track_key = ?2",
+                params![first_key, related],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+
+        assert_eq!(pair_count(&second_key), 1);
+        assert_eq!(pair_count(&seventh_key), 0);
+        assert_eq!(pair_count(&other_key), 0);
     }
 
     #[test]
     fn stale_dynamic_refresh_task_does_not_clear_new_generation() {
         assert!(is_current_generation(2, 2));
         assert!(!is_current_generation(1, 2));
+
+        let generation = AtomicU64::new(2);
+        let pending = AtomicBool::new(true);
+        let jobs = Mutex::new(HashMap::from([
+            (
+                "running".to_string(),
+                RecommendationJob {
+                    job_id: "running".to_string(),
+                    status: RecommendationJobStatus::Running,
+                    stage: RecommendationJobStage::CloudRerank,
+                    detail: String::new(),
+                    items: Vec::new(),
+                    error: None,
+                    updated_at: 1,
+                },
+            ),
+            (
+                "done".to_string(),
+                RecommendationJob {
+                    job_id: "done".to_string(),
+                    status: RecommendationJobStatus::Done,
+                    stage: RecommendationJobStage::Done,
+                    detail: String::new(),
+                    items: Vec::new(),
+                    error: None,
+                    updated_at: 1,
+                },
+            ),
+        ]));
+        invalidate_recommendation_state(&generation, &jobs, &pending);
+        assert_eq!(generation.load(Ordering::SeqCst), 3);
+        assert!(!pending.load(Ordering::SeqCst));
+        assert!(matches!(
+            &jobs.lock().get("running").unwrap().status,
+            RecommendationJobStatus::Done
+        ));
+        assert!(jobs.lock().contains_key("done"));
     }
 
     #[test]
@@ -1158,6 +2030,11 @@ mod tests {
         let items = vec![recommendation_item("netease", "1", "云端歌")];
 
         save_cloud_recommendation_result(&conn, "home", "job-1", "done", &items).unwrap();
+        conn.execute(
+            "INSERT INTO library_membership (container_type, container_id, track_key, updated_at) VALUES ('favorite', 'favorites', 'netease:1', 1)",
+            [],
+        )
+        .unwrap();
         assert!(load_latest_cloud_recommendation_job(&conn, "home")
             .unwrap()
             .is_some());
@@ -1166,5 +2043,11 @@ mod tests {
         assert!(load_latest_cloud_recommendation_job(&conn, "home")
             .unwrap()
             .is_none());
+        let membership_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM library_membership", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(membership_count, 0);
     }
 }

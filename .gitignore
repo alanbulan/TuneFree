@@ -9,7 +9,7 @@ pnpm-debug.log*
 # Dependencies
 node_modules
 
-# Next.js
+# Frontend build
 .next
 out
 

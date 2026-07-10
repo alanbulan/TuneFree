@@ -3,6 +3,7 @@ import {
   attachRecommendationMeta,
   getHomeRecommendations,
   logRecommendationEvent,
+  recommendationFeedbackFromSong,
 } from '../recommendation';
 import type { RecommendationItem } from '../recommendation';
 
@@ -42,5 +43,31 @@ describe('recommendation service', () => {
         recommendationScore: 0.8,
       },
     ]);
+  });
+
+  it('keeps the full recommended song in atomic feedback', () => {
+    const song = attachRecommendationMeta([
+      {
+        song: {
+          id: '1',
+          source: 'netease',
+          name: 'Song',
+          artist: 'Artist',
+          album: 'Album',
+        },
+        score: 0.8,
+        reasons: [],
+        recommendationSource: 'hybrid',
+        requestId: 'rec-1',
+      },
+    ])[0];
+
+    expect(recommendationFeedbackFromSong(song, 'play')).toEqual({
+      requestId: 'rec-1',
+      song,
+      action: 'play',
+      recommendationSource: 'hybrid',
+      context: 'recommendation',
+    });
   });
 });

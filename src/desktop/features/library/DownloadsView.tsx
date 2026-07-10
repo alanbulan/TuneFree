@@ -68,7 +68,8 @@ export default function DownloadsView() {
   const handleOpenDownloadDir = async () => {
     if (!downloadPath) return;
     try {
-      await invoke('open_external_url', { url: downloadPath });
+      const customDir = localStorage.getItem('tunefree_download_dir') || null;
+      await invoke('open_download_dir', { customDir });
     } catch {
       showToast('打开下载目录失败', 'error');
     }

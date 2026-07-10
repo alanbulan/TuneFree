@@ -11,13 +11,23 @@ interface KaraokeLyricTextProps {
 const getKaraokeClock = (currentTime: number): number => currentTime;
 
 const getWordState = (start: number, duration: number, currentTime: number): 'active' | 'done' | 'pending' => {
+  if (duration === 0) return currentTime < start ? 'pending' : 'done';
   if (currentTime >= start + duration) return 'done';
   if (currentTime >= start) return 'active';
   return 'pending';
 };
 
+const getWordProgress = (start: number, duration: number, currentTime: number): number => {
+  if (duration === 0) return currentTime < start ? 0 : 1;
+  return Math.max(0, Math.min(1, (currentTime - start) / duration));
+};
+
 export function hasTimedWords(line?: ParsedLyric | null): line is ParsedLyric & Required<Pick<ParsedLyric, 'words'>> {
-  return (line?.words?.filter((word) => Number.isFinite(word.start) && Number.isFinite(word.duration) && word.duration > 0).length || 0) > 1;
+  return (line?.words?.filter((word) => (
+    Number.isFinite(word.start)
+    && Number.isFinite(word.duration)
+    && word.duration >= 0
+  )).length || 0) > 0;
 }
 
 export function KaraokeLyricText({ line, currentTime, dragRegion = false }: KaraokeLyricTextProps) {
@@ -31,7 +41,7 @@ export function KaraokeLyricText({ line, currentTime, dragRegion = false }: Kara
     <span className="karaoke-line" aria-label={line.text} data-tauri-drag-region={dragRegion ? true : undefined}>
       {line.words.map((word, index) => {
         const state = getWordState(word.start, word.duration, karaokeClock);
-        const progress = Math.max(0, Math.min(1, (karaokeClock - word.start) / word.duration));
+        const progress = getWordProgress(word.start, word.duration, karaokeClock);
 
         return (
           <span

@@ -242,20 +242,42 @@ impl MusicProvider for KuwoProvider {
     }
 }
 
+fn parse_kuwo_url(body: &str) -> Result<String, ApiError> {
+    if body.lines().any(|line| line.trim() == "bitrate=1") {
+        return Err(ApiError::VipContent);
+    }
+
+    for line in body.lines() {
+        let line = line.trim();
+        if let Some(url_part) = line.strip_prefix("url=") {
+            let url = reqwest::Url::parse(url_part.trim())
+                .map_err(|e| ApiError::Parse(format!("Kuwo returned an invalid audio URL: {e}")))?;
+            if !matches!(url.scheme(), "http" | "https") {
+                return Err(ApiError::Parse(
+                    "Kuwo returned an unsupported audio URL scheme".to_string(),
+                ));
+            }
+            return Ok(url.to_string());
+        }
+    }
+
+    Err(ApiError::Parse(format!("Kuwo parsing failed: {body}")))
+}
+
 /// Resolves a playable audio URL from Kuwo Music.
 ///
 /// Encrypts request parameters using the Kuwo block cipher, Base64-encodes
 /// the ciphertext, and queries the Kuwo mobile API. The response is a
-/// key=value text format; the `url=` line is extracted and the query
-/// string is stripped.
+/// key=value text format; the complete `url=` value is preserved because
+/// query parameters may contain signatures or expiry tokens.
 ///
 /// # Arguments
 /// * `client` - Shared HTTP client.
 /// * `songmid` - The Kuwo song ID (rid).
-/// * `quality` - "128k", "192k", "320k", "ape", or "flac" (defaults to 128k).
+/// * `quality` - "128k", "192k", "320k", "ape", "flac", or "flac24bit".
 ///
 /// # Returns
-/// Direct audio URL (without query parameters) on success.
+/// Direct audio URL, including query parameters, on success.
 pub async fn get_kuwo_url(
     client: &Client,
     songmid: &str,
@@ -266,7 +288,7 @@ pub async fn get_kuwo_url(
         "192k" => ("192kmp3", "mp3"),
         "320k" => ("320kmp3", "mp3"),
         "ape" => ("2000kape", "ape"),
-        "flac" => ("2000kflac", "flac"),
+        "flac" | "flac24bit" => ("2000kflac", "flac"),
         _ => ("128kmp3", "mp3"),
     };
 
@@ -289,27 +311,11 @@ pub async fn get_kuwo_url(
         )
         .header("Referer", "http://kuwo.cn/")
         .send()
-        .await?;
+        .await?
+        .error_for_status()?;
 
     let body_str = resp.text().await?;
-    if body_str.contains("bitrate=1\r\n") {
-        return Err(ApiError::VipContent);
-    }
-
-    // Parse line-by-line for robust "url=" extraction (avoids matching
-    // other fields that might contain "url=" as a substring).
-    for line in body_str.lines() {
-        let line = line.trim();
-        if let Some(url_part) = line.strip_prefix("url=") {
-            let url_without_query = url_part.split('?').next().unwrap_or(url_part);
-            return Ok(url_without_query.to_string());
-        }
-    }
-
-    Err(ApiError::Parse(format!(
-        "Kuwo parsing failed: {}",
-        body_str
-    )))
+    parse_kuwo_url(&body_str)
 }
 
 #[cfg(test)]
@@ -326,5 +332,29 @@ mod tests {
             q_params,
             "18NsawlyRyRtNBB3YsCCYL6ViZJYU1V9YBbTxJJUSf9p8lacnpS0hlBvB+O3STOLkOQ9yIuZWZQZe7UvfQE6Zwn6AeQojd5MyPZr2iJoyOzi94OXIkC0yc+NwbIR+ERWTYsVc58LtjS25laWOGjchw=="
         );
+    }
+
+    #[test]
+    fn parse_kuwo_url_preserves_signed_query_parameters() {
+        let body = "format=mp3\r\nurl=http://audio.kwcdn.kuwo.cn/song.mp3?token=abc&expire=123\r\n";
+
+        assert_eq!(
+            parse_kuwo_url(body).unwrap(),
+            "http://audio.kwcdn.kuwo.cn/song.mp3?token=abc&expire=123"
+        );
+    }
+
+    #[test]
+    fn parse_kuwo_url_recognizes_vip_response_with_lf_lines() {
+        let body = "format=mp3\nbitrate=1\n";
+
+        assert!(matches!(parse_kuwo_url(body), Err(ApiError::VipContent)));
+    }
+
+    #[test]
+    fn parse_kuwo_url_rejects_unsupported_scheme() {
+        let body = "url=file:///tmp/song.mp3\n";
+
+        assert!(matches!(parse_kuwo_url(body), Err(ApiError::Parse(_))));
     }
 }

@@ -75,6 +75,8 @@ pub struct RecommendationJob {
 pub struct RecommendationEvent {
     pub event_type: String,
     pub song: Option<RecSong>,
+    #[serde(default)]
+    pub session_id: Option<String>,
     pub position_seconds: Option<f64>,
     pub duration_seconds: Option<f64>,
     pub quality: Option<String>,
@@ -101,15 +103,47 @@ pub struct LibrarySnapshot {
     pub queue: Vec<RecSong>,
     #[serde(default)]
     pub current_song: Option<RecSong>,
+    #[serde(default)]
+    pub delta: Option<LibraryDelta>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryMembershipChange {
+    pub container_type: String,
+    pub container_id: String,
+    pub track_key: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryDelta {
+    #[serde(default)]
+    pub upsert_songs: Vec<RecSong>,
+    #[serde(default)]
+    pub added_memberships: Vec<LibraryMembershipChange>,
+    #[serde(default)]
+    pub removed_memberships: Vec<LibraryMembershipChange>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecommendationFeedback {
     pub request_id: String,
-    pub track_key: String,
+    pub song: RecSong,
     pub action: String,
     pub recommendation_source: String,
+    #[serde(default)]
+    pub context: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentEventSummary {
+    pub event_type: String,
+    pub song_name: String,
+    pub artist: String,
+    pub age_bucket: String,
 }
 
 #[derive(Debug, Clone)]

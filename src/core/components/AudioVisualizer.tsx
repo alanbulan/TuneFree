@@ -13,6 +13,28 @@ const RESPONSE_CURVE = 0.7;             // 非线性响应曲线指数
 const MIN_BAR_PERCENT = 0.04;           // 最小可见高度百分比
 const DECAY_SPEED = 0.92;               // 暂停时衰减系数 (越接近1越慢)
 
+export const shouldScheduleVisualizerFrame = (
+  isPlaying: boolean,
+  pauseAnimationSettled: boolean,
+): boolean => isPlaying || !pauseAnimationSettled;
+
+export const calculateVisualizerCanvasSize = (
+  width: number,
+  height: number,
+  devicePixelRatio: number,
+) => {
+  const logicalWidth = Number.isFinite(width) ? Math.max(0, width) : 0;
+  const logicalHeight = Number.isFinite(height) ? Math.max(0, height) : 0;
+  const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  return {
+    width: logicalWidth,
+    height: logicalHeight,
+    dpr,
+    pixelWidth: Math.max(1, Math.round(logicalWidth * dpr)),
+    pixelHeight: Math.max(1, Math.round(logicalHeight * dpr)),
+  };
+};
+
 const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
   const { analyser } = usePlayerAnalyser();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -33,15 +55,31 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // 高 DPI 适配
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
+    let canvasSize = calculateVisualizerCanvasSize(0, 0, 1);
+
+    const syncCanvasSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const nextSize = calculateVisualizerCanvasSize(
+        rect.width,
+        rect.height,
+        window.devicePixelRatio || 1,
+      );
+      const changed =
+        nextSize.width !== canvasSize.width ||
+        nextSize.height !== canvasSize.height ||
+        nextSize.dpr !== canvasSize.dpr;
+
+      if (canvas.width !== nextSize.pixelWidth) canvas.width = nextSize.pixelWidth;
+      if (canvas.height !== nextSize.pixelHeight) canvas.height = nextSize.pixelHeight;
+      ctx.setTransform(nextSize.dpr, 0, 0, nextSize.dpr, 0, 0);
+      canvasSize = nextSize;
+      return changed;
+    };
+
+    syncCanvasSize();
 
     const dataArray = new Uint8Array(analyser ? analyser.frequencyBinCount : 0);
-    let animationId: number = 0;
+    let animationId: number | null = null;
 
     // === 渲染单个柱子（简洁风格，无峰值指示器）===
     const renderBar = (
@@ -79,10 +117,8 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
     };
 
     const draw = () => {
-      animationId = requestAnimationFrame(draw);
-
-      const width = rect.width;
-      const height = rect.height;
+      const width = canvasSize.width;
+      const height = canvasSize.height;
       ctx.clearRect(0, 0, width, height);
 
       const totalSpace = width / BAR_COUNT;
@@ -90,6 +126,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
       let x = (totalSpace - barWidth) / 2;
 
       const state = stateRef.current;
+      let pauseAnimationSettled = false;
 
       // 防御性检查：HMR 热更新可能导致旧 stateRef 结构不匹配
       if (!state.displayValues || state.displayValues.length !== BAR_COUNT) {
@@ -194,14 +231,33 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
                   renderBar(ctx, x, MIN_BAR_PERCENT, height, barWidth);
                   x += totalSpace;
               }
-              return; // 停止 rAF 循环
+              pauseAnimationSettled = true;
           }
+      }
+
+      if (shouldScheduleVisualizerFrame(isPlaying, pauseAnimationSettled)) {
+        animationId = requestAnimationFrame(draw);
+      } else {
+        animationId = null;
       }
     };
 
     draw();
 
-    return () => cancelAnimationFrame(animationId);
+    const handleResize = () => {
+      if (syncCanvasSize() && animationId === null) draw();
+    };
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(handleResize);
+    resizeObserver?.observe(canvas);
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', handleResize);
+      if (animationId !== null) cancelAnimationFrame(animationId);
+    };
   }, [analyser, isPlaying]);
 
   return (

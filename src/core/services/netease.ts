@@ -16,6 +16,48 @@ const getLyricText = (value: unknown): string => {
   return "";
 };
 
+const formatNeteaseLyricTime = (timeMs: number): string => {
+  const safeTime = Math.max(0, Math.round(timeMs));
+  const minutes = Math.floor(safeTime / 60_000);
+  const seconds = Math.floor((safeTime % 60_000) / 1000);
+  const milliseconds = safeTime % 1000;
+  return `[${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(milliseconds).padStart(3, "0")}]`;
+};
+
+const parseNeteaseStructuredLyricLine = (line: string): { timeMs: number; text: string } | null => {
+  if (!line.startsWith("{")) return null;
+
+  try {
+    const payload = JSON.parse(line) as {
+      t?: unknown;
+      c?: Array<{ tx?: unknown }>;
+    };
+    if (typeof payload.t !== "number" || !Number.isFinite(payload.t) || !Array.isArray(payload.c)) return null;
+
+    const text = payload.c
+      .map((item) => typeof item?.tx === "string" ? item.tx : "")
+      .join("")
+      .trim();
+    return text ? { timeMs: Number(payload.t), text } : null;
+  } catch {
+    return null;
+  }
+};
+
+const normalizeNeteaseLyricTrack = (
+  raw: string,
+  includeStructuredLines: boolean,
+): string => raw
+  .split(/\r?\n/)
+  .flatMap((line) => {
+    const structured = parseNeteaseStructuredLyricLine(line.trim());
+    if (!structured) return line;
+    if (!includeStructuredLines) return [];
+    return `${formatNeteaseLyricTime(structured.timeMs)}${structured.text}`;
+  })
+  .join("\n")
+  .trim();
+
 const buildNeteaseLyricV1Url = (id: string | number): string =>
   `https://music.163.com/api/song/lyric/v1?id=${id}&cp=false&lv=0&kv=0&tv=0&rv=0&yv=0&ytv=0&yrv=0`;
 
@@ -35,10 +77,13 @@ const fetchNeteaseLyricJson = async (url: string): Promise<any> => {
 };
 
 const extractNeteaseLyricTracks = (data: any) => ({
-  main: getLyricText(data?.lrc),
-  translation: getLyricText(data?.tlyric),
-  romanization: getLyricText(data?.romalrc),
-  karaoke: getLyricText(data?.yrc) || getLyricText(data?.klyric),
+  main: normalizeNeteaseLyricTrack(getLyricText(data?.lrc), true),
+  translation: normalizeNeteaseLyricTrack(getLyricText(data?.tlyric), true),
+  romanization: normalizeNeteaseLyricTrack(getLyricText(data?.romalrc), true),
+  karaoke: normalizeNeteaseLyricTrack(
+    getLyricText(data?.yrc) || getLyricText(data?.klyric),
+    false,
+  ),
 });
 
 const hasAnyLyricTrack = (tracks: ReturnType<typeof extractNeteaseLyricTracks>): boolean =>

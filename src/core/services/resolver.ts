@@ -26,9 +26,74 @@ const _lyricsPending = new Map<string, Promise<string>>();
 // 原源解析失败时，用「歌名 + 歌手」在其它音源搜索同曲并解析。
 const FALLBACK_SEARCH_LIMIT = 6;
 const FALLBACK_CANDIDATE_LIMIT = 3;
+const FALLBACK_SOURCE_CONCURRENCY = 3;
+const FALLBACK_TOTAL_TIMEOUT_MS = 15_000;
+const NATIVE_URL_TIMEOUT_MS = 8_000;
 const FALLBACK_SOURCES = ["netease", "qq", "kuwo", "joox", "bilibili"] as const;
 const KUWO_FALLBACK_SOURCES = ["qq", "netease", "joox", "bilibili"] as const;
 const NATIVE_LYRIC_SOURCES = new Set(["netease", "qq", "kuwo"]);
+
+const firstSuccessfulWithConcurrency = async <T, R>(
+  items: readonly T[],
+  concurrency: number,
+  timeoutMs: number,
+  worker: (item: T, signal: AbortSignal) => Promise<R | null>,
+): Promise<R | null> => {
+  if (items.length === 0) return null;
+
+  return new Promise((resolve) => {
+    let nextIndex = 0;
+    let activeCount = 0;
+    let settled = false;
+    const controller = new AbortController();
+
+    const finish = (result: R | null) => {
+      if (settled) return;
+      settled = true;
+      controller.abort();
+      clearTimeout(timeoutId);
+      resolve(result);
+    };
+
+    const launch = () => {
+      while (
+        !settled &&
+        activeCount < concurrency &&
+        nextIndex < items.length
+      ) {
+        const item = items[nextIndex++];
+        activeCount += 1;
+
+        void worker(item, controller.signal)
+          .then((result) => {
+            activeCount -= 1;
+            if (settled) return;
+            if (result !== null) {
+              finish(result);
+              return;
+            }
+            if (nextIndex >= items.length && activeCount === 0) {
+              finish(null);
+              return;
+            }
+            launch();
+          })
+          .catch(() => {
+            activeCount -= 1;
+            if (settled) return;
+            if (nextIndex >= items.length && activeCount === 0) {
+              finish(null);
+              return;
+            }
+            launch();
+          });
+      }
+    };
+
+    const timeoutId = setTimeout(() => finish(null), timeoutMs);
+    launch();
+  });
+};
 
 const hasPlayableId = (id: string | number | undefined | null): boolean => {
   const normalized = id === null || id === undefined ? "" : String(id).trim();
@@ -91,9 +156,12 @@ export const fetchNativeUrl = async (
   platform: string,
   quality: string,
 ): Promise<string | null> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), NATIVE_URL_TIMEOUT_MS);
   try {
     const resp = await fetch(
       `${API_PREFIX}/api/url?platform=${encodeURIComponent(platform)}&id=${encodeURIComponent(id)}&quality=${encodeURIComponent(quality)}`,
+      { signal: controller.signal },
     );
     if (resp.ok) {
       const data = await resp.json();
@@ -101,6 +169,8 @@ export const fetchNativeUrl = async (
     }
   } catch {
     // native resolver unavailable
+  } finally {
+    clearTimeout(timeoutId);
   }
   return null;
 };
@@ -133,10 +203,11 @@ export const fetchFallbackLyrics = async (
       }
     } catch (e) {
       console.warn(`[Resolver] fetchFallbackLyrics failed (${source}:${id}):`, e);
+    } finally {
+      _lyricsPending.delete(cacheKey);
     }
 
-    _lyricsCache.set(cacheKey, lrc);
-    _lyricsPending.delete(cacheKey);
+    if (lrc) _lyricsCache.set(cacheKey, lrc);
     return lrc;
   })();
 
@@ -244,42 +315,48 @@ const resolveFallbackSongFull = async (
 
   const fallbackSources = getFallbackSources(originalSource);
 
-  for (const source of fallbackSources) {
-    try {
-      const results = await searchFallbackSource(query, source);
-      if (!Array.isArray(results)) continue;
+  return firstSuccessfulWithConcurrency(
+    fallbackSources,
+    FALLBACK_SOURCE_CONCURRENCY,
+    FALLBACK_TOTAL_TIMEOUT_MS,
+    async (source, signal) => {
+      try {
+        const results = await searchFallbackSource(query, source);
+        if (signal.aborted || !Array.isArray(results)) return null;
 
-      const candidates = results
-        .filter(
-          (song) =>
-            hasPlayableId(song.id) &&
-            song.source !== originalSource &&
-            isLikelySameSong(song, songMeta),
-        )
-        .slice(0, FALLBACK_CANDIDATE_LIMIT);
+        const candidates = results
+          .filter(
+            (song) =>
+              hasPlayableId(song.id) &&
+              song.source !== originalSource &&
+              isLikelySameSong(song, songMeta),
+          )
+          .slice(0, FALLBACK_CANDIDATE_LIMIT);
 
-      for (const candidate of candidates) {
-        const parsed = await resolveDirectSongFull(
-          candidate.id,
-          candidate.source,
-          quality,
-          candidate,
-        );
+        for (const candidate of candidates) {
+          if (signal.aborted) return null;
+          const parsed = await resolveDirectSongFull(
+            candidate.id,
+            candidate.source,
+            quality,
+            candidate,
+          );
 
-        if (parsed?.url) {
-          return {
-            url: parsed.url,
-            lrc: parsed.lrc,
-            pic: parsed.pic || candidate.pic || songMeta?.pic || "",
-          };
+          if (signal.aborted) return null;
+          if (parsed?.url) {
+            return {
+              url: parsed.url,
+              lrc: parsed.lrc,
+              pic: parsed.pic || candidate.pic || songMeta?.pic || "",
+            };
+          }
         }
+      } catch (error) {
+        console.warn(`[Resolver] fallback source failed (${source}):`, error);
       }
-    } catch (error) {
-      console.warn(`[Resolver] fallback source failed (${source}):`, error);
-    }
-  }
-
-  return null;
+      return null;
+    },
+  );
 };
 
 export const getSongUrl = async (
