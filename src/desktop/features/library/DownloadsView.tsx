@@ -119,7 +119,7 @@ export default function DownloadsView() {
       ) : (
         <>
           <div className="content-card glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
-            <div className="song-table-container">
+            <div className="song-table-container" role="region" aria-label="离线下载列表" tabIndex={0}>
               <table className="song-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--line)', textAlign: 'left' }}>
