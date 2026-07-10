@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { DesktopLyricPlayerState, DesktopLyricStyleState } from '../_core/types';
 import { LyricLineRenderer } from './LyricLineRenderer';
 
@@ -14,9 +14,15 @@ const getExtensionCount = (line?: { translation?: string; romanization?: string;
   return [line.romanization, line.pronunciation, line.translation].filter(Boolean).length + (line.extra?.length || 0);
 };
 
+const MIN_COMPACT_FOCUS_SIZE = 12;
+
 export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps) {
   const stageRef = useRef<HTMLDivElement>(null);
+  const focusMeasureRef = useRef<HTMLDivElement>(null);
   const [stageHeight, setStageHeight] = useState(0);
+  const [stageWidth, setStageWidth] = useState(0);
+  const [focusSize, setFocusSize] = useState(styleState.size);
+  const [focusContentHeight, setFocusContentHeight] = useState(0);
   const { song, rows, activeIndex, currentLine } = player;
   const { size } = styleState;
   const lyricClock = player.currentTime + player.lyricOffsetSeconds;
@@ -31,6 +37,7 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
 
     const updateBounds = () => {
       setStageHeight(stage.clientHeight);
+      setStageWidth(stage.clientWidth);
     };
 
     updateBounds();
@@ -44,6 +51,36 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
     };
   }, []);
 
+  useLayoutEffect(() => {
+    setFocusSize(size);
+  }, [currentLine, size, stageHeight, stageWidth]);
+
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    const focusMeasure = focusMeasureRef.current;
+    if (!stage || !focusMeasure || !currentLine) {
+      setFocusContentHeight(0);
+      return;
+    }
+
+    const availableHeight = Math.max(1, stage.clientHeight);
+    const measuredHeight = focusMeasure.scrollHeight;
+    setFocusContentHeight((current) => current === measuredHeight ? current : measuredHeight);
+
+    if (measuredHeight <= availableHeight + 1 || focusSize <= MIN_COMPACT_FOCUS_SIZE) {
+      return;
+    }
+
+    const fittedSize = Math.floor(focusSize * (availableHeight / measuredHeight));
+    const nextSize = Math.max(
+      MIN_COMPACT_FOCUS_SIZE,
+      Math.min(focusSize - 1, fittedSize),
+    );
+    if (nextSize !== focusSize) {
+      setFocusSize(nextSize);
+    }
+  }, [currentLine, focusSize, stageHeight, stageWidth]);
+
   const contextDepth = useMemo(() => {
     if (rows.length === 0 || activeIndex < 0) return 0;
 
@@ -52,15 +89,23 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
     const measuredHeight = stageHeight || (typeof window !== 'undefined' ? window.innerHeight - 68 : 0);
     if (measuredHeight < 140) return 0;
 
-    const focusReserve = size * (1.65 + getExtensionCount(currentLine) * 0.86);
+    const focusReserve = focusContentHeight > 0
+      ? Math.min(measuredHeight, focusContentHeight)
+      : size * (1.65 + getExtensionCount(currentLine) * 0.86);
     const maxContextExtensions = rows.reduce((max, row, index) => (
       index === activeIndex ? max : Math.max(max, getExtensionCount(row))
     ), 0);
-    const contextLineBudget = Math.max(15, size * (0.82 + Math.min(2, maxContextExtensions) * 0.44));
-    const availableHeight = Math.max(0, measuredHeight - focusReserve - 14);
+    const contextPrimarySize = Math.max(12, Math.round(size * 0.6));
+    const contextExtensionSize = Math.max(12, Math.round(size * 0.56));
+    const contextLineBudget = (
+      contextPrimarySize * 1.18
+      + maxContextExtensions * (contextExtensionSize * 1.16 + 2)
+      + 5
+    );
+    const availableHeight = Math.max(0, measuredHeight - focusReserve - 16);
 
     return Math.max(0, Math.min(14, Math.floor(availableHeight / (contextLineBudget * 2))));
-  }, [activeIndex, currentLine, rows, size, stageHeight]);
+  }, [activeIndex, currentLine, focusContentHeight, rows, size, stageHeight]);
 
   const previousLines = contextDepth > 0 && activeIndex > 0
     ? rows.slice(Math.max(0, activeIndex - contextDepth), activeIndex)
@@ -115,35 +160,49 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
     );
   }
 
+  const compact = contextDepth === 0;
+
   return (
-    <div ref={stageRef} className="desktop-lyric-stage" data-tauri-drag-region>
-      <div className="desktop-lyric-context desktop-lyric-context-top" data-tauri-drag-region>
-        {previousLines.map((line, index) => (
-          <LyricLineRenderer
-            key={`prev-${line.time}-${index}`}
-            line={line}
-            size={size}
-            shadow={contextShadow}
-            depth={previousLines.length - index}
-          />
-        ))}
-      </div>
+    <div
+      ref={stageRef}
+      className={`desktop-lyric-stage${compact ? ' desktop-lyric-stage-compact' : ''}`}
+      data-tauri-drag-region
+    >
+      {!compact && (
+        <div className="desktop-lyric-context desktop-lyric-context-top" data-tauri-drag-region>
+          {previousLines.map((line, index) => (
+            <LyricLineRenderer
+              key={`prev-${line.time}-${index}`}
+              line={line}
+              size={size}
+              shadow={contextShadow}
+              depth={previousLines.length - index}
+            />
+          ))}
+        </div>
+      )}
 
       <div className="desktop-lyric-focus" data-tauri-drag-region>
-        {currentLine && <LyricLineRenderer line={currentLine} active size={size} shadow={activeShadow} currentTime={lyricClock} source={song?.source} enableKaraoke={enableKaraoke} />}
+        <div className="desktop-lyric-focus-content" data-tauri-drag-region>
+          <div ref={focusMeasureRef} className="desktop-lyric-focus-measure" data-tauri-drag-region>
+            {currentLine && <LyricLineRenderer line={currentLine} active size={focusSize} shadow={activeShadow} currentTime={lyricClock} source={song?.source} enableKaraoke={enableKaraoke} />}
+          </div>
+        </div>
       </div>
 
-      <div className="desktop-lyric-context desktop-lyric-context-bottom" data-tauri-drag-region>
-        {nextLines.map((line, index) => (
-          <LyricLineRenderer
-            key={`next-${line.time}-${index}`}
-            line={line}
-            size={size}
-            shadow={contextShadow}
-            depth={index + 1}
-          />
-        ))}
-      </div>
+      {!compact && (
+        <div className="desktop-lyric-context desktop-lyric-context-bottom" data-tauri-drag-region>
+          {nextLines.map((line, index) => (
+            <LyricLineRenderer
+              key={`next-${line.time}-${index}`}
+              line={line}
+              size={size}
+              shadow={contextShadow}
+              depth={index + 1}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

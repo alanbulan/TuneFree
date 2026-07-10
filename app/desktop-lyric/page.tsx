@@ -9,14 +9,25 @@ import { useDesktopLyricBridge } from './_core/useDesktopLyricBridge';
 
 export default function DesktopLyricPage() {
   const [isHovered, setIsHovered] = useState(false);
+  const [isFocusWithin, setIsFocusWithin] = useState(false);
   const { playerState, styleState, controls } = useDesktopLyricBridge();
-  const showToolbar = isHovered && !styleState.lock;
+  const showToolbar = (isHovered || isFocusWithin) && !styleState.lock;
 
   return (
     <div
       className="desktop-lyric-root"
+      data-tauri-drag-region
+      tabIndex={styleState.lock ? -1 : 0}
+      role="region"
+      aria-label="桌面歌词控制区域"
       onMouseEnter={() => !styleState.lock && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onFocusCapture={() => !styleState.lock && setIsFocusWithin(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setIsFocusWithin(false);
+        }
+      }}
       style={{ fontFamily: styleState.font }}
     >
       {showToolbar && (

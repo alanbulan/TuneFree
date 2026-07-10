@@ -17,10 +17,15 @@ body > div:first-child {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 46px 34px 22px;
+  padding: clamp(40px, 15dvh, 46px) clamp(14px, 3vw, 34px) clamp(8px, 7dvh, 22px);
   overflow: hidden;
   background: transparent;
   user-select: none;
+  outline: none;
+}
+
+.desktop-lyric-root:focus-visible {
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.42);
 }
 
 .desktop-lyric-toolbar {
@@ -66,6 +71,10 @@ body > div:first-child {
   grid-template-rows: 1fr;
 }
 
+.desktop-lyric-stage-compact {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .desktop-lyric-context {
   width: 100%;
   min-height: 0;
@@ -92,13 +101,32 @@ body > div:first-child {
 .desktop-lyric-focus {
   width: 100%;
   max-width: 100%;
-  min-height: 2.35em;
+  min-height: 0;
+  max-height: 100%;
+  color: var(--accent, #fa233b);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  z-index: 2;
+}
+
+.desktop-lyric-focus::-webkit-scrollbar {
+  display: none;
+}
+
+.desktop-lyric-focus-content {
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent, #fa233b);
-  overflow: visible;
-  z-index: 2;
+}
+
+.desktop-lyric-focus-measure {
+  width: 100%;
+  min-width: 0;
 }
 
 .desktop-lyric-current-line,
@@ -198,5 +226,18 @@ body > div:first-child {
   to {
     opacity: 1;
     transform: translateY(0) translateX(-50%);
+  }
+}
+
+@media (max-height: 240px) {
+  .desktop-lyric-root {
+    padding-top: 38px;
+    padding-bottom: 6px;
+  }
+
+  .desktop-lyric-toolbar {
+    top: 4px;
+    gap: 4px;
+    padding: 3px 8px;
   }
 }
