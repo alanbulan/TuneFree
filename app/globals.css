@@ -72,6 +72,7 @@
 
 * { box-sizing: border-box; }
 html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+#root { width: 100%; height: 100%; min-height: 0; }
 body {
   color: var(--text);
   font-family: var(--font);
@@ -2598,11 +2599,11 @@ input, textarea, [contenteditable="true"], .panel-input {
 }
 
 /* 桌面歌词相关的基础过渡效果 */
-.desktop-lyric-container button {
+.desktop-lyric-root button {
   transition: background 0.15s, opacity 0.15s;
 }
 
-.desktop-lyric-container button:hover {
+.desktop-lyric-root button:hover {
   background: rgba(255, 255, 255, 0.15) !important;
 }
 
