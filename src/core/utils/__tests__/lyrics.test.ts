@@ -192,8 +192,140 @@ Line three`;
 [15010,4470](15010,330,0)这(15340,210,0)个(15550,310,0)失(15860,450,0)眠(16310,810,0)夜 (17120,360,0)想(17480,100,0)不(17580,530,0)起(18110,250,0)你(18360,280,0)是(18640,840,0)谁`;
     const result = parseLyrics(lrc);
     expect(result[0].text).toBe('这个失眠夜 想不起你是谁');
-    expect(result[0].time).toBeCloseTo(15.01, 3);
+    expect(result[0].time).toBeCloseTo(15.73, 3);
+    expect(result[0].karaokeTime).toBeCloseTo(15.01, 3);
     expect(result[0].words).toHaveLength(11);
+    expect(findActiveLyricIndex(result, 15.2, 0, 'line')).toBe(0);
+    expect(findActiveLyricIndex(result, 15.2, 0, 'karaoke')).toBe(0);
+  });
+
+  it('should attach all Netease YRC rows when matching text drifts several seconds', () => {
+    const lrc = `[tunefree:main]
+[02:18.54]呜呜呜呜…
+[02:23.35]快来抱抱 快来抱抱我
+[02:31.68]呜呜呜呜…
+
+[tunefree:karaoke]
+[137160,2500](137160,500,0)呜(137660,500,0)呜(138160,500,0)呜(138660,500,0)呜(139160,500,0)…
+[140130,4200](140130,300,0)快(140430,300,0)来(140730,500,0)抱(141230,500,0)抱 (141730,300,0)快(142030,300,0)来(142330,500,0)抱(142830,500,0)抱(143330,1000,0)我
+[145470,2500](145470,500,0)呜(145970,500,0)呜(146470,500,0)呜(146970,500,0)呜(147470,500,0)…`;
+    const result = parseLyrics(lrc);
+
+    expect(result).toHaveLength(3);
+    expect(result.every((row) => (row.words?.length || 0) > 1)).toBe(true);
+    expect(result[1].time).toBeCloseTo(143.35, 3);
+    expect(result[1].karaokeTime).toBeCloseTo(140.13, 3);
+    expect(findActiveLyricIndex(result, 141, 0, 'line')).toBe(0);
+    expect(findActiveLyricIndex(result, 141, 0, 'karaoke')).toBe(1);
+  });
+
+  it('should match Netease YRC text case-insensitively', () => {
+    const lrc = `[tunefree:main]
+[00:19.38]我听着耳机中Jay的音乐
+
+[tunefree:karaoke]
+[19170,3440](19170,390,0)我(19560,450,0)听(20010,420,0)着(20430,320,0)耳(20750,200,0)机(20950,220,0)中(21170,220,0)jay(21390,360,0)的(21750,430,0)音(22180,430,0)乐`;
+    const result = parseLyrics(lrc);
+
+    expect(result[0].words).toHaveLength(10);
+    expect(result[0].karaokeTime).toBeCloseTo(19.17, 3);
+  });
+
+  it('should split one merged YRC row across multiple LRC rows at word boundaries', () => {
+    const lrc = `[tunefree:main]
+[00:10.00]如果我们
+[00:12.00]不曾相遇
+
+[tunefree:karaoke]
+[9500,5000](9500,500,0)如(10000,500,0)果(10500,500,0)我(11000,500,0)们(11500,500,0)不(12000,500,0)曾(12500,500,0)相(13000,500,0)遇`;
+    const result = parseLyrics(lrc);
+
+    expect(result[0].words?.map((word) => word.text).join('')).toBe('如果我们');
+    expect(result[1].words?.map((word) => word.text).join('')).toBe('不曾相遇');
+    expect(result[0].karaokeTime).toBe(9.5);
+    expect(result[1].karaokeTime).toBe(11.5);
+  });
+
+  it('should merge multiple YRC rows into one LRC row', () => {
+    const lrc = `[tunefree:main]
+[00:20.00]突然好想你你会在哪里
+
+[tunefree:karaoke]
+[19500,2500](19500,500,0)突(20000,500,0)然(20500,500,0)好(21000,500,0)想(21500,500,0)你
+[22000,2500](22000,500,0)你(22500,500,0)会(23000,500,0)在(23500,500,0)哪(24000,500,0)里`;
+    const result = parseLyrics(lrc);
+
+    expect(result[0].words?.map((word) => word.text).join('')).toBe('突然好想你你会在哪里');
+    expect(result[0].words).toHaveLength(10);
+    expect(result[0].karaokeTime).toBe(19.5);
+  });
+
+  it('should keep a line static when nearby YRC text is different', () => {
+    const lrc = `[tunefree:main]
+[00:22.47]琴键上透着光
+
+[tunefree:karaoke]
+[22520,2400](22520,400,0)装(22920,400,0)饰(23320,400,0)着(23720,400,0)教(24120,400,0)堂`;
+    const result = parseLyrics(lrc);
+
+    expect(result[0].words).toBeUndefined();
+    expect(result[0].karaokeTime).toBeUndefined();
+  });
+
+  it('should tolerate one-character text variants inside the local time window', () => {
+    const lrc = `[tunefree:main]
+[00:30.00]有些人一旦错过就不在
+
+[tunefree:karaoke]
+[29400,4400](29400,400,0)有(29800,400,0)些(30200,400,0)人(30600,400,0)一(31000,400,0)旦(31400,400,0)错(31800,400,0)过(32200,400,0)就(32600,400,0)不(33000,400,0)再`;
+    const result = parseLyrics(lrc);
+
+    expect(result[0].words?.map((word) => word.text).join('')).toBe('有些人一旦错过就不再');
+    expect(result[0].karaokeTime).toBe(29.4);
+  });
+
+  it('should match repeated chorus rows in their original order', () => {
+    const lrc = `[tunefree:main]
+[00:10.00]第一句
+[00:14.00]第二句
+[00:40.00]第一句
+[00:44.00]第二句
+
+[tunefree:karaoke]
+[9800,1200](9800,400,0)第(10200,400,0)一(10600,400,0)句
+[13800,1200](13800,400,0)第(14200,400,0)二(14600,400,0)句
+[39800,1200](39800,400,0)第(40200,400,0)一(40600,400,0)句
+[43800,1200](43800,400,0)第(44200,400,0)二(44600,400,0)句`;
+    const result = parseLyrics(lrc);
+
+    expect(result.map((row) => row.karaokeTime)).toEqual([9.8, 13.8, 39.8, 43.8]);
+  });
+
+  it('should retain zero-duration punctuation tokens', () => {
+    const lrc = `[tunefree:main]
+[00:01.00]你，好
+
+[tunefree:karaoke]
+[1000,800](1000,400,0)你(1400,0,0)，(1400,400,0)好`;
+    const result = parseLyrics(lrc);
+
+    expect(result[0].words).toEqual([
+      { start: 1, duration: 0.4, text: '你' },
+      { start: 1.4, duration: 0, text: '，' },
+      { start: 1.4, duration: 0.4, text: '好' },
+    ]);
+  });
+
+  it('should reject a distant karaoke credit line outside the verified singing drift', () => {
+    const lrc = `[tunefree:main]
+[00:30.00]同一句歌词
+
+[tunefree:karaoke]
+[15510,2000](15510,500,0)同(16010,500,0)一(16510,500,0)句(17010,500,0)歌(17510,500,0)词`;
+    const result = parseLyrics(lrc);
+
+    expect(result[0].karaokeTime).toBeUndefined();
+    expect(result[0].words).toBeUndefined();
   });
 });
 

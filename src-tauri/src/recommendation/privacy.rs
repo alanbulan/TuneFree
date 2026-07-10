@@ -5,11 +5,7 @@ pub fn sanitize_base_url(input: &str) -> String {
 }
 
 pub fn short_reason(input: &str) -> String {
-    input
-        .trim()
-        .chars()
-        .take(24)
-        .collect::<String>()
+    input.trim().chars().take(24).collect::<String>()
 }
 
 pub fn song_prompt_summary(song: &RecSong) -> serde_json::Value {

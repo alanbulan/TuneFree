@@ -32,6 +32,14 @@ pub fn track_key(song: &RecSong) -> String {
     format!("{}:{}", song.source, id_to_string(&song.id))
 }
 
+pub fn song_identity(song: &RecSong) -> String {
+    format!(
+        "{}:{}",
+        normalize_text(&song.name),
+        normalize_text(&song.artist)
+    )
+}
+
 pub fn normalize_text(input: &str) -> String {
     input
         .trim()
@@ -45,7 +53,10 @@ pub fn split_tokens(input: &str) -> Vec<String> {
     normalize_text(input)
         .split(|ch: char| {
             ch.is_whitespace()
-                || matches!(ch, '/' | '&' | ',' | '，' | '、' | '-' | '_' | '(' | ')' | '[' | ']')
+                || matches!(
+                    ch,
+                    '/' | '&' | ',' | '，' | '、' | '-' | '_' | '(' | ')' | '[' | ']'
+                )
         })
         .filter_map(|part| {
             let token = part.trim();
@@ -135,10 +146,11 @@ pub fn get_track(conn: &Connection, key: &str) -> rusqlite::Result<Option<RecSon
     .optional()
 }
 
-pub fn load_recent_tracks(conn: &Connection, limit: usize) -> rusqlite::Result<Vec<(String, RecSong, i64)>> {
-    let mut stmt = conn.prepare(
-        "SELECT * FROM tracks ORDER BY last_seen_at DESC LIMIT ?1",
-    )?;
+pub fn load_recent_tracks(
+    conn: &Connection,
+    limit: usize,
+) -> rusqlite::Result<Vec<(String, RecSong, i64)>> {
+    let mut stmt = conn.prepare("SELECT * FROM tracks ORDER BY last_seen_at DESC LIMIT ?1")?;
     let rows = stmt.query_map([limit as i64], |row| {
         let key: String = row.get("track_key")?;
         let last_seen_at: i64 = row.get("last_seen_at")?;

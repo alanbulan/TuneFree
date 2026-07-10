@@ -1,5 +1,6 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import {
+  CloseIcon,
   DownloadIcon,
   HeartFillIcon,
   HeartIcon,
@@ -13,7 +14,6 @@ import { usePlayerActions, usePlayerNowPlaying, usePlayerSettings } from '../../
 import {
   attachRecommendationMeta,
   getSimilarSongs,
-  logRecommendationEvent,
   recommendationFeedbackFromSong,
   saveRecommendationFeedback,
 } from '../../../core/services/recommendation';
@@ -37,7 +37,13 @@ export default function FullPlayerActions({
   const { playQueue } = usePlayerActions();
   const { toggleFavorite, isFavorite, playlists, addToPlaylist, createPlaylist } = useLibrary();
   const { showToast } = useToast();
-  const { downloadQuality, downloadProgress, handleDownload } = useSongDownload();
+  const {
+    downloadQuality,
+    downloadProgress,
+    isCancelling,
+    handleDownload,
+    cancelDownload,
+  } = useSongDownload();
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [loadingSimilar, setLoadingSimilar] = useState(false);
 
@@ -72,15 +78,8 @@ export default function FullPlayerActions({
         return;
       }
       const first = songs[0];
-      const feedback = first ? recommendationFeedbackFromSong(first, 'play') : null;
+      const feedback = first ? recommendationFeedbackFromSong(first, 'play', 'similar') : null;
       if (feedback) void saveRecommendationFeedback(feedback).catch(() => {});
-      if (first) {
-        void logRecommendationEvent({
-          eventType: first.recommendationSource === 'hybrid' ? 'llm_recommend_click' : 'similar_click',
-          song: first,
-          context: 'similar',
-        }).catch(() => {});
-      }
       await playQueue(songs, first);
       showToast(`已载入 ${songs.length} 首相似歌曲`, 'success');
     } catch {
@@ -153,12 +152,15 @@ export default function FullPlayerActions({
           <button
             type="button"
             className="full-action-button"
-            disabled={!currentSong || downloadQuality !== null}
-            onClick={handleOfflineCache}
-            title="下载当前音质到本地目录"
+            disabled={isCancelling || (!currentSong && downloadQuality === null)}
+            onClick={() => {
+              if (downloadQuality !== null) void cancelDownload();
+              else void handleOfflineCache();
+            }}
+            title={downloadQuality !== null ? '取消当前下载' : '下载当前音质到本地目录'}
           >
-            <DownloadIcon size={16} />
-            {downloadQuality !== null ? '下载中' : '离线缓存'}
+            {downloadQuality !== null ? <CloseIcon size={16} /> : <DownloadIcon size={16} />}
+            {downloadQuality !== null ? (isCancelling ? '取消中' : '取消下载') : '离线缓存'}
           </button>
           {qualityOptions.map((quality: AudioQuality) => {
             const meta = getDownloadMeta(quality);

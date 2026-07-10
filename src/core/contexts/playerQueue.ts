@@ -1,4 +1,4 @@
-import { PlayMode, Song, isSameSong } from "../types";
+import { PlayMode, Song, getSongKey, isSameSong } from "../types";
 
 export const findCurrentSongIndex = (
   queue: Song[],
@@ -44,4 +44,28 @@ export const getPrevQueueIndex = (
   }
 
   return (currentIndex - 1 + queue.length) % queue.length;
+};
+
+export const getNextRecommendationCandidateIndex = (
+  queue: Song[],
+  currentSong: Song | null,
+  failedSongKeys: ReadonlySet<string>,
+): number => {
+  if (!currentSong?.recommendationRequestId || queue.length < 2) return -1;
+
+  const currentIndex = findCurrentSongIndex(queue, currentSong);
+  if (currentIndex < 0) return -1;
+
+  for (let offset = 1; offset < queue.length; offset += 1) {
+    const candidateIndex = (currentIndex + offset) % queue.length;
+    const candidate = queue[candidateIndex];
+    if (
+      candidate?.recommendationRequestId === currentSong.recommendationRequestId &&
+      !failedSongKeys.has(getSongKey(candidate))
+    ) {
+      return candidateIndex;
+    }
+  }
+
+  return -1;
 };

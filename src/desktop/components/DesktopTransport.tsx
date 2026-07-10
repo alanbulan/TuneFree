@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
+  CloseIcon,
   DownloadIcon,
   HeartFillIcon,
   HeartIcon,
@@ -21,19 +22,19 @@ import {
   usePlayerSettings,
 } from '../../core/contexts/PlayerContext';
 import { useTheme } from '../../core/contexts/ThemeContext';
+import { useLyricDisplayMode } from '../../core/hooks/useLyricDisplayMode';
 import { Lock, Sparkles } from 'lucide-react';
 import AudioVisualizer from '../../core/components/AudioVisualizer';
 import { findActiveLyricIndex, parseLyrics, type ParsedLyric } from '../../core/utils/lyrics';
 import type { AudioQuality } from '../../core/types';
 import CoverArt from './CoverArt';
 import { useToast } from './ToastHost';
-import { formatTime } from '../utils/formatting';
+import PlayerProgressSlider from './PlayerProgressSlider';
 import { useSongDownload } from '../hooks/useSongDownload';
 import QualitySelector from './QualitySelector';
 import {
   attachRecommendationMeta,
   getSimilarSongs,
-  logRecommendationEvent,
   recommendationFeedbackFromSong,
   saveRecommendationFeedback,
 } from '../../core/services/recommendation';
@@ -54,7 +55,7 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
   const { toggleFavorite, isFavorite } = useLibrary();
   const { togglePlay, playNext, playPrev, seek, togglePlayMode, setAudioQuality, playQueue } = usePlayerActions();
   const { showToast } = useToast();
-  const { isDownloading, downloadProgress, handleDownload } = useSongDownload();
+  const { isDownloading, isCancelling, downloadProgress, handleDownload, cancelDownload } = useSongDownload();
 
   const [loadingSimilar, setLoadingSimilar] = useState(false);
 
@@ -69,15 +70,8 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
         showToast('未找到相似歌曲，换首其它歌曲试试吧', 'info');
       } else {
         const first = songs[0];
-        const feedback = first ? recommendationFeedbackFromSong(first, 'play') : null;
+        const feedback = first ? recommendationFeedbackFromSong(first, 'play', 'similar') : null;
         if (feedback) void saveRecommendationFeedback(feedback).catch(() => {});
-        if (first) {
-          void logRecommendationEvent({
-            eventType: first.recommendationSource === 'hybrid' ? 'llm_recommend_click' : 'similar_click',
-            song: first,
-            context: 'similar',
-          }).catch(() => {});
-        }
         await playQueue(songs, songs[0]);
         showToast(`已载入 ${songs.length} 首相似歌曲`, 'success');
       }
@@ -89,13 +83,15 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
     }
   };
 
-  // P3-11: Progress bar drag state
-  const [isDragging, setIsDragging] = useState(false);
-  const [previewTime, setPreviewTime] = useState(0);
-
   const rawLyrics = currentSong?.lrc;
+  const lyricDisplayMode = useLyricDisplayMode();
   const lyricRows = useMemo(() => parseLyrics(rawLyrics), [rawLyrics]);
-  const activeLyricIndex = findActiveLyricIndex(lyricRows, currentTime, lyricOffsetSeconds);
+  const activeLyricIndex = findActiveLyricIndex(
+    lyricRows,
+    currentTime,
+    lyricOffsetSeconds,
+    lyricDisplayMode,
+  );
   const activeLyric = activeLyricIndex >= 0 ? lyricRows[activeLyricIndex] : null;
   const activeLyricSecondary = getMiniLyricSecondary(activeLyric);
   const favoriteActive = !!currentSong && isFavorite(currentSong.id, currentSong.source);
@@ -151,9 +147,6 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
       onClick: () => currentSong && toggleFavorite(currentSong),
     });
   };
-
-  // P3-11: Display preview time during drag, actual time otherwise
-  const displayTime = isDragging ? previewTime : currentTime;
 
   return (
     <div className="transport mini-player">
@@ -258,29 +251,7 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
             <NextIcon size={19} />
           </button>
         </div>
-        <div className="progress-row">
-          <span>{formatTime(displayTime)}</span>
-          <input
-            className="progress-bar"
-            aria-label="播放进度"
-            type="range"
-            min={0}
-            max={duration || 0}
-            value={duration ? Math.min(displayTime, duration) : 0}
-            onInput={(event) => {
-              const target = event.target as HTMLInputElement;
-              setIsDragging(true);
-              setPreviewTime(Number(target.value));
-            }}
-            onChange={(event) => {
-              const target = event.target as HTMLInputElement;
-              const value = Number(target.value);
-              setIsDragging(false);
-              seek(value);
-            }}
-          />
-          <span>{formatTime(duration)}</span>
-        </div>
+        <PlayerProgressSlider currentTime={currentTime} duration={duration} onSeek={seek} />
       </div>
 
       <div className="transport-tools">
@@ -312,14 +283,18 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
         <button
           type="button"
           className="icon-button"
-          aria-label="下载当前歌曲"
-          disabled={!currentSong || isDownloading}
-          onClick={() => currentSong && handleDownload(currentSong, audioQuality)}
+          aria-label={isDownloading ? '取消下载' : '下载当前歌曲'}
+          title={isDownloading ? '取消当前下载' : '下载当前歌曲'}
+          disabled={isCancelling || (!currentSong && !isDownloading)}
+          onClick={() => {
+            if (isDownloading) void cancelDownload();
+            else if (currentSong) void handleDownload(currentSong, audioQuality);
+          }}
           style={{ minWidth: '28px' }}
         >
           {isDownloading ? (
             <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent)' }}>
-              {downloadProgress !== null ? `${downloadProgress}%` : '…'}
+              {isCancelling ? '…' : downloadProgress !== null ? `${downloadProgress}%` : <CloseIcon size={14} />}
             </span>
           ) : (
             <DownloadIcon size={16} />

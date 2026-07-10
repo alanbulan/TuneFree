@@ -752,7 +752,7 @@ export default function SettingsView() {
             </label>
           </div>
           <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '6px', lineHeight: 1.4 }}>
-            云端发现与重排会发送候选歌曲元数据和画像摘要；关闭后只使用本地推荐。
+            云端发现与重排始终会发送候选歌曲元数据和画像摘要；关闭后仅不附带最近事件摘要。
           </p>
         </div>
 

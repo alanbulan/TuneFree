@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Song, Playlist } from '../types';
-import { getSongKey } from '../types';
 import { normalizeMusicUrl } from './utils';
 
 const isTauri = (): boolean =>
@@ -12,6 +11,7 @@ const isLocalRecommendationEnabled = (): boolean =>
 
 export interface RecommendationEvent {
   eventType: string;
+  sessionId?: string;
   song?: Song | null;
   positionSeconds?: number;
   durationSeconds?: number;
@@ -38,13 +38,27 @@ export interface LibrarySnapshot {
   playlists: Playlist[];
   queue: Song[];
   currentSong?: Song | null;
+  delta?: LibraryDelta;
+}
+
+export interface LibraryMembershipChange {
+  containerType: 'favorite' | 'playlist';
+  containerId: string;
+  trackKey: string;
+}
+
+export interface LibraryDelta {
+  upsertSongs: Song[];
+  addedMemberships: LibraryMembershipChange[];
+  removedMemberships: LibraryMembershipChange[];
 }
 
 export interface RecommendationFeedback {
   requestId: string;
-  trackKey: string;
+  song: Song;
   action: string;
   recommendationSource: string;
+  context?: string;
 }
 
 export interface LlmConfigView {
@@ -246,12 +260,14 @@ export async function clearRecommendationData(): Promise<RecommendationMaintenan
 export function recommendationFeedbackFromSong(
   song: Song,
   action: string,
+  context = 'recommendation',
 ): RecommendationFeedback | null {
   if (!song.recommendationRequestId || !song.recommendationSource) return null;
   return {
     requestId: song.recommendationRequestId,
-    trackKey: getSongKey(song),
+    song,
     action,
     recommendationSource: song.recommendationSource,
+    context,
   };
 }

@@ -1,37 +1,41 @@
 {
   "name": "tunefree-desktop",
-  "version": "1.1.15",
+  "version": "1.1.16",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev -p 3001",
-    "build": "next build",
-    "start": "next start -p 3001",
+    "dev": "vite --host 127.0.0.1 --port 3101 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "start": "vite preview --host 127.0.0.1 --port 3101 --strictPort",
     "lint": "tsc --noEmit",
     "test": "vitest",
-    "tauri": "node bump-version.js && tauri"
+    "tauri": "tauri",
+    "version:check": "node bump-version.js --dry-run",
+    "version:bump": "node bump-version.js",
+    "version:bump:minor": "node bump-version.js --minor",
+    "version:bump:major": "node bump-version.js --major"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
-    "framer-motion": "^12.42.0",
-    "lucide-react": "^1.22.0",
-    "next": "^16.2.9",
-    "pako": "^2.2.0",
+    "framer-motion": "^12.42.2",
+    "lucide-react": "^1.24.0",
+    "pako": "^3.0.1",
     "qrc-decoder": "^1.0.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
-    "@types/node": "^26.0.1",
-    "@types/pako": "^2.0.4",
+    "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "@vitejs/plugin-react": "6.0.3",
+    "typescript": "7.0.2",
+    "vite": "8.1.4",
+    "vitest": "4.1.10"
   },
   "//framer-motion": "Tip: for better tree-shaking, import from framer-motion subpaths (e.g. 'framer-motion/m' for motion components) if bundle size becomes a concern.",
   "overrides": {
-    "postcss": "^8.5.10"
+    "postcss": "^8.5.16"
   }
 }

@@ -105,6 +105,26 @@ describe("netease lyrics", () => {
     ]);
   });
 
+  it("normalizes structured v1 credit lines and removes them from the karaoke track", async () => {
+    vi.mocked(proxyFetchJson).mockResolvedValueOnce({
+      lrc: {
+        lyric: '{"t":0,"c":[{"tx":"作词: "},{"tx":"周杰伦"}]}\n[00:23.97]半夜睡不着觉',
+      },
+      yrc: {
+        lyric: '{"t":0,"c":[{"tx":"作词: "},{"tx":"周杰伦"}]}\n[24080,1000](24080,300,0)半(24380,300,0)夜(24680,400,0)睡不着觉',
+      },
+    });
+
+    const lrc = await fetchNeteaseLyrics(5257138);
+    const rows = parseLyrics(lrc);
+
+    expect(lrc).not.toContain('{"t":0');
+    expect(rows[0]).toMatchObject({ time: 0, text: "作词: 周杰伦" });
+    expect(rows[1].text).toBe("半夜睡不着觉");
+    expect(rows[1].karaokeTime).toBeCloseTo(24.08, 3);
+    expect(rows[1].words).toHaveLength(3);
+  });
+
   it("falls back to legacy lyrics when v1 has no yrc", async () => {
     vi.mocked(proxyFetchJson)
       .mockResolvedValueOnce({
@@ -112,7 +132,9 @@ describe("netease lyrics", () => {
       })
       .mockResolvedValueOnce({
         lrc: { lyric: "[00:01.00]旧版普通歌词" },
-        yrc: { lyric: "[1000,800](1000,400,0)旧(1400,400,0)版" },
+        yrc: {
+          lyric: "[1000,2400](1000,400,0)旧(1400,400,0)版(1800,400,0)普(2200,400,0)通(2600,400,0)歌(3000,400,0)词",
+        },
       });
 
     const lrc = await fetchNeteaseLyrics(123);
@@ -125,6 +147,10 @@ describe("netease lyrics", () => {
     expect(rows[0].words).toEqual([
       { start: 1, duration: 0.4, text: "旧" },
       { start: 1.4, duration: 0.4, text: "版" },
+      { start: 1.8, duration: 0.4, text: "普" },
+      { start: 2.2, duration: 0.4, text: "通" },
+      { start: 2.6, duration: 0.4, text: "歌" },
+      { start: 3, duration: 0.4, text: "词" },
     ]);
   });
 

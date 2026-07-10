@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use super::{catalog, model::{Candidate, RecommendationItem}};
+use super::{
+    catalog,
+    model::{Candidate, RecommendationItem},
+};
 
 pub fn mmr(mut candidates: Vec<Candidate>, limit: usize) -> Vec<Candidate> {
     let mut selected: Vec<Candidate> = Vec::new();
@@ -20,18 +23,22 @@ pub fn mmr(mut candidates: Vec<Candidate>, limit: usize) -> Vec<Candidate> {
             let source = catalog::normalize_text(&candidate.song.source);
             let artist_quota = ((limit as f64) * 0.25).ceil() as usize;
             let source_quota = ((limit as f64) * 0.70).ceil() as usize;
-            let quota_penalty =
-                if artist_counts.get(&artist).copied().unwrap_or(0) >= artist_quota && candidates.len() > limit {
-                    0.35
-                } else {
-                    0.0
-                } +
-                if source_counts.get(&source).copied().unwrap_or(0) >= source_quota && candidates.len() > limit {
-                    0.15
-                } else {
-                    0.0
-                };
-            let score = lambda * candidate.local_score - (1.0 - lambda) * max_similarity - quota_penalty;
+            let quota_penalty = if artist_counts.get(&artist).copied().unwrap_or(0) >= artist_quota
+                && candidates.len() > limit
+            {
+                0.35
+            } else {
+                0.0
+            } + if source_counts.get(&source).copied().unwrap_or(0)
+                >= source_quota
+                && candidates.len() > limit
+            {
+                0.15
+            } else {
+                0.0
+            };
+            let score =
+                lambda * candidate.local_score - (1.0 - lambda) * max_similarity - quota_penalty;
             if score > best_score {
                 best_score = score;
                 best_index = index;
@@ -39,8 +46,12 @@ pub fn mmr(mut candidates: Vec<Candidate>, limit: usize) -> Vec<Candidate> {
         }
 
         let item = candidates.remove(best_index);
-        *artist_counts.entry(catalog::normalize_text(&item.song.artist)).or_insert(0) += 1;
-        *source_counts.entry(catalog::normalize_text(&item.song.source)).or_insert(0) += 1;
+        *artist_counts
+            .entry(catalog::normalize_text(&item.song.artist))
+            .or_insert(0) += 1;
+        *source_counts
+            .entry(catalog::normalize_text(&item.song.source))
+            .or_insert(0) += 1;
         selected.push(item);
     }
 

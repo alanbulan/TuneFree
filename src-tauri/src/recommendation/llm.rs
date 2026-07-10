@@ -9,8 +9,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 
 use super::{
-    catalog, llm_config,
-    model::{LlmConfig, ProfileToken, RecommendationItem, RecommendationQuery},
+    catalog, events, llm_config,
+    model::{LlmConfig, RecommendationItem, RecommendationQuery},
     privacy, prompt,
     provider::OpenAiCompatibleProvider,
     rerank,
@@ -81,7 +81,7 @@ pub async fn build_discovery_plan(
     request_id: &str,
     limit: usize,
 ) -> DiscoveryPlanResult {
-    let (config, api_key, profile_tokens) = {
+    let (config, api_key, profile_tokens, recent_events) = {
         let guard = conn.lock();
         let config = match llm_config::load_config(&guard) {
             Ok(config) => config,
@@ -141,7 +141,12 @@ pub async fn build_discovery_plan(
             }
         };
         let profile_tokens = super::profile::top_profile_tokens(&guard, 30).unwrap_or_default();
-        (config, api_key, profile_tokens)
+        let recent_events = if config.upload_recent_events {
+            events::recent_event_summaries(&guard, 20).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        (config, api_key, profile_tokens, recent_events)
     };
 
     let local_candidates: Vec<_> = local_items
@@ -149,8 +154,15 @@ pub async fn build_discovery_plan(
         .take(config.max_candidates.min(local_items.len()).max(1))
         .cloned()
         .collect();
-    let messages =
-        prompt::build_discovery_messages(query, &profile_tokens, &local_candidates, limit);
+    let messages = prompt::build_discovery_messages(
+        query,
+        &profile_tokens,
+        &local_candidates,
+        limit,
+        config
+            .upload_recent_events
+            .then_some(recent_events.as_slice()),
+    );
     let started = Instant::now();
     let first_attempt = provider
         .chat_json(&config, &api_key, messages.clone(), true)
@@ -230,7 +242,7 @@ pub async fn enhance_recommendations(
     local_items: Vec<RecommendationItem>,
     request_id: &str,
 ) -> LlmEnhancementResult {
-    let (config, api_key, profile_tokens, cache_key, cached_content) = {
+    let (config, api_key, profile_tokens, recent_events) = {
         let guard = conn.lock();
         let config = match llm_config::load_config(&guard) {
             Ok(config) => config,
@@ -281,12 +293,13 @@ pub async fn enhance_recommendations(
             }
         };
 
-        let max_candidates = config.max_candidates.min(local_items.len()).max(1);
-        let candidates: Vec<_> = local_items.iter().take(max_candidates).cloned().collect();
         let profile_tokens = super::profile::top_profile_tokens(&guard, 30).unwrap_or_default();
-        let cache_key = cache_key(&config, query, &profile_tokens, &candidates);
-        let cached_content = load_cache(&guard, &cache_key).ok().flatten();
-        (config, api_key, profile_tokens, cache_key, cached_content)
+        let recent_events = if config.upload_recent_events {
+            events::recent_event_summaries(&guard, 20).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        (config, api_key, profile_tokens, recent_events)
     };
 
     let max_candidates = config.max_candidates.min(local_items.len()).max(1);
@@ -296,6 +309,20 @@ pub async fn enhance_recommendations(
         .min(local_items.len())
         .max(1);
     let candidates: Vec<_> = local_items.iter().take(max_candidates).cloned().collect();
+    let messages = prompt::build_messages(
+        query,
+        &profile_tokens,
+        &candidates,
+        max_results,
+        config
+            .upload_recent_events
+            .then_some(recent_events.as_slice()),
+    );
+    let cache_key = cache_key(&config, &messages, max_results);
+    let cached_content = {
+        let guard = conn.lock();
+        load_cache(&guard, &cache_key).ok().flatten()
+    };
 
     if let Some(content) = cached_content {
         if let Some(items) =
@@ -318,7 +345,6 @@ pub async fn enhance_recommendations(
         }
     }
 
-    let messages = prompt::build_messages(query, &profile_tokens, &candidates, max_results);
     let started = Instant::now();
     let first_attempt = provider
         .chat_json(&config, &api_key, messages.clone(), true)
@@ -423,20 +449,25 @@ fn can_call_llm(config: &LlmConfig) -> bool {
     config.enabled && !config.base_url.trim().is_empty() && !config.model.trim().is_empty()
 }
 
-fn cache_key(
-    config: &LlmConfig,
-    query: &RecommendationQuery,
-    profile_tokens: &[ProfileToken],
-    candidates: &[RecommendationItem],
-) -> String {
+fn cache_key(config: &LlmConfig, messages: &[serde_json::Value], limit: usize) -> String {
     let payload = serde_json::json!({
-        "model": config.model,
-        "context": query.context,
-        "seed": query.seed.as_ref().map(catalog::track_key),
-        "profile": profile_tokens,
-        "candidates": candidates.iter().map(|item| catalog::track_key(&item.song)).collect::<Vec<_>>(),
+        "prompt_schema_version": prompt::PROMPT_SCHEMA_VERSION,
+        "base_url": normalize_base_url(&config.base_url),
+        "model": config.model.trim(),
+        "limit": limit,
+        "messages": messages,
     });
     format!("{:x}", md5::compute(payload.to_string()))
+}
+
+fn normalize_base_url(value: &str) -> String {
+    let trimmed = value.trim().trim_end_matches('/');
+    reqwest::Url::parse(trimmed)
+        .map(|mut url| {
+            url.set_fragment(None);
+            url.to_string().trim_end_matches('/').to_string()
+        })
+        .unwrap_or_else(|_| trimmed.to_string())
 }
 
 fn load_cache(conn: &Connection, cache_key: &str) -> rusqlite::Result<Option<String>> {
@@ -609,4 +640,56 @@ fn log_llm_call(conn: &Connection, call: LlmCallLog<'_>) {
             catalog::now_ms(),
         ],
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(base_url: &str, model: &str) -> LlmConfig {
+        LlmConfig {
+            enabled: true,
+            base_url: base_url.to_string(),
+            model: model.to_string(),
+            timeout_ms: 8_000,
+            max_candidates: 80,
+            max_results: 30,
+            cache_ttl_seconds: 3_600,
+            upload_recent_events: false,
+        }
+    }
+
+    #[test]
+    fn cache_key_uses_normalized_provider_final_messages_and_limit() {
+        let messages = vec![serde_json::json!({"role": "user", "content": "a"})];
+        let changed_messages = vec![serde_json::json!({"role": "user", "content": "b"})];
+        let first = cache_key(
+            &config(" HTTPS://Example.com/v1/ ", " model "),
+            &messages,
+            10,
+        );
+        let normalized = cache_key(&config("https://example.com/v1", "model"), &messages, 10);
+
+        assert_eq!(first, normalized);
+        assert_ne!(
+            first,
+            cache_key(&config("https://example.com/v2", "model"), &messages, 10)
+        );
+        assert_ne!(
+            first,
+            cache_key(&config("https://example.com/v1", "other"), &messages, 10)
+        );
+        assert_ne!(
+            first,
+            cache_key(
+                &config("https://example.com/v1", "model"),
+                &changed_messages,
+                10
+            )
+        );
+        assert_ne!(
+            first,
+            cache_key(&config("https://example.com/v1", "model"), &messages, 20)
+        );
+    }
 }

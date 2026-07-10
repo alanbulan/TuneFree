@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "TuneFree",
-  "version": "1.1.15",
+  "version": "1.1.16",
   "identifier": "com.alanbulan.tunefree",
   "build": {
     "frontendDist": "../out",
-    "devUrl": "http://localhost:3001",
+    "devUrl": "http://127.0.0.1:3101",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
@@ -34,16 +34,14 @@
         "alwaysOnTop": true,
         "visible": false,
         "shadow": false,
-        "url": "/desktop-lyric"
+        "url": "/desktop-lyric/index.html"
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' http://127.0.0.1:* http://asset.localhost https: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* http://asset.localhost https:; media-src 'self' http: https: data: blob: http://asset.localhost",
+      "csp": "default-src 'self'; img-src 'self' http://127.0.0.1:* https: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* https:; media-src 'self' http: https: data: blob: http://asset.localhost",
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "**"
-        ]
+        "scope": []
       },
       "capabilities": [
         "main",
@@ -51,8 +49,20 @@
       ]
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUxNjY4MjdCMTkyOUE0ODMKUldTRHBDa1plNEptVVlkUXVDeWllWXpEKzZXbGVZQi9tRi93eEpJaFB4OEpEWng3UkIvdEVqVjgK",
+      "endpoints": [
+        "https://github.com/alanbulan/TuneFree_Mobile/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "nsis"
     ],

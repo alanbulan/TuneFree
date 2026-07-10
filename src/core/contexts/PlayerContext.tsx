@@ -27,7 +27,11 @@ import {
   persistPlayMode,
   persistQueue,
 } from "./playerPersistence";
-import { getNextQueueIndex, getPrevQueueIndex } from "./playerQueue";
+import {
+  getNextQueueIndex,
+  getNextRecommendationCandidateIndex,
+  getPrevQueueIndex,
+} from "./playerQueue";
 import { hasTranslatedLyrics, parseLyrics, supportsTranslatedLyricFallback } from "../utils/lyrics";
 import { LYRIC_DISPLAY_MODE_CHANGE_EVENT } from "../utils/lyricDisplayMode";
 
@@ -119,6 +123,23 @@ const PlayerNoticeContext =
   createContext<PlayerNoticeContextType | undefined>(undefined);
 
 type ParsedSongData = NonNullable<Awaited<ReturnType<typeof parseSongFull>>>;
+type ParsedSongCacheEntry = {
+  data: ParsedSongData;
+  expiresAt: number;
+};
+type ParsedSongResolution = {
+  parsed: ParsedSongData | null;
+  cacheKey: string | null;
+};
+
+const PARSED_SONG_CACHE_TTL_MS = 10 * 60 * 1000;
+
+const createPlaybackSessionId = (): string => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `playback:${crypto.randomUUID()}`;
+  }
+  return `playback:${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
 
 const getFiniteAudioDuration = (audio: HTMLAudioElement): number =>
   Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
@@ -205,11 +226,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   // 标记当前 Audio 是否已被 AudioContext 接管路由（一旦接管，不支持 CORS 的源会静音）
   const audioCtxConnectedRef = useRef(false);
   const playRequestIdRef = useRef(0);
-  const parsedSongCacheRef = useRef<Map<string, ParsedSongData>>(new Map());
-  const preloadedAudioRef = useRef<{
-    key: string;
-    audio: HTMLAudioElement;
-  } | null>(null);
+  const parsedSongCacheRef = useRef<Map<string, ParsedSongCacheEntry>>(new Map());
+  const preloadedResolutionKeyRef = useRef<string | null>(null);
 
   // Refs to solve Stale Closure issues in Event Listeners
   const playNextRef = useRef<((force?: boolean) => void) | null>(null);
@@ -230,12 +248,25 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   // Track error retry to prevent loops
   const retryCountRef = useRef(0);
   const forceNoCorsPlaybackRef = useRef(false);
+  const activeParsedCacheKeyRef = useRef<string | null>(null);
+  const pendingQualityChangeRef = useRef(false);
+  const refreshedCacheKeysRef = useRef<Set<string>>(new Set());
+  const playbackSessionIdRef = useRef<string | null>(null);
+  const failedRecommendationRequestIdRef = useRef<string | null>(null);
+  const failedRecommendationSongKeysRef = useRef<Set<string>>(new Set());
 
   const resetRecommendationPlaybackState = useCallback((song: Song) => {
     const key = getSongKey(song);
     play30LoggedKeyRef.current = null;
     completeLoggedKeyRef.current = null;
     return key;
+  }, []);
+
+  const startPlaybackSession = useCallback(() => {
+    if (!playbackSessionIdRef.current) {
+      playbackSessionIdRef.current = createPlaybackSessionId();
+    }
+    return playbackSessionIdRef.current;
   }, []);
 
   const logPlaybackRecommendationEvent = useCallback((
@@ -248,13 +279,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     if (!song) return;
     void logRecommendationEvent({
       eventType,
+      sessionId: playbackSessionIdRef.current || startPlaybackSession(),
       song,
       positionSeconds,
       durationSeconds,
       quality: quality || audioQualityRef.current,
       context: "playback",
     }).catch(() => {});
-  }, []);
+  }, [startPlaybackSession]);
 
   const logEarlySkipIfNeeded = useCallback(() => {
     const song = currentSongRef.current;
@@ -277,6 +309,53 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     },
     [],
   );
+
+  const evictActiveParsedSong = useCallback(() => {
+    const cacheKey = activeParsedCacheKeyRef.current;
+    if (cacheKey) parsedSongCacheRef.current.delete(cacheKey);
+    activeParsedCacheKeyRef.current = null;
+  }, []);
+
+  const retryCachedSongResolution = useCallback((song: Song, quality: AudioQuality): boolean => {
+    const cacheKey = `${getSongKey(song)}:${quality}`;
+    if (
+      activeParsedCacheKeyRef.current !== cacheKey ||
+      refreshedCacheKeysRef.current.has(cacheKey)
+    ) {
+      return false;
+    }
+
+    refreshedCacheKeysRef.current.add(cacheKey);
+    parsedSongCacheRef.current.delete(cacheKey);
+    activeParsedCacheKeyRef.current = null;
+    void playSongRef.current(song, quality);
+    return true;
+  }, []);
+
+  const playNextRecommendationAfterFailure = useCallback((song: Song): boolean => {
+    const requestId = song.recommendationRequestId;
+    if (!requestId) return false;
+
+    if (failedRecommendationRequestIdRef.current !== requestId) {
+      failedRecommendationRequestIdRef.current = requestId;
+      failedRecommendationSongKeysRef.current.clear();
+    }
+    failedRecommendationSongKeysRef.current.add(getSongKey(song));
+
+    const nextIndex = getNextRecommendationCandidateIndex(
+      queueRef.current,
+      song,
+      failedRecommendationSongKeysRef.current,
+    );
+    if (nextIndex < 0) return false;
+
+    const nextSong = queueRef.current[nextIndex];
+    if (!nextSong) return false;
+
+    showPlayerNotice("当前推荐歌曲不可播放，已自动尝试下一首", "warning");
+    void playSongRef.current(nextSong);
+    return true;
+  }, [showPlayerNotice]);
 
   const syncAudioQualityState = useCallback((quality: AudioQuality) => {
     audioQualityRef.current = quality;
@@ -357,6 +436,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     lastProgressTimeRef.current = nextTime;
     setCurrentTime(nextTime);
   }, []);
+
+  const clearActiveAudioSource = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+    updateCurrentTimeState(0);
+    setDuration(0);
+  }, [updateCurrentTimeState]);
 
   const syncPlaybackTime = useCallback((force = false) => {
     const audio = audioRef.current;
@@ -509,18 +599,30 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           showPlayerNotice("当前音源不支持频谱解析，已切换兼容播放模式", "warning");
           forceNoCorsPlaybackRef.current = true;
           retryCountRef.current = 1;
-          playSongRef.current(currentSongRef.current, audioQualityRef.current);
+          playSongRef.current(currentSongRef.current, activeQualityRef.current);
           return;
         }
         if (
           currentSongRef.current &&
-          audioQualityRef.current !== "128k" &&
+          retryCachedSongResolution(currentSongRef.current, activeQualityRef.current)
+        ) {
+          return;
+        }
+        if (
+          currentSongRef.current &&
+          activeQualityRef.current !== "128k" &&
           retryCountRef.current <= 1
         ) {
           showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
-          syncAudioQualityState("128k");
           retryCountRef.current = 2;
           playSongRef.current(currentSongRef.current, "128k");
+          return;
+        }
+        evictActiveParsedSong();
+        if (
+          currentSongRef.current &&
+          playNextRecommendationAfterFailure(currentSongRef.current)
+        ) {
           return;
         }
         if (isSourceError) {
@@ -528,6 +630,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         } else {
           console.error("Playback failed.", getMediaErrorSummary(audio.error));
         }
+        clearActiveAudioSource();
         showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
         setIsLoading(false);
         setIsPlaying(false);
@@ -548,7 +651,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     handlersRef.current = handlers;
     audioRef.current = audio;
     return audio;
-  }, [logPlaybackRecommendationEvent, showPlayerNotice, syncAudioQualityState, syncPlaybackTime]);
+  }, [
+    clearActiveAudioSource,
+    evictActiveParsedSong,
+    logPlaybackRecommendationEvent,
+    playNextRecommendationAfterFailure,
+    retryCachedSongResolution,
+    showPlayerNotice,
+    syncPlaybackTime,
+  ]);
 
   // --- Audio Element 初始化（不预设 crossOrigin，由 playSong 根据源动态决定） ---
   useEffect(() => {
@@ -576,13 +687,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           audio.removeEventListener("waiting", handlersRef.current.waiting);
           audio.removeEventListener("canplay", handlersRef.current.canplay);
         }
-      }
-      const preloaded = preloadedAudioRef.current;
-      if (preloaded) {
-        preloaded.audio.pause();
-        preloaded.audio.removeAttribute("src");
-        preloaded.audio.load();
-        preloadedAudioRef.current = null;
       }
       if (progressFrameRef.current !== null) {
         window.cancelAnimationFrame(progressFrameRef.current);
@@ -691,48 +795,47 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const resolveParsedSong = useCallback(
-    async (song: Song, quality: AudioQuality): Promise<ParsedSongData | null> => {
+    async (
+      song: Song,
+      quality: AudioQuality,
+      forceRefresh = false,
+    ): Promise<ParsedSongResolution> => {
       // 离线优先（与 Flutter 版一致）：已下载的歌曲直接用本地 Blob 播放。
       // 不写入解析缓存，删除下载后可立即回落在线解析。
       const local = await resolveOfflinePlayback(song, quality).catch(() => null);
       if (local?.url) {
-        return { url: local.url, lrc: local.lrc, pic: local.pic };
+        return {
+          parsed: { url: local.url, lrc: local.lrc, pic: local.pic },
+          cacheKey: null,
+        };
       }
 
       const cacheKey = getParsedSongCacheKey(song, quality);
-      const cached = parsedSongCacheRef.current.get(cacheKey);
-      if (cached) return cached;
+      if (forceRefresh) parsedSongCacheRef.current.delete(cacheKey);
 
-      const parsed = await parseSongFull(song.id, song.source, quality, song);
-      if (parsed) parsedSongCacheRef.current.set(cacheKey, parsed);
-      return parsed;
+      const cached = parsedSongCacheRef.current.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return { parsed: cached.data, cacheKey };
+      }
+      if (cached) parsedSongCacheRef.current.delete(cacheKey);
+
+      try {
+        const parsed = await parseSongFull(song.id, song.source, quality, song);
+        if (parsed?.url) {
+          parsedSongCacheRef.current.set(cacheKey, {
+            data: parsed,
+            expiresAt: Date.now() + PARSED_SONG_CACHE_TTL_MS,
+          });
+        } else {
+          parsedSongCacheRef.current.delete(cacheKey);
+        }
+        return { parsed, cacheKey };
+      } catch (error) {
+        parsedSongCacheRef.current.delete(cacheKey);
+        throw error;
+      }
     },
     [getParsedSongCacheKey],
-  );
-
-  const clearPreloadedAudio = useCallback((cacheKey?: string) => {
-    const preloaded = preloadedAudioRef.current;
-    if (!preloaded || (cacheKey && preloaded.key !== cacheKey)) return;
-
-    preloaded.audio.pause();
-    preloaded.audio.removeAttribute("src");
-    preloaded.audio.load();
-    preloadedAudioRef.current = null;
-  }, []);
-
-  const preloadAudioUrl = useCallback(
-    (cacheKey: string, url: string) => {
-      if (preloadedAudioRef.current?.key === cacheKey) return;
-
-      clearPreloadedAudio();
-      const audio = new Audio();
-      audio.preload = "auto";
-      (audio as any).playsInline = true;
-      audio.src = url;
-      audio.load();
-      preloadedAudioRef.current = { key: cacheKey, audio };
-    },
-    [clearPreloadedAudio],
   );
 
   const preloadNextSong = useCallback(
@@ -749,16 +852,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const quality = audioQualityRef.current;
       const cacheKey = getParsedSongCacheKey(nextSong, quality);
-      if (preloadedAudioRef.current?.key === cacheKey) return;
+      if (preloadedResolutionKeyRef.current === cacheKey) return;
+      preloadedResolutionKeyRef.current = cacheKey;
 
       void resolveParsedSong(nextSong, quality)
-        .then((parsed) => {
-          if (!parsed?.url) return;
+        .then(({ parsed }) => {
+          if (!parsed?.url) {
+            if (preloadedResolutionKeyRef.current === cacheKey) {
+              preloadedResolutionKeyRef.current = null;
+            }
+            return;
+          }
           if (getParsedSongCacheKey(nextSong, audioQualityRef.current) !== cacheKey) {
+            if (preloadedResolutionKeyRef.current === cacheKey) {
+              preloadedResolutionKeyRef.current = null;
+            }
             return;
           }
 
-          preloadAudioUrl(cacheKey, parsed.url);
           const patch: Partial<Song> = { url: parsed.url };
           if (parsed.pic && !nextSong.pic) patch.pic = parsed.pic;
           if (parsed.lrc) patch.lrc = parsed.lrc;
@@ -773,10 +884,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           });
         })
         .catch((error) => {
+          if (preloadedResolutionKeyRef.current === cacheKey) {
+            preloadedResolutionKeyRef.current = null;
+          }
           console.error("Preload next song failed:", error);
         });
     },
-    [getParsedSongCacheKey, preloadAudioUrl, resolveParsedSong],
+    [getParsedSongCacheKey, resolveParsedSong],
   );
 
   const pausePlayback = useCallback(() => {
@@ -795,6 +909,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     const activeAudio = audioRef.current;
     const song = currentSongRef.current;
     if (!song) return;
+
+    if (
+      pendingQualityChangeRef.current &&
+      activeQualityRef.current !== audioQualityRef.current
+    ) {
+      await playSongRef.current(song, audioQualityRef.current);
+      return;
+    }
 
     if (!activeAudio || !activeAudio.src || activeAudio.src === window.location.href) {
       await playSongRef.current(song);
@@ -818,17 +940,35 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch (error: unknown) {
       if (requestId !== playRequestIdRef.current) return;
       console.error("Resume playback failed:", error);
-      showPlayerNotice("播放被浏览器阻止，请再次点击播放", "warning");
-      setIsPlaying(false);
-      setIsLoading(false);
+      const isNotAllowed = error instanceof Error && error.name === "NotAllowedError";
+      if (isNotAllowed) {
+        showPlayerNotice("播放被浏览器阻止，请再次点击播放", "warning");
+        setIsPlaying(false);
+        setIsLoading(false);
+        return;
+      }
+
+      evictActiveParsedSong();
+      clearActiveAudioSource();
+      await playSongRef.current(song);
     }
-  }, [preloadNextSong, showPlayerNotice, syncPlaybackTime, updateMediaSession]);
+  }, [
+    clearActiveAudioSource,
+    evictActiveParsedSong,
+    preloadNextSong,
+    showPlayerNotice,
+    syncPlaybackTime,
+    updateMediaSession,
+  ]);
 
   const playSong = useCallback(
     async (song: Song, forceQuality?: AudioQuality) => {
       if (!audioRef.current) return;
 
       const targetQuality = forceQuality || audioQualityRef.current;
+      if (!forceQuality || targetQuality === audioQualityRef.current) {
+        pendingQualityChangeRef.current = false;
+      }
       const isCurrentSong = isSameSong(currentSongRef.current, song);
       const isDifferentQuality =
         isCurrentSong && targetQuality !== activeQualityRef.current;
@@ -848,12 +988,23 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
+      if (!forceQuality) {
+        startPlaybackSession();
+        refreshedCacheKeysRef.current.clear();
+        if (failedRecommendationRequestIdRef.current !== song.recommendationRequestId) {
+          failedRecommendationRequestIdRef.current = song.recommendationRequestId || null;
+          failedRecommendationSongKeysRef.current.clear();
+        }
+        failedRecommendationSongKeysRef.current.delete(getSongKey(song));
+      }
+
       const requestId = ++playRequestIdRef.current;
       setIsLoading(true);
       if (!forceQuality) retryCountRef.current = 0;
 
       if (!isCurrentSong) {
         forceNoCorsPlaybackRef.current = false;
+        activeParsedCacheKeyRef.current = null;
         audioRef.current.pause();
         audioRef.current.removeAttribute("src");
         audioRef.current.load();
@@ -875,7 +1026,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       });
 
       try {
-        const parsed = await resolveParsedSong(song, targetQuality);
+        const resolution = await resolveParsedSong(song, targetQuality);
+        const parsed = resolution.parsed;
 
         if (
           requestId !== playRequestIdRef.current ||
@@ -941,8 +1093,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         if (url) {
           fullSong.url = url;
-          const cacheKey = getParsedSongCacheKey(song, targetQuality);
-          const preloadedCurrentAudio = preloadedAudioRef.current;
           const resumeTime =
             isCurrentSong && isDifferentQuality ? audioRef.current.currentTime : 0;
           const needsCors =
@@ -967,17 +1117,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           if (!activeAudio) return;
 
           activeQualityRef.current = targetQuality;
+          activeParsedCacheKeyRef.current = resolution.cacheKey;
 
           activeAudio.src = url;
           activeAudio.load();
-
-          if (preloadedCurrentAudio?.key === cacheKey) {
-            const preloadedDuration = getFiniteAudioDuration(
-              preloadedCurrentAudio.audio,
-            );
-            if (preloadedDuration > 0) setDuration(preloadedDuration);
-            clearPreloadedAudio(cacheKey);
-          }
 
           if (resumeTime > 0) activeAudio.currentTime = resumeTime;
 
@@ -1015,19 +1158,27 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               return;
             }
 
+            const isNotAllowed = error instanceof Error && error.name === "NotAllowedError";
+            if (!isNotAllowed && retryCachedSongResolution(song, targetQuality)) {
+              return;
+            }
+
             if (
               isUnsupportedSourcePlayError(error) &&
               retryCountRef.current <= 1 &&
               targetQuality !== "128k"
             ) {
               showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
-              syncAudioQualityState("128k");
               retryCountRef.current = 2;
               playSongRef.current(song, "128k");
               return;
             }
 
-            const isNotAllowed = error instanceof Error && error.name === "NotAllowedError";
+            if (!isNotAllowed) {
+              evictActiveParsedSong();
+              if (playNextRecommendationAfterFailure(song)) return;
+              clearActiveAudioSource();
+            }
             showPlayerNotice(
               isNotAllowed
                 ? "播放被浏览器阻止，请再次点击播放"
@@ -1042,17 +1193,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
           if (targetQuality !== "128k" && retryCountRef.current === 0) {
             showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
-            syncAudioQualityState("128k");
             retryCountRef.current = 1;
             playSongRef.current(song, "128k");
             return;
           }
 
-          audioRef.current.pause();
-          audioRef.current.removeAttribute("src");
-          audioRef.current.load();
-          updateCurrentTimeState(0);
-          setDuration(0);
+          evictActiveParsedSong();
+          if (playNextRecommendationAfterFailure(song)) return;
+
+          clearActiveAudioSource();
           showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
           setIsLoading(false);
           setIsPlaying(false);
@@ -1061,22 +1210,28 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         if (requestId === playRequestIdRef.current) {
           setIsLoading(false);
           setIsPlaying(false);
+          evictActiveParsedSong();
+          if (playNextRecommendationAfterFailure(song)) return;
+          clearActiveAudioSource();
         }
         console.error("Error in playSong", err);
       }
     },
     [
-      clearPreloadedAudio,
+      clearActiveAudioSource,
       createAudioElement,
+      evictActiveParsedSong,
       getParsedSongCacheKey,
       initAudioContext,
       logPlaybackRecommendationEvent,
       preloadNextSong,
+      playNextRecommendationAfterFailure,
       resolveParsedSong,
       resetRecommendationPlaybackState,
+      retryCachedSongResolution,
       resumePlayback,
       showPlayerNotice,
-      syncAudioQualityState,
+      startPlaybackSession,
       syncPlaybackTime,
       updateCurrentTimeState,
       updateMediaSession,
@@ -1099,7 +1254,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         : nextQueue[0];
       if (!targetSong) return;
 
-      clearPreloadedAudio();
+      preloadedResolutionKeyRef.current = null;
       queueRef.current = nextQueue;
       setQueue(nextQueue);
 
@@ -1110,13 +1265,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         activeAudio.src !== window.location.href &&
         !activeAudio.paused
       ) {
+        const mergedCurrentSong = {
+          ...currentSongRef.current,
+          ...targetSong,
+        } as Song;
+        currentSongRef.current = mergedCurrentSong;
+        setCurrentSong(mergedCurrentSong);
         preloadNextSong(targetSong);
         return;
       }
 
       await playSongRef.current(targetSong);
     },
-    [clearPreloadedAudio, preloadNextSong],
+    [preloadNextSong],
   );
 
   // 始终保持 playSongRef 指向最新的 playSong，避免 stale closure
@@ -1168,12 +1329,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     if (!nextSong) return;
 
     if (c && isSameSong(nextSong, c)) {
+      startPlaybackSession();
+      refreshedCacheKeysRef.current.clear();
       playSongRef.current(nextSong, audioQualityRef.current);
       return;
     }
 
     playSongRef.current(nextSong);
-  }, [logEarlySkipIfNeeded, updateCurrentTimeState]);
+  }, [logEarlySkipIfNeeded, startPlaybackSession, updateCurrentTimeState]);
 
   const playPrev = useCallback(() => {
     const activeAudio = audioRef.current;
@@ -1271,7 +1434,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       const nextQueue = previousQueue.filter((song) => !matchesTarget(song));
       queueRef.current = nextQueue;
       setQueue(nextQueue);
-      clearPreloadedAudio();
+      preloadedResolutionKeyRef.current = null;
 
       const current = currentSongRef.current;
       if (!current || !matchesTarget(current)) return;
@@ -1300,16 +1463,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       const nextSong = nextQueue[Math.min(removedIndex, nextQueue.length - 1)] || nextQueue[0];
       if (nextSong) void playSongRef.current(nextSong);
     },
-    [clearPreloadedAudio],
+    [],
   );
 
   const clearQueue = useCallback(() => {
-    clearPreloadedAudio();
+    preloadedResolutionKeyRef.current = null;
     const current = currentSongRef.current;
     const nextQueue = current ? [current] : [];
     queueRef.current = nextQueue;
     setQueue(nextQueue);
-  }, [clearPreloadedAudio]);
+  }, []);
 
   const togglePlayMode = useCallback(() => {
     setPlayMode((prev) => {
@@ -1332,6 +1495,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const setAudioQuality = useCallback((q: AudioQuality) => {
+    pendingQualityChangeRef.current = activeQualityRef.current !== q;
     syncAudioQualityState(q);
     logPlaybackRecommendationEvent(
       "quality_change",

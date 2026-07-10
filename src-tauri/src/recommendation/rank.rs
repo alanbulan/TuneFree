@@ -2,7 +2,11 @@ use std::collections::HashSet;
 
 use rusqlite::Connection;
 
-use super::{catalog, model::{Candidate, RecSong}, profile, recall};
+use super::{
+    catalog,
+    model::{Candidate, RecSong},
+    profile, recall,
+};
 
 pub fn rank_candidates(
     conn: &Connection,
@@ -26,15 +30,25 @@ pub fn rank_candidates(
         candidate.profile_score = profile::profile_score(&profile_tokens, &candidate.song);
         candidate.itemcf_score = (candidate.itemcf_score / max_itemcf).clamp(0.0, 1.0);
         candidate.quality_bonus = catalog::quality_bonus(&candidate.song);
-        candidate.dismiss_penalty = if dismissed.contains(&candidate.track_key) { 1.0 } else { 0.0 };
-        candidate.recent_penalty = if recent_complete.contains(&candidate.track_key) { 1.0 } else { 0.0 };
+        candidate.dismiss_penalty = if dismissed.contains(&candidate.track_key) {
+            1.0
+        } else {
+            0.0
+        };
+        candidate.recent_penalty = if recent_complete.contains(&candidate.track_key) {
+            1.0
+        } else {
+            0.0
+        };
         candidate.freshness_bonus = if now - candidate.last_seen_at < 7 * 24 * 60 * 60 * 1000 {
             0.3
         } else {
             0.0
         };
         if let Some(seed_artist) = &seed_artist {
-            if catalog::normalize_text(&candidate.song.artist) == *seed_artist && !seed_artist.is_empty() {
+            if catalog::normalize_text(&candidate.song.artist) == *seed_artist
+                && !seed_artist.is_empty()
+            {
                 candidate.artist_match = 1.0;
                 push_reason(candidate, format!("因为你常听 {}", candidate.song.artist));
             }
@@ -45,7 +59,8 @@ pub fn rank_candidates(
             }
         }
         if let Some(seed_song) = seed {
-            candidate.diversity_seed_score = catalog::content_similarity(seed_song, &candidate.song);
+            candidate.diversity_seed_score =
+                catalog::content_similarity(seed_song, &candidate.song);
         }
         if candidate.profile_score > 0.2 {
             push_reason(candidate, "来自你的本地画像偏好".to_string());
@@ -54,36 +69,35 @@ pub fn rank_candidates(
             push_reason(candidate, "高音质候选".to_string());
         }
 
-        candidate.local_score =
-            1.20 * candidate.profile_score +
-            1.00 * candidate.itemcf_score +
-            0.70 * candidate.artist_match +
-            0.35 * candidate.source_preference +
-            0.20 * candidate.quality_bonus +
-            0.15 * candidate.freshness_bonus +
-            0.25 * candidate.diversity_seed_score -
-            1.50 * candidate.recent_penalty -
-            3.00 * candidate.dismiss_penalty;
+        candidate.local_score = 1.20 * candidate.profile_score
+            + 1.00 * candidate.itemcf_score
+            + 0.70 * candidate.artist_match
+            + 0.35 * candidate.source_preference
+            + 0.20 * candidate.quality_bonus
+            + 0.15 * candidate.freshness_bonus
+            + 0.25 * candidate.diversity_seed_score
+            - 1.50 * candidate.recent_penalty
+            - 3.00 * candidate.dismiss_penalty;
     }
 
-    let mut seen_song_identity = HashSet::new();
-    candidates.retain(|candidate| {
-        if candidate.dismiss_penalty >= 1.0 || candidate.recent_penalty >= 1.0 {
-            return false;
-        }
-        let identity = format!(
-            "{}:{}",
-            catalog::normalize_text(&candidate.song.name),
-            catalog::normalize_text(&candidate.song.artist)
-        );
-        seen_song_identity.insert(identity)
-    });
+    candidates
+        .retain(|candidate| candidate.dismiss_penalty < 1.0 && candidate.recent_penalty < 1.0);
 
     candidates.sort_by(|a, b| {
         b.local_score
             .partial_cmp(&a.local_score)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                b.quality_bonus
+                    .partial_cmp(&a.quality_bonus)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| a.track_key.cmp(&b.track_key))
     });
+
+    let mut seen_song_identity = HashSet::new();
+    candidates
+        .retain(|candidate| seen_song_identity.insert(catalog::song_identity(&candidate.song)));
 
     Ok(candidates)
 }

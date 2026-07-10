@@ -14,6 +14,7 @@ export type ParsedLyricWord = {
 
 export type ParsedLyric = {
   time: number;
+  karaokeTime?: number;
   text: string;
   mainTexts?: string[];
   translation?: string;
@@ -67,6 +68,7 @@ const BLOCK_RESET_TOLERANCE_SECONDS = 2;
  */
 const EXTENDED_TRACK_MATCH_TOLERANCE_SECONDS = 0.1;
 const KARAOKE_TRACK_MATCH_TOLERANCE_SECONDS = 1.2;
+const KARAOKE_TEXT_MATCH_TOLERANCE_SECONDS = 8;
 
 /**
  * 容差：用于旧版（无显式轨道标记）自动推断轨道的行匹配。
@@ -187,7 +189,7 @@ const parseDurationWords = (
 
       const start = normalizeWordStart(Number(match[1]) / 1000, lineStart);
       const duration = Number(match[2]) / 1000;
-      if (!Number.isFinite(start) || !Number.isFinite(duration) || duration <= 0) continue;
+      if (!Number.isFinite(start) || !Number.isFinite(duration) || duration < 0) continue;
 
       words.push({ start, duration, text: rawText });
     }
@@ -201,7 +203,7 @@ const parseDurationWords = (
 
     const start = normalizeWordStart(Number(match[1]) / 1000, lineStart);
     const duration = Number(match[2]) / 1000;
-    if (!Number.isFinite(start) || !Number.isFinite(duration) || duration <= 0) continue;
+    if (!Number.isFinite(start) || !Number.isFinite(duration) || duration < 0) continue;
 
     words.push({ start, duration, text: rawText });
   }
@@ -403,7 +405,161 @@ const groupTimedLines = (lines: RawLyricLine[]): TimedLineGroup[] => {
 const joinTrackValues = (values: string[]): string => values.join('\n');
 
 const normalizeComparableLyricText = (value: string): string =>
-  value.replace(/\s+/g, '').trim();
+  value
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[\s\p{P}\p{S}]+/gu, '')
+    .trim();
+
+type KaraokeWordSpan = {
+  wordIndex: number;
+  textStart: number;
+  textEnd: number;
+};
+
+const getBoundedEditDistance = (left: string, right: string, maxDistance: number): number => {
+  const leftChars = Array.from(left);
+  const rightChars = Array.from(right);
+  if (Math.abs(leftChars.length - rightChars.length) > maxDistance) return maxDistance + 1;
+
+  let previous = rightChars.map((_, index) => index + 1);
+  previous.unshift(0);
+
+  for (let leftIndex = 1; leftIndex <= leftChars.length; leftIndex++) {
+    const current = [leftIndex];
+    let rowMinimum = current[0];
+
+    for (let rightIndex = 1; rightIndex <= rightChars.length; rightIndex++) {
+      const substitutionCost = leftChars[leftIndex - 1] === rightChars[rightIndex - 1] ? 0 : 1;
+      const distance = Math.min(
+        previous[rightIndex] + 1,
+        current[rightIndex - 1] + 1,
+        previous[rightIndex - 1] + substitutionCost,
+      );
+      current.push(distance);
+      rowMinimum = Math.min(rowMinimum, distance);
+    }
+
+    if (rowMinimum > maxDistance) return maxDistance + 1;
+    previous = current;
+  }
+
+  return previous[rightChars.length];
+};
+
+const attachKaraokeTrack = (
+  rows: ParsedLyric[],
+  karaokeLines: RawLyricLine[],
+) => {
+  const karaokeGroups = groupTimedLines(karaokeLines);
+  const karaokeWords: ParsedLyricWord[] = [];
+  const spans: KaraokeWordSpan[] = [];
+  let karaokeText = '';
+
+  for (const group of karaokeGroups) {
+    for (const word of group.words || []) {
+      const wordIndex = karaokeWords.push(word) - 1;
+      const normalizedText = normalizeComparableLyricText(word.text);
+      if (!normalizedText) continue;
+
+      const textStart = karaokeText.length;
+      karaokeText += normalizedText;
+      spans.push({ wordIndex, textStart, textEnd: karaokeText.length });
+    }
+  }
+
+  if (!karaokeText || spans.length === 0) return;
+
+  const spanByStart = new Map(spans.map((span, index) => [span.textStart, index]));
+  const spanByEnd = new Map(spans.map((span, index) => [span.textEnd, index]));
+  let textCursor = 0;
+
+  for (const row of rows) {
+    const rowText = normalizeComparableLyricText(row.text);
+    if (!rowText) continue;
+
+    let attached = false;
+    let matchStart = karaokeText.indexOf(rowText, textCursor);
+    while (matchStart >= 0) {
+      const matchEnd = matchStart + rowText.length;
+      const firstSpanIndex = spanByStart.get(matchStart);
+      const lastSpanIndex = spanByEnd.get(matchEnd);
+
+      if (firstSpanIndex !== undefined && lastSpanIndex !== undefined && lastSpanIndex >= firstSpanIndex) {
+        const firstWordIndex = spans[firstSpanIndex].wordIndex;
+        const lastWordIndex = spans[lastSpanIndex].wordIndex;
+        const words = karaokeWords.slice(firstWordIndex, lastWordIndex + 1);
+        const firstWordStart = words[0]?.start;
+        if (
+          Number.isFinite(firstWordStart) &&
+          Math.abs((firstWordStart as number) - row.time) <= KARAOKE_TEXT_MATCH_TOLERANCE_SECONDS
+        ) {
+          setRowTrack(row, 'karaoke', [], firstWordStart, words);
+          textCursor = matchEnd;
+          attached = true;
+          break;
+        }
+      }
+
+      matchStart = karaokeText.indexOf(rowText, matchStart + 1);
+    }
+
+    if (attached) continue;
+
+    const rowLength = Array.from(rowText).length;
+    if (rowLength < 4) continue;
+
+    const maxDistance = Math.max(1, Math.floor(rowLength * 0.1));
+    let bestMatch: {
+      firstSpanIndex: number;
+      lastSpanIndex: number;
+      distance: number;
+      lengthDiff: number;
+      timeDiff: number;
+    } | null = null;
+
+    for (let firstSpanIndex = 0; firstSpanIndex < spans.length; firstSpanIndex++) {
+      const firstSpan = spans[firstSpanIndex];
+      if (firstSpan.textStart < textCursor) continue;
+
+      const firstWord = karaokeWords[firstSpan.wordIndex];
+      const timeDiff = Math.abs(firstWord.start - row.time);
+      if (timeDiff > KARAOKE_TEXT_MATCH_TOLERANCE_SECONDS) continue;
+
+      for (let lastSpanIndex = firstSpanIndex; lastSpanIndex < spans.length; lastSpanIndex++) {
+        const candidateText = karaokeText.slice(firstSpan.textStart, spans[lastSpanIndex].textEnd);
+        const candidateLength = Array.from(candidateText).length;
+        if (candidateLength < rowLength - maxDistance) continue;
+        if (candidateLength > rowLength + maxDistance) break;
+
+        const distance = getBoundedEditDistance(rowText, candidateText, maxDistance);
+        if (distance > maxDistance) continue;
+        const lengthDiff = Math.abs(candidateLength - rowLength);
+
+        if (
+          !bestMatch
+          || distance < bestMatch.distance
+          || (distance === bestMatch.distance && lengthDiff < bestMatch.lengthDiff)
+          || (
+            distance === bestMatch.distance
+            && lengthDiff === bestMatch.lengthDiff
+            && timeDiff < bestMatch.timeDiff
+          )
+        ) {
+          bestMatch = { firstSpanIndex, lastSpanIndex, distance, lengthDiff, timeDiff };
+        }
+      }
+    }
+
+    if (bestMatch) {
+      const firstWordIndex = spans[bestMatch.firstSpanIndex].wordIndex;
+      const lastWordIndex = spans[bestMatch.lastSpanIndex].wordIndex;
+      const words = karaokeWords.slice(firstWordIndex, lastWordIndex + 1);
+      setRowTrack(row, 'karaoke', [], words[0]?.start, words);
+      textCursor = spans[bestMatch.lastSpanIndex].textEnd;
+    }
+  }
+};
 
 const getMainTexts = (row: ParsedLyric): string[] =>
   row.mainTexts && row.mainTexts.length > 0 ? row.mainTexts : row.text.split('\n').filter(Boolean);
@@ -424,8 +580,8 @@ const setRowTrack = (
     if (words && words.length > 0) {
       row.words = words;
       const firstWordStart = words[0]?.start;
-      if (Number.isFinite(firstWordStart) && firstWordStart < row.time) {
-        row.time = firstWordStart;
+      if (Number.isFinite(firstWordStart)) {
+        row.karaokeTime = firstWordStart;
       }
     }
     return;
@@ -490,7 +646,14 @@ const buildRowsFromPrimaryAndTracks = (
     words: group.words,
   } satisfies ParsedLyric));
 
+  const karaokeTrack = tracks.find((track) => track.type === 'karaoke');
+  if (karaokeTrack) {
+    attachKaraokeTrack(rows, karaokeTrack.lines);
+  }
+
   for (const track of tracks) {
+    if (track.type === 'karaoke') continue;
+
     const groups = groupTimedLines(track.lines);
     const groupByKey = new Map(groups.map((group) => [group.key, group]));
     const usedKeys = new Set<string>();
@@ -508,7 +671,6 @@ const buildRowsFromPrimaryAndTracks = (
       const primaryGroup = primaryGroups[rowIndex];
       let bestGroup: TimedLineGroup | null = null;
       let bestScore = Number.POSITIVE_INFINITY;
-      const rowText = normalizeComparableLyricText(row.text);
 
       for (const group of groups) {
         if (usedKeys.has(group.key)) continue;
@@ -516,9 +678,7 @@ const buildRowsFromPrimaryAndTracks = (
         const timeDiff = Math.abs(group.time - row.time);
         if (timeDiff > track.toleranceSeconds) continue;
 
-        const groupText = normalizeComparableLyricText(joinTrackValues(group.values));
-        const textBonus = track.type === 'karaoke' && rowText && groupText === rowText ? -0.45 : 0;
-        const score = timeDiff + Math.abs(group.order - primaryGroup.order) * 0.02 + textBonus;
+        const score = timeDiff + Math.abs(group.order - primaryGroup.order) * 0.02;
         if (score < bestScore) {
           bestScore = score;
           bestGroup = group;
@@ -683,21 +843,49 @@ export const parseLyrics = (lrc?: string): ParsedLyric[] => {
  * @param lyricOffsetSeconds - 歌词偏移量（秒），默认 0
  * @returns 当前应高亮的歌词行索引，无歌词时返回 -1
  */
+export type LyricTimingMode = 'line' | 'karaoke';
+
+export const getLyricLineTime = (
+  row: ParsedLyric,
+  timingMode: LyricTimingMode = 'line',
+): number => (
+  timingMode === 'karaoke' && Number.isFinite(row.karaokeTime)
+    ? row.karaokeTime as number
+    : row.time
+);
+
 export const findActiveLyricIndex = (
   rows: ParsedLyric[],
   currentTime: number,
   lyricOffsetSeconds = DEFAULT_LYRIC_OFFSET_SECONDS,
+  timingMode: LyricTimingMode = 'line',
 ): number => {
   if (rows.length === 0) return -1;
 
   const targetTime = currentTime + lyricOffsetSeconds;
+
+  if (timingMode === 'karaoke') {
+    let activeIndex = 0;
+    let activeTime = Number.NEGATIVE_INFINITY;
+
+    rows.forEach((row, index) => {
+      const rowTime = getLyricLineTime(row, timingMode);
+      if (rowTime <= targetTime && rowTime >= activeTime) {
+        activeIndex = index;
+        activeTime = rowTime;
+      }
+    });
+
+    return activeIndex;
+  }
+
   let low = 0;
   let high = rows.length - 1;
   let activeIndex = 0;
 
   while (low <= high) {
     const mid = (low + high) >>> 1;
-    if (rows[mid].time <= targetTime) {
+    if (getLyricLineTime(rows[mid], timingMode) <= targetTime) {
       activeIndex = mid;
       low = mid + 1;
     } else {

@@ -20,15 +20,15 @@ import { GD_STUDIO_ATTRIBUTION, GD_STUDIO_RATE_LIMIT_HINT } from '../../../core/
 import { useUpdateChecker } from './hooks/useUpdateChecker';
 
 const desktopTechStack = [
-  { name: 'Tauri 2.11.3', detail: '原生桌面容器 / 托盘', icon: <BoxesIcon size={18} /> },
+  { name: 'Tauri 2.11.5', detail: '原生桌面容器 / 托盘', icon: <BoxesIcon size={18} /> },
   { name: 'Rust 2021', detail: '命令、更新与下载服务', icon: <ServerIcon size={18} /> },
-  { name: 'Next.js 16.2', detail: 'Turbopack / 静态导出', icon: <RocketIcon size={18} /> },
+  { name: 'Vite 8.1', detail: 'Rolldown / 多页静态构建', icon: <RocketIcon size={18} /> },
   { name: 'React 19.2', detail: '桌面端交互组件', icon: <CodeIcon size={18} /> },
-  { name: 'TypeScript 6.0', detail: '核心播放与 UI 类型', icon: <FileCodeIcon size={18} /> },
+  { name: 'TypeScript 7.0', detail: '核心播放与 UI 类型', icon: <FileCodeIcon size={18} /> },
   { name: 'Axum 0.8.9', detail: '本地音源 API 服务', icon: <DatabaseIcon size={18} /> },
   { name: 'Tower HTTP 0.7', detail: '本地 CORS 与中间件', icon: <SettingsIcon size={18} /> },
-  { name: 'Reqwest 0.12', detail: 'Rust 网络请求代理', icon: <CloudIcon size={18} /> },
-  { name: 'Rusqlite 0.32', detail: '本地推荐数据库', icon: <DatabaseIcon size={18} /> },
+  { name: 'Reqwest 0.13', detail: 'Rust 网络请求代理', icon: <CloudIcon size={18} /> },
+  { name: 'Rusqlite 0.40', detail: '本地推荐数据库', icon: <DatabaseIcon size={18} /> },
   { name: 'SQLite 配置', detail: '模型 API Key 本地保存', icon: <DatabaseIcon size={18} /> },
   { name: 'Framer Motion 12', detail: '播放器与面板动效', icon: <RocketIcon size={18} /> },
   { name: 'Lucide React 1', detail: '桌面端图标组件', icon: <CodeIcon size={18} /> },
@@ -64,7 +64,7 @@ const aboutLinks = [
   { title: 'GitHub Releases', desc: '检查安装包与更新记录', href: 'https://github.com/alanbulan/TuneFree_Mobile/releases', icon: <GithubIcon size={30} /> },
   { title: 'GD 音乐台', desc: '扩展音源服务来源', href: 'https://music.gdstudio.xyz/', icon: <ExternalLinkIcon size={30} /> },
   { title: 'Tauri v2', desc: '桌面容器与系统集成文档', href: 'https://tauri.app/', icon: <BoxesIcon size={30} /> },
-  { title: 'Next.js', desc: 'App Router 与静态导出文档', href: 'https://nextjs.org/docs', icon: <RocketIcon size={30} /> },
+  { title: 'Vite', desc: '前端开发与静态构建文档', href: 'https://vite.dev/', icon: <RocketIcon size={30} /> },
 ];
 
 export default function AboutView() {
@@ -93,9 +93,9 @@ export default function AboutView() {
         <img className="about-app-icon" src="/icon.svg" alt="TuneFree" />
         <div className="about-hero-copy">
           <h3>TuneFree Desktop</h3>
-          <p>基于 Tauri 2.11、Next.js 16、React 19、TypeScript 6 与 Rust/Axum 本地服务的桌面音乐播放器。当前版本聚焦多源搜索、跨源播放兜底、多轨歌词、桌面歌词、离线缓存、本地资料库、统一推荐、桌宠与系统托盘集成。</p>
+          <p>基于 Tauri 2.11、Vite 8、React 19、TypeScript 7 与 Rust/Axum 本地服务的桌面音乐播放器。当前版本聚焦多源搜索、跨源播放兜底、多轨歌词、桌面歌词、离线缓存、本地资料库、统一推荐、桌宠与系统托盘集成。</p>
           <div className="about-hero-actions">
-            <span className="about-version">Tauri Desktop · v{appVersion}</span>
+            <span className="about-version">Tauri Desktop · {appVersion ? `v${appVersion}` : '版本读取中'}</span>
             <button
               type="button"
               className={`update-check-btn ${checkingUpdate || downloadingUpdate ? 'checking' : ''}`}
@@ -149,7 +149,7 @@ export default function AboutView() {
                 </span>
               ))}
             </div>
-            <p>前端通过 Next.js 静态导出运行在 Tauri WebView 中；Rust 侧提供下载、自动更新、外部链接、托盘生命周期、Axum 本地接口代理，以及 SQLite 推荐数据库与 OpenAI 兼容模型调用。</p>
+            <p>前端通过 Vite 多页静态构建运行在 Tauri WebView 中；Rust 侧提供下载、自动更新、外部链接、托盘生命周期、Axum 本地接口代理，以及 SQLite 推荐数据库与 OpenAI 兼容模型调用。</p>
           </div>
 
           <div className="about-card about-api-card glass-panel">
@@ -194,7 +194,7 @@ export default function AboutView() {
 
       <div className="about-card about-notice-card glass-panel">
         <h3>声明</h3>
-        <p>本项目仅供学习 React、Next.js、Tauri 与现代桌面端工程实践使用。音乐资源来源于第三方 API，本项目不存储任何音频文件，请支持正版音乐。</p>
+        <p>本项目仅供学习 React、Vite、Tauri 与现代桌面端工程实践使用。音乐资源来源于第三方 API，本项目不存储任何音频文件，请支持正版音乐。</p>
         <span>MIT License © 2026 TuneFree</span>
       </div>
     </section>

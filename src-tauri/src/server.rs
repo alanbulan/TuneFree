@@ -7,9 +7,32 @@ use axum::{
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener as StdTcpListener};
 use tauri::Emitter;
 use tower_http::cors::CorsLayer;
+
+/// HTTP clients used by the local API server.
+///
+/// API resolution requests use a bounded whole-request timeout, while the
+/// proxy client intentionally has no whole-request timeout so long-running
+/// audio streams are not terminated mid-playback.
+#[derive(Clone)]
+pub struct ServerState {
+    pub api_client: Client,
+    pub proxy_client: Client,
+}
+
+/// Binds the preferred loopback port, falling back to an OS-assigned port.
+///
+/// Binding happens before the Tauri frontend starts, allowing the actual port
+/// to be exposed synchronously through managed state without event races.
+pub fn bind_local_listener(preferred_port: u16) -> std::io::Result<StdTcpListener> {
+    let preferred_addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, preferred_port);
+    let listener = StdTcpListener::bind(preferred_addr)
+        .or_else(|_| StdTcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)))?;
+    listener.set_nonblocking(true)?;
+    Ok(listener)
+}
 
 /// Query parameters for the `/api/url` endpoint.
 #[derive(Deserialize)]
@@ -38,13 +61,16 @@ pub struct UrlResponse {
 /// Looks up the appropriate `MusicProvider` for the requested platform,
 /// resolves the audio URL, and returns it as JSON.
 async fn handle_url(
-    State(client): State<Client>,
+    State(state): State<ServerState>,
     Query(query): Query<UrlQuery>,
 ) -> impl IntoResponse {
     let quality = query.quality.clone().unwrap_or_else(|| "128k".to_string());
 
     match crate::api::get_provider(&query.platform) {
-        Some(provider) => match provider.get_url(&client, &query.id, &quality).await {
+        Some(provider) => match provider
+            .get_url(&state.api_client, &query.id, &quality)
+            .await
+        {
             Ok(url) => (
                 StatusCode::OK,
                 Json(UrlResponse {
@@ -77,25 +103,28 @@ async fn health_check() -> impl IntoResponse {
 
 /// Starts the local Axum web server for resolving music APIs and proxying CORS requests.
 ///
-/// The server binds to `127.0.0.1:3002` by default. If that port is unavailable,
-/// it falls back to an OS-assigned port (port 0) and emits the actual port
-/// to the frontend via the `server-port` event. If binding fails entirely,
-/// the function panics with a clear error message.
+/// The listener is bound before Tauri initialization so the actual port is
+/// already available through managed state when the frontend starts.
 ///
 /// # Arguments
 /// * `app_handle` - Tauri app handle for emitting the server port event.
-/// * `client` - Shared `reqwest::Client` for all HTTP requests.
+/// * `state` - Separate API and streaming proxy HTTP clients.
+/// * `listener` - Pre-bound non-blocking loopback listener.
 /// * `shutdown_rx` - Watch channel receiver; the server shuts down gracefully
 ///   when the value changes to `true`.
 pub async fn start_server(
     app_handle: tauri::AppHandle,
-    client: reqwest::Client,
+    state: ServerState,
+    listener: StdTcpListener,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) {
     // Restrict CORS to known frontend origins
     let cors = CorsLayer::new()
         .allow_origin([
-            "http://localhost:3001"
+            "http://127.0.0.1:3101"
+                .parse::<axum::http::HeaderValue>()
+                .unwrap(),
+            "http://localhost:3101"
                 .parse::<axum::http::HeaderValue>()
                 .unwrap(),
             "tauri://localhost"
@@ -115,6 +144,19 @@ pub async fn start_server(
         .allow_headers([
             HeaderName::from_static("content-type"),
             HeaderName::from_static("authorization"),
+            HeaderName::from_static("accept"),
+            HeaderName::from_static("range"),
+            HeaderName::from_static("if-range"),
+            HeaderName::from_static("if-none-match"),
+            HeaderName::from_static("if-modified-since"),
+        ])
+        .expose_headers([
+            HeaderName::from_static("accept-ranges"),
+            HeaderName::from_static("content-range"),
+            HeaderName::from_static("content-length"),
+            HeaderName::from_static("content-type"),
+            HeaderName::from_static("etag"),
+            HeaderName::from_static("last-modified"),
         ]);
 
     let app = Router::new()
@@ -123,23 +165,10 @@ pub async fn start_server(
         .route("/health", get(health_check))
         .layer(cors)
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
-        .with_state(client);
+        .with_state(state);
 
-    // Try the preferred port (3002), fall back to OS-assigned port
-    let preferred_addr = SocketAddr::from(([127, 0, 0, 1], 3002));
-    let listener = match tokio::net::TcpListener::bind(preferred_addr).await {
-        Ok(listener) => listener,
-        Err(e) => {
-            log::error!(
-                "Failed to bind to {}: {}, trying OS-assigned port",
-                preferred_addr,
-                e
-            );
-            tokio::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .unwrap_or_else(|e| panic!("Failed to bind to any port: {}", e))
-        }
-    };
+    let listener = tokio::net::TcpListener::from_std(listener)
+        .expect("Failed to register local server listener with Tokio");
 
     let actual_port = listener
         .local_addr()
@@ -156,5 +185,22 @@ pub async fn start_server(
 
     if let Err(e) = serve.await {
         log::error!("Server error: {}", e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bind_local_listener_falls_back_when_preferred_port_is_occupied() {
+        let occupied = StdTcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let occupied_port = occupied.local_addr().unwrap().port();
+
+        let listener = bind_local_listener(occupied_port).unwrap();
+        let actual_port = listener.local_addr().unwrap().port();
+
+        assert_ne!(actual_port, occupied_port);
+        assert_ne!(actual_port, 0);
     }
 }

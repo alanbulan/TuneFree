@@ -1,12 +1,12 @@
 [package]
 name = "app"
-version = "1.1.15"
+version = "1.1.16"
 description = "TuneFree Desktop - Modern desktop music player"
 authors = ["AlanBulan"]
 license = "MIT"
 repository = ""
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.88"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -21,19 +21,20 @@ tauri-build = { version = "2.6.3", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11.3", features = ["protocol-asset", "tray-icon", "image-png"] }
+tauri = { version = "2.11.5", features = ["protocol-asset", "tray-icon", "image-png"] }
 tauri-plugin-log = "2.8.0"
 tauri-plugin-dialog = "2.7.1"
-tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+tauri-plugin-updater = "2.10.1"
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "net", "sync", "time", "fs", "io-util"] }
 axum = "0.8.9"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots", "stream"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "query", "rustls", "stream"] }
 tower-http = { version = "0.7.0", features = ["cors"] }
-aes = "0.8"
-md5 = "0.7"
+aes = "0.9.1"
+md5 = "0.8.1"
 base64 = "0.22"
 url = "2"
 thiserror = "2"
 async-trait = "0.1"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40.1", features = ["bundled"] }
 parking_lot = "0.12"
 single-instance = "0.3.3"

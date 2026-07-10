@@ -1,5 +1,4 @@
-import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import dynamic from 'next/dynamic';
+import { FormEvent, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
 import { DownloadIcon, HeartIcon, HomeIcon, InfoIcon, LibraryIcon, SearchIcon, SettingsIcon, SidebarCollapseIcon, SidebarExpandIcon } from '../../core/components/Icons';
@@ -22,8 +21,8 @@ const LoadingSpinner = () => (
     <span style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>加载中…</span>
   </div>
 );
-const DesktopLibrary = dynamic(() => import('../features/library/DesktopLibrary'), { loading: () => <LoadingSpinner /> });
-const DesktopSearch = dynamic(() => import('../features/search/DesktopSearch'), { loading: () => <LoadingSpinner /> });
+const DesktopLibrary = lazy(() => import('../features/library/DesktopLibrary'));
+const DesktopSearch = lazy(() => import('../features/search/DesktopSearch'));
 
 interface DesktopShellProps {
   view: DesktopView;
@@ -44,6 +43,71 @@ const libraryViews: LibraryView[] = ['favorites', 'playlists', 'downloads', 'set
 
 const isTauri = typeof window !== 'undefined' &&
   ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+
+const LYRIC_SYNC_INTERVAL_MS = 500;
+
+function LyricSyncBridge() {
+  const { currentSong, isPlaying } = usePlayerNowPlaying();
+  const { currentTime, duration, lyricOffsetSeconds } = usePlayerProgress();
+  const lyricDisplayMode = useLyricDisplayMode();
+  const { showDesktopLyric } = useTheme();
+  const lastSyncAtRef = useRef(0);
+  const lastSignatureRef = useRef('');
+  const lastSyncedTimeRef = useRef(0);
+
+  useEffect(() => {
+    if (!isTauri || !showDesktopLyric) return;
+
+    const signature = [
+      currentSong?.source ?? '',
+      currentSong?.id ?? '',
+      currentSong?.lrc ?? '',
+      isPlaying ? '1' : '0',
+      duration,
+      lyricOffsetSeconds,
+      lyricDisplayMode,
+    ].join('');
+    const now = Date.now();
+    const stateChanged = signature !== lastSignatureRef.current;
+    const seeked = Math.abs(currentTime - lastSyncedTimeRef.current) > 1.5;
+    const throttled = now - lastSyncAtRef.current < LYRIC_SYNC_INTERVAL_MS;
+
+    if (!stateChanged && !seeked && throttled) return;
+
+    lastSignatureRef.current = signature;
+    lastSyncedTimeRef.current = currentTime;
+    lastSyncAtRef.current = now;
+
+    const syncLyric = async () => {
+      try {
+        const { emit } = await import('@tauri-apps/api/event');
+        await emit('lyric-update', {
+          song: currentSong ? {
+            id: currentSong.id,
+            name: currentSong.name,
+            artist: currentSong.artist,
+            source: currentSong.source,
+            pic: currentSong.pic,
+            lrc: currentSong.lrc,
+          } : null,
+          currentTime,
+          duration,
+          isPlaying,
+          playbackRate: 1,
+          lyricOffsetSeconds,
+          lyricDisplayMode,
+          sentAt: now,
+        });
+      } catch (e) {
+        console.error('Failed to emit lyric-update:', e);
+      }
+    };
+
+    void syncLyric();
+  }, [currentSong, isPlaying, currentTime, duration, lyricOffsetSeconds, lyricDisplayMode, showDesktopLyric]);
+
+  return null;
+}
 
 const handleWindowControl = async (action: 'minimize' | 'maximize' | 'close') => {
   if (isTauri) {
@@ -67,11 +131,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   const { closeBehavior, setCloseBehavior } = useDesktopPreferences();
   const { playerNotice } = usePlayerNotice();
   const { showToast } = useToast();
-  const { currentSong, isPlaying } = usePlayerNowPlaying();
-  const { currentTime, duration, lyricOffsetSeconds } = usePlayerProgress();
-  const lyricDisplayMode = useLyricDisplayMode();
   const {
-    showDesktopLyric,
     lockDesktopLyric,
     lyricSize,
     themeMode,
@@ -217,38 +277,6 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
     }
   };
 
-  // Cross-window lyric sync
-  useEffect(() => {
-    if (!isTauri || !showDesktopLyric) return;
-
-    const syncLyric = async () => {
-      try {
-        const { emit } = await import('@tauri-apps/api/event');
-        await emit('lyric-update', {
-          song: currentSong ? {
-            id: currentSong.id,
-            name: currentSong.name,
-            artist: currentSong.artist,
-            source: currentSong.source,
-            pic: currentSong.pic,
-            lrc: currentSong.lrc,
-          } : null,
-          currentTime,
-          duration,
-          isPlaying,
-          playbackRate: 1,
-          lyricOffsetSeconds,
-          lyricDisplayMode,
-          sentAt: Date.now(),
-        });
-      } catch (e) {
-        console.error('Failed to emit lyric-update:', e);
-      }
-    };
-
-    syncLyric();
-  }, [currentSong, isPlaying, currentTime, duration, lyricOffsetSeconds, lyricDisplayMode, showDesktopLyric]);
-
   const submitSearch = (query: string) => {
     const clean = query.trim();
     if (!clean) return;
@@ -339,13 +367,16 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
         <div className="view-scroll" key={view}>
           <div className="view-transition-panel">
             {view === 'home' && <DesktopHome onViewChange={onViewChange} />}
-            {view === 'search' && <DesktopSearch commandQuery={searchRequest.query} commandNonce={searchRequest.nonce} />}
-            {libraryViews.includes(view as LibraryView) && <DesktopLibrary activeView={view as LibraryView} />}
+            <Suspense fallback={<LoadingSpinner />}>
+              {view === 'search' && <DesktopSearch commandQuery={searchRequest.query} commandNonce={searchRequest.nonce} />}
+              {libraryViews.includes(view as LibraryView) && <DesktopLibrary activeView={view as LibraryView} />}
+            </Suspense>
           </div>
         </div>
       </main>
 
       <MiraPet />
+      <LyricSyncBridge />
       <DesktopTransport onExpand={() => setFullPlayerOpen(true)} />
       <AnimatePresence>
         {fullPlayerOpen && (

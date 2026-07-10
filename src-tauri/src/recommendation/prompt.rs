@@ -2,19 +2,21 @@ use serde_json::json;
 
 use super::{
     catalog,
-    model::{ProfileToken, RecommendationItem, RecommendationQuery},
+    model::{ProfileToken, RecentEventSummary, RecommendationItem, RecommendationQuery},
     privacy,
 };
 
 pub const SYSTEM_PROMPT: &str = "你是 TuneFree Desktop 的音乐推荐重排器。你只能基于用户提供的候选歌曲重新排序，不能编造候选之外的歌曲。你需要兼顾相关性、多样性、用户最近偏好、新歌探索和听歌场景。输出必须是合法 JSON，不要输出 Markdown，不要解释你的推理过程。";
 
 pub const DISCOVERY_SYSTEM_PROMPT: &str = "你是 TuneFree Desktop 的音乐发现规划器。你不能输出最终歌曲列表，也不能编造歌曲 ID。你只能根据用户画像、本地候选和场景生成可用于真实音乐平台搜索的关键词。输出必须是合法 JSON，不要输出 Markdown，不要解释你的推理过程。";
+pub const PROMPT_SCHEMA_VERSION: u32 = 2;
 
 pub fn build_messages(
     query: &RecommendationQuery,
     profile_tokens: &[ProfileToken],
     candidates: &[RecommendationItem],
     limit: usize,
+    recent_events: Option<&[RecentEventSummary]>,
 ) -> Vec<serde_json::Value> {
     let scene = if query.seed.is_some() {
         "similar"
@@ -44,7 +46,7 @@ pub fn build_messages(
         })
         .collect();
 
-    let user_payload = json!({
+    let mut user_payload = json!({
         "scene": scene,
         "limit": limit,
         "context": query.context,
@@ -58,6 +60,12 @@ pub fn build_messages(
             "输出 JSON: {\"intent_tags\": string[], \"items\": [{\"track_key\": string, \"rank\": number, \"score\": number, \"reason\": string}], \"dropped\": []}"
         ]
     });
+    if let Some(recent_events) = recent_events {
+        user_payload
+            .as_object_mut()
+            .expect("推荐提示词必须是 JSON 对象")
+            .insert("recent_events".to_string(), json!(recent_events));
+    }
 
     vec![
         json!({ "role": "system", "content": SYSTEM_PROMPT }),
@@ -70,6 +78,7 @@ pub fn build_discovery_messages(
     profile_tokens: &[ProfileToken],
     local_candidates: &[RecommendationItem],
     limit: usize,
+    recent_events: Option<&[RecentEventSummary]>,
 ) -> Vec<serde_json::Value> {
     let scene = if query.seed.is_some() {
         "similar"
@@ -98,7 +107,7 @@ pub fn build_discovery_messages(
         })
         .collect();
 
-    let user_payload = json!({
+    let mut user_payload = json!({
         "scene": scene,
         "limit": limit,
         "context": query.context,
@@ -116,6 +125,12 @@ pub fn build_discovery_messages(
             "输出 JSON: {\"intent_tags\": string[], \"queries\": [{\"keyword\": string, \"source\": string, \"reason\": string}]}"
         ]
     });
+    if let Some(recent_events) = recent_events {
+        user_payload
+            .as_object_mut()
+            .expect("发现提示词必须是 JSON 对象")
+            .insert("recent_events".to_string(), json!(recent_events));
+    }
 
     vec![
         json!({ "role": "system", "content": DISCOVERY_SYSTEM_PROMPT }),
@@ -127,4 +142,43 @@ pub fn item_reason(reason: Option<&str>) -> Option<String> {
     reason
         .map(privacy::short_reason)
         .filter(|value| !value.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn query() -> RecommendationQuery {
+        RecommendationQuery {
+            limit: Some(10),
+            seed: None,
+            context: Some("home".to_string()),
+        }
+    }
+
+    fn user_payload(messages: Vec<serde_json::Value>) -> serde_json::Value {
+        serde_json::from_str(messages[1]["content"].as_str().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn recent_events_are_only_added_when_explicitly_enabled() {
+        let summary = RecentEventSummary {
+            event_type: "play_complete".to_string(),
+            song_name: "测试歌曲".to_string(),
+            artist: "测试歌手".to_string(),
+            age_bucket: "today".to_string(),
+        };
+        let without_events = user_payload(build_messages(&query(), &[], &[], 10, None));
+        let with_events = user_payload(build_messages(
+            &query(),
+            &[],
+            &[],
+            10,
+            Some(std::slice::from_ref(&summary)),
+        ));
+
+        assert!(without_events.get("recent_events").is_none());
+        assert_eq!(with_events["recent_events"][0]["songName"], "测试歌曲");
+        assert!(with_events["recent_events"][0].get("sessionId").is_none());
+    }
 }

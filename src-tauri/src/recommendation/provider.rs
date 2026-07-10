@@ -110,13 +110,19 @@ impl OpenAiCompatibleProvider {
     }
 
     pub async fn test(&self, config: &LlmConfig, api_key: &str) -> LlmProviderTestResult {
-        if config.base_url.trim().is_empty() || config.model.trim().is_empty() || api_key.trim().is_empty() {
+        if config.base_url.trim().is_empty()
+            || config.model.trim().is_empty()
+            || api_key.trim().is_empty()
+        {
             return LlmProviderTestResult {
                 ok: false,
                 status: "missing_config".to_string(),
                 latency_ms: None,
                 supports_json_object: false,
-                error: Some("请填写 API 根地址、模型名和 API Key；如果已经保存 Key，请重新填写保存一次".to_string()),
+                error: Some(
+                    "请填写 API 根地址、模型名和 API Key；如果已经保存 Key，请重新填写保存一次"
+                        .to_string(),
+                ),
             };
         }
 
@@ -126,7 +132,10 @@ impl OpenAiCompatibleProvider {
             json!({ "role": "user", "content": "输出 {\"ok\": true}" }),
         ];
 
-        match self.chat_json(config, api_key, messages.clone(), true).await {
+        match self
+            .chat_json(config, api_key, messages.clone(), true)
+            .await
+        {
             Ok(content) => {
                 let ok = serde_json::from_str::<serde_json::Value>(&content)
                     .map(|value| value.get("ok").and_then(|ok| ok.as_bool()).unwrap_or(false))
@@ -136,7 +145,11 @@ impl OpenAiCompatibleProvider {
                     status: if ok { "ok" } else { "invalid_json" }.to_string(),
                     latency_ms: Some(started.elapsed().as_millis() as u64),
                     supports_json_object: true,
-                    error: if ok { None } else { Some("模型响应 JSON 不符合预期".to_string()) },
+                    error: if ok {
+                        None
+                    } else {
+                        Some("模型响应 JSON 不符合预期".to_string())
+                    },
                 }
             }
             Err(first_error) => {
@@ -146,10 +159,19 @@ impl OpenAiCompatibleProvider {
                         let ok = serde_json::from_str::<serde_json::Value>(&content).is_ok();
                         LlmProviderTestResult {
                             ok,
-                            status: if ok { "ok_without_json_object" } else { "invalid_json" }.to_string(),
+                            status: if ok {
+                                "ok_without_json_object"
+                            } else {
+                                "invalid_json"
+                            }
+                            .to_string(),
                             latency_ms: Some(started.elapsed().as_millis() as u64),
                             supports_json_object: false,
-                            error: if ok { None } else { Some("模型响应不是合法 JSON".to_string()) },
+                            error: if ok {
+                                None
+                            } else {
+                                Some("模型响应不是合法 JSON".to_string())
+                            },
                         }
                     }
                     Err(second_error) => LlmProviderTestResult {
