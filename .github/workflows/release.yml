@@ -29,7 +29,9 @@ jobs:
           targets: x86_64-pc-windows-msvc
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: |
+          npm install --global npm@11.6.2
+          npm ci
 
       - name: Verify release tag matches the app version
         shell: pwsh

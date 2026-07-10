@@ -27,6 +27,7 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - run: npm install --global npm@11.6.2
       - run: npm ci
       - run: npm run version:check
       - run: npm run lint
