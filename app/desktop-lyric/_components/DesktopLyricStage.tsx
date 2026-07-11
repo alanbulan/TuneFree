@@ -131,7 +131,7 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
             style={{
               display: 'block',
               fontSize: `${size}px`,
-              fontWeight: 860,
+              fontWeight: 800,
               lineHeight: 1.26,
               overflowWrap: 'anywhere',
               wordBreak: 'break-word',
@@ -146,7 +146,7 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
               marginTop: '6px',
               fontSize: `${Math.max(12, Math.round(size * 0.68))}px`,
               fontStyle: 'normal',
-              fontWeight: 620,
+              fontWeight: 600,
               opacity: 0.72,
               lineHeight: 1.26,
             }}
@@ -206,9 +206,8 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
 }
 
 const getLyricTextShadow = (active: boolean, dark: boolean) => {
-  const halo = active ? '0 0 18px rgba(var(--accent-rgb), .28)' : '0 0 10px rgba(0, 0, 0, .36)';
-  const base = dark ? 'rgba(0, 0, 0, .86)' : 'rgba(0, 0, 0, .78)';
+  const base = dark ? 'rgba(0, 0, 0, .82)' : 'rgba(0, 0, 0, .7)';
   return active
-    ? `0 2px 10px ${base}, ${halo}`
-    : `0 1px 8px ${base}, ${halo}`;
+    ? `0 1px 3px ${base}, 0 0 4px rgba(var(--accent-rgb), .14)`
+    : `0 1px 3px ${base}`;
 };

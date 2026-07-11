@@ -32,7 +32,7 @@ export function LyricLineRenderer({ line, active = false, size, shadow, align = 
       style={{
         textAlign: align,
         textShadow: shadow,
-        opacity: active ? 1 : contextOpacity,
+        color: active ? undefined : `rgba(248, 250, 252, ${contextOpacity})`,
       }}
     >
       <span
@@ -46,7 +46,7 @@ export function LyricLineRenderer({ line, active = false, size, shadow, align = 
           WebkitLineClamp: active ? undefined : 1,
           WebkitBoxOrient: 'vertical',
           fontSize: active ? `${size}px` : `${Math.max(12, Math.round(size * 0.6))}px`,
-          fontWeight: active ? 860 : 720,
+          fontWeight: active ? 800 : 700,
           lineHeight: active ? 1.24 : 1.18,
         }}
       >
@@ -66,10 +66,12 @@ export function LyricLineRenderer({ line, active = false, size, shadow, align = 
             WebkitBoxOrient: 'vertical',
             fontSize: `${extensionSize}px`,
             fontStyle: 'normal',
-            fontWeight: active ? 680 : 620,
+            fontWeight: active ? 650 : 600,
             lineHeight: active ? 1.26 : 1.16,
             marginTop: active ? '5px' : '2px',
-            opacity: active ? Math.max(0.62, 0.88 - index * 0.08) : Math.max(0.1, contextOpacity * 0.72),
+            color: active
+              ? 'var(--accent, #fa233b)'
+              : `rgba(248, 250, 252, ${Math.max(0.1, contextOpacity * 0.72)})`,
           }}
         >
           {text}

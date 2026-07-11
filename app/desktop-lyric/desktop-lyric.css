@@ -135,17 +135,39 @@ body > div:first-child {
   overflow: visible;
 }
 
+.desktop-lyric-root .karaoke-line {
+  display: inline !important;
+}
+
 .desktop-lyric-root .karaoke-word {
   background: transparent;
   box-shadow: none;
   filter: none;
   -webkit-text-stroke: 0;
   paint-order: normal;
-  transition: color 0.12s ease, opacity 0.12s ease;
+  transform: none;
+  transform-origin: initial;
+  animation: none;
+  will-change: auto;
+  opacity: 1;
+  transition: color 0.12s ease;
+}
+
+.desktop-lyric-root .karaoke-word.pending {
+  color: rgba(248, 250, 252, 0.38);
+  opacity: 1;
+}
+
+.desktop-lyric-root .karaoke-word.done,
+.desktop-lyric-root .karaoke-word.active {
+  color: var(--accent, #fa233b);
+  opacity: 1;
 }
 
 .desktop-lyric-root .karaoke-word.active {
   filter: none;
+  transform: none;
+  animation: none;
 }
 
 .desktop-lyric-resize-layer {
