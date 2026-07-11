@@ -21,12 +21,44 @@ vi.mock('../gdStudio', () => ({
   isGDStudioOnlySource: vi.fn().mockReturnValue(false),
   isGDStudioSource: vi.fn().mockReturnValue(false),
   parseGDStudioSongFull: vi.fn(),
+  resolveAutosource: vi.fn(),
   searchGDStudio: vi.fn(),
 }));
 
-import { fetchFallbackLyrics, fetchNativeUrl, getSongUrl } from '../resolver';
+import { fetchFallbackLyrics, fetchNativeUrl, getSongUrl, parseSongFull } from '../resolver';
 import { fetchNeteaseLyrics, searchNetease } from '../netease';
 import { searchQQ } from '../qq';
+import { resolveAutosource } from '../gdStudio';
+
+describe('Embeat playback resolution', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('passes the selected quality through autosource URL resolution', async () => {
+    vi.mocked(resolveAutosource).mockResolvedValue({
+      url: 'https://example.com/embeat.flac',
+      lrc: '[00:00.00]lyric',
+      pic: 'https://example.com/cover.jpg',
+      resolvedSource: 'netease',
+    });
+    const songMeta = {
+      name: '江南', artist: '林俊杰', album: '第二天堂',
+      pic: '', picId: '', urlId: '', lyricId: '',
+    };
+
+    await expect(getSongUrl('embeat-1', 'embeat', 'flac', songMeta))
+      .resolves.toBe('https://example.com/embeat.flac');
+    await expect(parseSongFull('embeat-1', 'embeat', 'flac24bit', songMeta))
+      .resolves.toMatchObject({ url: 'https://example.com/embeat.flac' });
+    expect(resolveAutosource).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      name: '江南', source: 'embeat',
+    }), 'flac');
+    expect(resolveAutosource).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      name: '江南', source: 'embeat',
+    }), 'flac24bit');
+  });
+});
 
 describe('fetchNativeUrl', () => {
   const originalFetch = globalThis.fetch;

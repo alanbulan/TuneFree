@@ -47,5 +47,8 @@ pnpm-workspace.yaml
 # Release notes (generated, not source)
 release_notes_*.txt
 
+# Release binaries are published by GitHub Actions
+/release/
+
 # TypeScript build info
 tsconfig.tsbuildinfo

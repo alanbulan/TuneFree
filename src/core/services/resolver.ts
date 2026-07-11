@@ -373,7 +373,7 @@ export const getSongUrl = async (
         artist: songMeta.artist || "",
         album: songMeta.album || "",
         source: "embeat",
-      });
+      }, quality);
       if (autosource?.url) return autosource.url;
     } catch (e) {
       console.warn("[Resolver] resolveAutosource failed in getSongUrl, falling back:", e);
@@ -406,7 +406,7 @@ export const parseSongFull = async (
         artist: songMeta.artist || "",
         album: songMeta.album || "",
         source: "embeat",
-      });
+      }, quality);
       if (autosource?.url) return autosource;
     } catch (e) {
       console.warn("[Resolver] resolveAutosource failed in parseSongFull, falling back:", e);

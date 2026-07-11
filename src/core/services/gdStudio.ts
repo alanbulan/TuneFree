@@ -3,6 +3,7 @@ import { mergeLyricTracks } from '../utils/lyrics';
 import {
   decodeResponseText,
   fetchGDStudioData,
+  GDStudioApiError,
   tryParseJson,
 } from './gdStudioClient';
 import {
@@ -18,6 +19,7 @@ import {
   getUrlCacheKey,
   joinArtists,
   lyricCache,
+  normalizeGDStudioSource,
   normalizeBitrate,
   picCache,
   rememberTrackMeta,
@@ -56,40 +58,68 @@ export const searchGDStudio = async (
     pages: page,
   });
 
-  if (!Array.isArray(data)) return [];
-
-  return data.map((item: GdStudioTrack) => {
-    const id = String(item.id || item.url_id || item.lyric_id || "").trim();
-    const picId = String(item.pic_id || "").trim();
-    const lyricId = String(item.lyric_id || id).trim();
-    const urlId = String(item.url_id || id).trim();
+  if (!Array.isArray(data)) {
+    throw new GDStudioApiError('BAD_RESPONSE', 200, 'search response must be an array');
+  }
+  const songs: Song[] = [];
+  const seen = new Set<string>();
+  for (const value of data) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new GDStudioApiError('BAD_RESPONSE', 200, 'search track must be an object');
+    }
+    const item = value as GdStudioTrack;
+    const artistValid = typeof item.artist === 'string'
+      || (Array.isArray(item.artist) && item.artist.every((artist) => typeof artist === 'string'));
+    const responseSource = normalizeGDStudioSource(item.source);
+    if (
+      !artistValid
+      || typeof item.name !== 'string'
+      || typeof item.album !== 'string'
+      || typeof item.pic_id !== 'string'
+      || !['string', 'number'].includes(typeof item.id)
+      || !['string', 'number'].includes(typeof item.url_id)
+      || !['string', 'number'].includes(typeof item.lyric_id)
+      || !responseSource
+    ) {
+      throw new GDStudioApiError('BAD_RESPONSE', 200, 'search track fields are invalid');
+    }
+    if (responseSource !== source) {
+      throw new GDStudioApiError(
+        'BAD_RESPONSE',
+        200,
+        `source mismatch: requested ${source}, received ${responseSource}`,
+      );
+    }
+    const id = String(item.id).trim();
+    const name = item.name.trim();
+    const picId = item.pic_id.trim();
+    const lyricId = String(item.lyric_id).trim();
+    const urlId = String(item.url_id).trim();
+    if (!id || !name || !lyricId || !urlId) {
+      throw new GDStudioApiError('BAD_RESPONSE', 200, 'search track identity fields are empty');
+    }
+    const key = getTrackKey(id, responseSource);
+    if (seen.has(key)) continue;
+    seen.add(key);
     const pic = picId.startsWith("http") || picId.startsWith("//")
       ? fixUrl(picId)
       : source === "joox" && picId
         ? fixUrl(buildJooxCoverUrl(picId, 500))
         : "";
-
-    if (id) {
-      rememberTrackMeta(id, source, {
-        pic,
-        picId,
-        lyricId,
-        urlId,
-      });
-    }
-
-    return {
-      id: id || `temp_${Math.random().toString(36).slice(2)}`,
-      name: String(item.name || ""),
+    rememberTrackMeta(id, responseSource, { pic, picId, lyricId, urlId });
+    songs.push({
+      id,
+      name,
       artist: joinArtists(item.artist),
-      album: String(item.album || ""),
+      album: item.album,
       pic,
       picId,
       lyricId,
       urlId,
-      source,
-    };
-  });
+      source: responseSource,
+    });
+  }
+  return songs;
 };
 
 export const getGDStudioSongUrl = async (
@@ -187,11 +217,10 @@ export const getGDStudioLyrics = async (
       source,
     });
 
-    lyricCache.set(cacheKey, lrc);
+    if (lrc) lyricCache.set(cacheKey, lrc);
     rememberTrackMeta(id, source, { lyricId: requestId });
     return lrc;
   } catch {
-    lyricCache.set(cacheKey, "");
     return "";
   }
 };
@@ -321,65 +350,75 @@ export const parseGDStudioSongFull = async (
  */
 export const resolveAutosource = async (
   song: Pick<Song, "name" | "artist" | "album" | "source">,
-): Promise<{ url: string | null; lrc: string; pic: string; resolvedSource?: string } | null> => {
+  quality: string = "320k",
+): Promise<{ url: string; lrc: string; pic: string; resolvedSource?: string }> => {
   const nameParts = [song.name || ""];
   if (song.artist) nameParts.push(song.artist);
   if (song.album) nameParts.push(song.album);
   const nameStr = nameParts.join(" | ");
 
-  try {
-    const data = await fetchGDStudioData<{
-      url?: string;
-      br?: number;
-      size?: number;
-      pic?: string;
-      lyric?: string;
-      tlyric?: string;
-      trans?: string;
-      translation?: string;
-      qrc?: string;
-      yrc?: string;
-      krc?: string;
-      klyric?: string;
-      mrc?: string;
-      karaoke?: string;
-      source?: string;
-      id?: string | number;
-    }>({
-      types: "autosource",
-      source: song.source || "embeat",
-      name: nameStr,
-    });
+  const data = await fetchGDStudioData<{
+    url?: string;
+    br?: number;
+    size?: number;
+    pic?: string;
+    lyric?: string;
+    tlyric?: string;
+    trans?: string;
+    translation?: string;
+    qrc?: string;
+    yrc?: string;
+    krc?: string;
+    klyric?: string;
+    mrc?: string;
+    karaoke?: string;
+    source?: string;
+    id?: string | number;
+  }>({
+    types: "autosource",
+    source: song.source || "embeat",
+    name: nameStr,
+    br: normalizeBitrate(quality),
+  });
 
-    const url = fixUrl(typeof data?.url === "string" ? data.url : "");
-    const pic = fixUrl(typeof data?.pic === "string" ? data.pic : "");
-    const main = typeof data?.lyric === "string" ? data.lyric : "";
-    const translation = [data?.tlyric, data?.trans, data?.translation]
-      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-      .map((value) => value.trim())
-      .join("\n");
-    const karaoke = [data?.qrc, data?.yrc, data?.krc, data?.klyric, data?.mrc, data?.karaoke]
-      .find((value): value is string => typeof value === "string" && value.trim().length > 0)
-      ?.trim() || "";
-    const lrc = mergeLyricTracks({
-      main,
-      translation,
-      karaoke,
-      source: data?.source || song.source,
-    });
-
-    if (!url) return null;
-
-    return {
-      url,
-      lrc,
-      pic,
-      resolvedSource: data?.source || undefined,
-    };
-  } catch (err) {
-    console.warn("[GDStudio] resolveAutosource failed:", err);
-    return null;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new GDStudioApiError('BAD_RESPONSE', 200, 'autosource response must be an object');
   }
+
+  const url = fixUrl(typeof data?.url === "string" ? data.url : "");
+  const pic = fixUrl(typeof data?.pic === "string" ? data.pic : "");
+  const main = typeof data?.lyric === "string" ? data.lyric : "";
+  const translation = [data?.tlyric, data?.trans, data?.translation]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim())
+    .join("\n");
+  const karaoke = [data?.qrc, data?.yrc, data?.krc, data?.klyric, data?.mrc, data?.karaoke]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0)
+    ?.trim() || "";
+  const lrc = mergeLyricTracks({
+    main,
+    translation,
+    karaoke,
+    source: data?.source || song.source,
+  });
+
+  if (!url) {
+    throw new GDStudioApiError('BAD_RESPONSE', 200, 'autosource response is missing url');
+  }
+
+  const resolvedSource = data?.source === undefined
+    ? undefined
+    : normalizeGDStudioSource(data.source);
+  if (data?.source !== undefined && !resolvedSource) {
+    throw new GDStudioApiError('BAD_RESPONSE', 200, 'autosource response has invalid source');
+  }
+
+  return {
+    url,
+    lrc,
+    pic,
+    resolvedSource: resolvedSource || undefined,
+  };
 };
 
 /**
@@ -389,8 +428,9 @@ export const getAIRecommendedSongs = async (
   keyword: string,
   source: GdStudioSource = 'netease',
   count: number = 20,
+  signal?: AbortSignal,
 ): Promise<Song[]> => {
-  const tracks = await loadAIRecommendationTracks(keyword, source, count);
+  const tracks = await loadAIRecommendationTracks(keyword, source, count, signal);
   await enrichAIRecommendationCovers(tracks, getGDStudioPic);
   return mapAIRecommendationTracks(tracks);
 };

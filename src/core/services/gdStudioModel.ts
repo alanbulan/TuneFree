@@ -38,6 +38,17 @@ export const urlCache = new Map<string, { url: string; expiresAt: number }>();
 export const buildJooxCoverUrl = (picId: string, size: 300 | 500 = 500): string =>
   `https://image.joox.com/JOOXcover/0/${picId}/${size}`;
 
+export const toGDStudioApiSource = (source: string): string =>
+  source === 'qq' ? 'tencent' : source;
+
+export const normalizeGDStudioSource = (source: unknown): GdStudioSource | null => {
+  const normalized = String(source || '').trim().toLowerCase();
+  const canonical = normalized === 'tencent' ? 'qq' : normalized;
+  return GD_STUDIO_SOURCES.includes(canonical as GdStudioSource)
+    ? canonical as GdStudioSource
+    : null;
+};
+
 export const getTrackKey = (id: string | number, source: string): string =>
   `${source}:${String(id)}`;
 

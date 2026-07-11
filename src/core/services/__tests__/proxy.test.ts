@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setLocalServerPort } from '../config';
-import { getProxies, isLocalServerProxy } from '../proxy';
+import { getProxies, isLocalServerProxy, proxyFetch } from '../proxy';
 
 describe('proxy configuration', () => {
   afterEach(() => {
@@ -23,5 +23,21 @@ describe('proxy configuration', () => {
     expect(getProxies()).toEqual([
       'http://127.0.0.1:43123/api/cors-proxy?url=',
     ]);
+  });
+
+  it('stops proxy retries when the caller cancels the request', async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn((_url, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => {
+        reject(new DOMException('aborted', 'AbortError'));
+      });
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = proxyFetch('https://example.com/data', { signal: controller.signal });
+    controller.abort();
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
