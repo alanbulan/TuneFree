@@ -39,7 +39,7 @@ const desktopTechStack = [
 const aboutFeatures = [
   ['统一推荐', '本地画像先生成候选，云端模型生成发现方向，经平台搜索验证真实歌曲后统一重排。'],
   ['语境搜歌', '保留 GD Studio / Pollinations 的外部意境搜歌能力，和本地画像推荐系统分离。'],
-  ['多源聚合搜索', '内置网易云、QQ 音乐、酷我音乐，并通过 GD Studio 接入其余公开来源。'],
+  ['多源聚合搜索', '内置网易云、QQ 音乐、酷我音乐搜索；JOOX 通过 GD Studio 扩展源接入。'],
   ['跨音源播放兜底', '原音源直链失效时，会按歌名与歌手在其它音源寻找可播放候选，优先保证能播。'],
   ['多音质与离线缓存', '支持 128K、320K、FLAC、Hi-Res 选档，并可下载到本地离线库。'],
   ['全屏播放器与队列', '常驻底部迷你播放器、沉浸式全屏歌词、播放队列、喜欢收藏和播放模式切换。'],
@@ -55,7 +55,7 @@ const aboutDataSources = [
   ['网易云', '搜索 / 榜单 / 直链 / 歌词', '本地 Rust API + Web 兼容接口'],
   ['QQ 音乐', '搜索 / 榜单 / 直链 / 双语歌词', 'musicu 请求与 Base64 歌词解码'],
   ['酷我音乐', '搜索 / 榜单 / 封面 / 歌词', '旧版搜索接口 + lyric fallback'],
-  ['GD Studio', 'TIDAL / Qobuz / JOOX / Bilibili / Apple / YouTube Music / Spotify', GD_STUDIO_RATE_LIMIT_HINT],
+  ['GD Studio', 'JOOX 扩展源', GD_STUDIO_RATE_LIMIT_HINT],
   ['OpenAI 兼容模型', '可选发现与重排', '通过用户配置的 Chat Completions 兼容接口生成发现方向并重排候选'],
   ['Pollinations AI', 'GD 意境搜歌降级', '仅用于外部意境搜歌兜底，不参与本地画像推荐'],
 ];
@@ -194,7 +194,7 @@ export default function AboutView() {
 
       <div className="about-card about-notice-card glass-panel">
         <h3>声明</h3>
-        <p>本项目仅供学习 React、Vite、Tauri 与现代桌面端工程实践使用。音乐资源来源于第三方 API，本项目不存储任何音频文件，请支持正版音乐。GD 音乐台接口遵循 CC BY-NC 4.0，仅限非商业学习使用。</p>
+        <p>本项目仅供学习 React、Vite、Tauri 与现代桌面端工程实践使用。音乐资源来源于第三方 API，本项目不存储任何音频文件，请支持正版音乐。</p>
         <span>MIT License © 2026 TuneFree</span>
       </div>
     </section>

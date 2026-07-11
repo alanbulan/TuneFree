@@ -1,5 +1,4 @@
 import { GD_STUDIO_API_BASE } from './config';
-import { toGDStudioApiSource } from './gdStudioModel';
 import { proxyFetch } from './proxy';
 
 const GD_STUDIO_REQUEST_TIMEOUT_MS = 12_000;
@@ -7,17 +6,6 @@ const TIME_SYNC_TIMEOUT_MS = 5_000;
 
 let lastTimeDiff = 0;
 let timeSynced = false;
-
-export class GDStudioApiError extends Error {
-  constructor(
-    public readonly code: 'RATE_LIMIT' | 'UNSUPPORTED_SOURCE' | 'UNAVAILABLE' | 'BAD_RESPONSE',
-    public readonly status: number,
-    public readonly detail: string,
-  ) {
-    super(`GD_STUDIO_${code}: ${detail}`);
-    this.name = 'GDStudioApiError';
-  }
-}
 
 const countDecodeArtifacts = (text: string): number => (text.match(/�/g) || []).length;
 
@@ -46,15 +34,6 @@ const looksLikeRateLimitResponse = (status: number, text: string): boolean => {
   return /频率|rate limit|too many requests/i.test(text);
 };
 
-export const classifyGDStudioFailure = (
-  status: number,
-  text: string,
-): GDStudioApiError['code'] => {
-  if (/source.+not supported/i.test(text)) return 'UNSUPPORTED_SOURCE';
-  if (looksLikeRateLimitResponse(status, text)) return 'RATE_LIMIT';
-  return status >= 400 ? 'UNAVAILABLE' : 'BAD_RESPONSE';
-};
-
 export async function fetchWithTimeout(
   input: RequestInfo | URL,
   init: RequestInit,
@@ -70,24 +49,22 @@ export async function fetchWithTimeout(
 }
 
 export async function syncServerTime(): Promise<void> {
-  const start = Date.now();
-  const response = await fetchWithTimeout(
-    'https://music-api.gdstudio.xyz/time',
-    { method: 'GET' },
-    TIME_SYNC_TIMEOUT_MS,
-  );
-  const text = (await response.text()).trim();
-  if (!response.ok) {
-    const code = classifyGDStudioFailure(response.status, text);
-    throw new GDStudioApiError(code, response.status, text.slice(0, 500));
+  try {
+    const start = Date.now();
+    const response = await fetchWithTimeout(
+      'https://music-api.gdstudio.xyz/time',
+      { method: 'GET' },
+      TIME_SYNC_TIMEOUT_MS,
+    );
+    const serverTime = Number((await response.text()).trim());
+    if (!Number.isNaN(serverTime) && serverTime > 0) {
+      const latency = (Date.now() - start) / 2;
+      lastTimeDiff = serverTime * 1000 - (start + latency);
+      timeSynced = true;
+    }
+  } catch (error) {
+    console.warn('[GDStudio] Failed to sync server time, using local time:', error);
   }
-  const serverTime = Number(text);
-  if (!Number.isFinite(serverTime) || serverTime <= 0) {
-    throw new GDStudioApiError('BAD_RESPONSE', response.status, 'invalid server time');
-  }
-  const latency = (Date.now() - start) / 2;
-  lastTimeDiff = serverTime * 1000 - (start + latency);
-  timeSynced = true;
 }
 
 const gdUrlEncode = (value: string): string =>
@@ -96,7 +73,7 @@ const gdUrlEncode = (value: string): string =>
 const calculateMD5 = async (value: string): Promise<string> => {
   const constants: number[] = [];
   let index = 0;
-  for (; index < 64;) constants[index] = Math.abs(Math.sin(++index)) * 4294967296 | 0;
+  for (; index < 64;) constants[index] = Math.sin(++index) * 4294967296 | 0;
   const shifts = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
   let a = 0x67452301;
   let b = 0xefcdab89;
@@ -104,7 +81,7 @@ const calculateMD5 = async (value: string): Promise<string> => {
   let d = 0x10325476;
   const utf8 = unescape(encodeURIComponent(value));
   const length = utf8.length;
-  const blocks = Array.from({ length: ((length + 8 >> 6) + 1) * 16 }, () => 0);
+  const blocks = [((length + 8 >> 6) + 1) << 4];
   let blockIndex = 0;
   for (; blockIndex < length; blockIndex++) {
     blocks[blockIndex >> 2] |= utf8.charCodeAt(blockIndex) << ((blockIndex % 4) << 3);
@@ -143,38 +120,22 @@ const calculateMD5 = async (value: string): Promise<string> => {
   return wordToHex(a) + wordToHex(b) + wordToHex(c) + wordToHex(d);
 };
 
-export const buildGDStudioRequestBody = async (
+export const fetchGDStudioData = async <T = any>(
   params: Record<string, string | number>,
-  timestampMs: number,
-): Promise<URLSearchParams> => {
-  const tsPrefix = String(timestampMs).slice(0, 9);
+): Promise<T> => {
+  if (!timeSynced) await syncServerTime();
+  const tsPrefix = String(Date.now() + lastTimeDiff).slice(0, 9);
   const subject = params.name !== undefined
     ? gdUrlEncode(String(params.name))
     : gdUrlEncode(String(params.id ?? params.types ?? ''));
   const hash = await calculateMD5(`${tsPrefix}|music.gdstudio.org|20260616|${subject}`);
   const body = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    const requestValue = key === 'source' && value === 'qq'
-      ? toGDStudioApiSource('qq')
-      : String(value);
-    if (key !== 's') body.set(key, requestValue);
+    if (key === 'source' && value === 'qq') body.set(key, 'tencent');
+    else if (key === 'name') body.set(key, gdUrlEncode(String(value)));
+    else if (key !== 's') body.set(key, String(value));
   }
   body.set('s', params.s ? String(params.s) : hash.slice(-8).toUpperCase());
-  return body;
-};
-
-export const fetchGDStudioData = async <T = any>(
-  params: Record<string, string | number>,
-): Promise<T> => {
-  if (!timeSynced) {
-    try {
-      await syncServerTime();
-    } catch (error) {
-      if (error instanceof GDStudioApiError) throw error;
-      throw new GDStudioApiError('UNAVAILABLE', 0, String(error));
-    }
-  }
-  const body = await buildGDStudioRequestBody(params, Date.now() + lastTimeDiff);
   let response: Response | null;
   try {
     response = await proxyFetch(GD_STUDIO_API_BASE, {
@@ -182,23 +143,20 @@ export const fetchGDStudioData = async <T = any>(
       headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
       body: body.toString(),
     }, GD_STUDIO_REQUEST_TIMEOUT_MS);
-  } catch (error) {
-    if (error instanceof GDStudioApiError) throw error;
-    throw new GDStudioApiError('UNAVAILABLE', 0, String(error));
+  } catch {
+    throw new Error('GD_STUDIO_UNAVAILABLE');
   }
-  if (!response) throw new GDStudioApiError('UNAVAILABLE', 0, 'empty proxy response');
+  if (!response) throw new Error('GD_STUDIO_UNAVAILABLE');
   const text = decodeResponseText(await response.arrayBuffer());
   const data = tryParseJson(text);
-  if (!response.ok || typeof data?.error === 'string' || typeof data?.detail === 'string') {
-    const errorText = typeof data?.error === 'string'
-      ? data.error
-      : typeof data?.detail === 'string' ? data.detail : text;
-    const code = classifyGDStudioFailure(response.status, errorText);
-    throw new GDStudioApiError(code, response.status, errorText.slice(0, 500));
+  if (!response.ok || typeof data?.error === 'string') {
+    const errorText = typeof data?.error === 'string' ? data.error : text;
+    if (looksLikeRateLimitResponse(response.status, errorText)) throw new Error('GD_STUDIO_RATE_LIMIT');
+    throw new Error('GD_STUDIO_UNAVAILABLE');
   }
   if (!data) {
-    const code = classifyGDStudioFailure(response.status, text);
-    throw new GDStudioApiError(code, response.status, text.slice(0, 500));
+    if (looksLikeRateLimitResponse(response.status, text)) throw new Error('GD_STUDIO_RATE_LIMIT');
+    throw new Error('GD_STUDIO_BAD_RESPONSE');
   }
   return data as T;
 };

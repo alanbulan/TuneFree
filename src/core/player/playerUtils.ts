@@ -45,8 +45,7 @@ export const shouldUseLyricCandidate = (existingLrc?: string, candidateLrc?: str
 };
 
 const TIMED_WORD_LYRIC_SOURCES = new Set([
-  "netease", "qq", "kuwo", "tidal", "qobuz", "joox", "bilibili",
-  "apple", "ytmusic", "spotify", "embeat",
+  "netease", "qq", "kuwo", "joox", "bilibili", "embeat",
 ]);
 
 export const shouldFetchBetterLyrics = (song: Pick<Song, "source">, lrc?: string): boolean => {

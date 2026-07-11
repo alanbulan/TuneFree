@@ -3,6 +3,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tauri::{Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize, Runtime, Window};
 
+use super::desktop_lyric_render::{wait_for_desktop_lyric_ready, DesktopLyricRenderState};
+
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct DesktopLyricWindowBounds {
     x: i32,
@@ -342,6 +344,8 @@ pub(crate) async fn show_desktop_lyric_window(
         .get_webview_window("desktop-lyric")
         .ok_or_else(|| "找不到桌面歌词窗口".to_string())?;
 
+    let render_state = app_handle.state::<DesktopLyricRenderState>();
+    wait_for_desktop_lyric_ready(&render_state).await?;
     apply_desktop_lyric_lock(&lyric_window, lock)?;
     lyric_window
         .show()

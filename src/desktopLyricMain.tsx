@@ -14,3 +14,13 @@ createRoot(root).render(
     <DesktopLyricPage />
   </StrictMode>,
 );
+
+if ('__TAURI_INTERNALS__' in window) {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      void import('@tauri-apps/api/core')
+        .then(({ invoke }) => invoke('mark_desktop_lyric_ready'))
+        .catch((error) => console.error('Failed to mark desktop lyric ready:', error));
+    });
+  });
+}
