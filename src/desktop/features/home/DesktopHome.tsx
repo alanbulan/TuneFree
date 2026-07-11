@@ -12,6 +12,7 @@ import { useToast } from '../../components/ToastHost';
 import VirtualRail from '../../components/VirtualRail';
 import type { DesktopView } from '../../types';
 import { ContextSearchPanel, HomeHero, HomeSourceTabs } from './HomePanels';
+import { attachContextSearchMeta, isCurrentContextSearch } from './contextSearch';
 import { useRecommendationJob } from './useRecommendationJob';
 
 const topListCache = new Map<string, { lists: TopList[]; ts: number }>();
@@ -35,6 +36,10 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
   const [lastAiSearch, setLastAiSearch] = useState('');
   const requestIdRef = useRef(0);
   const detailRequestIdRef = useRef(0);
+  const aiRequestIdRef = useRef(0);
+  const aiAbortRef = useRef<AbortController | null>(null);
+  const activeSourceRef = useRef(activeSource);
+  activeSourceRef.current = activeSource;
   const { playQueue } = usePlayerActions();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
   const { favorites, playlists, toggleFavorite, isFavorite } = useLibrary();
@@ -61,22 +66,37 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
   }, []);
 
   const handleAiSearch = useCallback(async (query: string) => {
-    if (!query.trim() || loadingBrowseSongs) return;
+    const cleanQuery = query.trim();
+    if (!cleanQuery) return;
+    aiAbortRef.current?.abort();
+    const controller = new AbortController();
+    aiAbortRef.current = controller;
+    const requestId = ++aiRequestIdRef.current;
+    const recommendationRequestId = `embeat:${Date.now()}:${requestId}`;
     setLoadingBrowseSongs(true);
-    setLastAiSearch(query);
+    setLastAiSearch(cleanQuery);
     setBrowseError('');
     try {
-      const songs = await getAIRecommendedSongs(query, 'netease', 20);
-      setBrowseSongs(songs);
-      showToast(songs.length === 0 ? '暂未找到符合意境的歌曲，换个词试试看' : `已生成 ${songs.length} 首语境歌曲`, songs.length === 0 ? 'info' : 'success');
+      const songs = await getAIRecommendedSongs(cleanQuery, 'netease', 20, controller.signal);
+      if (!isCurrentContextSearch(requestId, aiRequestIdRef.current, activeSourceRef.current)) return;
+      const contextSongs = attachContextSearchMeta(songs, recommendationRequestId);
+      setBrowseSongs(contextSongs);
+      showToast(contextSongs.length === 0 ? '暂未找到符合意境的歌曲，换个词试试看' : `已生成 ${contextSongs.length} 首语境歌曲`, contextSongs.length === 0 ? 'info' : 'success');
     } catch (cause) {
+      if (!isCurrentContextSearch(requestId, aiRequestIdRef.current, activeSourceRef.current)) return;
       console.error(cause);
-      setBrowseError('语境搜歌接口繁忙或超时，请稍后再试。');
+      const message = cause instanceof Error && cause.message.includes('RATE_LIMIT')
+        ? '语境搜歌请求过于频繁，请稍后再试。'
+        : '语境搜歌服务当前不可用，请稍后再试。';
+      setBrowseError(message);
       setBrowseSongs([]);
     } finally {
-      setLoadingBrowseSongs(false);
+      if (requestId === aiRequestIdRef.current) {
+        aiAbortRef.current = null;
+        setLoadingBrowseSongs(false);
+      }
     }
-  }, [loadingBrowseSongs, showToast]);
+  }, [showToast]);
 
   const loadTopListDetail = useCallback(async (list: TopList, source = activeSource) => {
     const requestId = ++detailRequestIdRef.current;
@@ -102,6 +122,10 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
   }, [activeSource]);
 
   useEffect(() => {
+    aiAbortRef.current?.abort();
+    aiAbortRef.current = null;
+    aiRequestIdRef.current += 1;
+    setLoadingBrowseSongs(false);
     const requestId = ++requestIdRef.current;
     setBrowseError('');
     setSelectedTopListId(null);
@@ -139,6 +163,11 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       if (requestId === requestIdRef.current) setLoadingLists(false);
     });
   }, [activeSource]);
+
+  useEffect(() => () => {
+    aiRequestIdRef.current += 1;
+    aiAbortRef.current?.abort();
+  }, []);
 
   const handleFavorite = (song: Song) => {
     const wasFavorite = isFavorite(song.id, song.source);

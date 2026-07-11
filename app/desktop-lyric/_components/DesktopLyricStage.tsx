@@ -123,8 +123,6 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
           style={{
             color: 'var(--accent, #fa233b)',
             textShadow: activeShadow,
-            WebkitTextStroke: '0.62px rgba(0, 0, 0, 0.86)',
-            paintOrder: 'stroke fill',
             textAlign: 'center',
           }}
         >

@@ -97,7 +97,7 @@ export const proxyFetchJson = async (
  */
 export const proxyFetch = async (
   url: string,
-  options: Omit<RequestInit, "signal" | "credentials" | "mode"> = {},
+  options: Omit<RequestInit, "credentials" | "mode"> = {},
   timeoutMs = 8000,
 ): Promise<Response | null> => {
   const proxies = getProxies();
@@ -107,16 +107,24 @@ export const proxyFetch = async (
     try {
       const finalUrl = `${proxy}${encodeURIComponent(url)}`;
       const controller = new AbortController();
+      const abortFromCaller = () => controller.abort(options.signal?.reason);
+      if (options.signal?.aborted) abortFromCaller();
+      options.signal?.addEventListener('abort', abortFromCaller, { once: true });
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       const isSelfProxy = proxy === SELF_HOSTED_PROXY;
 
-      const resp = await fetch(finalUrl, {
-        ...options,
-        ...(isSelfProxy ? {} : { mode: "cors" as RequestMode }),
-        credentials: "omit",
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+      let resp: Response;
+      try {
+        resp = await fetch(finalUrl, {
+          ...options,
+          ...(isSelfProxy ? {} : { mode: "cors" as RequestMode }),
+          credentials: "omit",
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+        options.signal?.removeEventListener('abort', abortFromCaller);
+      }
 
       if (resp.ok) {
         return resp;
@@ -124,6 +132,11 @@ export const proxyFetch = async (
 
       lastResp = resp;
     } catch {
+      if (options.signal?.aborted) {
+        throw options.signal.reason instanceof Error
+          ? options.signal.reason
+          : new DOMException('The operation was aborted', 'AbortError');
+      }
       /* 继续下一个代理 */
     }
   }

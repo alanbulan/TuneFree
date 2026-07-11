@@ -1,6 +1,6 @@
 {
   "name": "tunefree-desktop",
-  "version": "1.1.21",
+  "version": "1.1.22",
   "private": true,
   "type": "module",
   "scripts": {
@@ -38,7 +38,6 @@
     "vite": "8.1.4",
     "vitest": "4.1.10"
   },
-  "//framer-motion": "Tip: for better tree-shaking, import from framer-motion subpaths (e.g. 'framer-motion/m' for motion components) if bundle size becomes a concern.",
   "overrides": {
     "postcss": "^8.5.16"
   }

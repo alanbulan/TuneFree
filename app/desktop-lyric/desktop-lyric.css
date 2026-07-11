@@ -85,7 +85,6 @@ body > div:first-child {
   gap: 5px;
   color: #f8fafc;
   opacity: 1;
-  filter: blur(0.1px);
 }
 
 .desktop-lyric-context-top {
@@ -134,6 +133,19 @@ body > div:first-child {
   width: 100%;
   max-width: 100%;
   overflow: visible;
+}
+
+.desktop-lyric-root .karaoke-word {
+  background: transparent;
+  box-shadow: none;
+  filter: none;
+  -webkit-text-stroke: 0;
+  paint-order: normal;
+  transition: color 0.12s ease, opacity 0.12s ease;
+}
+
+.desktop-lyric-root .karaoke-word.active {
+  filter: none;
 }
 
 .desktop-lyric-resize-layer {

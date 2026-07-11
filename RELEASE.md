@@ -1,33 +1,90 @@
-# TuneFree 发布流程
+# TuneFree Desktop 发布流程
 
-公开发布页：<https://github.com/alanbulan/TuneFree_Mobile/releases>
+正式版本只从 `tauri` 分支发布。公开发布页：<https://github.com/alanbulan/TuneFree_Mobile/releases>。
 
-1. 执行 `npm run version:bump`，或使用 `version:bump:minor`、`version:bump:major`。
-2. 执行 `npm run version:check`，确认 package、Tauri、Cargo 和锁文件版本一致。
-3. 提交版本变更并推送与版本一致的标签，例如 `v1.1.21`。
-4. GitHub Actions 的 `Release signed desktop app` 工作流会构建 NSIS 安装包、更新签名和 `latest.json`。
+## 版本升级
 
-Updater 公钥已提交到 `src-tauri/tauri.conf.json`。私钥没有进入仓库：
+补丁版本：
 
-- 本机备份：`%LOCALAPPDATA%\TuneFree\signing\updater.key`
-- 本机密码备份：`%LOCALAPPDATA%\TuneFree\signing\updater.key.password.dpapi`
-- GitHub Secrets：`TAURI_SIGNING_PRIVATE_KEY`
-- GitHub Secrets：`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+```powershell
+npm run version:bump
+```
 
-密码备份由当前 Windows 用户的 DPAPI 加密，只能在当前用户上下文中解密。恢复时执行：
+也可使用 `version:bump:minor` 或 `version:bump:major`。脚本会同步更新：
+
+- `package.json`
+- `package-lock.json`
+- `src-tauri/tauri.conf.json`
+- `src-tauri/Cargo.toml`
+- `src-tauri/Cargo.lock`
+
+升级后执行：
+
+```powershell
+npm run version:check
+```
+
+## 发布前验证
+
+```powershell
+npm ci
+npm run version:check
+npm run lint
+npm run typecheck
+npm run architecture:check
+npm test -- --run
+npm run build
+cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings -D clippy::too_many_lines
+cargo test --manifest-path src-tauri/Cargo.toml --locked
+npx tauri build --no-bundle
+git diff --check
+```
+
+## 提交与标签
+
+版本号与标签必须一致。例如当前版本升级为 `1.1.22` 时：
+
+```powershell
+git add -A
+git commit -m "release: publish v1.1.22"
+git tag -a v1.1.22 -m "TuneFree v1.1.22"
+git push origin tauri
+git push origin v1.1.22
+```
+
+推送 `v*` 标签后，GitHub Actions 的 `Release signed desktop app` 工作流会构建、签名并发布：
+
+- `TuneFree_{version}_x64-setup.exe`
+- `TuneFree_{version}_x64-setup.exe.sig`
+- `latest.json`
+- 自动生成的版本说明
+
+## 签名配置
+
+Updater 公钥保存在 `src-tauri/tauri.conf.json`。私钥和密码不得提交到仓库：
+
+- 本机私钥：`%LOCALAPPDATA%\TuneFree\signing\updater.key`
+- 本机 DPAPI 密码备份：`%LOCALAPPDATA%\TuneFree\signing\updater.key.password.dpapi`
+- GitHub Secret：`TAURI_SIGNING_PRIVATE_KEY`
+- GitHub Secret：`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+
+读取当前 Windows 用户的 DPAPI 密码备份：
 
 ```powershell
 $encrypted = Get-Content -Raw "$env:LOCALAPPDATA\TuneFree\signing\updater.key.password.dpapi"
 $password = [System.Net.NetworkCredential]::new('', (ConvertTo-SecureString $encrypted)).Password
 ```
 
-私钥和密码必须同时备份到安全位置。丢失后无法为已安装客户端发布可验证的后续更新；首个签名版本发布后不得重新生成并覆盖现有公钥。
+首个签名版本发布后不能替换 updater 公钥，否则已安装客户端无法验证后续更新。
 
-发布后应确认 Release 中同时存在以下公开产物：
+## 发布后核验
 
-- Windows x64 NSIS 安装包 `TuneFree_{version}_x64-setup.exe`。
-- 与安装包配套的 `.sig` 签名文件。
-- 自动更新清单 `latest.json`。
-- 由提交记录生成的版本说明。
+1. 工作流结论为 success。
+2. Release 标签和目标提交与本次发布一致。
+3. 三个发布资产均存在且非空。
+4. `latest.json.version` 与标签一致。
+5. `latest.json` 的 `windows-x86_64` URL 指向本次安装包，签名字段非空。
+6. 本地 `tauri` 分支与 `origin/tauri` 同步且工作区干净。
 
-同时检查 `latest.json` 的 `windows-x86_64` URL、版本号与签名均指向本次产物。安装包应作为 GitHub Release Asset 发布，不再提交到源码目录。
+安装包只发布到 GitHub Releases，不提交到源码目录。

@@ -32,8 +32,6 @@ export function LyricLineRenderer({ line, active = false, size, shadow, align = 
       style={{
         textAlign: align,
         textShadow: shadow,
-        WebkitTextStroke: active ? '0.62px rgba(0, 0, 0, 0.86)' : '0.34px rgba(0, 0, 0, 0.74)',
-        paintOrder: 'stroke fill',
         opacity: active ? 1 : contextOpacity,
       }}
     >
