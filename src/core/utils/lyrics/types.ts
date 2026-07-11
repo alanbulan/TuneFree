@@ -12,6 +12,7 @@ export type ParsedLyric = {
   mainTexts?: string[];
   translation?: string;
   translations?: string[];
+  translationWords?: ParsedLyricWord[];
   romanization?: string;
   pronunciation?: string;
   extra?: ParsedLyricExtra[];

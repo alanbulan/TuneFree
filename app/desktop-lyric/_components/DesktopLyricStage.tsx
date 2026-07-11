@@ -183,7 +183,18 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
       <div className="desktop-lyric-focus" data-tauri-drag-region>
         <div className="desktop-lyric-focus-content" data-tauri-drag-region>
           <div ref={focusMeasureRef} className="desktop-lyric-focus-measure" data-tauri-drag-region>
-            {currentLine && <LyricLineRenderer line={currentLine} active size={focusSize} shadow={activeShadow} currentTime={lyricClock} source={song?.source} enableKaraoke={enableKaraoke} />}
+            {currentLine && (
+              <LyricLineRenderer
+                key={`${currentLine.time}-${currentLine.text}`}
+                line={currentLine}
+                active
+                size={focusSize}
+                shadow={activeShadow}
+                currentTime={lyricClock}
+                source={song?.source}
+                enableKaraoke={enableKaraoke}
+              />
+            )}
           </div>
         </div>
       </div>
