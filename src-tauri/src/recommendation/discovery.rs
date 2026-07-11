@@ -221,61 +221,58 @@ async fn search_qq(client: &Client, keyword: &str, limit: usize) -> Vec<RecSong>
         .and_then(|body| body.get("song"))
         .and_then(|song| song.get("list"))
         .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| {
-                    let id = item
-                        .get("mid")
-                        .or_else(|| item.get("songmid"))
-                        .or_else(|| item.get("id"))
-                        .map(value_id)?;
-                    let name = item
-                        .get("name")
-                        .or_else(|| item.get("title"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .trim();
-                    if name.is_empty() {
-                        return None;
-                    }
-                    let artist = item
-                        .get("singer")
-                        .and_then(Value::as_array)
-                        .map(|items| join_names(items))
-                        .unwrap_or_default();
-                    let album_value = item.get("album");
-                    let album = album_value
-                        .and_then(|album| album.get("name").or_else(|| album.get("title")))
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .to_string();
-                    let pic = album_value
-                        .and_then(|album| album.get("mid"))
-                        .and_then(Value::as_str)
-                        .filter(|mid| !mid.is_empty())
-                        .map(|mid| {
-                            format!(
-                                "https://y.gtimg.cn/music/photo_new/T002R500x500M000{}.jpg",
-                                mid
-                            )
-                        });
-                    Some(RecSong {
-                        id: Value::String(id),
-                        source: "qq".to_string(),
-                        name: name.to_string(),
-                        artist,
-                        album,
-                        pic,
-                        pic_id: None,
-                        url_id: None,
-                        lyric_id: None,
-                        types: None,
-                    })
-                })
-                .collect()
-        })
+        .map(|items| items.iter().filter_map(qq_song_from_value).collect())
         .unwrap_or_default()
+}
+
+fn qq_song_from_value(item: &Value) -> Option<RecSong> {
+    let id = item
+        .get("mid")
+        .or_else(|| item.get("songmid"))
+        .or_else(|| item.get("id"))
+        .map(value_id)?;
+    let name = item
+        .get("name")
+        .or_else(|| item.get("title"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    if name.is_empty() {
+        return None;
+    }
+    let artist = item
+        .get("singer")
+        .and_then(Value::as_array)
+        .map(|items| join_names(items))
+        .unwrap_or_default();
+    let album_value = item.get("album");
+    let album = album_value
+        .and_then(|album| album.get("name").or_else(|| album.get("title")))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let pic = album_value
+        .and_then(|album| album.get("mid"))
+        .and_then(Value::as_str)
+        .filter(|mid| !mid.is_empty())
+        .map(|mid| {
+            format!(
+                "https://y.gtimg.cn/music/photo_new/T002R500x500M000{}.jpg",
+                mid
+            )
+        });
+    Some(RecSong {
+        id: Value::String(id),
+        source: "qq".to_string(),
+        name: name.to_string(),
+        artist,
+        album,
+        pic,
+        pic_id: None,
+        url_id: None,
+        lyric_id: None,
+        types: None,
+    })
 }
 
 async fn search_kuwo(client: &Client, keyword: &str, limit: usize) -> Vec<RecSong> {

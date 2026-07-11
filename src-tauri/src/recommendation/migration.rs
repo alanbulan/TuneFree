@@ -6,9 +6,7 @@ const DERIVED_DATA_MIGRATION_VERSION: i64 = 2;
 const EVENT_WEIGHT_MIGRATION_VERSION: i64 = 3;
 const RECOMMENDATION_CLICK_MIGRATION_VERSION: i64 = 4;
 
-pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute_batch(
-        r#"
+const SCHEMA_SQL: &str = r#"
         PRAGMA foreign_keys = ON;
 
         CREATE TABLE IF NOT EXISTS tracks (
@@ -155,6 +153,7 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
           cache_ttl_seconds INTEGER NOT NULL DEFAULT 86400,
           upload_recent_events INTEGER NOT NULL DEFAULT 0,
           api_key TEXT NOT NULL DEFAULT '',
+          api_key_deleted INTEGER NOT NULL DEFAULT 0,
           updated_at INTEGER NOT NULL
         );
 
@@ -182,8 +181,10 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_llm_calls_created ON llm_calls(created_at);
-        "#,
-    )?;
+"#;
+
+pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(SCHEMA_SQL)?;
 
     conn.execute(
         "INSERT OR IGNORE INTO llm_config (
@@ -203,6 +204,12 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
     if !column_exists(conn, "llm_config", "api_key")? {
         conn.execute(
             "ALTER TABLE llm_config ADD COLUMN api_key TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+    if !column_exists(conn, "llm_config", "api_key_deleted")? {
+        conn.execute(
+            "ALTER TABLE llm_config ADD COLUMN api_key_deleted INTEGER NOT NULL DEFAULT 0",
             [],
         )?;
     }

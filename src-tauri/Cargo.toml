@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "1.1.17"
+version = "1.1.18"
 description = "TuneFree Desktop - Modern desktop music player"
 authors = ["AlanBulan"]
 license = "MIT"
@@ -38,3 +38,6 @@ async-trait = "0.1"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 parking_lot = "0.12"
 single-instance = "0.3.3"
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "=3.6.3", default-features = false, features = ["windows-native"] }

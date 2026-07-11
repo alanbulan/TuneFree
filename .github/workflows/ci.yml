@@ -31,16 +31,12 @@ jobs:
       - run: npm ci
       - run: npm run version:check
       - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run architecture:check
       - run: npm test -- --run
       - run: npm run build
-      - name: Check formatting of maintained Rust modules
-        shell: pwsh
-        run: |
-          rustfmt --edition 2021 --check --config skip_children=true src-tauri/src/lib.rs
-          Get-ChildItem src-tauri/src/recommendation -Filter *.rs | ForEach-Object {
-            rustfmt --edition 2021 --check --config skip_children=true $_.FullName
-          }
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings -D clippy::too_many_lines
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
       - run: npx tauri build --no-bundle
       - run: git diff --exit-code

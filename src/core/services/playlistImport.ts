@@ -4,119 +4,28 @@ import { proxyFetch, proxyFetchJson, proxyFetchJsonWithValidator } from "./proxy
 import { qqMusicuFetch } from "./qq";
 import { batchFetchKuwoCovers } from "./kuwo";
 import { fixUrl, normalizeSongs } from "./utils";
+import {
+  PlaylistImportError,
+  TUNEHUB_API_BASE,
+  parsePlaylistImportInput,
+  type ImportedPlaylistPayload,
+} from './playlistImportInput';
+
+export {
+  PLAYLIST_IMPORT_ERROR_MESSAGES,
+  PLAYLIST_IMPORT_SOURCES,
+  PlaylistImportError,
+  TUNEHUB_API_BASE,
+  getPlaylistImportErrorMessage,
+  parsePlaylistImportInput,
+  type ImportedPlaylistPayload,
+  type PlaylistImportErrorCode,
+} from './playlistImportInput';
 
 // ==============================
 // 在线歌单导入（与 Flutter 版 playlist_import_repository 对齐）
 // 直连 netease / qq / kuwo 歌单接口，失败时回落 TuneHub methods 描述符。
 // ==============================
-
-export const TUNEHUB_API_BASE = "https://tunehub.sayqz.com/api";
-
-export type PlaylistImportErrorCode =
-  | "invalidInput"
-  | "sourceMismatch"
-  | "unsupportedSource"
-  | "emptyPlaylist"
-  | "network"
-  | "remoteFormat";
-
-export class PlaylistImportError extends Error {
-  code: PlaylistImportErrorCode;
-
-  constructor(code: PlaylistImportErrorCode, message?: string) {
-    super(message || code);
-    this.name = "PlaylistImportError";
-    this.code = code;
-  }
-}
-
-export const PLAYLIST_IMPORT_ERROR_MESSAGES: Record<
-  PlaylistImportErrorCode,
-  string
-> = {
-  invalidInput: "无法识别歌单链接或 ID",
-  sourceMismatch: "链接与所选音源不一致",
-  unsupportedSource: "暂不支持该音源歌单导入",
-  emptyPlaylist: "歌单为空或暂时无法访问",
-  network: "网络异常，导入失败，请稍后重试",
-  remoteFormat: "解析歌单数据失败",
-};
-
-export const getPlaylistImportErrorMessage = (error: unknown): string =>
-  error instanceof PlaylistImportError
-    ? PLAYLIST_IMPORT_ERROR_MESSAGES[error.code]
-    : PLAYLIST_IMPORT_ERROR_MESSAGES.network;
-
-export const PLAYLIST_IMPORT_SOURCES = [
-  { value: "netease", label: "网易云", placeholder: "歌单链接或 ID，如 music.163.com/playlist?id=..." },
-  { value: "qq", label: "QQ音乐", placeholder: "歌单链接或 ID，如 y.qq.com/.../playlist/..." },
-  { value: "kuwo", label: "酷我音乐", placeholder: "歌单链接或 ID，如 kuwo.cn/playlist_detail/..." },
-] as const;
-
-export interface ImportedPlaylistPayload {
-  name: string;
-  songs: Song[];
-}
-
-// ==============================
-// 输入解析：链接源检测 + 歌单 ID 提取
-// ==============================
-
-const detectSource = (input: string): string | null => {
-  const lower = input.toLowerCase();
-  if (lower.includes("music.163.com") || lower.includes("y.music.163.com")) {
-    return "netease";
-  }
-  if (lower.includes("y.qq.com") || lower.includes("i.y.qq.com")) return "qq";
-  if (lower.includes("kuwo.cn")) return "kuwo";
-  return null;
-};
-
-const firstRegexGroup = (input: string, pattern: RegExp): string | null =>
-  pattern.exec(input)?.[1] || null;
-
-const rawInputId = (input: string): string | null =>
-  /^[A-Za-z0-9_-]+$/.test(input) ? input : null;
-
-const extractNeteasePlaylistId = (input: string): string | null =>
-  firstRegexGroup(input, /(?:[?&#]|\/)id=(\d+)/) ||
-  firstRegexGroup(input, /playlist\?id=(\d+)/) ||
-  firstRegexGroup(input, /\/playlist\/(\d+)/) ||
-  rawInputId(input);
-
-const extractQqPlaylistId = (input: string): string | null =>
-  firstRegexGroup(input, /(?:[?&#])(?:dissid|id|dirid)=([A-Za-z0-9_-]+)/) ||
-  firstRegexGroup(input, /\/playlist\/([A-Za-z0-9_-]+)/) ||
-  rawInputId(input);
-
-const extractKuwoPlaylistId = (input: string): string | null =>
-  firstRegexGroup(input, /(?:[?&#])pid=([A-Za-z0-9_-]+)/) ||
-  firstRegexGroup(input, /\/playlist_detail\/(\d+)/) ||
-  firstRegexGroup(input, /\/playlist\/(\d+)/) ||
-  rawInputId(input);
-
-export const parsePlaylistImportInput = (
-  source: string,
-  input: string,
-): { source: string; id: string } => {
-  const normalizedSource = source.trim();
-  const trimmedInput = input.trim();
-  if (!trimmedInput) throw new PlaylistImportError("invalidInput");
-
-  const detected = detectSource(trimmedInput);
-  if (detected && detected !== normalizedSource) {
-    throw new PlaylistImportError("sourceMismatch");
-  }
-
-  let id: string | null = null;
-  if (normalizedSource === "netease") id = extractNeteasePlaylistId(trimmedInput);
-  else if (normalizedSource === "qq") id = extractQqPlaylistId(trimmedInput);
-  else if (normalizedSource === "kuwo") id = extractKuwoPlaylistId(trimmedInput);
-  else throw new PlaylistImportError("unsupportedSource");
-
-  if (!id) throw new PlaylistImportError("invalidInput");
-  return { source: normalizedSource, id };
-};
 
 // ==============================
 // 直连：网易云歌单（v6 detail，tracks 截断时按 trackIds 分批补齐）

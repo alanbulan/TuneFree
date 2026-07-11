@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MusicIcon, SearchIcon, TrashIcon } from '../../../core/components/Icons';
+import { MusicIcon, SearchIcon } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { isGDStudioOnlySource, searchAggregate, searchSongs } from '../../../core/services/api';
@@ -12,6 +12,7 @@ import {
 } from '../../../core/utils/musicSource';
 import SongTable from '../../components/SongTable';
 import { useToast } from '../../components/ToastHost';
+import SearchHistoryPanel from './SearchHistoryPanel';
 
 const historyKey = 'tunefree_search_history';
 const extendedKey = 'tunefree_aggregate_extended_sources';
@@ -282,36 +283,14 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
           )}
         </section>
 
-        <aside className="content-card glass-panel">
-          <div className="panel-label-row">
-            <h3>搜索历史</h3>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="清空历史"
-              onClick={() => {
-                if (history.length === 0) return;
-                const previousHistory = history;
-                setHistory([]);
-                showToast('已清空搜索历史', 'success', {
-                  label: '撤销',
-                  onClick: () => setHistory(previousHistory),
-                });
-              }}
-            >
-              <TrashIcon size={16} />
-            </button>
-          </div>
-          <div className="segment-row history-chip-row">
-            {history.length === 0 ? (
-              <p className="muted-text">暂无历史记录</p>
-            ) : history.map((term) => (
-              <button type="button" className="source-chip" key={term} onClick={() => setQuery(term)}>
-                {term}
-              </button>
-            ))}
-          </div>
-        </aside>
+        <SearchHistoryPanel history={history} onSelect={setQuery} onClear={() => {
+          if (history.length === 0) return;
+          const previousHistory = history;
+          setHistory([]);
+          showToast('已清空搜索历史', 'success', {
+            label: '撤销', onClick: () => setHistory(previousHistory),
+          });
+        }} />
       </div>
     </div>
   );

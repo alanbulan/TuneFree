@@ -8,6 +8,8 @@ use super::{
     profile, recall,
 };
 
+const MAX_LOCAL_SCORE: f64 = 1.20 + 1.00 + 0.70 + 0.35 + 0.20 + 0.15 * 0.30 + 0.25;
+
 pub fn rank_candidates(
     conn: &Connection,
     mut candidates: Vec<Candidate>,
@@ -69,7 +71,7 @@ pub fn rank_candidates(
             push_reason(candidate, "高音质候选".to_string());
         }
 
-        candidate.local_score = 1.20 * candidate.profile_score
+        let raw_score = 1.20 * candidate.profile_score
             + 1.00 * candidate.itemcf_score
             + 0.70 * candidate.artist_match
             + 0.35 * candidate.source_preference
@@ -78,11 +80,15 @@ pub fn rank_candidates(
             + 0.25 * candidate.diversity_seed_score
             - 1.50 * candidate.recent_penalty
             - 3.00 * candidate.dismiss_penalty;
+        candidate.local_score = normalize_local_score(raw_score);
     }
 
+    Ok(finalize_candidates(candidates))
+}
+
+fn finalize_candidates(mut candidates: Vec<Candidate>) -> Vec<Candidate> {
     candidates
         .retain(|candidate| candidate.dismiss_penalty < 1.0 && candidate.recent_penalty < 1.0);
-
     candidates.sort_by(|a, b| {
         b.local_score
             .partial_cmp(&a.local_score)
@@ -99,7 +105,11 @@ pub fn rank_candidates(
     candidates
         .retain(|candidate| seen_song_identity.insert(catalog::song_identity(&candidate.song)));
 
-    Ok(candidates)
+    candidates
+}
+
+fn normalize_local_score(score: f64) -> f64 {
+    (score / MAX_LOCAL_SCORE).clamp(0.0, 1.0)
 }
 
 fn push_reason(candidate: &mut Candidate, reason: String) {
@@ -108,5 +118,18 @@ fn push_reason(candidate: &mut Candidate, reason: String) {
     }
     if !candidate.reasons.iter().any(|item| item == &reason) {
         candidate.reasons.push(reason);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_score_is_normalized_to_unit_interval() {
+        assert_eq!(normalize_local_score(0.0), 0.0);
+        assert!((normalize_local_score(MAX_LOCAL_SCORE) - 1.0).abs() < f64::EPSILON);
+        assert_eq!(normalize_local_score(MAX_LOCAL_SCORE * 2.0), 1.0);
+        assert_eq!(normalize_local_score(-1.0), 0.0);
     }
 }

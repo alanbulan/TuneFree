@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection};
 
 use super::{
-    catalog,
+    catalog, credential_store,
     model::{LlmConfig, LlmConfigInput, LlmConfigView},
 };
 
@@ -40,6 +40,13 @@ pub fn config_from_input(input: &LlmConfigInput) -> LlmConfig {
     }
 }
 
+fn validate_config(config: &mut LlmConfig) -> Result<(), String> {
+    if !config.base_url.is_empty() {
+        config.base_url = super::privacy::validate_base_url(&config.base_url)?;
+    }
+    Ok(())
+}
+
 pub fn view_config(
     conn: &Connection,
     database_size_bytes: u64,
@@ -48,7 +55,7 @@ pub fn view_config(
     let config = load_config(conn).map_err(|e| format!("读取模型配置失败: {}", e))?;
     let local_recommendation_enabled =
         load_recommendation_enabled(conn).map_err(|e| format!("读取推荐开关失败: {}", e))?;
-    let has_api_key = get_api_key(conn)
+    let has_api_key = credential_store::get_api_key(conn)
         .map(|key| !key.trim().is_empty())
         .map_err(|e| format!("读取 API Key 状态失败: {}", e))?;
     let llm_cache_entries = conn
@@ -75,7 +82,8 @@ pub fn view_config(
 }
 
 pub fn save_config(conn: &Connection, input: LlmConfigInput) -> Result<(), String> {
-    let config = config_from_input(&input);
+    let mut config = config_from_input(&input);
+    validate_config(&mut config)?;
     let local_recommendation_enabled = input.local_recommendation_enabled;
 
     conn.execute(
@@ -114,12 +122,12 @@ pub fn save_config(conn: &Connection, input: LlmConfigInput) -> Result<(), Strin
     }
 
     if input.clear_api_key.unwrap_or(false) {
-        delete_api_key(conn)?;
+        credential_store::delete_api_key(conn)?;
     } else if let Some(api_key) = input.api_key {
         let api_key = api_key.trim();
         if !api_key.is_empty() {
-            set_api_key(conn, api_key)?;
-            let saved_api_key = get_api_key(conn)?;
+            credential_store::save_api_key(conn, api_key)?;
+            let saved_api_key = credential_store::get_api_key(conn)?;
             if saved_api_key.trim() != api_key {
                 return Err("API Key 已提交保存，但本地配置校验失败".to_string());
             }
@@ -153,26 +161,5 @@ fn save_recommendation_enabled(conn: &Connection, enabled: bool) -> Result<(), S
 }
 
 pub fn get_api_key(conn: &Connection) -> Result<String, String> {
-    conn.query_row("SELECT api_key FROM llm_config WHERE id = 1", [], |row| {
-        row.get(0)
-    })
-    .map_err(|e| format!("读取 API Key 失败: {}", e))
-}
-
-fn set_api_key(conn: &Connection, api_key: &str) -> Result<(), String> {
-    conn.execute(
-        "UPDATE llm_config SET api_key = ?1, updated_at = ?2 WHERE id = 1",
-        params![api_key, catalog::now_ms()],
-    )
-    .map(|_| ())
-    .map_err(|e| format!("保存 API Key 失败: {}", e))
-}
-
-fn delete_api_key(conn: &Connection) -> Result<(), String> {
-    conn.execute(
-        "UPDATE llm_config SET api_key = '', updated_at = ?1 WHERE id = 1",
-        params![catalog::now_ms()],
-    )
-    .map(|_| ())
-    .map_err(|e| format!("删除 API Key 失败: {}", e))
+    credential_store::get_api_key(conn)
 }
