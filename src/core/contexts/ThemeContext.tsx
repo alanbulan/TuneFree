@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyThemeClasses,
   applyThemeVariables,
@@ -36,25 +36,18 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [themeMode, setThemeModeState] = useState<ThemeMode>(DEFAULT_THEME_PREFERENCES.themeMode);
-  const [themeColor, setThemeColorState] = useState<ThemeColor>(DEFAULT_THEME_PREFERENCES.themeColor);
-  const [lyricSize, setLyricSizeState] = useState<number>(DEFAULT_THEME_PREFERENCES.lyricSize);
-  const [lyricFont, setLyricFontState] = useState<string>(DEFAULT_THEME_PREFERENCES.lyricFont);
-  const [showDesktopLyric, setShowDesktopLyricState] = useState<boolean>(DEFAULT_THEME_PREFERENCES.showDesktopLyric);
-  const [lockDesktopLyric, setLockDesktopLyricState] = useState<boolean>(DEFAULT_THEME_PREFERENCES.lockDesktopLyric);
-
-  // 从 localStorage 加载配置，并对旧版本/异常值做安全兜底
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const preferences = readThemePreferences(localStorage);
-    setThemeModeState(preferences.themeMode);
-    setThemeColorState(preferences.themeColor);
-    setLyricSizeState(preferences.lyricSize);
-    setLyricFontState(preferences.lyricFont);
-    setShowDesktopLyricState(preferences.showDesktopLyric);
-    setLockDesktopLyricState(preferences.lockDesktopLyric);
-  }, []);
+  const [initialPreferences] = useState(() => (
+    typeof window === 'undefined' ? DEFAULT_THEME_PREFERENCES : readThemePreferences(localStorage)
+  ));
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(initialPreferences.themeMode);
+  const [themeColor, setThemeColorState] = useState<ThemeColor>(initialPreferences.themeColor);
+  const [lyricSize, setLyricSizeState] = useState<number>(initialPreferences.lyricSize);
+  const [lyricFont, setLyricFontState] = useState<string>(initialPreferences.lyricFont);
+  const [showDesktopLyric, setShowDesktopLyricState] = useState<boolean>(initialPreferences.showDesktopLyric);
+  const [lockDesktopLyric, setLockDesktopLyricState] = useState<boolean>(initialPreferences.lockDesktopLyric);
+  const desktopLyricCommandQueue = useRef<Promise<void>>(Promise.resolve());
+  const lockDesktopLyricRef = useRef(lockDesktopLyric);
+  lockDesktopLyricRef.current = lockDesktopLyric;
 
   const setThemeMode = useCallback((mode: ThemeMode) => {
     const safeMode = normalizeThemeMode(mode);
@@ -130,35 +123,39 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return () => mediaQuery.removeEventListener('change', applyTheme);
   }, [themeMode, themeColor, lyricSize, lyricFont]);
 
-  // 跨窗口同步 Tauri 歌词窗口的显示与隐藏
+  // 串行同步歌词窗口显隐，避免快速关闭/重开时旧命令覆盖最新状态。
   useEffect(() => {
     const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
     if (!isTauri) return;
 
-    let active = true;
-
-    const manageWindow = async () => {
+    desktopLyricCommandQueue.current = desktopLyricCommandQueue.current.catch(() => {}).then(async () => {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-
-        if (active) {
-          if (showDesktopLyric) {
-            await invoke('show_desktop_lyric_window', { lock: lockDesktopLyric });
-          } else {
-            await invoke('hide_desktop_lyric_window');
-          }
+        if (showDesktopLyric) {
+          await invoke('show_desktop_lyric_window', { lock: lockDesktopLyricRef.current });
+        } else {
+          await invoke('hide_desktop_lyric_window');
         }
       } catch (err) {
         console.error('Tauri window management failed:', err);
       }
-    };
+    });
+  }, [showDesktopLyric]);
 
-    manageWindow();
+  // 锁定变化只更新焦点和鼠标穿透，不触发布局恢复或窗口显隐。
+  useEffect(() => {
+    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (!isTauri) return;
 
-    return () => {
-      active = false;
-    };
-  }, [showDesktopLyric, lockDesktopLyric]);
+    desktopLyricCommandQueue.current = desktopLyricCommandQueue.current.catch(() => {}).then(async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('set_desktop_lyric_lock', { lock: lockDesktopLyric });
+      } catch (err) {
+        console.error('Tauri lyric lock management failed:', err);
+      }
+    });
+  }, [lockDesktopLyric]);
 
   const value = useMemo<ThemeContextType>(() => ({
     themeMode,

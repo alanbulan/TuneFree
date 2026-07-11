@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-use tauri::{Manager, Monitor, PhysicalPosition, PhysicalSize, Runtime, Window};
+use tauri::{Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize, Runtime, Window};
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct DesktopLyricWindowBounds {
@@ -254,20 +254,28 @@ pub(crate) fn schedule_desktop_lyric_bounds_save<R: Runtime>(window: &Window<R>)
     });
 }
 
-pub(crate) fn persist_desktop_lyric_bounds_in_background<R: Runtime>(window: &Window<R>) {
+pub(crate) fn persist_desktop_lyric_bounds_now<R: Runtime>(window: &Window<R>) {
     let Some(bounds) = capture_desktop_lyric_bounds(window) else {
         return;
     };
     let app_handle = window.app_handle().clone();
     let generation = next_desktop_lyric_bounds_generation(&app_handle);
+    if let Err(error) = persist_desktop_lyric_bounds_generation(&app_handle, &bounds, generation) {
+        log::warn!("{}", error);
+    }
+}
 
-    tauri::async_runtime::spawn_blocking(move || {
-        if let Err(error) =
-            persist_desktop_lyric_bounds_generation(&app_handle, &bounds, generation)
-        {
-            log::warn!("{}", error);
-        }
-    });
+pub(crate) fn persist_visible_desktop_lyric_bounds<R: Runtime>(app_handle: &tauri::AppHandle<R>) {
+    let Some(window) = app_handle.get_webview_window("desktop-lyric") else {
+        return;
+    };
+    let Some(bounds) = capture_desktop_lyric_webview_bounds(&window) else {
+        return;
+    };
+    let generation = next_desktop_lyric_bounds_generation(app_handle);
+    if let Err(error) = persist_desktop_lyric_bounds_generation(app_handle, &bounds, generation) {
+        log::warn!("{}", error);
+    }
 }
 
 async fn persist_desktop_lyric_webview_bounds<R: Runtime>(
@@ -310,6 +318,21 @@ fn apply_desktop_lyric_bounds<R: Runtime>(window: &tauri::WebviewWindow<R>) {
     }
 }
 
+fn apply_desktop_lyric_lock<R: Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    lock: bool,
+) -> Result<(), String> {
+    window
+        .set_focusable(!lock)
+        .map_err(|e| format!("设置桌面歌词焦点状态失败: {}", e))?;
+    window
+        .set_ignore_cursor_events(lock)
+        .map_err(|e| format!("设置桌面歌词锁定状态失败: {}", e))?;
+    window
+        .emit_to("desktop-lyric", "lock-change", lock)
+        .map_err(|e| format!("同步桌面歌词锁定状态失败: {}", e))
+}
+
 #[tauri::command]
 pub(crate) async fn show_desktop_lyric_window(
     app_handle: tauri::AppHandle,
@@ -319,16 +342,32 @@ pub(crate) async fn show_desktop_lyric_window(
         .get_webview_window("desktop-lyric")
         .ok_or_else(|| "找不到桌面歌词窗口".to_string())?;
 
-    apply_desktop_lyric_bounds(&lyric_window);
+    let was_visible = lyric_window
+        .is_visible()
+        .map_err(|e| format!("读取桌面歌词显示状态失败: {}", e))?;
+    if !was_visible {
+        apply_desktop_lyric_bounds(&lyric_window);
+    }
+    apply_desktop_lyric_lock(&lyric_window, lock)?;
     lyric_window
         .show()
         .map_err(|e| format!("显示桌面歌词失败: {}", e))?;
-    apply_desktop_lyric_bounds(&lyric_window);
-    lyric_window
-        .set_ignore_cursor_events(lock)
-        .map_err(|e| format!("设置桌面歌词锁定状态失败: {}", e))?;
+    if !was_visible {
+        apply_desktop_lyric_bounds(&lyric_window);
+    }
 
     Ok(())
+}
+
+#[tauri::command]
+pub(crate) fn set_desktop_lyric_lock(
+    app_handle: tauri::AppHandle,
+    lock: bool,
+) -> Result<(), String> {
+    let lyric_window = app_handle
+        .get_webview_window("desktop-lyric")
+        .ok_or_else(|| "找不到桌面歌词窗口".to_string())?;
+    apply_desktop_lyric_lock(&lyric_window, lock)
 }
 
 #[tauri::command]
