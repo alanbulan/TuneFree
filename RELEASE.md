@@ -43,14 +43,14 @@ git diff --check
 
 ## 提交与标签
 
-版本号与标签必须一致。例如当前版本升级为 `1.1.22` 时：
+版本号与标签必须一致。例如当前版本升级为 `1.1.23` 时：
 
 ```powershell
 git add -A
-git commit -m "release: publish v1.1.22"
-git tag -a v1.1.22 -m "TuneFree v1.1.22"
+git commit -m "release: publish v1.1.23"
+git tag -a v1.1.23 -m "TuneFree v1.1.23"
 git push origin tauri
-git push origin v1.1.22
+git push origin v1.1.23
 ```
 
 推送 `v*` 标签后，GitHub Actions 的 `Release signed desktop app` 工作流会构建、签名并发布：
