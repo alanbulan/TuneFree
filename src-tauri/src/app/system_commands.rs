@@ -54,6 +54,8 @@ pub(crate) fn show_main_window(app_handle: &tauri::AppHandle) {
 /// Sets the quitting flag, sends the server shutdown signal, hides/closes
 /// the desktop-lyric window, and exits the app.
 pub(crate) fn quit_app_inner(app_handle: &tauri::AppHandle) {
+    super::desktop_lyric::persist_visible_desktop_lyric_bounds(app_handle);
+
     if let Some(state) = app_handle.try_state::<AppLifecycleState>() {
         state.is_quitting.store(true, Ordering::SeqCst);
         let _ = state.shutdown_tx.send(true);

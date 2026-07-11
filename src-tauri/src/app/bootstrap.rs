@@ -10,8 +10,8 @@ use tauri::{
 };
 
 use super::desktop_lyric::{
-    persist_desktop_lyric_bounds_in_background, schedule_desktop_lyric_bounds_save,
-    DesktopLyricBoundsSaveState,
+    persist_desktop_lyric_bounds_now, persist_visible_desktop_lyric_bounds,
+    schedule_desktop_lyric_bounds_save, DesktopLyricBoundsSaveState,
 };
 use super::downloads::{DownloadClient, DownloadTaskRegistry};
 use super::system_commands::{
@@ -184,7 +184,7 @@ fn handle_desktop_lyric_event(window: &tauri::Window, event: &WindowEvent) {
             schedule_desktop_lyric_bounds_save(window);
         }
         WindowEvent::CloseRequested { api, .. } => {
-            persist_desktop_lyric_bounds_in_background(window);
+            persist_desktop_lyric_bounds_now(window);
             let is_quitting = window
                 .try_state::<AppLifecycleState>()
                 .is_some_and(|state| state.is_quitting.load(Ordering::SeqCst));
@@ -248,6 +248,7 @@ fn build_application(context: BootstrapContext) -> tauri::App {
             recommendation_commands::clear_recommendation_data,
             system_commands::quit_app,
             desktop_lyric::show_desktop_lyric_window,
+            desktop_lyric::set_desktop_lyric_lock,
             desktop_lyric::hide_desktop_lyric_window
         ])
         .on_window_event(handle_desktop_lyric_event)
@@ -263,6 +264,7 @@ pub fn run() {
     };
     build_application(context).run(|app_handle, event| match event {
         tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
+            persist_visible_desktop_lyric_bounds(app_handle);
             if let Some(state) = app_handle.try_state::<AppLifecycleState>() {
                 let _ = state.shutdown_tx.send(true);
             }
