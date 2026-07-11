@@ -13,11 +13,15 @@ use super::desktop_lyric::{
     persist_desktop_lyric_bounds_now, persist_visible_desktop_lyric_bounds,
     schedule_desktop_lyric_bounds_save, DesktopLyricBoundsSaveState,
 };
+use super::desktop_lyric_render::DesktopLyricRenderState;
 use super::downloads::{DownloadClient, DownloadTaskRegistry};
 use super::system_commands::{
     acquire_process_instance, quit_app_inner, show_main_window, AppLifecycleState, LocalServerState,
 };
-use super::{desktop_lyric, downloads, recommendation_commands, system_commands, updater};
+use super::{
+    desktop_lyric, desktop_lyric_render, downloads, recommendation_commands, system_commands,
+    updater,
+};
 use crate::{recommendation::RecommendationService, server};
 
 struct BootstrapContext {
@@ -219,6 +223,7 @@ fn build_application(context: BootstrapContext) -> tauri::App {
         .manage(DownloadClient(context.download_client))
         .manage(DownloadTaskRegistry::default())
         .manage(DesktopLyricBoundsSaveState::default())
+        .manage(DesktopLyricRenderState::default())
         .invoke_handler(tauri::generate_handler![
             downloads::transfer::download_song_to_local,
             downloads::transfer::cancel_download,
@@ -250,6 +255,7 @@ fn build_application(context: BootstrapContext) -> tauri::App {
             recommendation_commands::test_llm_provider,
             recommendation_commands::clear_recommendation_data,
             system_commands::quit_app,
+            desktop_lyric_render::mark_desktop_lyric_ready,
             desktop_lyric::show_desktop_lyric_window,
             desktop_lyric::set_desktop_lyric_lock,
             desktop_lyric::hide_desktop_lyric_window
