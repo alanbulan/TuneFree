@@ -2,7 +2,8 @@ import { Song, TopList } from "../types";
 import { searchNetease, getNeteaseTopLists, getNeteaseTopListDetail } from "./netease";
 import { searchQQ, getQQTopLists, getQQTopListDetail } from "./qq";
 import { searchKuwo, getKuwoTopLists, getKuwoTopListDetail } from "./kuwo";
-import { searchGDStudio } from "./gdStudio";
+import { isGDStudioOnlySource, searchGDStudio } from "./gdStudio";
+import { EXTENDED_AGGREGATE_SOURCES } from "../utils/musicSource";
 
 export {
   normalizeMusicUrl,
@@ -56,7 +57,7 @@ export const searchSongs = async (
   if (platform === "netease") return searchNetease(keyword, page, limit);
   if (platform === "qq") return searchQQ(keyword, page, limit);
   if (platform === "kuwo") return searchKuwo(keyword, page, limit);
-  if (platform === "joox") return searchGDStudio(keyword, platform, page, limit);
+  if (isGDStudioOnlySource(platform)) return searchGDStudio(keyword, platform, page, limit);
 
   return [];
 };
@@ -67,7 +68,7 @@ export const searchAggregate = async (
   options: { includeExtendedSources?: boolean } = {},
 ): Promise<Song[]> => {
   const platforms = options.includeExtendedSources
-    ? (["netease", "qq", "kuwo", "joox"] as const)
+    ? (["netease", "qq", "kuwo", ...EXTENDED_AGGREGATE_SOURCES] as const)
     : (["netease", "qq", "kuwo"] as const);
 
   const results = await Promise.all(

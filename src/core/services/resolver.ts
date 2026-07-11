@@ -7,10 +7,8 @@ import {
   getGDStudioLyrics,
   getGDStudioSongUrl,
   isGDStudioOnlySource,
-  isGDStudioSource,
   parseGDStudioSongFull,
   resolveAutosource,
-  searchGDStudio,
 } from "./gdStudio";
 import type { Song } from "../types";
 
@@ -29,8 +27,8 @@ const FALLBACK_CANDIDATE_LIMIT = 3;
 const FALLBACK_SOURCE_CONCURRENCY = 3;
 const FALLBACK_TOTAL_TIMEOUT_MS = 15_000;
 const NATIVE_URL_TIMEOUT_MS = 8_000;
-const FALLBACK_SOURCES = ["netease", "qq", "kuwo", "joox", "bilibili"] as const;
-const KUWO_FALLBACK_SOURCES = ["qq", "netease", "joox", "bilibili"] as const;
+const FALLBACK_SOURCES = ["netease", "qq", "kuwo"] as const;
+const KUWO_FALLBACK_SOURCES = ["qq", "netease"] as const;
 const NATIVE_LYRIC_SOURCES = new Set(["netease", "qq", "kuwo"]);
 
 const firstSuccessfulWithConcurrency = async <T, R>(
@@ -198,9 +196,6 @@ export const fetchFallbackLyrics = async (
         lrc = await fetchKuwoLyrics(id);
       }
 
-      if (!lrc && isGDStudioSource(source)) {
-        lrc = await getGDStudioLyrics(id, source);
-      }
     } catch (e) {
       console.warn(`[Resolver] fetchFallbackLyrics failed (${source}:${id}):`, e);
     } finally {
@@ -230,12 +225,7 @@ export const getLyrics = async (
     return fetchFallbackLyrics(lyricId, source);
   }
 
-  if (isGDStudioSource(source)) {
-    const gdLyrics = await getGDStudioLyrics(lyricId, source);
-    if (gdLyrics) return gdLyrics;
-  }
-
-  return fetchFallbackLyrics(lyricId, source);
+  return "";
 };
 
 const getDirectSongUrl = async (
@@ -247,13 +237,8 @@ const getDirectSongUrl = async (
     return null;
   }
 
-  if (isGDStudioSource(source)) {
-    const gdUrl = await getGDStudioSongUrl(id, source, quality);
-    if (gdUrl) return gdUrl;
-  }
-
   if (isGDStudioOnlySource(source)) {
-    return null;
+    return getGDStudioSongUrl(id, source, quality);
   }
 
   const nativeUrl = await fetchNativeUrl(String(id), source, quality);
@@ -269,9 +254,6 @@ const searchFallbackSource = async (
   if (source === "netease") return searchNetease(keyword, 1, FALLBACK_SEARCH_LIMIT);
   if (source === "qq") return searchQQ(keyword, 1, FALLBACK_SEARCH_LIMIT);
   if (source === "kuwo") return searchKuwo(keyword, 1, FALLBACK_SEARCH_LIMIT);
-  if (isGDStudioOnlySource(source)) {
-    return searchGDStudio(keyword, source, 1, FALLBACK_SEARCH_LIMIT);
-  }
   return [];
 };
 
@@ -383,6 +365,10 @@ export const getSongUrl = async (
     return fallback?.url || null;
   }
 
+  if (isGDStudioOnlySource(source)) {
+    return getDirectSongUrl(id, source, quality);
+  }
+
   const directUrl = await getDirectSongUrl(id, source, quality);
   if (directUrl) return directUrl;
 
@@ -415,6 +401,11 @@ export const parseSongFull = async (
     const fallback = await resolveFallbackSongFull(platform, quality, songMeta);
     if (fallback?.url) return fallback;
     return null;
+  }
+
+
+  if (isGDStudioOnlySource(platform)) {
+    return resolveDirectSongFull(id, platform, quality, songMeta);
   }
 
   const direct = await resolveDirectSongFull(id, platform, quality, songMeta);

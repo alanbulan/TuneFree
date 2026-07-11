@@ -1,6 +1,6 @@
 {
   "name": "tunefree-desktop",
-  "version": "1.1.19",
+  "version": "1.1.20",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "lint": "oxlint src --react-plugin --deny-warnings",
     "typecheck": "tsc --noEmit",
     "architecture:check": "node scripts/check-architecture.mjs",
+    "api:verify:gd": "node scripts/verify-gd-studio-api.mjs",
     "test": "vitest",
     "tauri": "tauri",
     "version:check": "node bump-version.js --dry-run",

@@ -1590,9 +1590,7 @@ img { display: block; }
   grid-template-rows: minmax(0, 1fr) 104px;
   gap: 20px;
   padding: 58px 28px 22px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 28px;
   background:
@@ -2071,7 +2069,7 @@ img { display: block; }
   .about-hero-copy { justify-self: start; }
   .table-head, .song-row { grid-template-columns: 34px minmax(0,1fr) 104px; }
   .song-album, .song-row > .source-badge, .table-head span:nth-child(3), .table-head span:nth-child(4) { display: none; }
-  .full-player-panel { left: 8px; right: 8px; bottom: 8px; height: calc(100% - 16px); grid-template-columns: 1fr; grid-template-rows: auto auto auto; align-content: start; padding: 58px 18px 18px; overflow-y: auto; }
+  .full-player-panel { left: 8px; right: 8px; bottom: 8px; height: calc(100% - 16px); grid-template-columns: 1fr; grid-template-rows: auto auto auto; align-content: start; padding: 58px 18px 18px; overflow: hidden; }
   .full-cover-art { width: min(56vw, 260px); margin: 0 auto; }
   .full-lyrics-stage { min-height: clamp(300px, 52dvh, 430px); padding: 22px 16px; }
   .lyric-scrollable { min-height: 0; max-height: none; }

@@ -4,7 +4,7 @@
 
 1. 执行 `npm run version:bump`，或使用 `version:bump:minor`、`version:bump:major`。
 2. 执行 `npm run version:check`，确认 package、Tauri、Cargo 和锁文件版本一致。
-3. 提交版本变更并推送与版本一致的标签，例如 `v1.1.19`。
+3. 提交版本变更并推送与版本一致的标签，例如 `v1.1.20`。
 4. GitHub Actions 的 `Release signed desktop app` 工作流会构建 NSIS 安装包、更新签名和 `latest.json`。
 
 Updater 公钥已提交到 `src-tauri/tauri.conf.json`。私钥没有进入仓库：

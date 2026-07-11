@@ -148,6 +148,9 @@ fn setup_application(
     context: SetupContext,
 ) -> Result<(), Box<dyn std::error::Error>> {
     app.handle().plugin(tauri_plugin_dialog::init())?;
+    if let Some(window) = app.get_webview_window("desktop-lyric") {
+        desktop_lyric::apply_desktop_lyric_bounds(&window);
+    }
     let recommendation_service =
         RecommendationService::new(app.handle().clone(), context.api_client.clone())
             .map_err(std::io::Error::other)?;

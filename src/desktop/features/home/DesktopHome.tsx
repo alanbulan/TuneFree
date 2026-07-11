@@ -214,12 +214,14 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
           }}
         />
       ))}
-      <div className="section-header">
-        <h2 className="section-title">
-          {activeSource === 'embeat' ? (lastAiSearch ? `“${lastAiSearch}” 的语境歌单` : '语境搜歌歌单') : isRecommendationSource ? '智能推荐' : selectedTopListName ? `${selectedTopListName} · 热歌` : '榜单热歌'}
-        </h2>
-        <span className="source-badge">{activeSourceLabel}</span>
-      </div>
+      {!isRecommendationSource && (
+        <div className="section-header">
+          <h2 className="section-title">
+            {activeSource === 'embeat' ? (lastAiSearch ? `“${lastAiSearch}” 的语境歌单` : '语境搜歌歌单') : selectedTopListName ? `${selectedTopListName} · 热歌` : '榜单热歌'}
+          </h2>
+          <span className="source-badge">{activeSourceLabel}</span>
+        </div>
+      )}
       {loadingSongs && featuredSongs.length === 0 ? (
         <SongTable songs={[]} currentSong={currentSong} isPlaying={isPlaying} isLoading skeletonRows={7} emptyText={isRecommendationSource ? '正在读取智能推荐...' : '正在分析语境...'} onPlay={handlePlay} onFavorite={handleFavorite} isFavorite={(song) => isFavorite(song.id, song.source)} />
       ) : featuredSongs.length === 0 ? (

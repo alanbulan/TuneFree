@@ -56,13 +56,13 @@ export function DesktopLyricToggle() {
   const cycle = () => {
     if (state === 'off') {
       setLockDesktopLyric(false); setShowDesktopLyric(true);
-      showToast('桌面歌词已打开', 'info'); return;
+      showToast('桌面歌词已打开', 'success'); return;
     }
     if (state === 'floating') {
-      setLockDesktopLyric(true); showToast('桌面歌词已锁定（鼠标穿透）', 'info'); return;
+      setLockDesktopLyric(true); showToast('桌面歌词已锁定（鼠标穿透）', 'success'); return;
     }
     setLockDesktopLyric(false); setShowDesktopLyric(false);
-    showToast('桌面歌词已关闭', 'info');
+    showToast('桌面歌词已关闭', 'success');
   };
   return (
     <button type="button" className={`lyric-toggle-btn ${showDesktopLyric ? 'active' : ''} ${lockDesktopLyric ? 'locked' : ''}`}
@@ -70,11 +70,11 @@ export function DesktopLyricToggle() {
       onContextMenu={(event) => {
         event.preventDefault();
         if (!showDesktopLyric) {
-          setLockDesktopLyric(false); setShowDesktopLyric(true); showToast('桌面歌词已打开', 'info'); return;
+          setLockDesktopLyric(false); setShowDesktopLyric(true); showToast('桌面歌词已打开', 'success'); return;
         }
         const nextLock = !lockDesktopLyric;
         setLockDesktopLyric(nextLock);
-        showToast(nextLock ? '桌面歌词已锁定（鼠标穿透）' : '桌面歌词已解锁', 'info');
+        showToast(nextLock ? '桌面歌词已锁定（鼠标穿透）' : '桌面歌词已解锁', 'success');
       }}
       style={{ background: 'transparent', fontSize: '11px', fontWeight: 800, padding: '4px 7px',
         borderRadius: '6px', color: showDesktopLyric ? (lockDesktopLyric ? 'var(--ios-card)' : 'var(--accent)') : 'var(--muted)',
