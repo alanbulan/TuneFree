@@ -8,15 +8,16 @@ import {
   EXTENDED_AGGREGATE_SOURCES,
   GD_STUDIO_ATTRIBUTION,
   GD_STUDIO_RATE_LIMIT_HINT,
+  SEARCH_SOURCE_OPTIONS,
   getMusicSourceLabel,
 } from '../../../core/utils/musicSource';
 import SongTable from '../../components/SongTable';
 import { useToast } from '../../components/ToastHost';
 import SearchHistoryPanel from './SearchHistoryPanel';
+import { mergeSearchPage } from './searchPagination';
 
 const historyKey = 'tunefree_search_history';
 const extendedKey = 'tunefree_aggregate_extended_sources';
-const singleSourceOptions = ['netease', 'qq', 'kuwo', 'joox'];
 
 const loadHistory = () => {
   if (typeof window === 'undefined') return [] as string[];
@@ -48,8 +49,9 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
   const [history, setHistory] = useState<string[]>(loadHistory);
   const debounceRef = useRef<number | null>(null);
   const searchRequestIdRef = useRef(0);
+  const nextPagePendingRef = useRef(false);
+  const resultsRef = useRef<Song[]>([]);
   const lastSearchedTermRef = useRef('');
-  const sentinelRef = useRef<HTMLDivElement>(null);
   const { playQueue } = usePlayerActions();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
   const { toggleFavorite, isFavorite } = useLibrary();
@@ -77,7 +79,11 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
   }, [commandQuery, commandNonce]);
 
   useEffect(() => {
+    searchRequestIdRef.current += 1;
+    nextPagePendingRef.current = false;
+    resultsRef.current = [];
     setResults([]);
+    setIsSearching(false);
     setPage(1);
     setHasMore(true);
     setSearchError('');
@@ -108,8 +114,10 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
         ? await searchAggregate(clean, page, { includeExtendedSources })
         : await searchSongs(clean, selectedSource, page);
       if (requestId !== searchRequestIdRef.current) return;
-      setResults((prev) => (page === 1 ? data : [...prev, ...data]));
-      setHasMore(data.length > 0);
+      const merged = mergeSearchPage(resultsRef.current, data, page === 1);
+      resultsRef.current = merged.songs;
+      setResults(merged.songs);
+      setHasMore(merged.hasMore);
     } catch {
       if (requestId !== searchRequestIdRef.current) return;
       setSearchError(
@@ -120,7 +128,10 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
       if (page === 1) setResults([]);
       setHasMore(false);
     } finally {
-      if (requestId === searchRequestIdRef.current) setIsSearching(false);
+      if (requestId === searchRequestIdRef.current) {
+        nextPagePendingRef.current = false;
+        setIsSearching(false);
+      }
     }
   }, [addToHistory, includeExtendedSources, page, query, searchMode, selectedSource, showToast]);
 
@@ -139,22 +150,10 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
     };
   }, [performSearch, query, page, searchMode, selectedSource, includeExtendedSources]);
 
-  // P3-19: Infinite scroll via IntersectionObserver
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isSearching && results.length > 0) {
-          setPage((prev) => prev + 1);
-        }
-      },
-      { rootMargin: '100px' },
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
+  const requestNextPage = useCallback(() => {
+    if (!hasMore || isSearching || results.length === 0 || nextPagePendingRef.current) return;
+    nextPagePendingRef.current = true;
+    setPage((current) => current + 1);
   }, [hasMore, isSearching, results.length]);
 
   const hint = useMemo(() => {
@@ -228,7 +227,7 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
               </button>
             ) : (
               <div className="source-option-row" role="radiogroup" aria-label="选择搜索音源">
-                {singleSourceOptions.map((source) => (
+                {SEARCH_SOURCE_OPTIONS.map((source) => (
                   <button
                     type="button"
                     key={source}
@@ -270,16 +269,14 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
               onPlay={handlePlay}
               onFavorite={handleFavorite}
               isFavorite={(song) => isFavorite(song.id, song.source)}
+              onEndReached={hasMore && !isSearching ? requestNextPage : undefined}
             />
           )}
 
           {!isSearching && results.length > 0 && hasMore && (
-            <button type="button" className="soft-button" style={{ marginTop: 14, width: '100%' }} onClick={() => setPage((prev) => prev + 1)}>
+            <button type="button" className="soft-button" style={{ marginTop: 14, width: '100%' }} onClick={requestNextPage}>
               加载更多结果
             </button>
-          )}
-          {results.length > 0 && hasMore && (
-            <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />
           )}
         </section>
 

@@ -19,6 +19,7 @@ interface SongTableProps {
   onDismiss?: (song: Song) => void;
   onDelete?: (song: Song) => void;
   deleteLabel?: string;
+  onEndReached?: () => void;
 }
 
 export default function SongTable({
@@ -36,6 +37,7 @@ export default function SongTable({
   onDismiss,
   onDelete,
   deleteLabel = '删除歌曲',
+  onEndReached,
 }: SongTableProps) {
   if (isLoading && songs.length === 0) {
     return (
@@ -94,6 +96,7 @@ export default function SongTable({
         itemHeight={56}
         maxHeight={Math.min(640, Math.max(280, songs.length * 56))}
         className="song-virtual-list"
+        onEndReached={onEndReached}
         getKey={(song, index) => `${song.source}-${song.id}-${index}`}
         renderItem={(song, index, style) => {
           const current = isSameSong(currentSong, song);

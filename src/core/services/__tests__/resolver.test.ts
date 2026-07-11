@@ -24,9 +24,16 @@ vi.mock('../gdStudio', () => ({
   searchGDStudio: vi.fn(),
 }));
 
-import { fetchFallbackLyrics, fetchNativeUrl, getSongUrl } from '../resolver';
+import { fetchFallbackLyrics, fetchNativeUrl, getLyrics, getSongUrl, parseSongFull } from '../resolver';
 import { fetchNeteaseLyrics, searchNetease } from '../netease';
 import { searchQQ } from '../qq';
+import { searchKuwo } from '../kuwo';
+import {
+  getGDStudioLyrics,
+  getGDStudioSongUrl,
+  isGDStudioOnlySource,
+  parseGDStudioSongFull,
+} from '../gdStudio';
 
 describe('fetchNativeUrl', () => {
   const originalFetch = globalThis.fetch;
@@ -166,6 +173,62 @@ describe('fetchFallbackLyrics', () => {
       '[00:02.00]recovered',
     );
     expect(fetchNeteaseLyrics).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('GD Studio direct resolution', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(isGDStudioOnlySource).mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    vi.mocked(isGDStudioOnlySource).mockReturnValue(false);
+  });
+
+  it('uses the requested source exactly once without cross-source fallback', async () => {
+    vi.mocked(getGDStudioSongUrl).mockResolvedValue('https://example.com/tidal.flac');
+
+    await expect(getSongUrl('track-1', 'tidal', 'flac')).resolves.toBe(
+      'https://example.com/tidal.flac',
+    );
+    expect(getGDStudioSongUrl).toHaveBeenCalledWith('track-1', 'tidal', 'flac');
+    expect(getGDStudioSongUrl).toHaveBeenCalledTimes(1);
+    expect(searchNetease).not.toHaveBeenCalled();
+    expect(searchQQ).not.toHaveBeenCalled();
+    expect(searchKuwo).not.toHaveBeenCalled();
+  });
+
+  it('propagates GD Studio errors instead of switching sources', async () => {
+    vi.mocked(getGDStudioSongUrl).mockRejectedValue(new Error('source is not supported'));
+
+    await expect(getSongUrl('track-2', 'tidal', '320k')).rejects.toThrow(
+      'source is not supported',
+    );
+    expect(searchNetease).not.toHaveBeenCalled();
+    expect(searchQQ).not.toHaveBeenCalled();
+    expect(searchKuwo).not.toHaveBeenCalled();
+  });
+
+  it('resolves lyrics and full data only through the requested GD Studio source', async () => {
+    vi.mocked(getGDStudioLyrics).mockResolvedValue('[00:00.00]lyric');
+    vi.mocked(parseGDStudioSongFull).mockResolvedValue({
+      url: 'https://example.com/qobuz.flac',
+      lrc: '[00:00.00]lyric',
+      pic: 'https://example.com/cover.jpg',
+    });
+
+    await expect(getLyrics('lyric-1', 'qobuz')).resolves.toBe('[00:00.00]lyric');
+    await expect(parseSongFull('track-3', 'qobuz', 'flac')).resolves.toMatchObject({
+      url: 'https://example.com/qobuz.flac',
+    });
+    expect(getGDStudioLyrics).toHaveBeenCalledTimes(1);
+    expect(getGDStudioLyrics).toHaveBeenCalledWith('lyric-1', 'qobuz');
+    expect(parseGDStudioSongFull).toHaveBeenCalledTimes(1);
+    expect(parseGDStudioSongFull).toHaveBeenCalledWith('track-3', 'qobuz', 'flac', undefined);
+    expect(searchNetease).not.toHaveBeenCalled();
+    expect(searchQQ).not.toHaveBeenCalled();
+    expect(searchKuwo).not.toHaveBeenCalled();
   });
 });
 

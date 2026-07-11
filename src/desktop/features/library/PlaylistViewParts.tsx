@@ -91,7 +91,8 @@ const getSourceLabel = (playlist: Playlist): string => {
   if (playlist.id === 'favorites' || !playlist.songs?.length) return '本地';
   const labels: Record<string, string> = {
     netease: '网易云', tencent: 'QQ音乐', qq: 'QQ音乐', kuwo: '酷我音乐',
-    joox: 'JOOX', bilibili: 'B站', apple: 'Apple Music', ytmusic: 'YouTube', spotify: 'Spotify',
+    tidal: 'TIDAL', qobuz: 'Qobuz', joox: 'JOOX', bilibili: 'B站',
+    apple: 'Apple Music', ytmusic: 'YouTube Music', spotify: 'Spotify',
   };
   return labels[playlist.songs[0].source] || '本地';
 };

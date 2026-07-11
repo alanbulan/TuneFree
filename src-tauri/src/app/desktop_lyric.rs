@@ -295,7 +295,7 @@ async fn persist_desktop_lyric_webview_bounds<R: Runtime>(
     .map_err(|error| format!("桌面歌词窗口位置后台保存异常: {}", error))?
 }
 
-fn apply_desktop_lyric_bounds<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+pub(crate) fn apply_desktop_lyric_bounds<R: Runtime>(window: &tauri::WebviewWindow<R>) {
     if let Some(bounds) = read_desktop_lyric_bounds(window.app_handle()) {
         let work_areas = window
             .available_monitors()
@@ -342,19 +342,10 @@ pub(crate) async fn show_desktop_lyric_window(
         .get_webview_window("desktop-lyric")
         .ok_or_else(|| "找不到桌面歌词窗口".to_string())?;
 
-    let was_visible = lyric_window
-        .is_visible()
-        .map_err(|e| format!("读取桌面歌词显示状态失败: {}", e))?;
-    if !was_visible {
-        apply_desktop_lyric_bounds(&lyric_window);
-    }
     apply_desktop_lyric_lock(&lyric_window, lock)?;
     lyric_window
         .show()
         .map_err(|e| format!("显示桌面歌词失败: {}", e))?;
-    if !was_visible {
-        apply_desktop_lyric_bounds(&lyric_window);
-    }
 
     Ok(())
 }

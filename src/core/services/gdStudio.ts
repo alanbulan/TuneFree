@@ -1,9 +1,8 @@
 import type { Song } from '../types';
 import { mergeLyricTracks } from '../utils/lyrics';
 import {
-  decodeResponseText,
   fetchGDStudioData,
-  tryParseJson,
+  GDStudioApiError,
 } from './gdStudioClient';
 import {
   enrichAIRecommendationCovers,
@@ -11,23 +10,23 @@ import {
   mapAIRecommendationTracks,
 } from './gdStudioAi';
 import {
-  buildJooxCoverUrl,
   GD_STUDIO_ONLY_SOURCES,
   GD_STUDIO_SOURCES,
   getTrackKey,
   getUrlCacheKey,
   joinArtists,
   lyricCache,
+  normalizeGDStudioSource,
   normalizeBitrate,
   picCache,
   rememberTrackMeta,
   resolveTrackMeta,
   URL_CACHE_TTL,
   urlCache,
+  type GdStudioMusicSource,
   type GdStudioSource,
   type GdStudioTrack,
 } from './gdStudioModel';
-import { proxyFetch } from './proxy';
 import { fixUrl } from './utils';
 
 export { syncServerTime } from './gdStudioClient';
@@ -42,9 +41,13 @@ export const isGDStudioOnlySource = (
     source as (typeof GD_STUDIO_ONLY_SOURCES)[number],
   );
 
+const REQUIRED_GD_TRACK_FIELDS: Array<keyof GdStudioTrack> = [
+  'id', 'name', 'artist', 'album', 'pic_id', 'url_id', 'lyric_id', 'source',
+];
+
 export const searchGDStudio = async (
   keyword: string,
-  source: GdStudioSource,
+  source: GdStudioMusicSource,
   page: number,
   limit: number,
 ): Promise<Song[]> => {
@@ -56,47 +59,92 @@ export const searchGDStudio = async (
     pages: page,
   });
 
-  if (!Array.isArray(data)) return [];
+  return mapGDStudioTracks(data, source);
+};
 
-  return data.map((item: GdStudioTrack) => {
-    const id = String(item.id || item.url_id || item.lyric_id || "").trim();
-    const picId = String(item.pic_id || "").trim();
-    const lyricId = String(item.lyric_id || id).trim();
-    const urlId = String(item.url_id || id).trim();
+export const mapGDStudioTracks = (
+  data: unknown,
+  requestedSource: GdStudioMusicSource,
+): Song[] => {
+  if (!Array.isArray(data)) {
+    throw new GDStudioApiError('BAD_RESPONSE', 200, 'search response must be an array');
+  }
+  const songs: Song[] = [];
+  const seen = new Set<string>();
+  for (const item of data) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new GDStudioApiError('BAD_RESPONSE', 200, 'track must be an object');
+    }
+    const missingFields = REQUIRED_GD_TRACK_FIELDS.filter((field) => !(field in item));
+    if (missingFields.length > 0) {
+      throw new GDStudioApiError(
+        'BAD_RESPONSE',
+        200,
+        `track is missing fields: ${missingFields.join(', ')}`,
+      );
+    }
+    const track = item as GdStudioTrack;
+    const artistIsValid = typeof track.artist === 'string'
+      || (Array.isArray(track.artist) && track.artist.every((artist) => typeof artist === 'string'));
+    if (
+      !artistIsValid
+      || typeof track.album !== 'string'
+      || typeof track.pic_id !== 'string'
+      || !['string', 'number'].includes(typeof track.id)
+      || typeof track.name !== 'string'
+      || !['string', 'number'].includes(typeof track.url_id)
+      || !['string', 'number'].includes(typeof track.lyric_id)
+      || typeof track.source !== 'string'
+    ) {
+      throw new GDStudioApiError('BAD_RESPONSE', 200, 'track fields have invalid types');
+    }
+    const id = String(track.id || '').trim();
+    const name = track.name.trim();
+    const source = normalizeGDStudioSource(track.source);
+    const urlId = String(track.url_id || '').trim();
+    const lyricId = String(track.lyric_id || '').trim();
+    if (!id || !name || !source || !urlId || !lyricId) {
+      throw new GDStudioApiError(
+        'BAD_RESPONSE',
+        200,
+        'track id, name, url_id, lyric_id and source must be non-empty',
+      );
+    }
+    if (source !== requestedSource) {
+      throw new GDStudioApiError(
+        'BAD_RESPONSE',
+        200,
+        `source mismatch: requested ${requestedSource}, received ${source}`,
+      );
+    }
+    const trackKey = getTrackKey(id, source);
+    if (seen.has(trackKey)) continue;
+    seen.add(trackKey);
+    const picId = track.pic_id.trim();
     const pic = picId.startsWith("http") || picId.startsWith("//")
       ? fixUrl(picId)
-      : source === "joox" && picId
-        ? fixUrl(buildJooxCoverUrl(picId, 500))
-        : "";
-
-    if (id) {
-      rememberTrackMeta(id, source, {
-        pic,
-        picId,
-        lyricId,
-        urlId,
-      });
-    }
-
-    return {
-      id: id || `temp_${Math.random().toString(36).slice(2)}`,
-      name: String(item.name || ""),
-      artist: joinArtists(item.artist),
-      album: String(item.album || ""),
+      : "";
+    rememberTrackMeta(id, source, { pic, picId, lyricId, urlId });
+    songs.push({
+      id,
+      name,
+      artist: joinArtists(track.artist),
+      album: track.album,
       pic,
       picId,
       lyricId,
       urlId,
       source,
-    };
-  });
+    });
+  }
+  return songs;
 };
 
 export const getGDStudioSongUrl = async (
   id: string | number,
-  source: GdStudioSource,
+  source: GdStudioMusicSource,
   quality: string = "320k",
-): Promise<string | null> => {
+): Promise<string> => {
   const cacheKey = getUrlCacheKey(id, source, quality);
   const cached = urlCache.get(cacheKey);
 
@@ -107,31 +155,23 @@ export const getGDStudioSongUrl = async (
   const trackMeta = resolveTrackMeta(id, source);
   const requestId = trackMeta.urlId || String(id);
 
-  try {
-    const data = await fetchGDStudioData<{ url?: string }>({
-      types: "url",
-      source,
-      id: requestId,
-      br: normalizeBitrate(quality),
-    });
-
-    const url = fixUrl(typeof data?.url === "string" ? data.url : "");
-    if (!url) return null;
-
-    urlCache.set(cacheKey, {
-      url,
-      expiresAt: Date.now() + URL_CACHE_TTL,
-    });
-
-    return url;
-  } catch {
-    return null;
+  const data = await fetchGDStudioData<{ url?: string }>({
+    types: "url",
+    source,
+    id: requestId,
+    br: normalizeBitrate(quality),
+  });
+  const url = fixUrl(typeof data?.url === "string" ? data.url : "");
+  if (!url) {
+    throw new GDStudioApiError('BAD_RESPONSE', 200, 'url response is missing url');
   }
+  urlCache.set(cacheKey, { url, expiresAt: Date.now() + URL_CACHE_TTL });
+  return url;
 };
 
 export const getGDStudioLyrics = async (
   id: string | number,
-  source: GdStudioSource,
+  source: GdStudioMusicSource,
 ): Promise<string> => {
   const trackMeta = resolveTrackMeta(id, source);
   const requestId = trackMeta.lyricId || String(id);
@@ -141,66 +181,27 @@ export const getGDStudioLyrics = async (
     return lyricCache.get(cacheKey) || "";
   }
 
-  try {
-    const data = await fetchGDStudioData<{
-      lyric?: string;
-      lrc?: string;
-      tlyric?: string;
-      trans?: string;
-      translation?: string;
-      translations?: string;
-      rlyric?: string;
-      romalrc?: string;
-      roma?: string;
-      romanization?: string;
-      pronunciation?: string;
-      qrc?: string;
-      yrc?: string;
-      krc?: string;
-      klyric?: string;
-      mrc?: string;
-      karaoke?: string;
-    }>({
-      types: "lyric",
-      source,
-      id: requestId,
-    });
-
-    const main = (typeof data?.lyric === "string" ? data.lyric : data?.lrc || "").trim();
-    const trans = [data?.tlyric, data?.trans, data?.translation, data?.translations]
-      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-      .map((value) => value.trim())
-      .join("\n");
-    const romanization = [data?.rlyric, data?.romalrc, data?.roma, data?.romanization]
-      .find((value): value is string => typeof value === "string" && value.trim().length > 0)
-      ?.trim() || "";
-    const pronunciation = typeof data?.pronunciation === "string" ? data.pronunciation.trim() : "";
-    const karaoke = [data?.qrc, data?.yrc, data?.krc, data?.klyric, data?.mrc, data?.karaoke]
-      .find((value): value is string => typeof value === "string" && value.trim().length > 0)
-      ?.trim() || "";
-    const lrc = mergeLyricTracks({
-      main,
-      translation: trans,
-      romanization,
-      pronunciation,
-      karaoke,
-      source,
-    });
-
-    lyricCache.set(cacheKey, lrc);
-    rememberTrackMeta(id, source, { lyricId: requestId });
-    return lrc;
-  } catch {
-    lyricCache.set(cacheKey, "");
-    return "";
+  const data = await fetchGDStudioData<{
+    lyric?: string;
+    tlyric?: string;
+  }>({ types: "lyric", source, id: requestId });
+  if (typeof data?.lyric !== 'string') {
+    throw new GDStudioApiError('BAD_RESPONSE', 200, 'lyric response is missing lyric');
   }
+  const lrc = mergeLyricTracks({
+    main: data.lyric.trim(),
+    translation: typeof data.tlyric === 'string' ? data.tlyric.trim() : '',
+    source,
+  });
+  lyricCache.set(cacheKey, lrc);
+  rememberTrackMeta(id, source, { lyricId: requestId });
+  return lrc;
 };
 
 export const getGDStudioPic = async (
-  source: GdStudioSource,
+  source: GdStudioMusicSource,
   picId: string,
   size: 300 | 500 = 500,
-  songId?: string | number,
 ): Promise<string> => {
   if (!picId) return "";
 
@@ -209,74 +210,28 @@ export const getGDStudioPic = async (
     return picCache.get(cacheKey) || "";
   }
 
-  // 1. 若已经是完整网址，直接返回
   const directPic = fixUrl(picId);
   if (directPic && (picId.startsWith("http") || picId.startsWith("//"))) {
     picCache.set(cacheKey, directPic);
     return directPic;
   }
-
-  // 2. 网易云：使用官方原生详情 API 配合代理安全获取，透传正确的歌曲 ID
-  if (source === "netease") {
-    try {
-      const targetId = songId || picId;
-      const url = `https://music.163.com/api/song/detail/?id=${targetId}&ids=[${targetId}]`;
-      const response = await proxyFetch(url, {}, 8000);
-      if (response) {
-        const text = decodeResponseText(await response.arrayBuffer());
-        const data = tryParseJson(text);
-        const picUrl = data?.songs?.[0]?.album?.picUrl;
-        if (picUrl) {
-          const pic = fixUrl(picUrl);
-          picCache.set(cacheKey, pic);
-          return pic;
-        }
-      }
-    } catch (err) {
-      console.warn("[GDStudio] Failed to fetch native netease cover:", err);
-    }
+  const data = await fetchGDStudioData<{ url?: string }>({
+    types: "pic",
+    source,
+    id: picId,
+    size,
+  });
+  const pic = fixUrl(typeof data?.url === "string" ? data.url : "");
+  if (!pic) {
+    throw new GDStudioApiError('BAD_RESPONSE', 200, 'pic response is missing url');
   }
-
-  // 3. QQ音乐：官方 CDN 高清直接拼接，免去任何网络请求
-  if (source === "qq") {
-    const pic = `https://y.gtimg.cn/music/photo_new/T002R300x300M000${picId}.jpg`;
-    picCache.set(cacheKey, pic);
-    return pic;
-  }
-
-  // 4. Joox 音乐：直接用原厂模板
-  if (source === "joox") {
-    const pic = fixUrl(buildJooxCoverUrl(picId, size));
-    picCache.set(cacheKey, pic);
-    return pic;
-  }
-
-
-
-  // 5. 其余平台兜底
-  try {
-    const data = await fetchGDStudioData<{ url?: string }>({
-      types: "pic",
-      source,
-      id: picId,
-      size,
-    });
-
-    const pic = fixUrl(typeof data?.url === "string" ? data.url : "");
-    if (pic) {
-      picCache.set(cacheKey, pic);
-      return pic;
-    }
-  } catch {
-    // skip
-  }
-
-  return "";
+  picCache.set(cacheKey, pic);
+  return pic;
 };
 
 export const resolveGDStudioPic = async (
   id: string | number,
-  source: GdStudioSource,
+  source: GdStudioMusicSource,
   songMeta?: Pick<Song, "pic" | "picId">,
 ): Promise<string> => {
   if (songMeta?.pic) return fixUrl(songMeta.pic);
@@ -286,7 +241,7 @@ export const resolveGDStudioPic = async (
 
   if (!picId) return "";
 
-  const pic = await getGDStudioPic(source, picId, 500, id);
+  const pic = await getGDStudioPic(source, picId, 500);
   if (pic) {
     rememberTrackMeta(id, source, { pic, picId });
   }
@@ -296,17 +251,15 @@ export const resolveGDStudioPic = async (
 
 export const parseGDStudioSongFull = async (
   id: string | number,
-  source: GdStudioSource,
+  source: GdStudioMusicSource,
   quality: string = "320k",
   songMeta?: Pick<Song, "pic" | "picId">,
-): Promise<{ url: string | null; lrc: string; pic: string } | null> => {
+): Promise<{ url: string; lrc: string; pic: string }> => {
   const [url, lrc, pic] = await Promise.all([
     getGDStudioSongUrl(id, source, quality),
     getGDStudioLyrics(id, source),
     resolveGDStudioPic(id, source, songMeta),
   ]);
-
-  if (!url && !lrc && !pic) return null;
 
   return {
     url,
@@ -387,7 +340,7 @@ export const resolveAutosource = async (
  */
 export const getAIRecommendedSongs = async (
   keyword: string,
-  source: GdStudioSource = 'netease',
+  source: GdStudioMusicSource = 'netease',
   count: number = 20,
 ): Promise<Song[]> => {
   const tracks = await loadAIRecommendationTracks(keyword, source, count);

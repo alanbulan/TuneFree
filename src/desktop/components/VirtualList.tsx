@@ -8,6 +8,8 @@ interface VirtualListProps<T> {
   fillParent?: boolean;
   overscan?: number;
   className?: string;
+  onEndReached?: () => void;
+  endReachedThreshold?: number;
   getKey: (item: T, index: number) => string;
   renderItem: (item: T, index: number, style: CSSProperties) => ReactNode;
 }
@@ -19,6 +21,8 @@ export default function VirtualList<T>({
   fillParent = false,
   overscan = 6,
   className = '',
+  onEndReached,
+  endReachedThreshold = 96,
   getKey,
   renderItem,
 }: VirtualListProps<T>) {
@@ -54,7 +58,11 @@ export default function VirtualList<T>({
   }, [fillParent]);
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
-    setScrollTop(event.currentTarget.scrollTop);
+    const target = event.currentTarget;
+    setScrollTop(target.scrollTop);
+    if (onEndReached && target.scrollHeight - target.scrollTop - target.clientHeight <= endReachedThreshold) {
+      onEndReached();
+    }
   };
 
   return (

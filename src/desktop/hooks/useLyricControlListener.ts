@@ -111,7 +111,7 @@ export function useLyricControlListener({
               actions.setLockDesktopLyric(nextLock);
               actions.showToast(
                 nextLock ? '桌面歌词已锁定（鼠标穿透）' : '桌面歌词已解锁',
-                'info',
+                'success',
               );
             } else if (action === 'adjust-lyric-size') {
               const nextSize = Math.max(14, Math.min(36, lyricSizeRef.current + Number(value)));
