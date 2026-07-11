@@ -1,5 +1,6 @@
 import type { ParsedLyric } from '../../../src/core/utils/lyrics';
 import { KaraokeLyricText } from '../../../src/core/components/KaraokeLyricText';
+import { SynchronizedTranslationText } from '../../../src/core/components/SynchronizedTranslationText';
 
 interface LyricLineRendererProps {
   line: ParsedLyric;
@@ -13,12 +14,20 @@ interface LyricLineRendererProps {
   enableKaraoke?: boolean;
 }
 
-const getExtensionLines = (line: ParsedLyric): string[] => [
-  line.romanization,
-  line.pronunciation,
-  line.translation,
-  ...(line.extra || []).map((item) => item.text),
-].filter((text): text is string => !!text);
+type ExtensionLine = {
+  text: string;
+  type: 'translation' | 'romanization' | 'pronunciation' | 'other';
+};
+
+const getExtensionLines = (line: ParsedLyric): ExtensionLine[] => [
+  { type: 'romanization' as const, text: line.romanization },
+  { type: 'pronunciation' as const, text: line.pronunciation },
+  { type: 'translation' as const, text: line.translation },
+  ...(line.extra || []).map((item) => ({
+    type: item.type === 'translation' ? 'translation' as const : 'other' as const,
+    text: item.text,
+  })),
+].filter((item): item is ExtensionLine => !!item.text);
 
 export function LyricLineRenderer({ line, active = false, size, shadow, align = 'center', depth = 1, currentTime = 0, source, enableKaraoke = false }: LyricLineRendererProps) {
   const extensionSize = Math.max(12, Math.round(size * (active ? 0.68 : 0.56)));
@@ -52,9 +61,9 @@ export function LyricLineRenderer({ line, active = false, size, shadow, align = 
       >
         {active && enableKaraoke ? <KaraokeLyricText line={line} currentTime={currentTime} source={source} dragRegion /> : line.text}
       </span>
-      {extensionLines.map((text, index) => (
+      {extensionLines.map((extension, index) => (
         <em
-          key={`${index}-${text}`}
+          key={`${index}-${extension.text}`}
           data-tauri-drag-region
           style={{
             display: active ? 'block' : '-webkit-box',
@@ -74,7 +83,14 @@ export function LyricLineRenderer({ line, active = false, size, shadow, align = 
               : `rgba(248, 250, 252, ${Math.max(0.1, contextOpacity * 0.72)})`,
           }}
         >
-          {text}
+          {active && enableKaraoke && extension.type === 'translation' ? (
+            <SynchronizedTranslationText
+              line={line}
+              text={extension.text}
+              currentTime={currentTime}
+              dragRegion
+            />
+          ) : extension.text}
         </em>
       ))}
     </div>

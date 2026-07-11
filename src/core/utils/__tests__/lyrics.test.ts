@@ -67,6 +67,21 @@ describe('parseLyrics', () => {
     expect(result[1].translation).toBe('世界');
   });
 
+  it('should preserve real word timing from a translation track', () => {
+    const lrc = `[tunefree:main]
+[00:01.00]君と出会えた
+
+[tunefree:translation]
+[1000,1800](1000,500,0)与(1500,600,0)你(2100,700,0)相遇`;
+    const result = parseLyrics(lrc);
+    expect(result[0].translation).toBe('与你相遇');
+    expect(result[0].translationWords).toEqual([
+      { start: 1, duration: 0.5, text: '与' },
+      { start: 1.5, duration: 0.6, text: '你' },
+      { start: 2.1, duration: 0.7, text: '相遇' },
+    ]);
+  });
+
   it('should parse multi-track lyrics with romanization markers', () => {
     const lrc = `[tunefree:main]
 [00:01.00]歌词

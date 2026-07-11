@@ -55,7 +55,9 @@ const setRowTrack = (
   if (type === 'translation') {
     const next = [...(row.translations || [])];
     filtered.forEach((text) => pushUnique(next, text));
-    row.translations = next; row.translation = joinTrackValues(next); return;
+    row.translations = next; row.translation = joinTrackValues(next);
+    if (filtered.length === 1 && words?.length) row.translationWords = words;
+    return;
   }
   if (type === 'romanization') {
     const existing = row.romanization ? row.romanization.split('\n') : [];
