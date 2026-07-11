@@ -41,11 +41,11 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
 
   // 持久化状态，跨帧保留
   const stateRef = useRef({
-      simValues: new Array(BAR_COUNT).fill(0),
-      simTargets: new Array(BAR_COUNT).fill(0),
+      simValues: Array.from({ length: BAR_COUNT }, () => 0),
+      simTargets: Array.from({ length: BAR_COUNT }, () => 0),
       phase: 0,
       // 当前显示值（用于平滑过渡，包括暂停衰减）
-      displayValues: new Array(BAR_COUNT).fill(0),
+      displayValues: Array.from({ length: BAR_COUNT }, () => 0),
   });
 
   useEffect(() => {
@@ -130,13 +130,13 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
 
       // 防御性检查：HMR 热更新可能导致旧 stateRef 结构不匹配
       if (!state.displayValues || state.displayValues.length !== BAR_COUNT) {
-          state.displayValues = new Array(BAR_COUNT).fill(0);
+          state.displayValues = Array.from({ length: BAR_COUNT }, () => 0);
       }
       if (!state.simValues || state.simValues.length !== BAR_COUNT) {
-          state.simValues = new Array(BAR_COUNT).fill(0);
+          state.simValues = Array.from({ length: BAR_COUNT }, () => 0);
       }
       if (!state.simTargets || state.simTargets.length !== BAR_COUNT) {
-          state.simTargets = new Array(BAR_COUNT).fill(0);
+          state.simTargets = Array.from({ length: BAR_COUNT }, () => 0);
       }
 
       if (isPlaying && analyser) {

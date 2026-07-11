@@ -1,7 +1,9 @@
 pub mod catalog;
+pub mod credential_store;
 pub mod db;
 pub mod discovery;
 pub mod events;
+pub mod exclusions;
 pub mod llm;
 pub mod llm_config;
 pub mod migration;

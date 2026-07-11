@@ -1,5 +1,4 @@
-import { useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState } from 'react';
 import {
   CloseIcon,
   DownloadIcon,
@@ -21,11 +20,8 @@ import {
   usePlayerQueueState,
   usePlayerSettings,
 } from '../../core/contexts/PlayerContext';
-import { useTheme } from '../../core/contexts/ThemeContext';
-import { useLyricDisplayMode } from '../../core/hooks/useLyricDisplayMode';
-import { Lock, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import AudioVisualizer from '../../core/components/AudioVisualizer';
-import { findActiveLyricIndex, parseLyrics, type ParsedLyric } from '../../core/utils/lyrics';
 import type { AudioQuality } from '../../core/types';
 import CoverArt from './CoverArt';
 import { useToast } from './ToastHost';
@@ -38,18 +34,15 @@ import {
   recommendationFeedbackFromSong,
   saveRecommendationFeedback,
 } from '../../core/services/recommendation';
+import { DesktopLyricToggle, TransportMiniLyric } from './DesktopTransportWidgets';
 
 interface DesktopTransportProps {
   onExpand: () => void;
 }
 
-const getMiniLyricSecondary = (row: ParsedLyric | null): string =>
-  row?.romanization || row?.pronunciation || row?.translation || row?.extra?.[0]?.text || '';
-
 export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
   const { currentSong, isPlaying, isLoading } = usePlayerNowPlaying();
-  const { showDesktopLyric, setShowDesktopLyric, lockDesktopLyric, setLockDesktopLyric } = useTheme();
-  const { currentTime, duration, lyricOffsetSeconds } = usePlayerProgress();
+  const { currentTime, duration } = usePlayerProgress();
   const { playMode } = usePlayerQueueState();
   const { audioQuality } = usePlayerSettings();
   const { toggleFavorite, isFavorite } = useLibrary();
@@ -83,17 +76,6 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
     }
   };
 
-  const rawLyrics = currentSong?.lrc;
-  const lyricDisplayMode = useLyricDisplayMode();
-  const lyricRows = useMemo(() => parseLyrics(rawLyrics), [rawLyrics]);
-  const activeLyricIndex = findActiveLyricIndex(
-    lyricRows,
-    currentTime,
-    lyricOffsetSeconds,
-    lyricDisplayMode,
-  );
-  const activeLyric = activeLyricIndex >= 0 ? lyricRows[activeLyricIndex] : null;
-  const activeLyricSecondary = getMiniLyricSecondary(activeLyric);
   const favoriteActive = !!currentSong && isFavorite(currentSong.id, currentSong.source);
   const modeIcon =
     playMode === 'shuffle' ? (
@@ -103,41 +85,6 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
     ) : (
       <RepeatIcon size={17} />
     );
-  const desktopLyricState = !showDesktopLyric ? 'off' : lockDesktopLyric ? 'locked' : 'floating';
-  const desktopLyricButtonLabel =
-    desktopLyricState === 'off' ? 'LRC' : desktopLyricState === 'floating' ? '浮动' : '锁定';
-  const desktopLyricButtonTitle =
-    desktopLyricState === 'off'
-      ? '打开桌面歌词'
-      : desktopLyricState === 'floating'
-        ? '锁定桌面歌词（鼠标穿透）'
-        : '关闭桌面歌词';
-  const desktopLyricButtonAria =
-    desktopLyricState === 'off'
-      ? '打开桌面歌词'
-      : desktopLyricState === 'floating'
-        ? '锁定桌面歌词'
-        : '关闭桌面歌词';
-
-  const handleCycleDesktopLyric = () => {
-    if (desktopLyricState === 'off') {
-      setLockDesktopLyric(false);
-      setShowDesktopLyric(true);
-      showToast('桌面歌词已打开', 'info');
-      return;
-    }
-
-    if (desktopLyricState === 'floating') {
-      setLockDesktopLyric(true);
-      showToast('桌面歌词已锁定（鼠标穿透）', 'info');
-      return;
-    }
-
-    setLockDesktopLyric(false);
-    setShowDesktopLyric(false);
-    showToast('桌面歌词已关闭', 'info');
-  };
-
   const handleToggleFavorite = () => {
     if (!currentSong) return;
     const wasFavorite = isFavorite(currentSong.id, currentSong.source);
@@ -173,67 +120,7 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
       </button>
 
       <div className="transport-center">
-        <button
-          type="button"
-          className="transport-mini-lyric"
-          onClick={onExpand}
-          aria-label="打开全屏歌词"
-          style={{
-            position: 'relative',
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <AnimatePresence mode="popLayout">
-            <motion.div
-              key={activeLyric?.text || currentSong?.name || 'empty'}
-              initial={{ y: 8, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -8, opacity: 0 }}
-              transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                width: '100%',
-                pointerEvents: 'none',
-              }}
-            >
-              <span
-                style={{
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: 'var(--text)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  maxWidth: '90%',
-                }}
-              >
-                {activeLyric?.text || currentSong?.name || 'TuneFree Desktop'}
-              </span>
-              {activeLyricSecondary ? (
-                <em
-                  style={{
-                    fontSize: '11px',
-                    fontStyle: 'normal',
-                    opacity: 0.65,
-                    marginTop: '2px',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    maxWidth: '90%',
-                  }}
-                >
-                  {activeLyricSecondary}
-                </em>
-              ) : null}
-            </motion.div>
-          </AnimatePresence>
-        </button>
+        <TransportMiniLyric onExpand={onExpand} />
         <div className="transport-controls">
           <button type="button" className="control-button" aria-label="上一首" onClick={() => playPrev()}>
             <PrevIcon size={19} />
@@ -304,53 +191,7 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
           {modeIcon}
         </button>
         <QualitySelector audioQuality={audioQuality} onQualityChange={(q: AudioQuality) => setAudioQuality(q)} />
-        <button
-          type="button"
-          className={`lyric-toggle-btn ${showDesktopLyric ? 'active' : ''} ${lockDesktopLyric ? 'locked' : ''}`}
-          title={`${desktopLyricButtonTitle}；右击可单独${lockDesktopLyric ? '解锁' : '锁定'}`}
-          aria-label={desktopLyricButtonAria}
-          onClick={handleCycleDesktopLyric}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            if (!showDesktopLyric) {
-              setLockDesktopLyric(false);
-              setShowDesktopLyric(true);
-              showToast('桌面歌词已打开', 'info');
-              return;
-            }
-            const nextLock = !lockDesktopLyric;
-            setLockDesktopLyric(nextLock);
-            showToast(nextLock ? '桌面歌词已锁定（鼠标穿透）' : '桌面歌词已解锁', 'info');
-          }}
-          style={{
-            background: 'transparent',
-            fontSize: '11px',
-            fontWeight: 800,
-            padding: '4px 7px',
-            borderRadius: '6px',
-            color: showDesktopLyric ? (lockDesktopLyric ? 'var(--ios-card)' : 'var(--accent)') : 'var(--muted)',
-            backgroundColor: showDesktopLyric ? (lockDesktopLyric ? 'var(--accent)' : 'rgba(var(--accent-rgb), 0.10)') : 'transparent',
-            border: showDesktopLyric ? '1px solid var(--accent)' : '1px solid var(--line)',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '3px',
-            flex: '0 0 auto',
-            height: '24px',
-            width: lockDesktopLyric ? '54px' : '42px',
-            marginLeft: '6px',
-            lineHeight: 1,
-            whiteSpace: 'nowrap',
-            boxShadow: showDesktopLyric ? '0 2px 8px rgba(var(--accent-rgb), 0.35)' : 'none',
-          }}
-        >
-          {showDesktopLyric && lockDesktopLyric && (
-            <Lock size={10} style={{ flex: '0 0 auto' }} />
-          )}
-          <span style={{ flex: '0 0 auto' }}>{desktopLyricButtonLabel}</span>
-        </button>
+        <DesktopLyricToggle />
       </div>
     </div>
   );

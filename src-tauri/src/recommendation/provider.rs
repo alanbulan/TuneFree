@@ -19,10 +19,9 @@ impl OpenAiCompatibleProvider {
     }
 
     fn chat_completion_urls(base_url: &str) -> Vec<String> {
-        let base = privacy::sanitize_base_url(base_url);
-        if base.is_empty() {
+        let Ok(base) = privacy::validate_base_url(base_url) else {
             return Vec::new();
-        }
+        };
         let lower = base.to_ascii_lowercase();
         if lower.ends_with("/chat/completions") {
             return vec![base];
@@ -184,5 +183,23 @@ impl OpenAiCompatibleProvider {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OpenAiCompatibleProvider;
+
+    #[test]
+    fn only_builds_secure_or_loopback_completion_urls() {
+        assert!(OpenAiCompatibleProvider::chat_completion_urls("http://example.com/v1").is_empty());
+        assert_eq!(
+            OpenAiCompatibleProvider::chat_completion_urls("https://example.com/v1"),
+            vec!["https://example.com/v1/chat/completions"]
+        );
+        assert_eq!(
+            OpenAiCompatibleProvider::chat_completion_urls("http://127.0.0.1:11434/v1"),
+            vec!["http://127.0.0.1:11434/v1/chat/completions"]
+        );
     }
 }

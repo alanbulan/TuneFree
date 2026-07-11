@@ -1,201 +1,36 @@
-import { Song } from "../types";
-import { mergeLyricTracks } from "../utils/lyrics";
-import { GD_STUDIO_API_BASE } from "./config";
-import { proxyFetch } from "./proxy";
-import { fixUrl } from "./utils";
+import type { Song } from '../types';
+import { mergeLyricTracks } from '../utils/lyrics';
+import {
+  decodeResponseText,
+  fetchGDStudioData,
+  tryParseJson,
+} from './gdStudioClient';
+import {
+  enrichAIRecommendationCovers,
+  loadAIRecommendationTracks,
+  mapAIRecommendationTracks,
+} from './gdStudioAi';
+import {
+  buildJooxCoverUrl,
+  GD_STUDIO_ONLY_SOURCES,
+  GD_STUDIO_SOURCES,
+  getTrackKey,
+  getUrlCacheKey,
+  joinArtists,
+  lyricCache,
+  normalizeBitrate,
+  picCache,
+  rememberTrackMeta,
+  resolveTrackMeta,
+  URL_CACHE_TTL,
+  urlCache,
+  type GdStudioSource,
+  type GdStudioTrack,
+} from './gdStudioModel';
+import { proxyFetch } from './proxy';
+import { fixUrl } from './utils';
 
-type GdStudioTrack = {
-  id?: string | number;
-  name?: string;
-  artist?: string[] | string;
-  album?: string;
-  pic_id?: string;
-  url_id?: string;
-  lyric_id?: string;
-  source?: string;
-};
-
-type GdStudioSource = "netease" | "kuwo" | "joox" | "bilibili" | "qq" | "embeat";
-
-type CachedTrackMeta = {
-  pic?: string;
-  picId?: string;
-  lyricId?: string;
-  urlId?: string;
-};
-
-const GD_STUDIO_SOURCES: readonly GdStudioSource[] = [
-  "netease",
-  "kuwo",
-  "joox",
-  "bilibili",
-  "qq",
-  "embeat",
-];
-
-const GD_STUDIO_ONLY_SOURCES = ["joox", "bilibili"] as const;
-
-const buildJooxCoverUrl = (picId: string, size: 300 | 500 = 500): string =>
-  `https://image.joox.com/JOOXcover/0/${picId}/${size}`;
-
-const trackMetaCache = new Map<string, CachedTrackMeta>();
-const lyricCache = new Map<string, string>();
-const picCache = new Map<string, string>();
-const urlCache = new Map<string, { url: string; expiresAt: number }>();
-
-const URL_CACHE_TTL = 5 * 60 * 1000;
-
-const countDecodeArtifacts = (text: string): number =>
-  (text.match(/�/g) || []).length;
-
-const decodeResponseText = (buffer: ArrayBuffer): string => {
-  const bytes = new Uint8Array(buffer);
-  const utf8 = new TextDecoder("utf-8").decode(bytes);
-
-  try {
-    const gb18030 = new TextDecoder("gb18030").decode(bytes);
-    return countDecodeArtifacts(gb18030) < countDecodeArtifacts(utf8)
-      ? gb18030
-      : utf8;
-  } catch {
-    return utf8;
-  }
-};
-
-const tryParseJson = (text: string): any | null => {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-};
-
-const looksLikeRateLimitResponse = (status: number, text: string): boolean => {
-  if (status === 429) return true;
-  if (status === 403 && /__cf_chl_|Just a moment|cf-browser-verification/i.test(text)) {
-    return true;
-  }
-  return /频率|rate limit|too many requests/i.test(text);
-};
-
-const fetchGDStudioData = async <T = any>(
-  params: Record<string, string | number>,
-): Promise<T> => {
-  // 统一使用 POST + md5 时间戳签名（与官方网站 mkPlayer.method = "POST" 完全一致）
-  if (!timeSynced) {
-    await syncServerTime();
-  }
-  const currentServerTime = Date.now() + lastTimeDiff;
-  const tsPrefix = String(currentServerTime).slice(0, 9);
-
-  // 签名主体：优先用 name 参数（embeat_agent/autosource/search），其次用 urlEncode(id)
-  let signSubject = "";
-  if (params.name !== undefined) {
-    signSubject = gdUrlEncode(String(params.name));
-  } else if (params.id !== undefined) {
-    signSubject = gdUrlEncode(String(params.id));
-  } else {
-    signSubject = gdUrlEncode(String(params.types || ""));
-  }
-
-  const textToHash = `${tsPrefix}|music.gdstudio.org|20260616|${signSubject}`;
-  const md5Hex = await calculateMD5(textToHash);
-  const calculatedS = params.s ? String(params.s) : md5Hex.slice(-8).toUpperCase();
-
-  const bodyParams = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (key === "source" && value === "qq") {
-      bodyParams.set(key, "tencent");
-    } else if (key === "name") {
-      bodyParams.set(key, gdUrlEncode(String(value)));
-    } else if (key !== "s") {
-      bodyParams.set(key, String(value));
-    }
-  }
-  bodyParams.set("s", calculatedS);
-
-  let response;
-  try {
-    response = await proxyFetch(GD_STUDIO_API_BASE, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
-      },
-      body: bodyParams.toString()
-    } as any, 12000);
-  } catch {
-    throw new Error("GD_STUDIO_UNAVAILABLE");
-  }
-
-  if (!response) {
-    throw new Error("GD_STUDIO_UNAVAILABLE");
-  }
-
-  const text = decodeResponseText(await response.arrayBuffer());
-  const data = tryParseJson(text);
-
-  if (!response.ok) {
-    if (looksLikeRateLimitResponse(response.status, text)) {
-      throw new Error("GD_STUDIO_RATE_LIMIT");
-    }
-    throw new Error("GD_STUDIO_UNAVAILABLE");
-  }
-
-  if (!data) {
-    if (looksLikeRateLimitResponse(response.status, text)) {
-      throw new Error("GD_STUDIO_RATE_LIMIT");
-    }
-    throw new Error("GD_STUDIO_BAD_RESPONSE");
-  }
-
-  if (typeof data?.error === "string") {
-    if (looksLikeRateLimitResponse(response.status, data.error)) {
-      throw new Error("GD_STUDIO_RATE_LIMIT");
-    }
-    throw new Error("GD_STUDIO_UNAVAILABLE");
-  }
-
-  return data as T;
-};
-
-const getTrackKey = (id: string | number, source: string): string =>
-  `${source}:${String(id)}`;
-
-const getUrlCacheKey = (
-  id: string | number,
-  source: string,
-  quality: string,
-): string => `${source}:${String(id)}:${quality}`;
-
-
-
-const joinArtists = (artist: string[] | string | undefined): string => {
-  if (Array.isArray(artist)) return artist.join(", ");
-  return typeof artist === "string" ? artist : "";
-};
-
-const normalizeBitrate = (quality: string): string => {
-  if (quality === "128k") return "128";
-  if (quality === "320k") return "320";
-  if (quality === "flac") return "740";
-  if (quality === "flac24bit") return "999";
-  return "320";
-};
-
-const rememberTrackMeta = (
-  id: string | number,
-  source: string,
-  meta: CachedTrackMeta,
-): void => {
-  const cacheKey = getTrackKey(id, source);
-  const previous = trackMetaCache.get(cacheKey) || {};
-  trackMetaCache.set(cacheKey, { ...previous, ...meta });
-};
-
-const resolveTrackMeta = (
-  id: string | number,
-  source: string,
-): CachedTrackMeta => trackMetaCache.get(getTrackKey(id, source)) || {};
+export { syncServerTime } from './gdStudioClient';
 
 export const isGDStudioSource = (source: string): source is GdStudioSource =>
   GD_STUDIO_SOURCES.includes(source as GdStudioSource);
@@ -548,246 +383,14 @@ export const resolveAutosource = async (
 };
 
 /**
- * 纯 JavaScript 经典 MD5 算法实现 (完美规避部分浏览器 WebView 对 Web Crypto MD5 的不支持限制)
- */
-async function calculateMD5(str: string): Promise<string> {
-  let k: number[] = [], i = 0;
-  for (; i < 64; ) {
-    k[i] = Math.sin(++i) * 4294967296 | 0;
-  }
-  
-  let s = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
-  let a = 0x67452301, b = 0xefcdab89, c = 0x98badcfe, d = 0x10325476;
-  
-  let utf8 = unescape(encodeURIComponent(str));
-  let l = utf8.length, blocks = [(l + 8 >> 6) + 1 << 4], j = 0;
-  for (; j < l; j++) {
-    blocks[j >> 2] |= utf8.charCodeAt(j) << (j % 4 << 3);
-  }
-  blocks[j >> 2] |= 0x80 << (j % 4 << 3);
-  
-  // 确保 blocks 数组最后一个位置被填充
-  const lastIndex = (blocks.length > 2) ? blocks.length - 2 : 0;
-  blocks[lastIndex] = l * 8;
-  
-  for (j = 0; j < blocks.length; j += 16) {
-    let olda = a, oldb = b, oldc = c, oldd = d;
-    for (i = 0; i < 64; i++) {
-      let f = 0, g = 0;
-      if (i < 16) {
-        f = (b & c) | (~b & d);
-        g = i;
-      } else if (i < 32) {
-        f = (d & b) | (~d & c);
-        g = (5 * i + 1) % 16;
-      } else if (i < 48) {
-        f = b ^ c ^ d;
-        g = (3 * i + 5) % 16;
-      } else {
-        f = c ^ (b | ~d);
-        g = (7 * i) % 16;
-      }
-      let temp = d;
-      d = c;
-      c = b;
-      b = (b + rol(a + f + k[i] + (blocks[j + g] || 0), s[(i >> 4 << 2) + i % 4])) | 0;
-      a = temp;
-    }
-    a = (a + olda) | 0;
-    b = (b + oldb) | 0;
-    c = (c + oldc) | 0;
-    d = (d + oldd) | 0;
-  }
-  
-  return wordToHex(a) + wordToHex(b) + wordToHex(c) + wordToHex(d);
-
-  function rol(num: number, cnt: number): number {
-    return (num << cnt) | (num >>> (32 - cnt));
-  }
-  
-  function wordToHex(num: number): string {
-    let hex = '', tmp = 0;
-    for (; tmp < 4; tmp++) {
-      hex += ((num >> (tmp << 3)) & 0xff).toString(16).padStart(2, '0');
-    }
-    return hex;
-  }
-}
-
-/**
- * 对应 ajax.js 中的 urlEncode 实现
- */
-function gdUrlEncode(a: string): string {
-  return encodeURIComponent(a)
-    .replace(/'/g, "%27")
-    .replace(/\(/g, "%28")
-    .replace(/\)/g, "%29");
-}
-
-let lastTimeDiff = 0;
-let timeSynced = false;
-
-/**
- * 同步 GD 音乐台的时间戳以保证签名处于有效期（10秒）内
- */
-export async function syncServerTime(): Promise<void> {
-  try {
-    const start = Date.now();
-    const resp = await fetch('https://music-api.gdstudio.xyz/time', { method: 'GET' });
-    const text = await resp.text();
-    const serverTime = Number(text.trim());
-    if (!isNaN(serverTime) && serverTime > 0) {
-      const end = Date.now();
-      const latency = (end - start) / 2;
-      lastTimeDiff = (serverTime * 1000) - (start + latency);
-      timeSynced = true;
-    }
-  } catch (err) {
-    console.warn("[GDStudio] Failed to sync server time, using local time:", err);
-  }
-}
-
-/**
  * 调用 Embeat 大模型获取 AI 推荐歌曲 (支持大语言模型搜歌 / 情感电台)
  */
 export const getAIRecommendedSongs = async (
   keyword: string,
   source: GdStudioSource = 'netease',
-  count: number = 20
+  count: number = 20,
 ): Promise<Song[]> => {
-  let data: GdStudioTrack[] | null = null;
-  try {
-    data = await fetchGDStudioData<GdStudioTrack[]>({
-      types: "embeat_agent",
-      count,
-      source,
-      pages: 1,
-      name: keyword,
-    });
-  } catch (err) {
-    console.warn("[GDStudio] embeat_agent failed, trying Pollinations AI fallback:", err);
-  }
-
-  // 第二梯队：若官方AI失效，降级使用本地 Pollinations AI 推荐 + 并发 search 查询
-  if (!data || !Array.isArray(data) || data.length === 0) {
-    try {
-      const prompt = `[No reasoning] 严格禁止任何思考链。请根据意境“${keyword}”，推荐4首适合的中文歌曲。以极简的纯JSON数组格式返回：[{"name":"歌名","artist":"歌手"}]。绝对不要有任何解释、推理思考、Markdown格式标记或多余字眼！`;
-      const aiResp = await fetch("https://text.pollinations.ai/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-      if (aiResp.ok) {
-        const aiText = await aiResp.text();
-        const dataObj = JSON.parse(aiText);
-        const content = dataObj.content || aiText;
-        const match = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
-        if (match) {
-          const recommendedList = JSON.parse(match[0]);
-          if (Array.isArray(recommendedList) && recommendedList.length > 0) {
-            const searchPromises = recommendedList.map(async (rec: any) => {
-              try {
-                const queryName = `${rec.name} ${rec.artist}`;
-                const searchRes = await fetchGDStudioData<GdStudioTrack[]>({
-                  types: "search",
-                  count: 1,
-                  source,
-                  pages: 1,
-                  name: queryName,
-                });
-                return Array.isArray(searchRes) && searchRes.length > 0 ? searchRes[0] : null;
-              } catch {
-                return null;
-              }
-            });
-            const searchResults = await Promise.all(searchPromises);
-            data = searchResults.filter((t): t is GdStudioTrack => t !== null);
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("[GDStudio] Pollinations AI fallback failed:", err);
-    }
-  }
-
-  // 第三梯队：终极直接搜索降级，截取前几个字符以保证必能返回普通列表
-  if (!data || !Array.isArray(data) || data.length === 0) {
-    try {
-      const fallbackKeyword = keyword.length > 6 ? keyword.slice(0, 4) : keyword;
-      data = await fetchGDStudioData<GdStudioTrack[]>({
-        types: "search",
-        count,
-        source,
-        pages: 1,
-        name: fallbackKeyword,
-      });
-    } catch (err) {
-      console.error("[GDStudio] Ultimate fallback search failed:", err);
-    }
-  }
-
-  if (!Array.isArray(data)) return [];
-
-  // 统一对列表所有歌曲进行本地大图封面并发拉取补全，保障全部封面在首屏与后续完美展现
-  if (data.length > 0) {
-    const coverPromises = data.map(async (item) => {
-      const picId = String(item.pic_id || "").trim();
-      const songId = String(item.id || item.url_id || "").trim();
-      // 获取规范化的真实歌曲来源
-      const rawSource = String(item.source || "").trim();
-      const itemSource = rawSource && rawSource !== "embeat"
-        ? (rawSource === "tencent" ? "qq" : rawSource)
-        : "netease";
-        
-      if (picId && songId && !picId.startsWith("http") && !picId.startsWith("//")) {
-        try {
-          const realPic = await getGDStudioPic(itemSource as any, picId, 500, songId);
-          if (realPic) {
-            item.pic_id = realPic;
-          }
-        } catch {
-          // skip
-        }
-      }
-    });
-    await Promise.all(coverPromises);
-  }
-
-  return data.map((item: GdStudioTrack) => {
-    const id = String(item.id || item.url_id || item.lyric_id || "").trim();
-    const picId = String(item.pic_id || "").trim();
-    const lyricId = String(item.lyric_id || id).trim();
-    const urlId = String(item.url_id || id).trim();
-    const pic = picId.startsWith("http") || picId.startsWith("//")
-      ? fixUrl(picId)
-      : "";
-
-    const rawSource = String(item.source || "").trim();
-    const itemSource = rawSource && rawSource !== "embeat"
-      ? (rawSource === "tencent" ? "qq" : rawSource)
-      : "netease";
-
-    if (id) {
-      rememberTrackMeta(id, itemSource as any, {
-        pic,
-        picId,
-        lyricId,
-        urlId,
-      });
-    }
-
-    return {
-      id: id || `temp_${Math.random().toString(36).slice(2)}`,
-      name: String(item.name || ""),
-      artist: joinArtists(item.artist),
-      album: String(item.album || ""),
-      pic,
-      picId,
-      lyricId,
-      urlId,
-      source: itemSource as any,
-    };
-  });
+  const tracks = await loadAIRecommendationTracks(keyword, source, count);
+  await enrichAIRecommendationCovers(tracks, getGDStudioPic);
+  return mapAIRecommendationTracks(tracks);
 };

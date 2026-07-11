@@ -1,13 +1,15 @@
 {
   "name": "tunefree-desktop",
-  "version": "1.1.17",
+  "version": "1.1.18",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 3101 --strictPort",
     "build": "tsc --noEmit && vite build",
     "start": "vite preview --host 127.0.0.1 --port 3101 --strictPort",
-    "lint": "tsc --noEmit",
+    "lint": "oxlint src --react-plugin --deny-warnings",
+    "typecheck": "tsc --noEmit",
+    "architecture:check": "node scripts/check-architecture.mjs",
     "test": "vitest",
     "tauri": "tauri",
     "version:check": "node bump-version.js --dry-run",
@@ -30,6 +32,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "6.0.3",
+    "oxlint": "^1.73.0",
     "typescript": "7.0.2",
     "vite": "8.1.4",
     "vitest": "4.1.10"

@@ -286,7 +286,10 @@ mod tests {
     #[test]
     fn filters_headers_named_by_connection() {
         let mut headers = HeaderMap::new();
-        headers.insert("connection", HeaderValue::from_static("keep-alive, x-internal"));
+        headers.insert(
+            "connection",
+            HeaderValue::from_static("keep-alive, x-internal"),
+        );
         let tokens = connection_header_tokens(&headers);
 
         assert!(!should_forward_response_header(
