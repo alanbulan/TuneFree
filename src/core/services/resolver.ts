@@ -434,6 +434,8 @@ export const parseSongFull = async (
         return {
           ...autosource,
           resolvedSource: autosource.resolvedSource || platform,
+          resolvedId: autosource.resolvedId,
+          resolvedLyricId: autosource.resolvedLyricId,
         };
       }
     } catch (e) {

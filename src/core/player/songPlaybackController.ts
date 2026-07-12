@@ -70,7 +70,7 @@ const beginPlaybackRequest = (
     refs.failedRecommendationSongKeys.current.delete(getSongKey(song));
   }
   const requestId = ++refs.playRequestId.current;
-  refs.lyricBindings.current.delete(getSongKey(song));
+  refs.lyricBindings.current.clear();
   runtime.setIsLoading(true);
   if (!forceQuality) refs.retryCount.current = 0;
   if (!isCurrentSong && refs.audio.current) {

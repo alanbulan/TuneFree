@@ -6,7 +6,11 @@ vi.mock("../../services/api", () => ({
 
 import { getLyrics } from "../../services/api";
 import type { Song } from "../../types";
-import { applyParsedMetadata, getLyricRequest } from "../songMetadata";
+import {
+  applyParsedMetadata,
+  getLyricRequest,
+  notifyLyricTimelineMismatch,
+} from "../songMetadata";
 import type { ParsedSongData } from "../types";
 import type { PlayerRuntime } from "../usePlayerRuntime";
 
@@ -25,10 +29,14 @@ const createRuntime = (song: Song): PlayerRuntime => {
   const queue = { current: [song] };
   return {
     refs: {
+      audio: { current: null },
       currentSong,
       queue,
       lyricBindings: { current: new Map() },
+      lyricMismatchNoticedKey: { current: null },
     },
+    duration: 0,
+    setPlayerNotice: vi.fn(),
     setCurrentSong: vi.fn((updater) => {
       currentSong.current = typeof updater === "function" ? updater(currentSong.current) : updater;
     }),
@@ -131,5 +139,14 @@ describe("resolved lyric binding", () => {
       url: "https://example.com/current.mp3",
       lrc: "[00:01.00]current fallback",
     });
+  });
+
+  it("uses a valid media duration and only reports a mismatch once per song", () => {
+    const runtime = createRuntime(originalSong);
+    const lrc = "[03:20.00]仍在唱\n[03:30.00]继续唱\n[04:10.00]最后一句";
+
+    expect(notifyLyricTimelineMismatch(runtime, originalSong, lrc, 200)).toBe(true);
+    expect(notifyLyricTimelineMismatch(runtime, originalSong, lrc, 200)).toBe(false);
+    expect(runtime.setPlayerNotice).toHaveBeenCalledTimes(1);
   });
 });

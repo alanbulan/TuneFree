@@ -4,10 +4,7 @@ import {
   getMediaErrorSummary,
   MEDIA_ERR_SRC_NOT_SUPPORTED_CODE,
 } from "./playerUtils";
-import {
-  analyzeLyricTimeline,
-  LYRIC_VERSION_MISMATCH_MESSAGE,
-} from "../utils/lyrics/timeline";
+import { notifyLyricTimelineMismatch } from "./songMetadata";
 import type { AudioHandlers } from "./types";
 import type { PlaybackRecovery } from "./usePlaybackRecovery";
 import type { PlayerRuntime } from "./usePlayerRuntime";
@@ -125,13 +122,15 @@ const createHandlers = (
       syncPlaybackTime(true);
       const duration = syncMediaPosition(audio, runtime);
       const song = refs.currentSong.current;
-      if (song && analyzeLyricTimeline(song.lrc, duration).status === "overrun") {
-        recommendation.showPlayerNotice(LYRIC_VERSION_MISMATCH_MESSAGE, "warning");
-      }
+      if (song) notifyLyricTimelineMismatch(runtime, song, song.lrc || "", duration);
       setIsLoading(false);
       refs.retryCount.current = 0;
     },
-    durationchange: () => { syncMediaPosition(audio, runtime); },
+    durationchange: () => {
+      const duration = syncMediaPosition(audio, runtime);
+      const song = refs.currentSong.current;
+      if (song) notifyLyricTimelineMismatch(runtime, song, song.lrc || "", duration);
+    },
     ended: () => {
       const song = refs.currentSong.current;
       if (song && refs.completeLoggedKey.current !== getSongKey(song)) {

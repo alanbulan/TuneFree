@@ -44,10 +44,12 @@ const parseNeteaseStructuredLyricLine = (line: string): { timeMs: number; text: 
   }
 };
 
-const NETEASE_STRUCTURED_CREDIT_LABEL = /^(?:作[词詞]|作曲|编曲|編曲|原唱|翻唱|演唱|制作人|製作人|制作|製作|监制|監製|统筹|統籌|企划|企劃|和声(?:编写|編寫)?|和聲(?:编写|編寫)?|配唱制作人|配唱製作人|吉他|贝斯|貝斯|鼓|钢琴|鋼琴|键盘|鍵盤|弦乐|弦樂|乐器|樂器|混音(?:工程师|工程師|工程)?|母带(?:工程师|工程師|处理|處理)?|录音(?:工程师|工程師|工程)?|錄音(?:工程师|工程師|工程)?|人声编辑|人聲編輯|音频编辑|音頻編輯|出品|发行|發行|版权|版權|授权|授權|特别鸣谢|特別鳴謝|OP|SP|ISRC)(?=\s*[:：]|\s+)/i;
+const NETEASE_STRUCTURED_CREDIT_LABEL = /^(?:(?:洛天依)?调校|(?:洛天依)?調校|作[词詞]|作曲|编曲|編曲|原唱|翻唱|演唱|制作人|製作人|制作|製作|监制|監製|统筹|統籌|项目统筹|項目統籌|总策划|總策劃|企划|企劃|音乐营销|音樂營銷|和声(?:编写|編寫)?|和聲(?:编写|編寫)?|配唱制作人|配唱製作人|吉他|贝斯|貝斯|鼓|钢琴|鋼琴|键盘|鍵盤|弦乐|弦樂|乐器|樂器|混音(?:工程师|工程師|工程)?|母带(?:工程师|工程師|处理|處理)?|录音(?:工程师|工程師|工程)?|錄音(?:工程师|工程師|工程)?|人声编辑|人聲編輯|音频编辑|音頻編輯|出品人?|發行人?|发行人?|音乐发行|音樂發行|版权|版權|授权|授權|词曲版权归属\s*[-—–]?\s*(?:OP\s*\/\s*SP|OP|SP)?|詞曲版權歸屬\s*[-—–]?\s*(?:OP\s*\/\s*SP|OP|SP)?|特别鸣谢|特別鳴謝|OP|SP|ISRC)(?=\s*[:：]|\s+)/i;
+
+const NETEASE_STRUCTURED_CREDIT_NOTICE = /^(?:【|\[)?(?:本歌曲已获得词曲正版授权|本歌曲已獲得詞曲正版授權|未经著作权人许可|未經著作權人許可)(?:[，,。；;：:\s].*)?(?:】|\])?$/;
 
 const isNeteaseStructuredCredit = (text: string): boolean =>
-  NETEASE_STRUCTURED_CREDIT_LABEL.test(text);
+  NETEASE_STRUCTURED_CREDIT_LABEL.test(text) || NETEASE_STRUCTURED_CREDIT_NOTICE.test(text);
 
 const normalizeNeteaseLyricTrack = (
   raw: string,

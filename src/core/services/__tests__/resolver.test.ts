@@ -41,6 +41,8 @@ describe('Embeat playback resolution', () => {
       lrc: '[00:00.00]lyric',
       pic: 'https://example.com/cover.jpg',
       resolvedSource: 'netease',
+      resolvedId: 'netease-123',
+      resolvedLyricId: 'netease-123',
     });
     const songMeta = {
       name: '江南', artist: '林俊杰', album: '第二天堂',
@@ -55,6 +57,8 @@ describe('Embeat playback resolution', () => {
         lrc: '[00:00.00]lyric',
         pic: 'https://example.com/cover.jpg',
         resolvedSource: 'netease',
+        resolvedId: 'netease-123',
+        resolvedLyricId: 'netease-123',
       });
     expect(resolveAutosource).toHaveBeenNthCalledWith(1, expect.objectContaining({
       name: '江南', source: 'embeat',

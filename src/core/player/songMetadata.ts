@@ -5,7 +5,11 @@ import {
   analyzeLyricTimeline,
   LYRIC_VERSION_MISMATCH_MESSAGE,
 } from "../utils/lyrics/timeline";
-import { shouldFetchBetterLyrics, shouldUseLyricCandidate } from "./playerUtils";
+import {
+  getFiniteAudioDuration,
+  shouldFetchBetterLyrics,
+  shouldUseLyricCandidate,
+} from "./playerUtils";
 import type { ParsedSongData, ResolvedLyricBinding } from "./types";
 import type { PlayerRuntime } from "./usePlayerRuntime";
 
@@ -16,14 +20,22 @@ export const isSameLyricBinding = (
   left?.id === right?.id && left?.lyricId === right?.lyricId;
 
 export const notifyLyricTimelineMismatch = (
-  duration: number,
-  setPlayerNotice: PlayerRuntime["setPlayerNotice"],
+  runtime: Pick<PlayerRuntime, "duration" | "refs" | "setPlayerNotice">,
+  song: Song,
   lrc: string,
-): void => {
-  if (analyzeLyricTimeline(lrc, duration).status !== "overrun") return;
-  setPlayerNotice({
+  knownDuration = 0,
+): boolean => {
+  const audioDuration = runtime.refs.audio?.current
+    ? getFiniteAudioDuration(runtime.refs.audio.current) : 0;
+  const duration = knownDuration > 0 ? knownDuration : audioDuration || runtime.duration;
+  if (analyzeLyricTimeline(lrc, duration).status !== "overrun") return false;
+  const songKey = getSongKey(song);
+  if (runtime.refs.lyricMismatchNoticedKey.current === songKey) return false;
+  runtime.refs.lyricMismatchNoticedKey.current = songKey;
+  runtime.setPlayerNotice({
     id: Date.now(), tone: "warning", message: LYRIC_VERSION_MISMATCH_MESSAGE,
   });
+  return true;
 };
 
 const updateLyrics = (
@@ -36,7 +48,7 @@ const updateLyrics = (
   if (!isSameLyricBinding(refs.lyricBindings.current.get(getSongKey(song)), binding)) return;
   if (!isSameSong(refs.currentSong.current, song) ||
       !shouldUseLyricCandidate(refs.currentSong.current?.lrc, lrc)) return;
-  notifyLyricTimelineMismatch(runtime.duration, runtime.setPlayerNotice, lrc);
+  notifyLyricTimelineMismatch(runtime, song, lrc);
   setCurrentSong((previous) => {
     if (!previous || !isSameSong(previous, song) ||
         !shouldUseLyricCandidate(previous.lrc, lrc)) return previous;

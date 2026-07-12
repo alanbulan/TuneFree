@@ -126,6 +126,41 @@ describe("netease lyrics", () => {
     expect(rows[0].words).toHaveLength(3);
   });
 
+  it("removes known structured production and copyright credit variants", async () => {
+    const credits = [
+      "洛天依调校：某制作人",
+      "项目统筹：某统筹",
+      "总策划：某策划",
+      "音乐营销：某团队",
+      "出品人：某出品方",
+      "音乐发行：某发行方",
+      "词曲版权归属-op：某版权方",
+      "词曲版权归属-sp：某版权方",
+      "本歌曲已获得词曲正版授权",
+      "【未经著作权人许可 不得翻唱翻录或使用】",
+    ];
+    vi.mocked(proxyFetchJson)
+      .mockResolvedValueOnce({
+        lrc: {
+          lyric: [
+            ...credits.map((text, index) => JSON.stringify({
+              t: index * 1000,
+              c: [{ tx: text }],
+            })),
+            '{"t":9500,"c":[{"tx":"旁白："},{"tx":"故事继续"}]}',
+            "[00:11.00]第一句歌词",
+          ].join("\n"),
+        },
+      })
+      .mockResolvedValueOnce({ lrc: { lyric: "" } });
+
+    const lrc = await fetchNeteaseLyrics(123);
+    const rows = parseLyrics(lrc);
+
+    credits.forEach((credit) => expect(lrc).not.toContain(credit));
+    expect(rows.map((row) => row.text)).toEqual(["旁白：故事继续", "第一句歌词"]);
+  });
+
   it("keeps unknown structured lines as timed lyrics", async () => {
     vi.mocked(proxyFetchJson)
       .mockResolvedValueOnce({
@@ -154,6 +189,25 @@ describe("netease lyrics", () => {
 
     expect(lrc).toContain("[00:01.00]作词：周杰伦");
     expect(rows.map((row) => row.text)).toEqual(["作词：周杰伦", "第一句歌词"]);
+  });
+
+  it("keeps ordinary LRC lines for extended credit and copyright text", async () => {
+    vi.mocked(proxyFetchJson)
+      .mockResolvedValueOnce({
+        lrc: {
+          lyric: "[00:01.00]洛天依调校：某制作人\n[00:02.00]本歌曲已获得词曲正版授权\n[00:03.00]第一句歌词",
+        },
+      })
+      .mockResolvedValueOnce({ lrc: { lyric: "" } });
+
+    const lrc = await fetchNeteaseLyrics(123);
+    const rows = parseLyrics(lrc);
+
+    expect(rows.map((row) => row.text)).toEqual([
+      "洛天依调校：某制作人",
+      "本歌曲已获得词曲正版授权",
+      "第一句歌词",
+    ]);
   });
 
   it("falls back to legacy lyrics when v1 has no yrc", async () => {
