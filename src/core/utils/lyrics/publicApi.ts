@@ -78,7 +78,7 @@ export const findActiveLyricIndex = (
   if (rows.length === 0) return -1;
   const targetTime = currentTime + lyricOffsetSeconds;
   if (timingMode === 'karaoke') {
-    let activeIndex = 0;
+    let activeIndex = -1;
     let activeTime = Number.NEGATIVE_INFINITY;
     rows.forEach((row, index) => {
       const rowTime = getLyricLineTime(row, timingMode);
@@ -90,7 +90,7 @@ export const findActiveLyricIndex = (
   }
   let low = 0;
   let high = rows.length - 1;
-  let activeIndex = 0;
+  let activeIndex = -1;
   while (low <= high) {
     const mid = (low + high) >>> 1;
     if (getLyricLineTime(rows[mid], timingMode) <= targetTime) {

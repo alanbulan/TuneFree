@@ -17,7 +17,14 @@ import type { Song } from "../types";
 type SongMeta = Pick<Song, "pic" | "picId" | "urlId" | "lyricId"> &
   Partial<Pick<Song, "name" | "artist" | "album">>;
 
-type ParsedSongFull = { url: string | null; lrc: string; pic: string };
+export type ParsedSongFull = {
+  url: string | null;
+  lrc: string;
+  pic: string;
+  resolvedSource: string;
+  resolvedId?: string | number;
+  resolvedLyricId?: string | number;
+};
 
 const _lyricsCache = new Map<string, string>();
 const _lyricsPending = new Map<string, Promise<string>>();
@@ -286,7 +293,13 @@ const resolveDirectSongFull = async (
   }
 
   if (isGDStudioOnlySource(platform)) {
-    return parseGDStudioSongFull(id, platform, quality, songMeta);
+    const parsed = await parseGDStudioSongFull(id, platform, quality, songMeta);
+    return parsed ? {
+      ...parsed,
+      resolvedSource: platform,
+      resolvedId: id,
+      resolvedLyricId: songMeta?.lyricId || id,
+    } : null;
   }
 
   const [url, lrc] = await Promise.all([
@@ -297,7 +310,14 @@ const resolveDirectSongFull = async (
 
   if (!url && !lrc && !pic) return null;
 
-  return { url, lrc, pic };
+  return {
+    url,
+    lrc,
+    pic,
+    resolvedSource: platform,
+    resolvedId: id,
+    resolvedLyricId: songMeta?.lyricId || id,
+  };
 };
 
 const getFallbackSources = (originalSource: string): readonly string[] => {
@@ -348,6 +368,9 @@ const resolveFallbackSongFull = async (
               url: parsed.url,
               lrc: parsed.lrc,
               pic: parsed.pic || candidate.pic || songMeta?.pic || "",
+              resolvedSource: parsed.resolvedSource,
+              resolvedId: parsed.resolvedId,
+              resolvedLyricId: parsed.resolvedLyricId,
             };
           }
         }
@@ -407,7 +430,12 @@ export const parseSongFull = async (
         album: songMeta.album || "",
         source: "embeat",
       }, quality);
-      if (autosource?.url) return autosource;
+      if (autosource?.url) {
+        return {
+          ...autosource,
+          resolvedSource: autosource.resolvedSource || platform,
+        };
+      }
     } catch (e) {
       console.warn("[Resolver] resolveAutosource failed in parseSongFull, falling back:", e);
     }

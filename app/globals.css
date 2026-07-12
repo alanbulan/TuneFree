@@ -19,6 +19,7 @@
   --accent: var(--ios-blue);
   --accent-rgb: 0, 122, 255;
   --accent-2: var(--ios-red);
+  --visualizer-bar-rgb: 0, 0, 0;
   --play: var(--accent);
   --danger: var(--ios-red);
   --danger-rgb: 250, 35, 59;
@@ -1960,6 +1961,12 @@ img { display: block; }
   transform: scaleY(.72);
   transform-origin: center bottom;
 }
+.dark-theme .transport-wave-bg { opacity: .58; }
+.dark-theme .mini-wave-bg { opacity: .52; }
+.dark-theme .transport-wave-bg canvas {
+  opacity: .52;
+  mix-blend-mode: screen;
+}
 .transport-like-button.active { color: var(--accent); background: rgba(var(--accent-rgb),.10); }
 
 .skeleton-block,
@@ -2527,6 +2534,7 @@ input, textarea, [contenteditable="true"], .panel-input {
   --text-soft: #e4e4e7;
   --muted: var(--ios-subtext);
   --faint: #52525b;
+  --visualizer-bar-rgb: 244, 244, 245;
   --bg-rgb: 9, 9, 11;
   --card-rgb: 24, 24, 27;
   /* Semantic glass/blur backgrounds */

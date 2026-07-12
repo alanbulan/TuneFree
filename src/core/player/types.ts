@@ -56,6 +56,11 @@ export type PlayerNoticeState = Pick<PlayerContextValue, "playerNotice">;
 export type ParsedSongData = NonNullable<Awaited<ReturnType<typeof parseSongFull>>>;
 export interface ParsedSongCacheEntry { data: ParsedSongData; expiresAt: number }
 export interface ParsedSongResolution { parsed: ParsedSongData | null; cacheKey: string | null }
+export interface ResolvedLyricBinding {
+  source: string;
+  id?: string | number;
+  lyricId?: string | number;
+}
 
 export interface AudioHandlers {
   timeupdate: () => void;
@@ -102,6 +107,7 @@ export interface PlayerRefs {
   play30LoggedKey: MutableRefObject<string | null>;
   completeLoggedKey: MutableRefObject<string | null>;
   lyricRefreshKey: MutableRefObject<string | null>;
+  lyricBindings: MutableRefObject<Map<string, ResolvedLyricBinding>>;
   retryCount: MutableRefObject<number>;
   forceNoCorsPlayback: MutableRefObject<boolean>;
   activeParsedCacheKey: MutableRefObject<string | null>;

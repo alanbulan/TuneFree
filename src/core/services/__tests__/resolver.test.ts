@@ -50,13 +50,36 @@ describe('Embeat playback resolution', () => {
     await expect(getSongUrl('embeat-1', 'embeat', 'flac', songMeta))
       .resolves.toBe('https://example.com/embeat.flac');
     await expect(parseSongFull('embeat-1', 'embeat', 'flac24bit', songMeta))
-      .resolves.toMatchObject({ url: 'https://example.com/embeat.flac' });
+      .resolves.toEqual({
+        url: 'https://example.com/embeat.flac',
+        lrc: '[00:00.00]lyric',
+        pic: 'https://example.com/cover.jpg',
+        resolvedSource: 'netease',
+      });
     expect(resolveAutosource).toHaveBeenNthCalledWith(1, expect.objectContaining({
       name: '江南', source: 'embeat',
     }), 'flac');
     expect(resolveAutosource).toHaveBeenNthCalledWith(2, expect.objectContaining({
       name: '江南', source: 'embeat',
     }), 'flac24bit');
+  });
+
+  it('returns the original identity for a direct resolution', async () => {
+    vi.mocked(fetchNeteaseLyrics).mockResolvedValue('[00:01.00]direct lyric');
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ url: 'https://example.com/direct.mp3' }),
+    }) as any;
+
+    await expect(parseSongFull('direct-id', 'netease', '320k', {
+      name: 'Direct Song', artist: 'Direct Artist', album: '',
+      pic: '', picId: '', urlId: '', lyricId: 'direct-lyric-id',
+    })).resolves.toMatchObject({
+      url: 'https://example.com/direct.mp3',
+      resolvedSource: 'netease',
+      resolvedId: 'direct-id',
+      resolvedLyricId: 'direct-lyric-id',
+    });
   });
 });
 
@@ -257,6 +280,40 @@ describe('isLikelySameSong (indirect via getSongUrl)', () => {
     const result = await getSongUrl('temp_0', 'kuwo', '320k', songMeta);
     // Should have tried the netease fallback and found the URL
     expect(result).toBe('https://example.com/song.mp3');
+  });
+
+  it('returns the fallback candidate identity together with its URL and lyrics', async () => {
+    const songMeta = {
+      name: 'Fallback Song',
+      artist: 'Fallback Artist',
+      pic: '',
+      picId: '',
+      urlId: '',
+      lyricId: '',
+    };
+    vi.mocked(searchNetease).mockResolvedValue([{
+      id: 'fallback-id',
+      name: 'Fallback Song',
+      artist: 'Fallback Artist',
+      album: '',
+      pic: '',
+      lyricId: 'fallback-lyric-id',
+      source: 'netease',
+    }]);
+    vi.mocked(fetchNeteaseLyrics).mockResolvedValue('[00:01.00]fallback lyric');
+    globalThis.fetch = vi.fn((url: string) => Promise.resolve({
+      ok: url.includes('platform=netease'),
+      json: () => Promise.resolve({ url: 'https://example.com/fallback.mp3' }),
+    })) as any;
+
+    await expect(parseSongFull('temp_fallback', 'kuwo', '320k', songMeta))
+      .resolves.toMatchObject({
+        url: 'https://example.com/fallback.mp3',
+        lrc: '[00:01.00]fallback lyric',
+        resolvedSource: 'netease',
+        resolvedId: 'fallback-id',
+        resolvedLyricId: 'fallback-lyric-id',
+      });
   });
 
   it('should reject candidates with completely different names', async () => {

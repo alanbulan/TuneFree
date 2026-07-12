@@ -88,6 +88,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
         percent: number,
         h: number,
         w: number,
+        color: string,
     ) => {
         if (percent < MIN_BAR_PERCENT) percent = MIN_BAR_PERCENT;
 
@@ -95,9 +96,9 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
         const radius = w / 2;
         const y = h - barHeight;
 
-        // 简洁深色风格 — 强度越大越不透明
+        // 颜色跟随当前主题，强度越大越不透明
         const alpha = 0.12 + percent * 0.38;
-        ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+        ctx.fillStyle = `rgba(${color}, ${alpha})`;
 
         // 绘制圆角柱子
         ctx.beginPath();
@@ -120,6 +121,9 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
       const width = canvasSize.width;
       const height = canvasSize.height;
       ctx.clearRect(0, 0, width, height);
+      const barColor = getComputedStyle(canvas)
+        .getPropertyValue('--visualizer-bar-rgb')
+        .trim() || '0, 0, 0';
 
       const totalSpace = width / BAR_COUNT;
       const barWidth = totalSpace * 0.92;
@@ -169,7 +173,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
                 state.displayValues[i] += (percent - state.displayValues[i]) * 0.15;
             }
 
-            renderBar(ctx, x, state.displayValues[i], height, barWidth);
+            renderBar(ctx, x, state.displayValues[i], height, barWidth, barColor);
             x += totalSpace;
           }
 
@@ -205,7 +209,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
              percent = Math.pow(percent, RESPONSE_CURVE);
              state.displayValues[i] = percent;
 
-             renderBar(ctx, x, percent, height, barWidth);
+             renderBar(ctx, x, percent, height, barWidth, barColor);
              x += totalSpace;
           }
 
@@ -217,7 +221,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
               if (state.displayValues[i] > MIN_BAR_PERCENT + 0.005) {
                   allSettled = false;
               }
-              renderBar(ctx, x, state.displayValues[i], height, barWidth);
+              renderBar(ctx, x, state.displayValues[i], height, barWidth, barColor);
               x += totalSpace;
           }
 
@@ -228,7 +232,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
               x = (totalSpace - barWidth) / 2;
               for (let i = 0; i < BAR_COUNT; i++) {
                   state.displayValues[i] = 0;
-                  renderBar(ctx, x, MIN_BAR_PERCENT, height, barWidth);
+                  renderBar(ctx, x, MIN_BAR_PERCENT, height, barWidth, barColor);
                   x += totalSpace;
               }
               pauseAnimationSettled = true;
@@ -250,11 +254,18 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
     const resizeObserver = typeof ResizeObserver === 'undefined'
       ? null
       : new ResizeObserver(handleResize);
+    const themeObserver = typeof MutationObserver === 'undefined'
+      ? null
+      : new MutationObserver(() => {
+        if (animationId === null) draw();
+      });
     resizeObserver?.observe(canvas);
+    themeObserver?.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     window.addEventListener('resize', handleResize);
 
     return () => {
       resizeObserver?.disconnect();
+      themeObserver?.disconnect();
       window.removeEventListener('resize', handleResize);
       if (animationId !== null) cancelAnimationFrame(animationId);
     };

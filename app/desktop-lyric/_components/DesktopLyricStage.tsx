@@ -24,6 +24,7 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
   const [focusSize, setFocusSize] = useState(styleState.size);
   const [focusContentHeight, setFocusContentHeight] = useState(0);
   const { song, rows, activeIndex, currentLine } = player;
+  const displayIndex = activeIndex >= 0 ? activeIndex : currentLine ? 0 : -1;
   const { size } = styleState;
   const lyricClock = player.currentTime + player.lyricOffsetSeconds;
   const enableKaraoke = player.lyricDisplayMode === 'karaoke';
@@ -82,7 +83,7 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
   }, [currentLine, focusSize, stageHeight, stageWidth]);
 
   const contextDepth = useMemo(() => {
-    if (rows.length === 0 || activeIndex < 0) return 0;
+    if (rows.length === 0 || displayIndex < 0) return 0;
 
     // 桌面歌词没有可见边框，用户拖的是透明窗口边界；这里用实际舞台高度计算上下文容量。
     // 旧的 6 行上限在竖向大窗口里明显太少，这里提高到上下各 14 行，并按字号压缩行预算。
@@ -93,7 +94,7 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
       ? Math.min(measuredHeight, focusContentHeight)
       : size * (1.65 + getExtensionCount(currentLine) * 0.86);
     const maxContextExtensions = rows.reduce((max, row, index) => (
-      index === activeIndex ? max : Math.max(max, getExtensionCount(row))
+      index === displayIndex ? max : Math.max(max, getExtensionCount(row))
     ), 0);
     const contextPrimarySize = Math.max(12, Math.round(size * 0.6));
     const contextExtensionSize = Math.max(12, Math.round(size * 0.56));
@@ -105,13 +106,13 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
     const availableHeight = Math.max(0, measuredHeight - focusReserve - 16);
 
     return Math.max(0, Math.min(14, Math.floor(availableHeight / (contextLineBudget * 2))));
-  }, [activeIndex, currentLine, focusContentHeight, rows, size, stageHeight]);
+  }, [currentLine, displayIndex, focusContentHeight, rows, size, stageHeight]);
 
-  const previousLines = contextDepth > 0 && activeIndex > 0
-    ? rows.slice(Math.max(0, activeIndex - contextDepth), activeIndex)
+  const previousLines = contextDepth > 0 && displayIndex > 0
+    ? rows.slice(Math.max(0, displayIndex - contextDepth), displayIndex)
     : [];
-  const nextLines = contextDepth > 0 && activeIndex >= 0
-    ? rows.slice(activeIndex + 1, activeIndex + 1 + contextDepth)
+  const nextLines = contextDepth > 0 && displayIndex >= 0
+    ? rows.slice(displayIndex + 1, displayIndex + 1 + contextDepth)
     : [];
 
   if (rows.length === 0) {

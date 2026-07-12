@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { findActiveLyricIndex, parseLyrics } from '../../../src/core/utils/lyrics';
+import { findActiveLyricIndex, parseLyrics, type ParsedLyric } from '../../../src/core/utils/lyrics';
 import { normalizeLyricDisplayMode, type LyricDisplayMode } from '../../../src/core/utils/lyricDisplayMode';
 import type { DesktopLyricCommand, DesktopLyricPlayerState, DesktopLyricSong, DesktopLyricStyleState, LyricUpdateEvent } from './types';
 import { forceTransparentDocument, readAndApplyDesktopLyricTheme } from './theme';
@@ -13,6 +13,11 @@ type PlaybackSnapshot = {
   lyricDisplayMode: LyricDisplayMode;
   receivedAt: number;
 };
+
+export const getDesktopLyricCurrentLine = (
+  rows: ParsedLyric[],
+  activeIndex: number,
+): ParsedLyric | null => activeIndex >= 0 ? rows[activeIndex] ?? null : rows[0] ?? null;
 
 const getNowSeconds = () => {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -148,7 +153,7 @@ export const useDesktopLyricBridge = () => {
     ),
     [rows, projectedTime, snapshot.lyricOffsetSeconds, snapshot.lyricDisplayMode],
   );
-  const currentLine = activeIndex >= 0 ? rows[activeIndex] : rows[0] ?? null;
+  const currentLine = getDesktopLyricCurrentLine(rows, activeIndex);
 
   const playerState: DesktopLyricPlayerState = {
     song: snapshot.song,

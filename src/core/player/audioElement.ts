@@ -4,6 +4,10 @@ import {
   getMediaErrorSummary,
   MEDIA_ERR_SRC_NOT_SUPPORTED_CODE,
 } from "./playerUtils";
+import {
+  analyzeLyricTimeline,
+  LYRIC_VERSION_MISMATCH_MESSAGE,
+} from "../utils/lyrics/timeline";
 import type { AudioHandlers } from "./types";
 import type { PlaybackRecovery } from "./usePlaybackRecovery";
 import type { PlayerRuntime } from "./usePlayerRuntime";
@@ -119,7 +123,11 @@ const createHandlers = (
     },
     loadedmetadata: () => {
       syncPlaybackTime(true);
-      syncMediaPosition(audio, runtime);
+      const duration = syncMediaPosition(audio, runtime);
+      const song = refs.currentSong.current;
+      if (song && analyzeLyricTimeline(song.lrc, duration).status === "overrun") {
+        recommendation.showPlayerNotice(LYRIC_VERSION_MISMATCH_MESSAGE, "warning");
+      }
       setIsLoading(false);
       refs.retryCount.current = 0;
     },
