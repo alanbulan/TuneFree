@@ -108,6 +108,7 @@ export interface PlayerRefs {
   completeLoggedKey: MutableRefObject<string | null>;
   lyricRefreshKey: MutableRefObject<string | null>;
   lyricBindings: MutableRefObject<Map<string, ResolvedLyricBinding>>;
+  lyricMismatchNoticedKey: MutableRefObject<string | null>;
   retryCount: MutableRefObject<number>;
   forceNoCorsPlayback: MutableRefObject<boolean>;
   activeParsedCacheKey: MutableRefObject<string | null>;

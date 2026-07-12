@@ -46,7 +46,7 @@ export const useLyricRefresh = (runtime: PlayerRuntime): void => {
       if (cancelled || !isSameLyricBinding(
         refs.lyricBindings.current.get(getSongKey(currentSong)), binding,
       ) || !shouldUseLyricCandidate(refs.currentSong.current?.lrc, lrc)) return;
-      notifyLyricTimelineMismatch(duration, setPlayerNotice, lrc);
+      notifyLyricTimelineMismatch({ duration, refs, setPlayerNotice }, currentSong, lrc);
       refs.parsedSongCache.current.clear();
       setCurrentSong((previous) => {
         if (!previous || !isSameSong(previous, currentSong) ||

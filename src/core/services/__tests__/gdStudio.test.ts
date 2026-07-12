@@ -56,6 +56,42 @@ describe('GD Studio service', () => {
     }));
   });
 
+  it('returns the upstream autosource id as the resolved audio and lyric identity', async () => {
+    mockedFetchData.mockResolvedValue({
+      url: 'https://example.com/song.mp3',
+      lyric: '[00:00.00]江南',
+      source: 'netease',
+      id: 'netease-123',
+    });
+
+    await expect(resolveAutosource({
+      name: '江南', artist: '林俊杰', album: '第二天堂', source: 'embeat',
+    })).resolves.toMatchObject({
+      resolvedSource: 'netease',
+      resolvedId: 'netease-123',
+      resolvedLyricId: 'netease-123',
+    });
+  });
+
+  it('does not invent a resolved identity when autosource omits a usable id', async () => {
+    mockedFetchData.mockResolvedValue({
+      url: 'https://example.com/song.mp3',
+      source: 'netease',
+      id: '   ',
+    });
+
+    await expect(resolveAutosource({
+      name: '江南', artist: '林俊杰', album: '第二天堂', source: 'embeat',
+    })).resolves.toEqual({
+      url: 'https://example.com/song.mp3',
+      lrc: '',
+      pic: '',
+      resolvedSource: 'netease',
+      resolvedId: undefined,
+      resolvedLyricId: undefined,
+    });
+  });
+
   it('does not permanently cache an empty lyric after a failed request', async () => {
     mockedFetchData
       .mockRejectedValueOnce(new Error('temporary failure'))

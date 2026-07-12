@@ -351,7 +351,14 @@ export const parseGDStudioSongFull = async (
 export const resolveAutosource = async (
   song: Pick<Song, "name" | "artist" | "album" | "source">,
   quality: string = "320k",
-): Promise<{ url: string; lrc: string; pic: string; resolvedSource?: string }> => {
+): Promise<{
+  url: string;
+  lrc: string;
+  pic: string;
+  resolvedSource?: string;
+  resolvedId?: string | number;
+  resolvedLyricId?: string | number;
+}> => {
   const nameParts = [song.name || ""];
   if (song.artist) nameParts.push(song.artist);
   if (song.album) nameParts.push(song.album);
@@ -412,12 +419,17 @@ export const resolveAutosource = async (
   if (data?.source !== undefined && !resolvedSource) {
     throw new GDStudioApiError('BAD_RESPONSE', 200, 'autosource response has invalid source');
   }
+  const resolvedId = data?.id !== undefined && data?.id !== null && String(data.id).trim()
+    ? data.id
+    : undefined;
 
   return {
     url,
     lrc,
     pic,
     resolvedSource: resolvedSource || undefined,
+    resolvedId,
+    resolvedLyricId: resolvedId,
   };
 };
 
