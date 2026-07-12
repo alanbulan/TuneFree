@@ -105,7 +105,7 @@ describe("netease lyrics", () => {
     ]);
   });
 
-  it("normalizes structured v1 credit lines and removes them from the karaoke track", async () => {
+  it("removes recognized structured v1 credit lines from displayed lyrics", async () => {
     vi.mocked(proxyFetchJson).mockResolvedValueOnce({
       lrc: {
         lyric: '{"t":0,"c":[{"tx":"作词: "},{"tx":"周杰伦"}]}\n[00:23.97]半夜睡不着觉',
@@ -119,10 +119,41 @@ describe("netease lyrics", () => {
     const rows = parseLyrics(lrc);
 
     expect(lrc).not.toContain('{"t":0');
-    expect(rows[0]).toMatchObject({ time: 0, text: "作词: 周杰伦" });
-    expect(rows[1].text).toBe("半夜睡不着觉");
-    expect(rows[1].karaokeTime).toBeCloseTo(24.08, 3);
-    expect(rows[1].words).toHaveLength(3);
+    expect(lrc).not.toContain("作词: 周杰伦");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text).toBe("半夜睡不着觉");
+    expect(rows[0].karaokeTime).toBeCloseTo(24.08, 3);
+    expect(rows[0].words).toHaveLength(3);
+  });
+
+  it("keeps unknown structured lines as timed lyrics", async () => {
+    vi.mocked(proxyFetchJson)
+      .mockResolvedValueOnce({
+        lrc: {
+          lyric: '{"t":1500,"c":[{"tx":"旁白："},{"tx":"故事开始"}]}\n[00:03.00]第一句歌词',
+        },
+      })
+      .mockResolvedValueOnce({ lrc: { lyric: "" } });
+
+    const lrc = await fetchNeteaseLyrics(123);
+    const rows = parseLyrics(lrc);
+
+    expect(lrc).toContain("[00:01.500]旁白：故事开始");
+    expect(rows.map((row) => row.text)).toEqual(["旁白：故事开始", "第一句歌词"]);
+  });
+
+  it("keeps ordinary LRC lines even when their text looks like a credit", async () => {
+    vi.mocked(proxyFetchJson)
+      .mockResolvedValueOnce({
+        lrc: { lyric: "[00:01.00]作词：周杰伦\n[00:03.00]第一句歌词" },
+      })
+      .mockResolvedValueOnce({ lrc: { lyric: "" } });
+
+    const lrc = await fetchNeteaseLyrics(123);
+    const rows = parseLyrics(lrc);
+
+    expect(lrc).toContain("[00:01.00]作词：周杰伦");
+    expect(rows.map((row) => row.text)).toEqual(["作词：周杰伦", "第一句歌词"]);
   });
 
   it("falls back to legacy lyrics when v1 has no yrc", async () => {

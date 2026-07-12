@@ -3,11 +3,16 @@ import { getLyrics } from "../services/api";
 import { getSongKey, isSameSong } from "../types";
 import { LYRIC_DISPLAY_MODE_CHANGE_EVENT } from "../utils/lyricDisplayMode";
 import { shouldFetchBetterLyrics, shouldUseLyricCandidate } from "./playerUtils";
+import {
+  getLyricRequest,
+  isSameLyricBinding,
+  notifyLyricTimelineMismatch,
+} from "./songMetadata";
 import type { PlayerRuntime } from "./usePlayerRuntime";
 
 export const useLyricRefresh = (runtime: PlayerRuntime): void => {
   const [refreshNonce, setRefreshNonce] = useState(0);
-  const { currentSong, refs, setCurrentSong, setQueue } = runtime;
+  const { currentSong, duration, refs, setCurrentSong, setPlayerNotice, setQueue } = runtime;
 
   useEffect(() => {
     const requestRefresh = () => setRefreshNonce((value) => value + 1);
@@ -20,14 +25,28 @@ export const useLyricRefresh = (runtime: PlayerRuntime): void => {
   }, []);
 
   useEffect(() => {
-    if (!currentSong || !shouldFetchBetterLyrics(currentSong, currentSong.lrc)) return;
-    const refreshKey = `${getSongKey(currentSong)}:${currentSong.lrc?.length || 0}:${refreshNonce}`;
+    if (!currentSong) return;
+    const binding = refs.lyricBindings.current.get(getSongKey(currentSong));
+    const lyricRequest = getLyricRequest(currentSong, binding);
+    if (!lyricRequest) return;
+    if (!shouldFetchBetterLyrics({ source: lyricRequest.source }, currentSong.lrc)) return;
+    const refreshKey = [
+      getSongKey(currentSong),
+      lyricRequest.source,
+      lyricRequest.id,
+      lyricRequest.songMeta.lyricId || "",
+      currentSong.lrc?.length || 0,
+      refreshNonce,
+    ].join(":");
     if (refs.lyricRefreshKey.current === refreshKey) return;
     refs.lyricRefreshKey.current = refreshKey;
 
     let cancelled = false;
-    void getLyrics(currentSong.id, currentSong.source, currentSong).then((lrc) => {
-      if (cancelled || !shouldUseLyricCandidate(refs.currentSong.current?.lrc, lrc)) return;
+    void getLyrics(lyricRequest.id, lyricRequest.source, lyricRequest.songMeta).then((lrc) => {
+      if (cancelled || !isSameLyricBinding(
+        refs.lyricBindings.current.get(getSongKey(currentSong)), binding,
+      ) || !shouldUseLyricCandidate(refs.currentSong.current?.lrc, lrc)) return;
+      notifyLyricTimelineMismatch(duration, setPlayerNotice, lrc);
       refs.parsedSongCache.current.clear();
       setCurrentSong((previous) => {
         if (!previous || !isSameSong(previous, currentSong) ||
@@ -46,5 +65,5 @@ export const useLyricRefresh = (runtime: PlayerRuntime): void => {
       });
     });
     return () => { cancelled = true; };
-  }, [currentSong, refreshNonce, refs, setCurrentSong, setQueue]);
+  }, [currentSong, duration, refreshNonce, refs, setCurrentSong, setPlayerNotice, setQueue]);
 };

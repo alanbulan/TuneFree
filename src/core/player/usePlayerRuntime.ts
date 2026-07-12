@@ -41,7 +41,7 @@ export const usePlayerRuntime = () => {
       audioQuality: ref(audioQuality), activeQuality: ref<AudioQuality>(audioQuality),
       progressFrame: ref<number | null>(null), lastProgressTime: ref(0),
       play30LoggedKey: ref<string | null>(null), completeLoggedKey: ref<string | null>(null),
-      lyricRefreshKey: ref<string | null>(null), retryCount: ref(0),
+      lyricRefreshKey: ref<string | null>(null), lyricBindings: ref(new Map()), retryCount: ref(0),
       forceNoCorsPlayback: ref(false), activeParsedCacheKey: ref<string | null>(null),
       pendingQualityChange: ref(false), refreshedCacheKeys: ref<Set<string>>(new Set()),
       playbackSessionId: ref<string | null>(null),

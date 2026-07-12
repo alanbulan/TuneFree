@@ -37,6 +37,30 @@ describe('parseLyrics', () => {
     expect(result[1].text).toBe('Repeated line');
   });
 
+  it('should remove only known third-party watermarks at the 999-minute sentinel', () => {
+    const lrc = `[999:00.00]***歌詞來自第三方***
+[999:01.23]***歌词来自第三方***
+[998:59.99]***歌詞來自第三方***
+[999:02.00]第三方歌词说明`;
+
+    expect(parseLyrics(lrc).map(({ time, text }) => ({ time, text }))).toEqual([
+      { time: 59939.99, text: '***歌詞來自第三方***' },
+      { time: 59942, text: '第三方歌词说明' },
+    ]);
+    expect(parseLyrics('[123:45.67]***歌詞來自第三方***')[0]).toMatchObject({
+      time: 7425.67,
+      text: '***歌詞來自第三方***',
+    });
+  });
+
+  it('should preserve a normal timestamp paired with a 999-minute watermark timestamp', () => {
+    const result = parseLyrics('[999:00.00][00:05.00]***歌詞來自第三方***');
+
+    expect(result.map(({ time, text }) => ({ time, text }))).toEqual([
+      { time: 5, text: '***歌詞來自第三方***' },
+    ]);
+  });
+
   it('should skip metadata tags (ar, al, ti, by, length)', () => {
     const lrc = `
 [ar:Artist Name]
@@ -210,7 +234,7 @@ Line three`;
     expect(result[0].time).toBeCloseTo(15.73, 3);
     expect(result[0].karaokeTime).toBeCloseTo(15.01, 3);
     expect(result[0].words).toHaveLength(11);
-    expect(findActiveLyricIndex(result, 15.2, 0, 'line')).toBe(0);
+    expect(findActiveLyricIndex(result, 15.2, 0, 'line')).toBe(-1);
     expect(findActiveLyricIndex(result, 15.2, 0, 'karaoke')).toBe(0);
   });
 
@@ -412,9 +436,9 @@ describe('findActiveLyricIndex', () => {
     expect(findActiveLyricIndex(rows, 10)).toBe(4);
   });
 
-  it('should return 0 for time before first lyric', () => {
-    expect(findActiveLyricIndex(rows, 0)).toBe(0);
-    expect(findActiveLyricIndex(rows, 0.5)).toBe(0);
+  it('should return -1 for time before first lyric', () => {
+    expect(findActiveLyricIndex(rows, 0)).toBe(-1);
+    expect(findActiveLyricIndex(rows, 0.5)).toBe(-1);
   });
 
   it('should return last index for time after last lyric', () => {
@@ -431,6 +455,20 @@ describe('findActiveLyricIndex', () => {
     expect(findActiveLyricIndex(rows, 2, -1)).toBe(0);
     // With offset of +2, a time of 1 should match line at time 3
     expect(findActiveLyricIndex(rows, 1, 2)).toBe(1);
+    expect(findActiveLyricIndex(rows, 0.5, -1)).toBe(-1);
+  });
+
+  it('should return -1 before the first karaoke word timing', () => {
+    const karaokeRows = parseLyrics(`[tunefree:main]
+[00:10.00]First line
+[00:20.00]Second line
+
+[tunefree:karaoke]
+[9500,1000](9500,500,0)First(10000,500,0) line
+[19500,1000](19500,500,0)Second(20000,500,0) line`);
+
+    expect(findActiveLyricIndex(karaokeRows, 9.49, 0, 'karaoke')).toBe(-1);
+    expect(findActiveLyricIndex(karaokeRows, 9.5, 0, 'karaoke')).toBe(0);
   });
 
   it('should handle exact boundary times with tolerance', () => {

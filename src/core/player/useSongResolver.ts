@@ -23,7 +23,17 @@ export const useSongResolver = (runtime: PlayerRuntime) => {
   ): Promise<ParsedSongResolution> => {
     const local = await resolveOfflinePlayback(song, quality).catch(() => null);
     if (local?.url) {
-      return { parsed: { url: local.url, lrc: local.lrc, pic: local.pic }, cacheKey: null };
+      return {
+        parsed: {
+          url: local.url,
+          lrc: local.lrc,
+          pic: local.pic,
+          resolvedSource: song.source,
+          resolvedId: song.id,
+          resolvedLyricId: song.lyricId || song.id,
+        },
+        cacheKey: null,
+      };
     }
     const cacheKey = getParsedSongCacheKey(song, quality);
     if (forceRefresh) refs.parsedSongCache.current.delete(cacheKey);

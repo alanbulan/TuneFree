@@ -12,6 +12,10 @@ const durationLinePattern = /^\s*\[(\d+),(\d+)\](.*)$/;
 const durationTimingMarkerPattern = /\((\d+),(\d+)(?:,[^)]*)?\)/g;
 const durationWordPattern = /\((\d+),(\d+)(?:,[^)]*)?\)([^()]*)/g;
 const BLOCK_RESET_TOLERANCE_SECONDS = 2;
+const THIRD_PARTY_WATERMARKS = new Set([
+  '***歌詞來自第三方***',
+  '***歌词来自第三方***',
+]);
 const TRACK_MARKERS: Record<string, LyricTrackType> = {
   main: 'main', lyric: 'main', lrc: 'main', translation: 'translation',
   translations: 'translation', translated: 'translation', trans: 'translation',
@@ -25,6 +29,8 @@ const parseTimeMatch = (match: RegExpMatchArray): number => {
   const fraction = Number((match[3] || '0').padEnd(3, '0').slice(0, 3));
   return Number(match[1]) * 60 + Number(match[2]) + fraction / 1000;
 };
+const isThirdPartyWatermarkSentinel = (match: RegExpMatchArray, text: string): boolean =>
+  match[1] === '999' && THIRD_PARTY_WATERMARKS.has(text);
 const parseInlineWordTime = (value: string): { start: number; duration?: number } | null => {
   const commaParts = value.split(',');
   if (commaParts.length >= 2 && /^\d+$/.test(commaParts[0]) && /^\d+$/.test(commaParts[1])) {
@@ -147,12 +153,14 @@ export const parseLyricDocument = (
     const content = parseTimedContent(line, firstLineTime);
     if (!content.text) continue;
     if (matches.length === 0) { plainLines.push(content.text); continue; }
-    const firstTime = parseTimeMatch(matches[0]) + offsetSeconds;
+    const timedMatches = matches.filter((match) => !isThirdPartyWatermarkSentinel(match, content.text));
+    if (timedMatches.length === 0) continue;
+    const firstTime = parseTimeMatch(timedMatches[0]) + offsetSeconds;
     if (previousLineTime !== null && firstTime + BLOCK_RESET_TOLERANCE_SECONDS < previousLineTime) {
       blocks.push(createBlock('auto'));
     }
     previousLineTime = firstTime;
-    for (const match of matches) {
+    for (const match of timedMatches) {
       const time = Math.max(0, parseTimeMatch(match) + offsetSeconds);
       blocks[blocks.length - 1].lines.push({ time, text: content.text,
         words: content.words, order, key: getTimeKey(time) });
