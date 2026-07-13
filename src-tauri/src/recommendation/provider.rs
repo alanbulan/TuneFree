@@ -8,6 +8,8 @@ use super::{
     privacy,
 };
 
+const CHAT_COMPLETION_MAX_TOKENS: u64 = 2_000;
+
 #[derive(Clone)]
 pub struct OpenAiCompatibleProvider {
     client: Client,
@@ -34,6 +36,23 @@ impl OpenAiCompatibleProvider {
         urls
     }
 
+    fn chat_request_body(
+        model: &str,
+        messages: Vec<serde_json::Value>,
+        use_json_object: bool,
+    ) -> serde_json::Value {
+        let mut body = json!({
+            "model": model,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": CHAT_COMPLETION_MAX_TOKENS,
+        });
+        if use_json_object {
+            body["response_format"] = json!({ "type": "json_object" });
+        }
+        body
+    }
+
     pub async fn chat_json(
         &self,
         config: &LlmConfig,
@@ -41,14 +60,7 @@ impl OpenAiCompatibleProvider {
         messages: Vec<serde_json::Value>,
         use_json_object: bool,
     ) -> Result<String, String> {
-        let mut body = json!({
-            "model": config.model,
-            "messages": messages,
-            "temperature": 0.2,
-        });
-        if use_json_object {
-            body["response_format"] = json!({ "type": "json_object" });
-        }
+        let body = Self::chat_request_body(&config.model, messages, use_json_object);
 
         let mut last_error = None;
         for url in Self::chat_completion_urls(&config.base_url) {
@@ -188,6 +200,8 @@ impl OpenAiCompatibleProvider {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::OpenAiCompatibleProvider;
 
     #[test]
@@ -201,5 +215,17 @@ mod tests {
             OpenAiCompatibleProvider::chat_completion_urls("http://127.0.0.1:11434/v1"),
             vec!["http://127.0.0.1:11434/v1/chat/completions"]
         );
+    }
+
+    #[test]
+    fn chat_request_body_includes_positive_max_tokens() {
+        let body = OpenAiCompatibleProvider::chat_request_body(
+            "grok-4.5",
+            vec![json!({ "role": "user", "content": "test" })],
+            true,
+        );
+
+        assert_eq!(body["max_tokens"].as_u64(), Some(2_000));
+        assert_eq!(body["response_format"]["type"], "json_object");
     }
 }
