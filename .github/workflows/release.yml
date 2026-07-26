@@ -57,9 +57,9 @@ jobs:
             throw "Tag ${{ github.ref_name }} does not match app version v$version"
           }
 
-      # releaseDraft: true —— updater endpoint 指向 releases/latest/download/latest.json，
-      # 一旦发布为正式 Release，全部已安装客户端会立即自动升级。
-      # 因此这里只产出草稿，由人工核对资产后再手动 Publish（见 RELEASE.md）。
+      # releaseDraft: false —— 直接发布正式 Release，已安装客户端下次检查更新即可拉到。
+      # 质量闸门由上面的 validate job 承担：它未通过则本 job 根本不会执行，
+      # 未经验证的提交无法产出发布资产。
       - name: Build, sign and publish the NSIS updater
         uses: tauri-apps/tauri-action@v0
         env:
@@ -71,7 +71,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: TuneFree ${{ github.ref_name }}
           generateReleaseNotes: true
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
           updaterJsonPreferNsis: true

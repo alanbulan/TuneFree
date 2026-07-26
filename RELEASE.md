@@ -63,23 +63,28 @@ git push origin v1.1.24
 
 1. `Validate` 可复用工作流（lint / typecheck / architecture / vitest / fmt / clippy / cargo test / tauri build）。
 2. 校验标签与 `src-tauri/tauri.conf.json` 的版本号一致。
-3. 构建、签名并创建**草稿 Release**，附带：
+3. 构建、签名并直接发布**正式 Release**（`releaseDraft: false`），附带：
 
 - `TuneFree_{version}_x64-setup.exe`
 - `TuneFree_{version}_x64-setup.exe.sig`
 - `latest.json`
 - 自动生成的版本说明
 
-## 手动发布闸门
+## 自动发布与质量闸门
 
-工作流只创建草稿（`releaseDraft: true`），不会自动公开。
+发布是全自动的：推送 `v*` 标签后无需任何人工操作，Release 直接公开。
+
+闸门由 `validate` job 承担——它是 `release-windows-x64` 的 `needs` 前置，未通过则构建与签名步骤
+根本不会执行，因此未经验证的提交不可能产出发布资产。这是本流程唯一的质量保障，不要移除该依赖。
 
 `src-tauri/tauri.conf.json` 的 updater endpoint 指向
 `https://github.com/alanbulan/TuneFree_Mobile/releases/latest/download/latest.json`，
-只要草稿被 Publish 为正式 Release，所有已安装客户端下一次检查更新就会立即拉到该版本。
-因此必须先完成下面的"发布后核验"，确认无误后再在 GitHub Releases 页面手动点击 Publish。
+Release 一旦公开，所有已安装客户端下一次检查更新就会立即拉到该版本。
 
-草稿如需作废，直接删除草稿 Release 与对应标签即可，不会影响任何已安装客户端。
+**因此打标签前务必在本地跑完"发布前验证"那一节的命令**——标签推出去之后就没有人工拦截点了。
+
+发布后若发现问题，需要立刻删除该 Release 与对应标签（客户端会回落到上一个 `latest`），
+再修复并发布新的补丁版本。
 
 ## 签名配置
 
@@ -101,7 +106,7 @@ $password = [System.Net.NetworkCredential]::new('', (ConvertTo-SecureString $enc
 
 ## 发布后核验
 
-以下 1-6 项在草稿状态下完成，全部通过后再手动 Publish，第 7 项在 Publish 之后确认。
+Release 已自动公开，以下核验用于尽早发现问题——发现异常应立即删除该 Release 与标签并发补丁版本。
 
 1. `validate` 与 `release-windows-x64` 两个 job 结论均为 success。
 2. Release 标签和目标提交与本次发布一致。
@@ -109,6 +114,6 @@ $password = [System.Net.NetworkCredential]::new('', (ConvertTo-SecureString $enc
 4. `latest.json.version` 与标签一致。
 5. `latest.json` 的 `windows-x86_64` URL 指向本次安装包，签名字段非空。
 6. 本地 `tauri` 分支与 `origin/tauri` 同步且工作区干净。
-7. Publish 后用一台旧版本客户端验证自动更新链路可用。
+7. 用一台旧版本客户端验证自动更新链路可用。
 
 安装包只发布到 GitHub Releases，不提交到源码目录。
