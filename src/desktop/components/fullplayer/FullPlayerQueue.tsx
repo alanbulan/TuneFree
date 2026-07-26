@@ -1,4 +1,4 @@
-import { type CSSProperties } from 'react';
+import { memo, type CSSProperties } from 'react';
 import {
   QueueIcon,
   TrashIcon,
@@ -19,7 +19,7 @@ const playModeLabel: Record<'sequence' | 'loop' | 'shuffle', string> = {
   shuffle: '随机播放',
 };
 
-export default function FullPlayerQueue() {
+function FullPlayerQueue() {
   const { currentSong } = usePlayerNowPlaying();
   const { queue, playMode } = usePlayerQueueState();
   const { playSong, playQueue, clearQueue, removeFromQueue, togglePlayMode } = usePlayerActions();
@@ -137,3 +137,6 @@ export default function FullPlayerQueue() {
     </aside>
   );
 }
+
+/** 零 props、自订阅队列 context，memo 后全屏播放器的其它状态变化都传不进来。 */
+export default memo(FullPlayerQueue);

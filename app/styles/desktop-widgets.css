@@ -1,0 +1,268 @@
+/* ── 桌面壳组件层：桌宠精灵帧、底栏小部件、关闭确认、全屏播放器与虚拟列表布局 ──
+   由 components.css 顶部保序 @import 引入，因此层叠位置在 library.css 之后、
+   components.css 本体之前；这里的规则可以覆盖 shell/player/lyrics 三层的同名声明。 */
+
+/* ── 桌宠精灵帧动画 ─────────────────────────────────────────────
+   精灵帧只是 background-position 的偏移，交给 CSS 的 step-end 关键帧自驱动，
+   不再逐帧 setState。每个动作一组关键帧，百分比即 miraPetAtlas.ts 里
+   frameDurations 的累计占比，animation-duration 等于该动作各帧时长之和；
+   改动 miraPetAtlas.ts 的帧数或帧时长时，这里必须同步。
+   行偏移（background-position-y）仍由组件写入 --mira-y，几何数据只存在于 TS。 */
+.mira-pet-sprite {
+  animation-timing-function: step-end;
+  animation-iteration-count: infinite;
+}
+.mira-pet[data-action="idle"] .mira-pet-sprite { animation-name: miraSpriteIdle; animation-duration: 1100ms; }
+.mira-pet[data-action="running-right"] .mira-pet-sprite { animation-name: miraSpriteRun8; animation-duration: 1060ms; }
+.mira-pet[data-action="running-left"] .mira-pet-sprite { animation-name: miraSpriteRun8; animation-duration: 1060ms; }
+.mira-pet[data-action="waving"] .mira-pet-sprite { animation-name: miraSpriteWaving; animation-duration: 700ms; }
+.mira-pet[data-action="jumping"] .mira-pet-sprite { animation-name: miraSpriteJumping; animation-duration: 840ms; }
+.mira-pet[data-action="failed"] .mira-pet-sprite { animation-name: miraSpriteFailed; animation-duration: 1220ms; }
+.mira-pet[data-action="waiting"] .mira-pet-sprite { animation-name: miraSpriteWaiting; animation-duration: 1010ms; }
+.mira-pet[data-action="running"] .mira-pet-sprite { animation-name: miraSpriteRunning; animation-duration: 820ms; }
+.mira-pet[data-action="review"] .mira-pet-sprite { animation-name: miraSpriteReview; animation-duration: 1030ms; }
+
+@keyframes miraSpriteIdle {
+  0% { background-position-x: 0; }
+  25.455% { background-position-x: -192px; }
+  35.455% { background-position-x: -384px; }
+  45.455% { background-position-x: -576px; }
+  58.182% { background-position-x: -768px; }
+  70.909% { background-position-x: -960px; }
+}
+@keyframes miraSpriteRun8 {
+  0% { background-position-x: 0; }
+  11.321% { background-position-x: -192px; }
+  22.642% { background-position-x: -384px; }
+  33.962% { background-position-x: -576px; }
+  45.283% { background-position-x: -768px; }
+  56.604% { background-position-x: -960px; }
+  67.925% { background-position-x: -1152px; }
+  79.245% { background-position-x: -1344px; }
+}
+@keyframes miraSpriteWaving {
+  0% { background-position-x: 0; }
+  20% { background-position-x: -192px; }
+  40% { background-position-x: -384px; }
+  60% { background-position-x: -576px; }
+}
+@keyframes miraSpriteJumping {
+  0% { background-position-x: 0; }
+  16.667% { background-position-x: -192px; }
+  33.333% { background-position-x: -384px; }
+  50% { background-position-x: -576px; }
+  66.667% { background-position-x: -768px; }
+}
+@keyframes miraSpriteFailed {
+  0% { background-position-x: 0; }
+  11.475% { background-position-x: -192px; }
+  22.951% { background-position-x: -384px; }
+  34.426% { background-position-x: -576px; }
+  45.902% { background-position-x: -768px; }
+  57.377% { background-position-x: -960px; }
+  68.852% { background-position-x: -1152px; }
+  80.328% { background-position-x: -1344px; }
+}
+@keyframes miraSpriteWaiting {
+  0% { background-position-x: 0; }
+  14.851% { background-position-x: -192px; }
+  29.703% { background-position-x: -384px; }
+  44.554% { background-position-x: -576px; }
+  59.406% { background-position-x: -768px; }
+  74.257% { background-position-x: -960px; }
+}
+@keyframes miraSpriteRunning {
+  0% { background-position-x: 0; }
+  14.634% { background-position-x: -192px; }
+  29.268% { background-position-x: -384px; }
+  43.902% { background-position-x: -576px; }
+  58.537% { background-position-x: -768px; }
+  73.171% { background-position-x: -960px; }
+}
+@keyframes miraSpriteReview {
+  0% { background-position-x: 0; }
+  14.563% { background-position-x: -192px; }
+  29.126% { background-position-x: -384px; }
+  43.689% { background-position-x: -576px; }
+  58.252% { background-position-x: -768px; }
+  72.816% { background-position-x: -960px; }
+}
+
+/* motion.css 的统一豁免块早于本文件且未覆盖 .mira-pet-sprite，这里补齐：
+   停掉帧动画后精灵停在动作首帧（--mira-x），组件同时改用 5s 轮换动作。 */
+@media (prefers-reduced-motion: reduce) {
+  .mira-pet-sprite { animation-name: none; }
+}
+
+/* ── 虚拟列表/横向轨道的行容器 ─────────────────────────────────
+   只有 top / left / 尺寸是运行时算出来的，留在内联样式里。 */
+.virtual-list-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+.virtual-rail-item {
+  position: absolute;
+  top: 8px;
+}
+
+/* ── 标题栏：拖拽区要铺满整条，才不会在空白处漏出无法拖动的缝 ───── */
+.window-bar { height: 100%; }
+.window-bar-search-zone {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+.window-bar-drag-filler {
+  flex: 1;
+  height: 100%;
+}
+
+/* ── 底栏迷你歌词 ───────────────────────────────────────────── */
+.transport-mini-lyric {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.transport-mini-lyric-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  pointer-events: none;
+}
+/* 需要 (0,2,0) 才能压过 shell.css 里 `.transport-mini-lyric span/em` 的 (0,1,1) */
+.transport-mini-lyric .transport-mini-lyric-text {
+  max-width: 90%;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.transport-mini-lyric .transport-mini-lyric-sub {
+  max-width: 90%;
+  margin-top: 2px;
+  font-size: 11px;
+  font-style: normal;
+  opacity: .65;
+}
+
+/* ── 桌面歌词开关（关 / 浮动 / 锁定 三态）─────────────────────── */
+.lyric-toggle-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 42px;
+  height: 24px;
+  margin-left: 6px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background-color: transparent;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color .2s ease, background-color .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.lyric-toggle-btn > * { flex: 0 0 auto; }
+.lyric-toggle-btn.locked { width: 54px; }
+.lyric-toggle-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background-color: rgba(var(--accent-rgb), .10);
+  box-shadow: 0 2px 8px rgba(var(--accent-rgb), .35);
+}
+.lyric-toggle-btn.active.locked {
+  color: var(--ios-card);
+  background-color: var(--accent);
+}
+
+/* ── 底栏工具区的两个特例 ───────────────────────────────────── */
+.transport-tools .ai-radar-btn-mini { margin-right: 8px; }
+.ai-radar-btn-pending {
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 900;
+}
+.transport-download-button { min-width: 28px; }
+.transport-download-progress {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ── 关闭确认弹窗 ───────────────────────────────────────────── */
+.close-prompt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, .18);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.close-prompt-card {
+  width: min(420px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 22px;
+  color: var(--text);
+  background: var(--ios-card);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, .22);
+}
+.close-prompt-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+}
+.close-prompt-text {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.close-prompt-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.close-prompt-remember input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+.close-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* ── 全屏播放器：入场动画由 framer-motion 接管，关掉 CSS 过渡免得两边打架 ─ */
+.full-player-layer { overflow: hidden; }
+.full-player-backdrop,
+.full-player-panel { transition: none; }
+.full-song-meta {
+  position: relative;
+  min-height: 80px;
+  overflow: hidden;
+}
+.full-song-meta-swap { width: 100%; }
+.full-lyrics-content { overflow: hidden; }
+.lyric-scroll { height: 100%; }

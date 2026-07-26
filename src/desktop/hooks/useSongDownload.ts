@@ -9,13 +9,21 @@ import {
   useState,
   type PropsWithChildren,
 } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import {
+  invokeCommand,
+  isTauri,
+  listenEvent,
+  toIpcError,
+  type DownloadProgressPayload,
+  type IpcError,
+  type UnlistenFn,
+} from '../../core/ipc';
 import { getSongUrl, triggerDownload } from '../../core/services/api';
 import { saveDownloadMeta } from '../../core/services/offlineDownloads';
 import { logRecommendationEvent } from '../../core/services/recommendation';
 import type { AudioQuality, Song } from '../../core/types';
 import { useToast } from '../components/ToastHost';
+import { writeCachedDownloadDir } from '../utils/downloadDirCache';
 
 const downloadMeta: Record<string, { label: string; ext: string }> = {
   '128k': { label: '128K', ext: 'mp3' },
@@ -45,16 +53,6 @@ interface UseSongDownloadResult {
   cancelDownload: () => Promise<void>;
 }
 
-interface DownloadedFileResult {
-  filepath: string;
-  filename: string;
-}
-
-interface DownloadProgressPayload {
-  taskId: string;
-  progress: number;
-}
-
 const DownloadContext = createContext<UseSongDownloadResult | null>(null);
 
 const createDownloadTaskId = (): string => {
@@ -75,6 +73,47 @@ export const canContinueDownloadTask = (
   cancellationRequested: boolean,
 ): boolean => activeTaskId === taskId && !cancellationRequested;
 
+/** How a failed download should be surfaced to the user. */
+export interface DownloadFailurePresentation {
+  /** 用户主动取消属于正常路径，不弹提示。 */
+  silent: boolean;
+  message: string;
+  /** 是否在提示上附带「选择目录」操作。 */
+  offerDirectoryPicker: boolean;
+}
+
+/**
+ * Routes a download failure by `IpcError.code` instead of by message text.
+ * Cancellation is recognised from the error itself, so no local flag is
+ * consulted when classifying.
+ */
+export const describeDownloadFailure = (error: IpcError): DownloadFailurePresentation => {
+  switch (error.code) {
+    case 'CANCELLED':
+      return { silent: true, message: error.message, offerDirectoryPicker: false };
+    case 'DOWNLOAD_DIR_UNAUTHORIZED':
+    case 'DOWNLOAD_DIR_INVALID':
+      return {
+        silent: false,
+        message: `${error.message || '下载目录不可用'}，请重新选择下载目录`,
+        offerDirectoryPicker: true,
+      };
+    case 'NETWORK':
+    case 'TIMEOUT':
+      return {
+        silent: false,
+        message: `${error.message || '网络异常'}，请检查网络后重试`,
+        offerDirectoryPicker: false,
+      };
+    default:
+      return {
+        silent: false,
+        message: error.message || '下载失败，请稍后再试',
+        offerDirectoryPicker: false,
+      };
+  }
+};
+
 /**
  * Shared download logic used by both DesktopTransport and DesktopFullPlayer.
  * Encapsulates URL resolution, Tauri / browser download dispatch, and
@@ -89,15 +128,14 @@ export function DownloadProvider({ children }: PropsWithChildren) {
   const cancellationRequestedRef = useRef(false);
 
   useEffect(() => {
-    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-    if (!isTauri) return;
+    if (!isTauri()) return;
 
     let cancelled = false;
-    let unlisten: (() => void) | undefined;
+    let unlisten: UnlistenFn | undefined;
 
-    void listen<DownloadProgressPayload>('download-progress', (event) => {
-      if (cancelled || !isDownloadProgressForTask(event.payload, activeTaskIdRef.current)) return;
-      setDownloadProgress(event.payload.progress);
+    void listenEvent('download-progress', (payload) => {
+      if (cancelled || !isDownloadProgressForTask(payload, activeTaskIdRef.current)) return;
+      setDownloadProgress(payload.progress);
     }).then((unlistenFn) => {
       if (cancelled) unlistenFn();
       else unlisten = unlistenFn;
@@ -109,6 +147,32 @@ export function DownloadProvider({ children }: PropsWithChildren) {
     };
   }, []);
 
+  const reselectDownloadDir = useCallback(async () => {
+    try {
+      const directory = await invokeCommand('select_download_dir');
+      if (!directory) return;
+      writeCachedDownloadDir(directory);
+      showToast('下载目录已更新，请重新下载', 'success');
+    } catch (error: unknown) {
+      showToast(toIpcError(error).message, 'error');
+    }
+  }, [showToast]);
+
+  const reportDownloadFailure = useCallback(
+    (error: unknown) => {
+      const presentation = describeDownloadFailure(toIpcError(error));
+      if (presentation.silent) return;
+      showToast(
+        presentation.message,
+        'error',
+        presentation.offerDirectoryPicker
+          ? { label: '选择目录', onClick: () => void reselectDownloadDir() }
+          : undefined,
+      );
+    },
+    [reselectDownloadDir, showToast],
+  );
+
   const cancelDownload = useCallback(async () => {
     const taskId = activeTaskIdRef.current;
     if (!taskId || cancellationRequestedRef.current) return;
@@ -116,15 +180,31 @@ export function DownloadProvider({ children }: PropsWithChildren) {
     cancellationRequestedRef.current = true;
     setIsCancelling(true);
 
-    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-    if (!isTauri) return;
+    if (!isTauri()) return;
 
     try {
-      await invoke<boolean>('cancel_download', { taskId });
+      await invokeCommand('cancel_download', { taskId });
     } catch (error) {
       console.error('取消下载失败', error);
     }
   }, []);
+
+  const rememberDownloadedSong = useCallback(
+    async (filename: string, song: Song, quality: AudioQuality) => {
+      try {
+        await saveDownloadMeta(filename, song, String(quality));
+        void logRecommendationEvent({
+          eventType: 'download',
+          song,
+          quality: String(quality),
+          context: 'download',
+        }).catch(() => {});
+      } catch (e) {
+        console.error('保存下载元数据失败', e);
+      }
+    },
+    [],
+  );
 
   const handleDownload = useCallback(
     async (song: Song, quality: AudioQuality) => {
@@ -151,40 +231,22 @@ export function DownloadProvider({ children }: PropsWithChildren) {
         const meta = getDownloadMeta(quality);
         const filename = `${song.artist} - ${song.name}.${meta.ext}`;
 
-        const isTauri =
-          typeof window !== 'undefined' &&
-          '__TAURI_INTERNALS__' in window;
-
-        if (isTauri) {
-          const customDir = localStorage.getItem('tunefree_download_dir') || null;
-          const savedFile = await invoke<DownloadedFileResult>('download_song_to_local', {
-            url,
-            filename,
-            customDir,
-            taskId,
-          });
-          try {
-            await saveDownloadMeta(savedFile.filename, song, String(quality));
-            void logRecommendationEvent({
-              eventType: 'download',
-              song,
-              quality: String(quality),
-              context: 'download',
-            }).catch(() => {});
-          } catch (e) {
-            console.error('保存下载元数据失败', e);
-          }
-          showToast('下载成功，已保存至本地下载目录', 'success');
-        } else {
+        if (!isTauri()) {
           triggerDownload(url, filename);
           showToast('已开始下载', 'success');
+          return;
         }
+
+        // 下载目录由后端唯一持有，前端不再传路径。
+        const savedFile = await invokeCommand('download_song_to_local', {
+          url,
+          filename,
+          taskId,
+        });
+        await rememberDownloadedSong(savedFile.filename, song, quality);
+        showToast('下载成功，已保存至本地下载目录', 'success');
       } catch (err: unknown) {
-        if (!cancellationRequestedRef.current) {
-          const message =
-            err instanceof Error ? err.message : typeof err === 'string' ? err : '下载失败，请稍后再试';
-          showToast(message, 'error');
-        }
+        reportDownloadFailure(err);
       } finally {
         if (activeTaskIdRef.current === taskId) {
           activeTaskIdRef.current = null;
@@ -195,7 +257,7 @@ export function DownloadProvider({ children }: PropsWithChildren) {
         }
       }
     },
-    [showToast],
+    [rememberDownloadedSong, reportDownloadFailure, showToast],
   );
 
   const value = useMemo<UseSongDownloadResult>(() => ({

@@ -37,11 +37,11 @@ const createRuntime = (song: Song): PlayerRuntime => {
     },
     duration: 0,
     setPlayerNotice: vi.fn(),
-    setCurrentSong: vi.fn((updater) => {
-      currentSong.current = typeof updater === "function" ? updater(currentSong.current) : updater;
+    commitCurrentSong: vi.fn((next: Song | null) => {
+      currentSong.current = next as Song;
     }),
-    setQueue: vi.fn((updater) => {
-      queue.current = typeof updater === "function" ? updater(queue.current) : updater;
+    commitQueue: vi.fn((next) => {
+      queue.current = typeof next === "function" ? next(queue.current) : next;
     }),
   } as unknown as PlayerRuntime;
 };

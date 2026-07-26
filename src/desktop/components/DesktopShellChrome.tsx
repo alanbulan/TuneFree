@@ -3,10 +3,9 @@ import { DownloadIcon, HeartIcon, HomeIcon, InfoIcon, LibraryIcon, SearchIcon,
   SettingsIcon, SidebarCollapseIcon, SidebarExpandIcon } from '../../core/components/Icons';
 import { Laptop, Moon, Sun } from 'lucide-react';
 import { useTheme } from '../../core/contexts/ThemeContext';
+import { getCurrentWindow, isTauri } from '../../core/ipc';
 import type { DesktopView } from '../types';
 
-const isTauri = typeof window !== 'undefined' &&
-  ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 const navItems: { view: DesktopView; label: string; icon: React.ReactNode }[] = [
   { view: 'home', label: '首页', icon: <HomeIcon size={17} /> },
   { view: 'search', label: '搜索', icon: <SearchIcon size={17} /> },
@@ -18,9 +17,8 @@ const navItems: { view: DesktopView; label: string; icon: React.ReactNode }[] = 
 ];
 
 const handleWindowControl = async (action: 'minimize' | 'maximize' | 'close') => {
-  if (!isTauri) return;
+  if (!isTauri()) return;
   try {
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
     const appWindow = getCurrentWindow();
     if (action === 'minimize') await appWindow.minimize();
     else if (action === 'maximize') await appWindow.toggleMaximize();
@@ -43,7 +41,7 @@ export function WindowBar({ view, commandQuery, onCommandQueryChange, onCommandS
   const nextThemeMode = themeMode === 'light' ? 'dark' : themeMode === 'dark' ? 'system' : 'light';
   const nextThemeLabel = nextThemeMode === 'light' ? '浅色' : nextThemeMode === 'dark' ? '深色' : '随系统';
   return (
-    <header className="window-bar" data-tauri-drag-region style={{ height: '100%' }}>
+    <header className="window-bar" data-tauri-drag-region>
       <div className="window-brand-zone" data-tauri-drag-region>
         <div className="window-brand-lockup" aria-label="TuneFree Desktop" data-tauri-drag-region>
           <img className="brand-mark" src="/icon.svg" alt="" aria-hidden="true" data-tauri-drag-region />
@@ -58,7 +56,7 @@ export function WindowBar({ view, commandQuery, onCommandQueryChange, onCommandS
           {themeMode === 'system' && <Laptop size={14} />}
         </button>
       </div>
-      <div data-tauri-drag-region style={{ display: 'flex', alignItems: 'center', flex: 1, height: '100%', minWidth: 0 }}>
+      <div className="window-bar-search-zone" data-tauri-drag-region>
         {view !== 'search' && (
           <form className="command-search" onSubmit={onCommandSearch}>
             <SearchIcon size={15} />
@@ -66,9 +64,9 @@ export function WindowBar({ view, commandQuery, onCommandQueryChange, onCommandS
               onChange={(event) => onCommandQueryChange(event.target.value)} placeholder="搜索" />
           </form>
         )}
-        <div data-tauri-drag-region style={{ flex: 1, height: '100%' }} />
+        <div className="window-bar-drag-filler" data-tauri-drag-region />
       </div>
-      {isTauri ? (
+      {isTauri() ? (
         <div className="window-controls">
           <button className="win-btn minimize" onClick={() => void handleWindowControl('minimize')} data-tooltip="最小化" aria-label="最小化" />
           <button className="win-btn maximize" onClick={() => void handleWindowControl('maximize')} data-tooltip="最大化" aria-label="最大化" />

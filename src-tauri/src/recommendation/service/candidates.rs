@@ -2,46 +2,44 @@ use super::jobs::new_request_id;
 use super::*;
 
 impl RecommendationService {
-    pub fn home_recommendations(
-        &self,
-        query: RecommendationQuery,
-    ) -> Result<Vec<RecommendationItem>, String> {
-        let conn = self.conn.lock();
-        self.local_recommendations(&conn, &query, "local")
-    }
-
     pub fn similar_songs(
         &self,
         song: RecSong,
         limit: Option<usize>,
-    ) -> Result<Vec<RecommendationItem>, String> {
+    ) -> CommandResult<Vec<RecommendationItem>> {
+        self.db_handle()?;
         let query = RecommendationQuery {
             limit,
             seed: Some(song),
             context: Some("similar".to_string()),
         };
-        let conn = self.conn.lock();
-        self.local_recommendations(&conn, &query, "local")
+        self.local_recommendations(&query, "local")
+            .map_err(CommandError::database)
     }
 
     pub(super) fn local_recommendations(
         &self,
-        conn: &Connection,
         query: &RecommendationQuery,
         recommendation_source: &str,
     ) -> Result<Vec<RecommendationItem>, String> {
+        let handle = self.conn_handle().map_err(|error| error.message.clone())?;
         let request_id = new_request_id();
-        if let Some(seed) = &query.seed {
-            catalog::upsert_track(conn, seed)
-                .map_err(|e| format!("保存相似推荐种子失败: {}", e))?;
-        }
-        let mut candidates = recall::collect_candidates(conn, query.seed.as_ref(), 500)
-            .map_err(|e| format!("召回推荐候选失败: {}", e))?;
-        if let Some(seed) = query.seed.as_ref() {
-            candidates.retain(|candidate| !is_seed_song(&candidate.song, seed));
-        }
-        candidates = rank::rank_candidates(conn, candidates, query.seed.as_ref())
-            .map_err(|e| format!("推荐排序失败: {}", e))?;
+        // SQL 召回与排序在锁内完成；MMR 重排等纯计算移到锁外，
+        // 缩短全局连接锁的持有时间。
+        let candidates = {
+            let conn = handle.lock();
+            if let Some(seed) = &query.seed {
+                catalog::upsert_track(&conn, seed)
+                    .map_err(|e| format!("保存相似推荐种子失败: {}", e))?;
+            }
+            let mut candidates = recall::collect_candidates(&conn, query.seed.as_ref(), 500)
+                .map_err(|e| format!("召回推荐候选失败: {}", e))?;
+            if let Some(seed) = query.seed.as_ref() {
+                candidates.retain(|candidate| !is_seed_song(&candidate.song, seed));
+            }
+            rank::rank_candidates(&conn, candidates, query.seed.as_ref())
+                .map_err(|e| format!("推荐排序失败: {}", e))?
+        };
         let limit = query.limit.unwrap_or(30).clamp(1, 50);
         let candidates = rerank::mmr(candidates, limit);
         Ok(rerank::to_items(

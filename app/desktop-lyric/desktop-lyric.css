@@ -1,13 +1,78 @@
+/* 歌词窗口不加载 globals.css，这里是它唯一的文档级重置与透明化声明。
+   没有任何规则给 html/body 上背景，所以无需强制优先级对抗。 */
+* { box-sizing: border-box; }
+
 html,
 body,
 #root,
 body > div:first-child {
-  height: 100% !important;
-  max-height: 100vh !important;
-  max-height: 100dvh !important;
-  overflow: hidden !important;
-  background: transparent !important;
-  background-color: transparent !important;
+  width: 100%;
+  height: 100%;
+  max-height: 100dvh;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+/* 歌词窗口不加载 base.css，这里补一份可读的错误降级界面（窗口本身是透明的） */
+.error-boundary {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.error-boundary-card {
+  display: grid;
+  gap: 10px;
+  max-width: 100%;
+  padding: 16px;
+  border-radius: 14px;
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.88);
+  font-size: 12px;
+}
+
+.error-boundary-title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.error-boundary-message {
+  margin: 0;
+  opacity: 0.78;
+  overflow-wrap: anywhere;
+}
+
+.error-boundary-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.error-boundary-button {
+  min-height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 12px;
+}
+
+.error-boundary-button-primary {
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+.error-boundary-button-danger {
+  color: #f87171;
 }
 
 .desktop-lyric-root {
@@ -52,6 +117,44 @@ body > div:first-child {
   padding: 0 4px;
   cursor: move;
   opacity: 0.6;
+}
+
+.desktop-lyric-drag-handle svg {
+  pointer-events: none;
+}
+
+.desktop-lyric-toolbar-separator {
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.desktop-lyric-toolbar button {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  outline: none;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.desktop-lyric-toolbar button:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* 两条选择器都写成两个类，才能压过 `.desktop-lyric-toolbar button` 的基础声明 */
+.desktop-lyric-toolbar .desktop-lyric-toolbar-play {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.desktop-lyric-toolbar .desktop-lyric-toolbar-close {
+  color: #f87171;
 }
 
 .desktop-lyric-stage {
@@ -141,7 +244,7 @@ body > div:first-child {
 }
 
 .desktop-lyric-root .karaoke-line {
-  display: inline !important;
+  display: inline;
 }
 
 .desktop-lyric-root .karaoke-word {
@@ -150,13 +253,9 @@ body > div:first-child {
   filter: none;
   -webkit-text-stroke: 0;
   paint-order: normal;
-  transform: none;
-  transform-origin: initial;
   animation: none;
   will-change: auto;
   opacity: 1;
-  position: relative;
-  top: 0;
   vertical-align: baseline;
   transition: color 0.12s ease;
 }
@@ -174,7 +273,6 @@ body > div:first-child {
 
 .desktop-lyric-root .karaoke-word.active {
   filter: none;
-  transform: none;
   animation: desktopLyricWordBounce 0.3s cubic-bezier(0.2, 0.9, 0.25, 1);
 }
 
@@ -271,20 +369,22 @@ body > div:first-child {
   }
 }
 
+/* 与主窗口的 karaokeWordPop 一致，用 transform 走合成器，不触发逐帧回流 */
 @keyframes desktopLyricLineBounce {
-  0% { top: 5px; }
-  58% { top: -2px; }
-  100% { top: 0; }
+  0% { transform: translateY(5px); }
+  58% { transform: translateY(-2px); }
+  100% { transform: translateY(0); }
 }
 
 @keyframes desktopLyricWordBounce {
-  0% { top: 0; }
-  42% { top: -0.16em; }
-  72% { top: 0.04em; }
-  100% { top: 0; }
+  0% { transform: translateY(0); }
+  42% { transform: translateY(-0.16em); }
+  72% { transform: translateY(0.04em); }
+  100% { transform: translateY(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .desktop-lyric-toolbar,
   .desktop-lyric-current-line,
   .desktop-lyric-root .karaoke-word.active {
     animation: none;

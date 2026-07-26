@@ -1,0 +1,108 @@
+/* ── 基础层：重置、文档、滚动条、焦点环、错误边界 ─────────────── */
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+#root { width: 100%; height: 100%; min-height: 0; }
+body {
+  color: var(--text);
+  font-family: var(--font);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(var(--accent-rgb),.10), transparent 28rem),
+    radial-gradient(circle at 100% 0%, var(--accent-soft), transparent 32rem),
+    var(--ios-bg);
+}
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .52; }
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), .46);
+  outline-offset: 3px;
+}
+a { color: inherit; text-decoration: none; }
+img { display: block; }
+::selection { background: rgba(var(--accent-rgb), .18); }
+
+/* 通用滚动条 */
+.view-scroll::-webkit-scrollbar,
+.playlist-stack::-webkit-scrollbar,
+.queue-list::-webkit-scrollbar,
+.virtual-list::-webkit-scrollbar,
+.toplist-grid::-webkit-scrollbar { width: 8px; height: 8px; }
+.view-scroll::-webkit-scrollbar-thumb,
+.playlist-stack::-webkit-scrollbar-thumb,
+.queue-list::-webkit-scrollbar-thumb,
+.virtual-list::-webkit-scrollbar-thumb,
+.toplist-grid::-webkit-scrollbar-thumb { background: rgba(142,142,147,.42); border-radius: 999px; }
+
+/* 桌面内容禁用文本选中和长按复制菜单 */
+html, body, .desktop-app, .desktop-shell,
+button, .sidebar, .window-controls, .window-bar {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* 输入类控件保留编辑能力 */
+input, textarea, [contenteditable="true"], .panel-input {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* 顶层渲染错误降级界面 */
+.error-boundary {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--ios-bg);
+}
+.error-boundary-card {
+  width: min(460px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  color: var(--text);
+  background: var(--card-solid);
+  box-shadow: 0 24px 70px var(--shadow-xl);
+}
+.error-boundary-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: -.03em;
+}
+.error-boundary-message {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.error-boundary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.error-boundary-button {
+  min-height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 12px;
+  color: var(--text-soft);
+  background: var(--surface-2);
+  font-size: 13px;
+  font-weight: 850;
+  transition: filter .16s ease;
+}
+.error-boundary-button:hover { filter: brightness(.94); }
+.error-boundary-button-primary { color: #fff; background: var(--accent); }
+.error-boundary-button-danger { color: var(--danger); background: rgba(var(--danger-rgb), .12); }

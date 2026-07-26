@@ -1,6 +1,8 @@
 use tauri::Emitter;
 use tauri_plugin_updater::UpdaterExt;
 
+use super::error::{CommandError, CommandResult, ErrorCode};
+
 /// Progress payload emitted during update downloads.
 ///
 /// Emitted via the `update-progress` event.
@@ -16,16 +18,22 @@ pub(crate) struct AvailableUpdate {
     notes: Option<String>,
 }
 
+/// Logs the upstream updater error and returns a summary the renderer can show.
+fn update_error(message: &str, error: impl std::fmt::Display) -> CommandError {
+    log::warn!("{}: {}", message, error);
+    CommandError::new(ErrorCode::UpdateFailed, message)
+}
+
 #[tauri::command]
 pub(crate) async fn check_for_update(
     app_handle: tauri::AppHandle,
-) -> Result<Option<AvailableUpdate>, String> {
+) -> CommandResult<Option<AvailableUpdate>> {
     let update = app_handle
         .updater()
-        .map_err(|e| format!("初始化更新器失败: {}", e))?
+        .map_err(|error| update_error("初始化更新器失败", error))?
         .check()
         .await
-        .map_err(|e| format!("检查更新失败: {}", e))?;
+        .map_err(|error| update_error("检查更新失败", error))?;
 
     Ok(update.map(|update| AvailableUpdate {
         version: update.version,
@@ -43,16 +51,14 @@ fn calculate_update_progress(downloaded: u64, total: Option<u64>) -> u8 {
 /// Downloads, verifies and installs the update selected by the official
 /// Tauri updater for the current platform and CPU architecture.
 #[tauri::command]
-pub(crate) async fn download_and_install_update(
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
+pub(crate) async fn download_and_install_update(app_handle: tauri::AppHandle) -> CommandResult<()> {
     let update = app_handle
         .updater()
-        .map_err(|e| format!("初始化更新器失败: {}", e))?
+        .map_err(|error| update_error("初始化更新器失败", error))?
         .check()
         .await
-        .map_err(|e| format!("检查更新失败: {}", e))?
-        .ok_or_else(|| "当前没有可安装的更新".to_string())?;
+        .map_err(|error| update_error("检查更新失败", error))?
+        .ok_or_else(|| CommandError::not_found("当前没有可安装的更新"))?;
 
     let progress_handle = app_handle.clone();
     let mut downloaded = 0_u64;
@@ -68,7 +74,7 @@ pub(crate) async fn download_and_install_update(
             || {},
         )
         .await
-        .map_err(|e| format!("下载或安装更新失败: {}", e))?;
+        .map_err(|error| update_error("下载或安装更新失败", error))?;
 
     let _ = app_handle.emit("update-progress", UpdateProgress { progress: 100 });
     app_handle.restart()

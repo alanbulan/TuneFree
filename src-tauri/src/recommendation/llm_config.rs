@@ -1,9 +1,11 @@
 use rusqlite::{params, Connection};
 
 use super::{
-    catalog, credential_store,
+    catalog,
+    credential_store::{self, CredentialStoreError},
     model::{LlmConfig, LlmConfigInput, LlmConfigView},
 };
+use crate::app::error::{CommandError, ErrorCode};
 
 pub fn load_config(conn: &Connection) -> rusqlite::Result<LlmConfig> {
     conn.query_row(
@@ -55,9 +57,13 @@ pub fn view_config(
     let config = load_config(conn).map_err(|e| format!("读取模型配置失败: {}", e))?;
     let local_recommendation_enabled =
         load_recommendation_enabled(conn).map_err(|e| format!("读取推荐开关失败: {}", e))?;
+    // 取密钥失败只降级为"未配置"，不能让整个设置视图打不开。
     let has_api_key = credential_store::get_api_key(conn)
         .map(|key| !key.trim().is_empty())
-        .map_err(|e| format!("读取 API Key 状态失败: {}", e))?;
+        .unwrap_or_else(|error| {
+            log::warn!("读取 API Key 状态失败，按未配置处理: {}", error);
+            false
+        });
     let llm_cache_entries = conn
         .query_row("SELECT COUNT(*) FROM llm_recommendation_cache", [], |row| {
             row.get::<_, i64>(0)
@@ -81,9 +87,19 @@ pub fn view_config(
     })
 }
 
-pub fn save_config(conn: &Connection, input: LlmConfigInput) -> Result<(), String> {
+fn credential_error(error: CredentialStoreError) -> CommandError {
+    match error {
+        CredentialStoreError::Unavailable(message) => {
+            CommandError::new(ErrorCode::CredentialUnavailable, message)
+        }
+        CredentialStoreError::Failure(message) => CommandError::internal(message),
+    }
+}
+
+pub fn save_config(conn: &Connection, input: LlmConfigInput) -> Result<(), CommandError> {
     let mut config = config_from_input(&input);
-    validate_config(&mut config)?;
+    validate_config(&mut config)
+        .map_err(|message| CommandError::new(ErrorCode::LlmConfigInvalid, message))?;
     let local_recommendation_enabled = input.local_recommendation_enabled;
 
     conn.execute(
@@ -115,21 +131,24 @@ pub fn save_config(conn: &Connection, input: LlmConfigInput) -> Result<(), Strin
             catalog::now_ms(),
         ],
     )
-    .map_err(|e| format!("保存模型配置失败: {}", e))?;
+    .map_err(|e| CommandError::database(format!("保存模型配置失败: {}", e)))?;
 
     if let Some(enabled) = local_recommendation_enabled {
-        save_recommendation_enabled(conn, enabled)?;
+        save_recommendation_enabled(conn, enabled).map_err(CommandError::database)?;
     }
 
     if input.clear_api_key.unwrap_or(false) {
-        credential_store::delete_api_key(conn)?;
+        credential_store::delete_api_key(conn).map_err(credential_error)?;
     } else if let Some(api_key) = input.api_key {
         let api_key = api_key.trim();
         if !api_key.is_empty() {
-            credential_store::save_api_key(conn, api_key)?;
-            let saved_api_key = credential_store::get_api_key(conn)?;
+            credential_store::save_api_key(conn, api_key).map_err(credential_error)?;
+            let saved_api_key =
+                credential_store::get_api_key(conn).map_err(CommandError::internal)?;
             if saved_api_key.trim() != api_key {
-                return Err("API Key 已提交保存，但本地配置校验失败".to_string());
+                return Err(CommandError::internal(
+                    "API Key 已提交保存，但本地配置校验失败",
+                ));
             }
         }
     }

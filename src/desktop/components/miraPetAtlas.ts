@@ -44,6 +44,12 @@ const makeAction = (
   frameDurations,
 });
 
+/**
+ * Frame timings are mirrored by the `miraSprite*` keyframes in
+ * `app/styles/desktop-widgets.css`, which drive the sprite entirely from CSS.
+ * Changing the frame count or any duration here requires updating both the
+ * keyframe percentages and the matching `animation-duration` over there.
+ */
 export const MIRA_ACTIONS = {
   idle: makeAction("idle", 0, 6, [280, 110, 110, 140, 140, 320]),
   running_right: makeAction("running-right", 1, 8, durations(8, 120, 220)),
@@ -66,34 +72,3 @@ export const MIRA_ACTION_POOLS: Record<MiraMood, MiraActionName[]> = {
   celebrate: ["waving", "jumping"],
 };
 
-export const MIRA_ALL_USABLE_FRAMES = Object.values(MIRA_ACTIONS).flatMap((action) => action.frames);
-
-export const validateMiraActionCoverage = () => {
-  const expected = new Set<string>();
-
-  Object.values(MIRA_ACTIONS).forEach((action) => {
-    action.frames.forEach((item) => expected.add(item.key));
-  });
-
-  const used = new Set<string>();
-  Object.values(MIRA_ACTIONS).forEach((action) => {
-    action.frames.forEach((item) => used.add(item.key));
-  });
-
-  const missing = [...expected].filter((key) => !used.has(key));
-  const extra = [...used].filter((key) => !expected.has(key));
-  const result = {
-    totalUsable: expected.size,
-    totalUsed: used.size,
-    missing,
-    extra,
-  };
-
-  if (missing.length > 0 || extra.length > 0 || used.size !== expected.size) {
-    console.warn("[MiraPet] action coverage mismatch", result);
-  } else {
-    console.info("[MiraPet] action coverage complete", result);
-  }
-
-  return result;
-};

@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode, UIEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { computeVirtualWindow, isSameVirtualWindow } from './virtualWindow';
 
 interface VirtualListProps<T> {
   items: T[];
@@ -13,6 +14,9 @@ interface VirtualListProps<T> {
   getKey: (item: T, index: number) => string;
   renderItem: (item: T, index: number, style: CSSProperties) => ReactNode;
 }
+
+/** 行内容始终撑满行容器，提出常量避免每次渲染都造一个新对象。 */
+const FILL_STYLE: CSSProperties = { width: '100%', height: '100%' };
 
 export default function VirtualList<T>({
   items,
@@ -32,12 +36,18 @@ export default function VirtualList<T>({
   const contentHeight = items.length * itemHeight;
   const fallbackHeight = Math.min(contentHeight, maxHeight);
   const viewportHeight = fillParent && parentHeight > 0 ? Math.min(contentHeight, parentHeight) : fallbackHeight;
-  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
-  const endIndex = Math.min(items.length, Math.ceil((scrollTop + viewportHeight) / itemHeight) + overscan);
+  const { start: startIndex, end: endIndex } =
+    computeVirtualWindow(scrollTop, viewportHeight, itemHeight, items.length, overscan);
   const visibleItems = useMemo(
     () => items.slice(startIndex, endIndex).map((item, offset) => ({ item, index: startIndex + offset })),
     [endIndex, items, startIndex],
   );
+
+  // 已渲染出去的窗口，滚动时用它判断这一帧是否真的换了行，避免 60Hz 空转 setState。
+  const renderedWindowRef = useRef({ start: startIndex, end: endIndex });
+  useEffect(() => {
+    renderedWindowRef.current = { start: startIndex, end: endIndex };
+  });
 
   useEffect(() => {
     if (!fillParent) return;
@@ -59,30 +69,31 @@ export default function VirtualList<T>({
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     const target = event.currentTarget;
-    setScrollTop(target.scrollTop);
+    const nextWindow =
+      computeVirtualWindow(target.scrollTop, viewportHeight, itemHeight, items.length, overscan);
+    if (!isSameVirtualWindow(nextWindow, renderedWindowRef.current)) {
+      renderedWindowRef.current = nextWindow;
+      setScrollTop(target.scrollTop);
+    }
     if (onEndReached && target.scrollHeight - target.scrollTop - target.clientHeight <= endReachedThreshold) {
       onEndReached();
     }
   };
 
   return (
-    <div ref={rootRef} className={`virtual-list ${className}`.trim()} style={{ height: viewportHeight }} onScroll={handleScroll} role="list" aria-setsize={items.length}>
-      <div className="virtual-spacer" style={{ height: contentHeight }}>
+    <div ref={rootRef} className={`virtual-list ${className}`.trim()} style={{ height: viewportHeight }} onScroll={handleScroll} role="list">
+      {/* 撑高滚动区的垫片不能挡在 list 与 listitem 之间，否则辅助技术看不到列表关系。 */}
+      <div className="virtual-spacer" role="presentation" style={{ height: contentHeight }}>
         {visibleItems.map(({ item, index }) => (
           <div
             key={getKey(item, index)}
+            className="virtual-list-row"
             role="listitem"
             aria-setsize={items.length}
             aria-posinset={index + 1}
-            style={{
-              position: 'absolute',
-              top: index * itemHeight,
-              left: 0,
-              right: 0,
-              height: itemHeight,
-            }}
+            style={{ top: index * itemHeight, height: itemHeight }}
           >
-            {renderItem(item, index, { width: '100%', height: '100%' })}
+            {renderItem(item, index, FILL_STYLE)}
           </div>
         ))}
       </div>

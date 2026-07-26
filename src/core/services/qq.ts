@@ -1,8 +1,8 @@
 import { Song, TopList } from "../types";
 import { mergeLyricTracks } from "../utils/lyrics";
 import { decryptQrc } from "qrc-decoder";
-import { SELF_HOSTED_PROXY } from "./config";
-import { getProxies } from "./proxy";
+import { buildLocalServerHeaders, SELF_HOSTED_PROXY } from "./config";
+import { createLinkedAbort, getProxies, throwIfAborted } from "./proxy";
 import { fixUrl } from "./utils";
 
 // ==============================
@@ -68,7 +68,10 @@ const decodeQQEncryptedQrc = (value: unknown): string => {
  *
  * @param reqBody  req 字段内容（module、method、param）
  */
-export const qqMusicuFetch = async (reqBody: any): Promise<any> => {
+export const qqMusicuFetch = async (
+  reqBody: any,
+  signal?: AbortSignal,
+): Promise<any> => {
   const body = {
     comm: QQ_COMM,
     req: reqBody,
@@ -76,26 +79,30 @@ export const qqMusicuFetch = async (reqBody: any): Promise<any> => {
   const proxies = getProxies();
 
   for (const proxy of proxies) {
+    const linked = createLinkedAbort(signal, 8000);
     try {
       const finalUrl = `${proxy}${encodeURIComponent(MUSICU_URL)}`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
       const isSelfProxy = proxy === SELF_HOSTED_PROXY;
 
       const resp = await fetch(finalUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(isSelfProxy ? buildLocalServerHeaders() : {}),
+        },
         body: JSON.stringify(body),
         ...(isSelfProxy ? {} : { mode: "cors" as RequestMode }),
         credentials: "omit",
-        signal: controller.signal,
+        signal: linked.signal,
       });
-      clearTimeout(timeoutId);
 
       const data = await resp.json();
       if (data?.req?.code === 0) return data.req.data;
     } catch {
+      throwIfAborted(signal);
       /* 继续下一个代理 */
+    } finally {
+      linked.cleanup();
     }
   }
 
@@ -118,12 +125,13 @@ export const searchQQ = async (
   keyword: string,
   page: number,
   limit: number,
+  signal?: AbortSignal,
 ): Promise<Song[]> => {
   const data = await qqMusicuFetch({
     method: "DoSearchForQQMusicDesktop",
     module: "music.search.SearchCgiService",
     param: { query: keyword, page_num: page, num_per_page: limit },
-  });
+  }, signal);
 
   const songs = data?.body?.song?.list;
   if (!songs || !Array.isArray(songs) || songs.length === 0) return [];
@@ -234,6 +242,7 @@ export const getQQTopListDetail = async (
  */
 export const fetchQQLyrics = async (
   id: string | number,
+  signal?: AbortSignal,
 ): Promise<string> => {
   try {
     const numericId = /^\d+$/.test(String(id)) ? Number(id) : 0;
@@ -248,7 +257,7 @@ export const fetchQQLyrics = async (
         trans: 1,
         roma: 1,
       },
-    });
+    }, signal);
 
     if (!data) return "";
 
@@ -266,6 +275,7 @@ export const fetchQQLyrics = async (
       source: "qq",
     });
   } catch {
+    throwIfAborted(signal);
     return "";
   }
 };

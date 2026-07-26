@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { findActiveLyricIndex, parseLyrics, type ParsedLyric } from '../../../src/core/utils/lyrics';
 import { normalizeLyricDisplayMode, type LyricDisplayMode } from '../../../src/core/utils/lyricDisplayMode';
-import type { DesktopLyricCommand, DesktopLyricPlayerState, DesktopLyricSong, DesktopLyricStyleState, LyricUpdateEvent } from './types';
-import { forceTransparentDocument, readAndApplyDesktopLyricTheme } from './theme';
+import { invokeCommand, isTauri as detectTauri, listenEvent } from '../../../src/core/ipc';
+import type { DesktopLyricCommand, DesktopLyricPlayerState, DesktopLyricSong, DesktopLyricStyleState } from './types';
+import { readAndApplyDesktopLyricTheme } from './theme';
 
-type PlaybackSnapshot = {
-  song: DesktopLyricSong | null;
+type TimingSnapshot = {
+  trackKey: string;
   currentTime: number;
   isPlaying: boolean;
   playbackRate: number;
@@ -26,86 +27,118 @@ const getNowSeconds = () => {
   return Date.now() / 1000;
 };
 
+const INITIAL_TIMING: TimingSnapshot = {
+  trackKey: '',
+  currentTime: 0,
+  isPlaying: false,
+  playbackRate: 1,
+  lyricOffsetSeconds: 0,
+  lyricDisplayMode: 'line',
+  receivedAt: 0,
+};
+
 export const useDesktopLyricBridge = () => {
-  const [snapshot, setSnapshot] = useState<PlaybackSnapshot>({
-    song: null,
-    currentTime: 0,
-    isPlaying: false,
-    playbackRate: 1,
-    lyricOffsetSeconds: 0,
-    lyricDisplayMode: 'line',
+  const [song, setSong] = useState<DesktopLyricSong | null>(null);
+  const [trackKey, setTrackKey] = useState('');
+  const [timing, setTiming] = useState<TimingSnapshot>(() => ({
+    ...INITIAL_TIMING,
     receivedAt: getNowSeconds(),
-  });
+  }));
   const [projectedTime, setProjectedTime] = useState(0);
   const [isTauri, setIsTauri] = useState(false);
   const [styleState, setStyleState] = useState<DesktopLyricStyleState>({ size: 22, font: 'system-ui', lock: false });
 
   useLayoutEffect(() => {
-    const checkTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
-    setIsTauri(checkTauri);
+    setIsTauri(detectTauri());
     setStyleState(readAndApplyDesktopLyricTheme());
-    forceTransparentDocument();
   }, []);
 
   useEffect(() => {
     if (!isTauri) return;
 
-    let lyricUnlisten: (() => void) | null = null;
-    let lockUnlisten: (() => void) | null = null;
+    const disposers: Array<() => void> = [];
+    let cancelled = false;
 
-    const setupListeners = async () => {
-      try {
-        const { listen } = await import('@tauri-apps/api/event');
-        lyricUnlisten = await listen<LyricUpdateEvent>('lyric-update', (event) => {
-          const { song, currentTime, isPlaying, playbackRate, lyricOffsetSeconds, lyricDisplayMode, sentAt } = event.payload;
-          const now = getNowSeconds();
-          const transportDelay = isPlaying && sentAt ? Math.max(0, Date.now() - sentAt) / 1000 : 0;
-          const baseTime = currentTime + Math.min(0.25, transportDelay);
-
-          setSnapshot({
-            song,
-            currentTime: baseTime,
-            isPlaying,
-            playbackRate: playbackRate && Number.isFinite(playbackRate) ? playbackRate : 1,
-            lyricOffsetSeconds: Number.isFinite(lyricOffsetSeconds) ? lyricOffsetSeconds || 0 : 0,
-            lyricDisplayMode: normalizeLyricDisplayMode(lyricDisplayMode),
-            receivedAt: now,
-          });
-          setProjectedTime(baseTime);
-        });
-
-        lockUnlisten = await listen<boolean>('lock-change', (event) => {
-          setStyleState((current) => ({ ...current, lock: event.payload }));
-        });
-      } catch (e) {
-        console.error('Failed to setup desktop lyric bridge:', e);
-      }
+    const register = (pending: Promise<() => void>) => {
+      void pending
+        .then((dispose) => {
+          if (cancelled) dispose();
+          else disposers.push(dispose);
+        })
+        .catch((error) => console.error('Failed to setup desktop lyric bridge:', error));
     };
 
-    void setupListeners();
+    // 曲目信息（含完整 LRC）只在换歌时到达。
+    register(
+      listenEvent('lyric-song', (payload) => {
+        setTrackKey(payload.trackKey);
+        setSong(
+          payload.trackKey
+            ? {
+                id: payload.id,
+                name: payload.title,
+                artist: payload.artist,
+                source: payload.source,
+                pic: payload.pic,
+                lrc: payload.lrc ?? undefined,
+              }
+            : null,
+        );
+      }),
+    );
+
+    // 进度心跳只带标量；trackKey 不匹配说明是上一首的过期 tick，直接丢弃。
+    register(
+      listenEvent('lyric-tick', (payload) => {
+        const transportDelay = payload.isPlaying && payload.sentAt
+          ? Math.max(0, Date.now() - payload.sentAt) / 1000
+          : 0;
+        const baseTime = payload.currentTime + Math.min(0.25, transportDelay);
+        setTiming({
+          trackKey: payload.trackKey,
+          currentTime: baseTime,
+          isPlaying: payload.isPlaying,
+          playbackRate: Number.isFinite(payload.playbackRate) && payload.playbackRate
+            ? payload.playbackRate
+            : 1,
+          lyricOffsetSeconds: Number.isFinite(payload.lyricOffsetSeconds)
+            ? payload.lyricOffsetSeconds || 0
+            : 0,
+          lyricDisplayMode: normalizeLyricDisplayMode(payload.lyricDisplayMode),
+          receivedAt: getNowSeconds(),
+        });
+        setProjectedTime(baseTime);
+      }),
+    );
+
+    register(
+      listenEvent('lock-change', (locked) => {
+        setStyleState((current) => ({ ...current, lock: locked }));
+      }),
+    );
 
     return () => {
-      lyricUnlisten?.();
-      lockUnlisten?.();
+      cancelled = true;
+      disposers.forEach((dispose) => dispose());
     };
   }, [isTauri]);
 
   useEffect(() => {
-    if (!snapshot.isPlaying) {
-      setProjectedTime(snapshot.currentTime);
+    if (!timing.isPlaying) {
+      setProjectedTime(timing.currentTime);
       return;
     }
 
     let frame = 0;
     const tick = () => {
-      const elapsed = Math.max(0, getNowSeconds() - snapshot.receivedAt);
-      setProjectedTime(snapshot.currentTime + elapsed * snapshot.playbackRate);
+      const elapsed = Math.max(0, getNowSeconds() - timing.receivedAt);
+      setProjectedTime(timing.currentTime + elapsed * timing.playbackRate);
       frame = window.requestAnimationFrame(tick);
     };
 
     frame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frame);
-  }, [snapshot]);
+  }, [timing]);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,20 +149,11 @@ export const useDesktopLyricBridge = () => {
     mediaQuery.addEventListener('change', syncStyle);
 
     let unlistenFn: (() => void) | null = null;
-    const isTauriEnv = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
-    if (isTauriEnv) {
-      import('@tauri-apps/api/event')
-        .then(({ listen }) =>
-          listen('theme-changed', () => {
-            syncStyle();
-          }),
-        )
+    if (detectTauri()) {
+      void listenEvent('theme-changed', syncStyle)
         .then((unlisten) => {
-          if (cancelled) {
-            unlisten();
-          } else {
-            unlistenFn = unlisten;
-          }
+          if (cancelled) unlisten();
+          else unlistenFn = unlisten;
         })
         .catch(() => {});
     }
@@ -142,36 +166,36 @@ export const useDesktopLyricBridge = () => {
     };
   }, []);
 
-  const rawLyrics = snapshot.song?.lrc || '';
+  // tick 早于 lyric-song 到达时先不渲染上一首的歌词，避免串词。
+  const rawLyrics = trackKey && timing.trackKey && trackKey !== timing.trackKey ? '' : song?.lrc || '';
   const rows = useMemo(() => parseLyrics(rawLyrics), [rawLyrics]);
   const activeIndex = useMemo(
     () => findActiveLyricIndex(
       rows,
       projectedTime,
-      snapshot.lyricOffsetSeconds,
-      snapshot.lyricDisplayMode,
+      timing.lyricOffsetSeconds,
+      timing.lyricDisplayMode,
     ),
-    [rows, projectedTime, snapshot.lyricOffsetSeconds, snapshot.lyricDisplayMode],
+    [rows, projectedTime, timing.lyricOffsetSeconds, timing.lyricDisplayMode],
   );
   const currentLine = getDesktopLyricCurrentLine(rows, activeIndex);
 
   const playerState: DesktopLyricPlayerState = {
-    song: snapshot.song,
+    song,
     rows,
     activeIndex,
     currentLine,
     currentTime: projectedTime,
-    lyricOffsetSeconds: snapshot.lyricOffsetSeconds,
-    lyricDisplayMode: snapshot.lyricDisplayMode,
-    isPlaying: snapshot.isPlaying,
+    lyricOffsetSeconds: timing.lyricOffsetSeconds,
+    lyricDisplayMode: timing.lyricDisplayMode,
+    isPlaying: timing.isPlaying,
   };
 
-  const sendCommand = async (action: DesktopLyricCommand, value?: any) => {
+  const sendCommand = async (action: DesktopLyricCommand, value?: unknown) => {
     if (!isTauri) return;
 
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('relay_player_control', { action, value });
+      await invokeCommand('relay_player_control', { action, value });
     } catch (e) {
       console.error('Failed to send player-control:', e);
     }

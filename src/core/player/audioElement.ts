@@ -68,31 +68,30 @@ const handleAudioFailure = (
   const isSourceError = audio.error?.code === MEDIA_ERR_SRC_NOT_SUPPORTED_CODE;
   console.error(`Audio Element Error: Code=${audio.error?.code}, Msg=${audio.error?.message}`);
 
-  if (isSourceError && song && !refs.forceNoCorsPlayback.current && refs.retryCount.current === 0) {
-    recommendation.showPlayerNotice("当前音源不支持频谱解析，已切换兼容播放模式", "warning");
-    refs.forceNoCorsPlayback.current = true;
-    refs.retryCount.current = 1;
-    void refs.playSong.current(song, refs.activeQuality.current);
+  const giveUp = () => {
+    console.error(
+      isSourceError ? "Playback source is not supported." : "Playback failed.",
+      getMediaErrorSummary(audio.error),
+    );
+    clearActiveAudioSource();
+    recommendation.showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
+    setIsLoading(false);
+    setIsPlaying(false);
+  };
+
+  if (!song) {
+    recovery.evictActiveParsedSong();
+    refs.recoveryStage.current = "initial";
+    giveUp();
     return;
   }
-  if (song && recovery.retryCachedSongResolution(song, refs.activeQuality.current)) return;
-  if (song && refs.activeQuality.current !== "128k" && refs.retryCount.current <= 1) {
-    recommendation.showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
-    refs.retryCount.current = 2;
-    void refs.playSong.current(song, "128k");
-    return;
-  }
-  recovery.evictActiveParsedSong();
-  if (song && recovery.playNextRecommendationAfterFailure(song)) return;
-  console.error(
-    isSourceError ? "Playback source is not supported." : "Playback failed.",
-    getMediaErrorSummary(audio.error),
-  );
-  clearActiveAudioSource();
-  recommendation.showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
-  setIsLoading(false);
-  setIsPlaying(false);
-  refs.retryCount.current = 0;
+  recovery.runRecovery({
+    song,
+    quality: refs.activeQuality.current,
+    trigger: "mediaError",
+    canRetryWithoutCors: isSourceError && !refs.forceNoCorsPlayback.current,
+    onGiveUp: giveUp,
+  });
 };
 
 const createHandlers = (
@@ -124,7 +123,7 @@ const createHandlers = (
       const song = refs.currentSong.current;
       if (song) notifyLyricTimelineMismatch(runtime, song, song.lrc || "", duration);
       setIsLoading(false);
-      refs.retryCount.current = 0;
+      refs.recoveryStage.current = "initial";
     },
     durationchange: () => {
       const duration = syncMediaPosition(audio, runtime);

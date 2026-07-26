@@ -5,9 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="transparent" />
     <title>TuneFree 桌面歌词</title>
-    <style>
-      html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent !important; background-color: transparent !important; }
-    </style>
+    <script>
+      /* 透明悬浮窗的首帧引导：只落 dark-theme / light-theme 类。
+         这里不写任何背景色，透明化由 app/desktop-lyric/desktop-lyric.css 一处声明负责；
+         主题色等变量由 readAndApplyDesktopLyricTheme 在首帧渲染前补齐。 */
+      (function () {
+        try {
+          var mode = localStorage.getItem('tunefree_theme_mode');
+          if (mode !== 'light' && mode !== 'dark' && mode !== 'system') mode = 'system';
+          var prefersDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var isDark = mode === 'dark' || (mode === 'system' && prefersDark);
+          document.documentElement.classList.toggle('dark-theme', isDark);
+          document.documentElement.classList.toggle('light-theme', !isDark);
+        } catch (error) {
+          /* 引导失败不影响启动 */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

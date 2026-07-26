@@ -35,7 +35,7 @@ export default function StorageAndBackupColumn({ model }: { model: SettingsViewM
             <input
               type="file"
               accept=".json"
-              style={{ display: 'none' }}
+              className="hidden-file-input"
               onChange={(event) => {
                 model.importFile(event.target.files?.[0]);
                 event.currentTarget.value = '';

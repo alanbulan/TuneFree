@@ -6,6 +6,11 @@ const DERIVED_DATA_MIGRATION_VERSION: i64 = 2;
 const EVENT_WEIGHT_MIGRATION_VERSION: i64 = 3;
 const RECOMMENDATION_CLICK_MIGRATION_VERSION: i64 = 4;
 
+/// Deferred rebuild of `user_profile` from the full event history.
+pub const PENDING_REBUILD_PROFILE: &str = "profile";
+/// Deferred rebuild of the session co-occurrence index.
+pub const PENDING_REBUILD_COOCCURRENCE: &str = "cooccurrence";
+
 const SCHEMA_SQL: &str = r#"
         PRAGMA foreign_keys = ON;
 
@@ -93,6 +98,11 @@ const SCHEMA_SQL: &str = r#"
         CREATE TABLE IF NOT EXISTS recommendation_maintenance (
           id INTEGER PRIMARY KEY CHECK (id = 1),
           last_run_at INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS recommendation_pending_rebuilds (
+          task TEXT PRIMARY KEY,
+          created_at INTEGER NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS recommendation_cache (
@@ -253,8 +263,8 @@ fn run_event_weight_migration_v3(conn: &Connection) -> rusqlite::Result<()> {
         DELETE FROM item_cooccurrence;
         "#,
     )?;
-    profile::rebuild_profile_from_events(&tx)?;
-    events::rebuild_session_cooccurrence(&tx)?;
+    mark_rebuild_pending(&tx, PENDING_REBUILD_PROFILE)?;
+    mark_rebuild_pending(&tx, PENDING_REBUILD_COOCCURRENCE)?;
     tx.execute(
         "INSERT INTO recommendation_schema_migrations (version, applied_at) VALUES (?1, ?2)",
         [EVENT_WEIGHT_MIGRATION_VERSION, catalog::now_ms()],
@@ -282,7 +292,7 @@ fn run_recommendation_click_migration_v4(conn: &Connection) -> rusqlite::Result<
         "#,
         [],
     )?;
-    profile::rebuild_profile_from_events(&tx)?;
+    mark_rebuild_pending(&tx, PENDING_REBUILD_PROFILE)?;
     tx.execute(
         "INSERT INTO recommendation_schema_migrations (version, applied_at) VALUES (?1, ?2)",
         [RECOMMENDATION_CLICK_MIGRATION_VERSION, catalog::now_ms()],
@@ -301,7 +311,7 @@ fn run_derived_data_migration_v2(conn: &Connection) -> rusqlite::Result<()> {
     }
 
     let tx = conn.unchecked_transaction()?;
-    profile::rebuild_profile_from_events(&tx)?;
+    mark_rebuild_pending(&tx, PENDING_REBUILD_PROFILE)?;
     profile::clear_library_profile(&tx)?;
     tx.execute("DELETE FROM item_cooccurrence", [])?;
     tx.execute(
@@ -309,6 +319,46 @@ fn run_derived_data_migration_v2(conn: &Connection) -> rusqlite::Result<()> {
         [DERIVED_DATA_MIGRATION_VERSION, catalog::now_ms()],
     )?;
     tx.commit()
+}
+
+/// Records that a derived-data rebuild must run after startup. Kept in a table
+/// (not memory) so a crash between migration and rebuild cannot lose the work.
+/// Migrations mark instead of rebuilding inline so opening the database stays
+/// fast; the service executes [`run_pending_rebuilds`] in the background.
+fn mark_rebuild_pending(conn: &Connection, task: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO recommendation_pending_rebuilds (task, created_at) VALUES (?1, ?2)",
+        rusqlite::params![task, catalog::now_ms()],
+    )?;
+    Ok(())
+}
+
+/// Executes and clears any pending derived-data rebuilds. Returns whether any
+/// rebuild ran. Safe to call on every startup; a no-op costs one SELECT.
+pub fn run_pending_rebuilds(conn: &Connection) -> rusqlite::Result<bool> {
+    let pending = {
+        let mut stmt = conn.prepare("SELECT task FROM recommendation_pending_rebuilds")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    if pending.is_empty() {
+        return Ok(false);
+    }
+
+    let tx = conn.unchecked_transaction()?;
+    if pending.iter().any(|task| task == PENDING_REBUILD_PROFILE) {
+        profile::rebuild_profile_from_events(&tx)?;
+    }
+    if pending
+        .iter()
+        .any(|task| task == PENDING_REBUILD_COOCCURRENCE)
+    {
+        tx.execute("DELETE FROM item_cooccurrence", [])?;
+        events::rebuild_session_cooccurrence(&tx)?;
+    }
+    tx.execute("DELETE FROM recommendation_pending_rebuilds", [])?;
+    tx.commit()?;
+    Ok(true)
 }
 
 fn column_exists(conn: &Connection, table: &str, column: &str) -> rusqlite::Result<bool> {
@@ -371,6 +421,17 @@ mod tests {
         let weight: f64 = conn
             .query_row("SELECT weight FROM play_events", [], |row| row.get(0))
             .unwrap();
+        assert_eq!(weight, 0.0);
+        let pending_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM recommendation_pending_rebuilds",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(pending_count > 0);
+
+        assert!(run_pending_rebuilds(&conn).unwrap());
         let profile_value: Option<f64> = conn
             .query_row(
                 "SELECT value FROM user_profile WHERE key = 'artist:测试歌手'",
@@ -379,8 +440,8 @@ mod tests {
             )
             .optional()
             .unwrap();
-        assert_eq!(weight, 0.0);
         assert!(profile_value.is_none());
+        assert!(!run_pending_rebuilds(&conn).unwrap());
 
         run_migrations(&conn).unwrap();
         let migration_count: i64 = conn

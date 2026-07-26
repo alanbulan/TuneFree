@@ -1,8 +1,8 @@
 import { Song, TopList } from "../types";
 import { mergeLyricTracks } from "../utils/lyrics";
 import { inflate } from "pako";
-import { SELF_HOSTED_PROXY } from "./config";
-import { getProxies, proxyFetchJson } from "./proxy";
+import { buildLocalServerHeaders, SELF_HOSTED_PROXY } from "./config";
+import { createLinkedAbort, getProxies, proxyFetchJson, throwIfAborted } from "./proxy";
 import { fixUrl } from "./utils";
 
 // ==============================
@@ -16,24 +16,27 @@ import { fixUrl } from "./utils";
  * 失败的单首封面不影响整体结果。
  * @param songs 待补全封面的歌曲列表
  */
-export const batchFetchKuwoCovers = async (songs: Song[]): Promise<Song[]> => {
+export const batchFetchKuwoCovers = async (
+  songs: Song[],
+  signal?: AbortSignal,
+): Promise<Song[]> => {
   if (songs.length === 0) return songs;
   const proxy = getProxies()[0]; // 只用最高优先级代理（自建代理）
 
   const coverPromises = songs.map(async (song) => {
     if (song.pic || !song.id) return song;
+    const linked = createLinkedAbort(signal, 5000);
     try {
       const apiUrl = `http://artistpicserver.kuwo.cn/pic.web?corp=kuwo&type=rid_pic&pictype=500&size=500&rid=${song.id}`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
       const isSelfProxy = proxy === SELF_HOSTED_PROXY;
 
       const resp = await fetch(`${proxy}${encodeURIComponent(apiUrl)}`, {
-        ...(isSelfProxy ? {} : { mode: "cors" as RequestMode }),
+        ...(isSelfProxy
+          ? { headers: buildLocalServerHeaders() }
+          : { mode: "cors" as RequestMode }),
         credentials: "omit",
-        signal: controller.signal,
+        signal: linked.signal,
       });
-      clearTimeout(timeoutId);
 
       const picUrl = (await resp.text()).trim();
       if (picUrl && picUrl.startsWith("http")) {
@@ -41,6 +44,8 @@ export const batchFetchKuwoCovers = async (songs: Song[]): Promise<Song[]> => {
       }
     } catch {
       /* 单首封面获取失败不影响整体 */
+    } finally {
+      linked.cleanup();
     }
     return song;
   });
@@ -61,24 +66,25 @@ export const searchKuwo = async (
   keyword: string,
   page: number,
   limit: number,
+  signal?: AbortSignal,
 ): Promise<Song[]> => {
   const pn = page - 1; // 旧版 API 页码从 0 开始
   const rawUrl = `http://search.kuwo.cn/r.s?all=${encodeURIComponent(keyword)}&ft=music&itemset=web_2013&pn=${pn}&rn=${limit}&encoding=utf8&rformat=json&moession=1&vkey=VKEY`;
   const proxies = getProxies();
 
   for (const proxy of proxies) {
+    const linked = createLinkedAbort(signal, 8000);
     try {
       const finalUrl = `${proxy}${encodeURIComponent(rawUrl)}`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
       const isSelfProxy = proxy === SELF_HOSTED_PROXY;
 
       const resp = await fetch(finalUrl, {
-        ...(isSelfProxy ? {} : { mode: "cors" as RequestMode }),
+        ...(isSelfProxy
+          ? { headers: buildLocalServerHeaders() }
+          : { mode: "cors" as RequestMode }),
         credentials: "omit",
-        signal: controller.signal,
+        signal: linked.signal,
       });
-      clearTimeout(timeoutId);
 
       let text = await resp.text();
       // 旧版 kuwo API 返回单引号 dict，转换为标准 JSON
@@ -102,9 +108,12 @@ export const searchKuwo = async (
       });
 
       // 旧版 API 无封面，通过 artistpicserver 批量补全
-      return batchFetchKuwoCovers(songs);
+      return await batchFetchKuwoCovers(songs, signal);
     } catch {
+      throwIfAborted(signal);
       /* 继续下一个代理 */
+    } finally {
+      linked.cleanup();
     }
   }
 
@@ -295,22 +304,23 @@ const parseKuwoLrcxAsKaraoke = (lrcx: string): string => {
 
 const fetchKuwoLrcxKaraoke = async (
   id: string | number,
+  signal?: AbortSignal,
 ): Promise<string> => {
   const rawUrl = `http://newlyric.kuwo.cn/newlyric.lrc?${buildKuwoNewLyricToken(id)}`;
 
   for (const proxy of getProxies()) {
+    const linked = createLinkedAbort(signal, 8000);
     try {
       const finalUrl = `${proxy}${encodeURIComponent(rawUrl)}`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
       const isSelfProxy = proxy === SELF_HOSTED_PROXY;
 
       const resp = await fetch(finalUrl, {
-        ...(isSelfProxy ? {} : { mode: "cors" as RequestMode }),
+        ...(isSelfProxy
+          ? { headers: buildLocalServerHeaders() }
+          : { mode: "cors" as RequestMode }),
         credentials: "omit",
-        signal: controller.signal,
+        signal: linked.signal,
       });
-      clearTimeout(timeoutId);
 
       if (!resp.ok) continue;
 
@@ -318,7 +328,10 @@ const fetchKuwoLrcxKaraoke = async (
       const karaoke = parseKuwoLrcxAsKaraoke(lrcx);
       if (karaoke) return karaoke;
     } catch {
+      throwIfAborted(signal);
       /* 继续下一个代理 */
+    } finally {
+      linked.cleanup();
     }
   }
 
@@ -335,14 +348,19 @@ const fetchKuwoLrcxKaraoke = async (
  */
 export const fetchKuwoLyrics = async (
   id: string | number,
+  signal?: AbortSignal,
 ): Promise<string> => {
   try {
     let lrcList: any[] | null = null;
-    const karaokePromise = fetchKuwoLrcxKaraoke(id);
+    const karaokePromise = fetchKuwoLrcxKaraoke(id, signal);
+    // 主歌词请求先失败时避免逐字歌词请求成为 unhandled rejection
+    karaokePromise.catch(() => {});
 
     // 优先：openapi 端点（兼容性更好）
     const openApiResp = await proxyFetchJson(
       `https://kuwo.cn/openapi/v1/www/lyric/getlyric?musicId=${id}`,
+      8000,
+      signal,
     );
     if (openApiResp?.data?.lrclist) {
       lrcList = openApiResp.data.lrclist;
@@ -350,6 +368,8 @@ export const fetchKuwoLyrics = async (
       // 降级：songinfoandlrc（httpsStatus=1 防止 301 重定向）
       const fallbackResp = await proxyFetchJson(
         `http://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId=${id}&httpsStatus=1`,
+        8000,
+        signal,
       );
       if (fallbackResp?.data?.lrclist) {
         lrcList = fallbackResp.data.lrclist;
@@ -373,6 +393,7 @@ export const fetchKuwoLyrics = async (
       source: "kuwo",
     });
   } catch {
+    throwIfAborted(signal);
     return "";
   }
 };

@@ -13,6 +13,8 @@ const disposeAudio = (refs: PlayerRefs): void => {
     audio.pause();
     detachAudioHandlers(audio, refs.handlers.current);
   }
+  refs.playAbort.current?.abort();
+  refs.preloadAbort.current?.abort();
   if (refs.progressFrame.current !== null) {
     window.cancelAnimationFrame(refs.progressFrame.current);
     refs.progressFrame.current = null;

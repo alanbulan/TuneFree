@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { AudioQuality, PlayMode, Song } from "../types";
 import {
   loadStoredAudioQuality,
@@ -10,7 +10,47 @@ import {
   persistPlayMode,
   persistQueue,
 } from "../contexts/playerPersistence";
+import type { ShuffleOrder } from "../contexts/playerQueue";
 import type { AudioHandlers, ParsedSongCacheEntry, PlayerNotice, PlayerRefs } from "./types";
+import type { RecoveryStage } from "./playbackRecovery";
+
+const createPlayerRefs = (
+  currentSong: Song | null,
+  queue: Song[],
+  playMode: PlayMode,
+  audioQuality: AudioQuality,
+): PlayerRefs => {
+  const ref = <T,>(current: T) => ({ current });
+  return {
+    analyser: ref<AnalyserNode | null>(null),
+    audio: ref<HTMLAudioElement | null>(null),
+    audioContext: ref<AudioContext | null>(null),
+    sourceNode: ref<MediaElementAudioSourceNode | null>(null),
+    audioContextConnected: ref(false), playRequestId: ref(0),
+    playAbort: ref<AbortController | null>(null),
+    preloadAbort: ref<AbortController | null>(null),
+    parsedSongCache: ref<Map<string, ParsedSongCacheEntry>>(new Map()),
+    preloadedResolutionKey: ref<string | null>(null),
+    playNext: ref<((force?: boolean) => void) | null>(null),
+    playSong: ref<(song: Song, forceQuality?: AudioQuality) => Promise<void>>(async () => {}),
+    currentSong: ref(currentSong), queue: ref(queue),
+    shuffleOrder: ref<ShuffleOrder | null>(null), playMode: ref(playMode),
+    audioQuality: ref(audioQuality), activeQuality: ref<AudioQuality>(audioQuality),
+    progressFrame: ref<number | null>(null), lastProgressTime: ref(0),
+    play30LoggedKey: ref<string | null>(null), completeLoggedKey: ref<string | null>(null),
+    lyricRefreshKey: ref<string | null>(null), lyricBindings: ref(new Map()),
+    lyricMismatchNoticedKey: ref<string | null>(null),
+    recoveryStage: ref<RecoveryStage>("initial"),
+    forceNoCorsPlayback: ref(false), activeParsedCacheKey: ref<string | null>(null),
+    pendingQualityChange: ref(false), refreshedCacheKeys: ref<Set<string>>(new Set()),
+    playbackSessionId: ref<string | null>(null),
+    failedRecommendationRequestId: ref<string | null>(null),
+    failedRecommendationSongKeys: ref<Set<string>>(new Set()),
+    handlers: ref<AudioHandlers | null>(null),
+    isIOS: ref(/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)),
+  };
+};
 
 export const usePlayerRuntime = () => {
   const [currentSong, setCurrentSong] = useState<Song | null>(loadStoredCurrentSong);
@@ -25,43 +65,27 @@ export const usePlayerRuntime = () => {
   const [playerNotice, setPlayerNotice] = useState<PlayerNotice | null>(null);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
 
-  const [refs] = useState<PlayerRefs>(() => {
-    const ref = <T,>(current: T) => ({ current });
-    return {
-      analyser: ref<AnalyserNode | null>(null),
-      audio: ref<HTMLAudioElement | null>(null),
-      audioContext: ref<AudioContext | null>(null),
-      sourceNode: ref<MediaElementAudioSourceNode | null>(null),
-      audioContextConnected: ref(false), playRequestId: ref(0),
-      parsedSongCache: ref<Map<string, ParsedSongCacheEntry>>(new Map()),
-      preloadedResolutionKey: ref<string | null>(null),
-      playNext: ref<((force?: boolean) => void) | null>(null),
-      playSong: ref<(song: Song, forceQuality?: AudioQuality) => Promise<void>>(async () => {}),
-      currentSong: ref(currentSong), queue: ref(queue), playMode: ref(playMode),
-      audioQuality: ref(audioQuality), activeQuality: ref<AudioQuality>(audioQuality),
-      progressFrame: ref<number | null>(null), lastProgressTime: ref(0),
-      play30LoggedKey: ref<string | null>(null), completeLoggedKey: ref<string | null>(null),
-      lyricRefreshKey: ref<string | null>(null), lyricBindings: ref(new Map()),
-      lyricMismatchNoticedKey: ref<string | null>(null), retryCount: ref(0),
-      forceNoCorsPlayback: ref(false), activeParsedCacheKey: ref<string | null>(null),
-      pendingQualityChange: ref(false), refreshedCacheKeys: ref<Set<string>>(new Set()),
-      playbackSessionId: ref<string | null>(null),
-      failedRecommendationRequestId: ref<string | null>(null),
-      failedRecommendationSongKeys: ref<Set<string>>(new Set()),
-      handlers: ref<AudioHandlers | null>(null),
-      isIOS: ref(/iPad|iPhone|iPod/.test(navigator.userAgent) ||
-        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)),
-    };
-  });
+  const [refs] = useState<PlayerRefs>(
+    () => createPlayerRefs(currentSong, queue, playMode, audioQuality),
+  );
 
-  useEffect(() => {
-    persistQueue(queue);
-    refs.queue.current = queue;
-  }, [queue, refs.queue]);
-  useEffect(() => {
-    persistCurrentSong(currentSong);
-    refs.currentSong.current = currentSong;
-  }, [currentSong, refs.currentSong]);
+  // 队列与当前歌曲的唯一写入口：ref 先于 state 落地，
+  // 因此 updater 内部不再需要（也不允许）写 ref。
+  const commitQueue = useCallback((next: Song[] | ((previous: Song[]) => Song[])) => {
+    const nextQueue = typeof next === "function" ? next(refs.queue.current) : next;
+    if (nextQueue === refs.queue.current) return;
+    refs.queue.current = nextQueue;
+    setQueue(nextQueue);
+  }, [refs]);
+
+  const commitCurrentSong = useCallback((next: Song | null) => {
+    if (next === refs.currentSong.current) return;
+    refs.currentSong.current = next;
+    setCurrentSong(next);
+  }, [refs]);
+
+  useEffect(() => { persistQueue(queue); }, [queue]);
+  useEffect(() => { persistCurrentSong(currentSong); }, [currentSong]);
   useEffect(() => {
     persistPlayMode(playMode);
     refs.playMode.current = playMode;
@@ -73,10 +97,11 @@ export const usePlayerRuntime = () => {
 
   return {
     currentSong, isPlaying, isLoading, currentTime, duration,
-    lyricOffsetSeconds, volume: 1, queue, playMode, audioQuality,
+    lyricOffsetSeconds, queue, playMode, audioQuality,
     playerNotice, analyser, refs,
-    setCurrentSong, setIsPlaying, setIsLoading, setCurrentTime,
-    setDuration, setLyricOffsetSeconds, setQueue, setPlayMode,
+    commitQueue, commitCurrentSong,
+    setIsPlaying, setIsLoading, setCurrentTime,
+    setDuration, setLyricOffsetSeconds, setPlayMode,
     setAudioQuality, setPlayerNotice, setAnalyser,
   };
 };

@@ -16,7 +16,6 @@ import { useLibrary } from '../../core/contexts/LibraryContext';
 import {
   usePlayerActions,
   usePlayerNowPlaying,
-  usePlayerProgress,
   usePlayerQueueState,
   usePlayerSettings,
 } from '../../core/contexts/PlayerContext';
@@ -25,7 +24,7 @@ import AudioVisualizer from '../../core/components/AudioVisualizer';
 import type { AudioQuality } from '../../core/types';
 import CoverArt from './CoverArt';
 import { useToast } from './ToastHost';
-import PlayerProgressSlider from './PlayerProgressSlider';
+import ConnectedProgressSlider from './ConnectedProgressSlider';
 import { useSongDownload } from '../hooks/useSongDownload';
 import QualitySelector from './QualitySelector';
 import {
@@ -38,15 +37,16 @@ import { DesktopLyricToggle, TransportMiniLyric } from './DesktopTransportWidget
 
 interface DesktopTransportProps {
   onExpand: () => void;
+  /** 全屏播放器打开时底栏被完全遮挡，据此停掉这里的可视化绘制。 */
+  suspended?: boolean;
 }
 
-export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
+export default function DesktopTransport({ onExpand, suspended = false }: DesktopTransportProps) {
   const { currentSong, isPlaying, isLoading } = usePlayerNowPlaying();
-  const { currentTime, duration } = usePlayerProgress();
   const { playMode } = usePlayerQueueState();
   const { audioQuality } = usePlayerSettings();
   const { toggleFavorite, isFavorite } = useLibrary();
-  const { togglePlay, playNext, playPrev, seek, togglePlayMode, setAudioQuality, playQueue } = usePlayerActions();
+  const { togglePlay, playNext, playPrev, togglePlayMode, setAudioQuality, playQueue } = usePlayerActions();
   const { showToast } = useToast();
   const { isDownloading, isCancelling, downloadProgress, handleDownload, cancelDownload } = useSongDownload();
 
@@ -98,7 +98,7 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
   return (
     <div className="transport mini-player">
       <div className="transport-wave-bg mini-wave-bg" aria-hidden="true">
-        <AudioVisualizer isPlaying={isPlaying} />
+        <AudioVisualizer isPlaying={isPlaying} suspended={suspended} />
       </div>
 
       <button
@@ -138,7 +138,7 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
             <NextIcon size={19} />
           </button>
         </div>
-        <PlayerProgressSlider currentTime={currentTime} duration={duration} onSeek={seek} />
+        <ConnectedProgressSlider />
       </div>
 
       <div className="transport-tools">
@@ -149,10 +149,9 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
             title="根据当前播放歌曲开启相似音乐流 (Embeat)"
             onClick={handleStartSimilarFlow}
             disabled={loadingSimilar}
-            style={{ marginRight: '8px' }}
           >
             {loadingSimilar ? (
-              <span style={{ fontSize: '10px', fontWeight: 900, color: 'var(--text-soft)' }}>…</span>
+              <span className="ai-radar-btn-pending">…</span>
             ) : (
               <Sparkles size={11} />
             )}
@@ -169,7 +168,7 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
         </button>
         <button
           type="button"
-          className="icon-button"
+          className="icon-button transport-download-button"
           aria-label={isDownloading ? '取消下载' : '下载当前歌曲'}
           title={isDownloading ? '取消当前下载' : '下载当前歌曲'}
           disabled={isCancelling || (!currentSong && !isDownloading)}
@@ -177,10 +176,9 @@ export default function DesktopTransport({ onExpand }: DesktopTransportProps) {
             if (isDownloading) void cancelDownload();
             else if (currentSong) void handleDownload(currentSong, audioQuality);
           }}
-          style={{ minWidth: '28px' }}
         >
           {isDownloading ? (
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent)' }}>
+            <span className="transport-download-progress">
               {isCancelling ? '…' : downloadProgress !== null ? `${downloadProgress}%` : <CloseIcon size={14} />}
             </span>
           ) : (

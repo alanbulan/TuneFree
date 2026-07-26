@@ -1,0 +1,106 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react", "import", "promise", "jsx-a11y"],
+  "categories": {
+    "correctness": "deny",
+    "suspicious": "deny",
+    "perf": "deny"
+  },
+  "env": {
+    "builtin": true,
+    "browser": true,
+    "es2024": true,
+    "node": true
+  },
+  "settings": {
+    "react": {
+      "version": "19.0"
+    }
+  },
+  "ignorePatterns": ["node_modules", "out", "src-tauri/target", "coverage"],
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }],
+    "promise/always-return": "off",
+    "eslint/no-await-in-loop": "off",
+    "eslint/no-shadow": "off",
+    "eslint/no-underscore-dangle": "off",
+    "eslint/no-unmodified-loop-condition": "off",
+    "oxc/no-map-spread": "off",
+    "react/no-array-index-key": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/prefer-add-event-listener": "off",
+    "unicorn/prefer-set-has": "off",
+
+    /* jsx-a11y：保留 ARIA 正确性类规则（aria-props / aria-role /
+       role-supports-aria-props / alt-text ...），关掉的这几条要么要求把
+       `div[role]` 重写成语义标签（会改变窗口壳的拖拽与层叠行为），要么与
+       本项目"用 div 承载可拖拽/可虚拟化行"的既有结构冲突，逐条评估后关闭。 */
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "jsx-a11y/label-has-associated-control": "off",
+    "jsx-a11y/no-noninteractive-tabindex": "off",
+    "jsx-a11y/no-noninteractive-element-interactions": "off",
+    "jsx-a11y/no-static-element-interactions": "off",
+    "jsx-a11y/control-has-associated-label": "off",
+
+    "eslint/no-eval": "error",
+    "eslint/no-new-func": "error",
+    "eslint/no-script-url": "error",
+    "eslint/no-alert": "error",
+    "react/jsx-no-script-url": "error",
+    "react/no-danger": "error",
+
+    "eslint/no-throw-literal": "error",
+    "eslint/prefer-promise-reject-errors": "error",
+    "unicorn/error-message": "error",
+    "unicorn/throw-new-error": "error",
+    "unicorn/prefer-type-error": "error",
+    "unicorn/no-await-in-promise-methods": "error",
+    "promise/no-return-wrap": "error",
+    "promise/no-nesting": "error",
+    "promise/param-names": "error",
+    "promise/valid-params": "error",
+
+    "import/no-cycle": "error",
+    "import/no-self-import": "error",
+    "import/no-duplicates": "error",
+    "react/no-unstable-nested-components": "error",
+    "react/void-dom-elements-no-children": "error",
+
+    "eslint/default-case-last": "error",
+    "eslint/no-return-assign": "error",
+    "eslint/prefer-object-spread": "error",
+    "unicorn/no-instanceof-builtins": "error",
+    "unicorn/no-object-as-default-parameter": "error",
+    "unicorn/prefer-modern-dom-apis": "error",
+    "unicorn/prefer-node-protocol": "error",
+    "unicorn/prefer-string-slice": "error",
+    "unicorn/require-array-join-separator": "error",
+
+    "eslint/eqeqeq": "error",
+    "eslint/no-var": "error",
+    "eslint/guard-for-in": "error",
+    "eslint/no-labels": "error",
+    "react/jsx-key": "error",
+    "react/no-children-prop": "error",
+    "promise/catch-or-return": "error",
+    "promise/no-callback-in-promise": "error",
+    "import/no-empty-named-blocks": "error",
+    "import/no-named-as-default-member": "error",
+    "unicorn/escape-case": "error",
+    "unicorn/no-hex-escape": "error",
+    "unicorn/no-lonely-if": "error",
+    "unicorn/no-single-promise-in-promise-methods": "error",
+    "unicorn/prefer-array-flat-map": "error",
+    "unicorn/prefer-array-index-of": "error",
+    "unicorn/prefer-array-some": "error",
+    "unicorn/prefer-date-now": "error",
+    "unicorn/prefer-includes": "error",
+    "unicorn/prefer-logical-operator-over-ternary": "error",
+    "unicorn/prefer-negative-index": "error",
+    "unicorn/prefer-optional-catch-binding": "error",
+    "unicorn/prefer-regexp-test": "error",
+    "unicorn/require-number-to-fixed-digits-argument": "error"
+  }
+}

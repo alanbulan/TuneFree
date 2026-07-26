@@ -1,4 +1,8 @@
-import { DEFAULT_PROXIES, SELF_HOSTED_PROXY } from "./config";
+import {
+  buildLocalServerHeaders,
+  DEFAULT_PROXIES,
+  SELF_HOSTED_PROXY,
+} from "./config";
 
 export const isLocalServerProxy = (value: string): boolean => {
   try {
@@ -40,29 +44,99 @@ export const getProxies = (): string[] => {
 // 代理请求核心工具
 // ==============================
 
+/** 把调用方 signal 与超时合并成一个请求级 signal，cleanup 负责解绑。 */
+export const createLinkedAbort = (
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+): { signal: AbortSignal; cleanup: () => void } => {
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abortFromCaller();
+  signal?.addEventListener('abort', abortFromCaller, { once: true });
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', abortFromCaller);
+    },
+  };
+};
+
+/** 调用方主动取消时把 abort 原因往上抛，避免被当作"代理失败"吞掉。 */
+export const throwIfAborted = (signal?: AbortSignal): void => {
+  if (!signal?.aborted) return;
+  throw signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException('The operation was aborted', 'AbortError');
+};
+
+const describeTargetHost = (url: string): string => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
+/**
+ * 403（代理白名单拒绝/平台风控）与 429（限流）必须可观测，
+ * 否则与"平台不可用"完全不可区分。
+ */
+const warnDegradedResponse = (targetUrl: string, status: number): void => {
+  if (status === 403 || status === 429 || status >= 500) {
+    console.warn(
+      `[Proxy] 目标 ${describeTargetHost(targetUrl)} 响应 HTTP ${status}` +
+        '（403=代理白名单拒绝或平台风控，429=限流）',
+    );
+  }
+};
+
+const buildProxyRequestInit = (
+  isSelfProxy: boolean,
+  options: RequestInit,
+  signal: AbortSignal,
+): RequestInit => {
+  const init: RequestInit = {
+    ...options,
+    credentials: "omit",
+    signal,
+  };
+  if (isSelfProxy) {
+    const headers = new Headers(options.headers);
+    for (const [key, value] of Object.entries(buildLocalServerHeaders())) {
+      headers.set(key, value);
+    }
+    init.headers = headers;
+    delete init.mode;
+  } else {
+    // 自建代理（同源请求）不设 mode: 'cors'，避免 CF 透传头引发 CORS 预检失败。
+    init.mode = "cors";
+  }
+  return init;
+};
+
 /**
  * 通过代理列表发起 GET 请求，自动解析 JSON（兼容 JSONP 包裹格式）。
- * 自建代理（同源请求）不设 mode: 'cors'，避免 CF 透传头引发 CORS 预检失败。
  */
 export const proxyFetchJson = async (
   url: string,
   timeoutMs = 8000,
+  signal?: AbortSignal,
 ): Promise<any> => {
   const proxies = getProxies();
 
   for (const proxy of proxies) {
+    const linked = createLinkedAbort(signal, timeoutMs);
     try {
       const finalUrl = `${proxy}${encodeURIComponent(url)}`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       const isSelfProxy = proxy === SELF_HOSTED_PROXY;
 
-      const resp = await fetch(finalUrl, {
-        ...(isSelfProxy ? {} : { mode: "cors" as RequestMode }),
-        credentials: "omit",
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+      const resp = await fetch(
+        finalUrl,
+        buildProxyRequestInit(isSelfProxy, {}, linked.signal),
+      );
+      if (!resp.ok) warnDegradedResponse(url, resp.status);
 
       const text = await resp.text();
       let data: any = null;
@@ -83,7 +157,10 @@ export const proxyFetchJson = async (
 
       if (data) return data;
     } catch {
+      throwIfAborted(signal);
       /* 继续下一个代理 */
+    } finally {
+      linked.cleanup();
     }
   }
 
@@ -104,40 +181,27 @@ export const proxyFetch = async (
   let lastResp: Response | null = null;
 
   for (const proxy of proxies) {
+    const linked = createLinkedAbort(options.signal ?? undefined, timeoutMs);
     try {
       const finalUrl = `${proxy}${encodeURIComponent(url)}`;
-      const controller = new AbortController();
-      const abortFromCaller = () => controller.abort(options.signal?.reason);
-      if (options.signal?.aborted) abortFromCaller();
-      options.signal?.addEventListener('abort', abortFromCaller, { once: true });
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       const isSelfProxy = proxy === SELF_HOSTED_PROXY;
 
-      let resp: Response;
-      try {
-        resp = await fetch(finalUrl, {
-          ...options,
-          ...(isSelfProxy ? {} : { mode: "cors" as RequestMode }),
-          credentials: "omit",
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeoutId);
-        options.signal?.removeEventListener('abort', abortFromCaller);
-      }
+      const resp = await fetch(
+        finalUrl,
+        buildProxyRequestInit(isSelfProxy, options, linked.signal),
+      );
 
       if (resp.ok) {
         return resp;
       }
 
+      warnDegradedResponse(url, resp.status);
       lastResp = resp;
     } catch {
-      if (options.signal?.aborted) {
-        throw options.signal.reason instanceof Error
-          ? options.signal.reason
-          : new DOMException('The operation was aborted', 'AbortError');
-      }
+      throwIfAborted(options.signal ?? undefined);
       /* 继续下一个代理 */
+    } finally {
+      linked.cleanup();
     }
   }
 
@@ -150,26 +214,23 @@ export const proxyFetch = async (
  */
 export const proxyFetchJsonWithValidator = async <T = any>(
   url: string,
-  options: Omit<RequestInit, "signal" | "credentials" | "mode"> = {},
+  options: Omit<RequestInit, "credentials" | "mode"> = {},
   validator: (data: any) => boolean = () => true,
   timeoutMs = 8000,
 ): Promise<T | null> => {
   const proxies = getProxies();
 
   for (const proxy of proxies) {
+    const linked = createLinkedAbort(options.signal ?? undefined, timeoutMs);
     try {
       const finalUrl = `${proxy}${encodeURIComponent(url)}`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       const isSelfProxy = proxy === SELF_HOSTED_PROXY;
 
-      const resp = await fetch(finalUrl, {
-        ...options,
-        ...(isSelfProxy ? {} : { mode: "cors" as RequestMode }),
-        credentials: "omit",
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+      const resp = await fetch(
+        finalUrl,
+        buildProxyRequestInit(isSelfProxy, options, linked.signal),
+      );
+      if (!resp.ok) warnDegradedResponse(url, resp.status);
 
       let data: any = null;
       try {
@@ -180,7 +241,10 @@ export const proxyFetchJsonWithValidator = async <T = any>(
 
       if (data && validator(data)) return data as T;
     } catch {
+      throwIfAborted(options.signal ?? undefined);
       /* 继续下一个代理 */
+    } finally {
+      linked.cleanup();
     }
   }
 

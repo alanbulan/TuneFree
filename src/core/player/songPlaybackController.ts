@@ -1,6 +1,11 @@
 import { getSongKey, isSameSong } from "../types";
 import type { AudioQuality, Song } from "../types";
-import { getFiniteAudioDuration, isUnsupportedSourcePlayError, shouldUseCors } from "./playerUtils";
+import {
+  getFiniteAudioDuration,
+  isAbortError,
+  isUnsupportedSourcePlayError,
+  shouldUseCors,
+} from "./playerUtils";
 import { applyParsedMetadata } from "./songMetadata";
 import type { AudioLifecycle } from "./useAudioLifecycle";
 import type { PlaybackControls } from "./usePlaybackControls";
@@ -24,6 +29,7 @@ interface PlaybackRequest {
   isCurrentSong: boolean;
   isDifferentQuality: boolean;
   fullSong: Song;
+  signal: AbortSignal;
 }
 
 const reuseCurrentPlayback = async (
@@ -70,9 +76,13 @@ const beginPlaybackRequest = (
     refs.failedRecommendationSongKeys.current.delete(getSongKey(song));
   }
   const requestId = ++refs.playRequestId.current;
+  // 快速切歌时旧的解析链路必须真正中止，否则会继续占用网络并写回过期结果。
+  refs.playAbort.current?.abort();
+  const controller = new AbortController();
+  refs.playAbort.current = controller;
   refs.lyricBindings.current.clear();
   runtime.setIsLoading(true);
-  if (!forceQuality) refs.retryCount.current = 0;
+  if (!forceQuality) refs.recoveryStage.current = "initial";
   if (!isCurrentSong && refs.audio.current) {
     refs.forceNoCorsPlayback.current = false;
     refs.activeParsedCacheKey.current = null;
@@ -84,15 +94,10 @@ const beginPlaybackRequest = (
     runtime.setDuration(0);
   }
   const fullSong = { ...song };
-  refs.currentSong.current = fullSong;
-  runtime.setCurrentSong(fullSong);
-  runtime.setQueue((previous) => {
-    const nextQueue = previous.some((queued) => isSameSong(queued, song))
-      ? previous : [...previous, fullSong];
-    refs.queue.current = nextQueue;
-    return nextQueue;
-  });
-  return { requestId, targetQuality, isCurrentSong,
+  runtime.commitCurrentSong(fullSong);
+  runtime.commitQueue((previous) => previous.some((queued) => isSameSong(queued, song))
+    ? previous : [...previous, fullSong]);
+  return { requestId, targetQuality, isCurrentSong, signal: controller.signal,
     isDifferentQuality: isCurrentSong && targetQuality !== refs.activeQuality.current, fullSong };
 };
 
@@ -134,33 +139,24 @@ const handlePlayError = (
 ): void => {
   const { runtime, audio, recovery, recommendation } = dependencies;
   const { refs } = runtime;
-  if (error instanceof Error && error.name === "AbortError") return;
-  if (isUnsupportedSourcePlayError(error) && !refs.forceNoCorsPlayback.current) {
-    recommendation.showPlayerNotice("当前音源不支持频谱解析，已切换兼容播放模式", "warning");
-    refs.forceNoCorsPlayback.current = true;
-    refs.retryCount.current = Math.max(refs.retryCount.current, 1);
-    void refs.playSong.current(song, quality);
+  if (isAbortError(error)) return;
+  if (error instanceof Error && error.name === "NotAllowedError") {
+    recommendation.showPlayerNotice("播放被浏览器阻止，请再次点击播放", "warning");
+    runtime.setIsPlaying(false);
+    runtime.setIsLoading(false);
     return;
   }
-  const isNotAllowed = error instanceof Error && error.name === "NotAllowedError";
-  if (!isNotAllowed && recovery.retryCachedSongResolution(song, quality)) return;
-  if (isUnsupportedSourcePlayError(error) && refs.retryCount.current <= 1 && quality !== "128k") {
-    recommendation.showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
-    refs.retryCount.current = 2;
-    void refs.playSong.current(song, "128k");
-    return;
-  }
-  if (!isNotAllowed) {
-    recovery.evictActiveParsedSong();
-    if (recovery.playNextRecommendationAfterFailure(song)) return;
-    audio.clearActiveAudioSource();
-  }
-  recommendation.showPlayerNotice(
-    isNotAllowed ? "播放被浏览器阻止，请再次点击播放" : "播放失败，请稍后再试",
-    isNotAllowed ? "warning" : "error",
-  );
-  runtime.setIsPlaying(false);
-  runtime.setIsLoading(false);
+  recovery.runRecovery({
+    song, quality, trigger: "playRejected",
+    canRetryWithoutCors: isUnsupportedSourcePlayError(error) &&
+      !refs.forceNoCorsPlayback.current,
+    onGiveUp: () => {
+      audio.clearActiveAudioSource();
+      recommendation.showPlayerNotice("播放失败，请稍后再试", "error");
+      runtime.setIsPlaying(false);
+      runtime.setIsLoading(false);
+    },
+  });
 };
 
 const startResolvedAudio = async (
@@ -201,18 +197,15 @@ const handleMissingUrl = (
 ): void => {
   const { runtime, audio, recovery, recommendation } = dependencies;
   console.error(`No valid URL for ${song.name} [${quality}]`);
-  if (quality !== "128k" && runtime.refs.retryCount.current === 0) {
-    recommendation.showPlayerNotice("当前音质不可播放，已尝试切换到 128K", "warning");
-    runtime.refs.retryCount.current = 1;
-    void runtime.refs.playSong.current(song, "128k");
-    return;
-  }
-  recovery.evictActiveParsedSong();
-  if (recovery.playNextRecommendationAfterFailure(song)) return;
-  audio.clearActiveAudioSource();
-  recommendation.showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
-  runtime.setIsLoading(false);
-  runtime.setIsPlaying(false);
+  recovery.runRecovery({
+    song, quality, trigger: "missingUrl", canRetryWithoutCors: false,
+    onGiveUp: () => {
+      audio.clearActiveAudioSource();
+      recommendation.showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
+      runtime.setIsLoading(false);
+      runtime.setIsPlaying(false);
+    },
+  });
 };
 
 export const executeSongPlayback = async (
@@ -224,7 +217,9 @@ export const executeSongPlayback = async (
   if (await reuseCurrentPlayback(dependencies, song, forceQuality)) return;
   const request = beginPlaybackRequest(dependencies, song, forceQuality);
   try {
-    const resolution = await dependencies.resolver.resolveParsedSong(song, request.targetQuality);
+    const resolution = await dependencies.resolver.resolveParsedSong(
+      song, request.targetQuality, { signal: request.signal },
+    );
     if (request.requestId !== dependencies.runtime.refs.playRequestId.current ||
         !isSameSong(dependencies.runtime.refs.currentSong.current, song)) return;
     request.fullSong = applyParsedMetadata(
@@ -236,6 +231,7 @@ export const executeSongPlayback = async (
       handleMissingUrl(dependencies, song, request.targetQuality);
     }
   } catch (error) {
+    if (isAbortError(error)) return;
     if (request.requestId === dependencies.runtime.refs.playRequestId.current) {
       dependencies.runtime.setIsLoading(false);
       dependencies.runtime.setIsPlaying(false);

@@ -17,6 +17,11 @@ describe('shouldScheduleVisualizerFrame', () => {
   it('stops scheduling after paused bars have settled', () => {
     expect(shouldScheduleVisualizerFrame(false, true)).toBe(false);
   });
+
+  it('stops scheduling while the instance is suspended, even during playback', () => {
+    expect(shouldScheduleVisualizerFrame(true, false, true)).toBe(false);
+    expect(shouldScheduleVisualizerFrame(false, false, true)).toBe(false);
+  });
 });
 
 describe('calculateVisualizerCanvasSize', () => {

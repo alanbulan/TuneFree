@@ -62,10 +62,10 @@ describe('Embeat playback resolution', () => {
       });
     expect(resolveAutosource).toHaveBeenNthCalledWith(1, expect.objectContaining({
       name: '江南', source: 'embeat',
-    }), 'flac');
+    }), 'flac', undefined);
     expect(resolveAutosource).toHaveBeenNthCalledWith(2, expect.objectContaining({
       name: '江南', source: 'embeat',
-    }), 'flac24bit');
+    }), 'flac24bit', undefined);
   });
 
   it('returns the original identity for a direct resolution', async () => {
@@ -491,5 +491,67 @@ describe('isLikelySameSong (indirect via getSongUrl)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('ResolveOptions signal threading', () => {
+  const songMeta = {
+    name: 'Signal Song',
+    artist: 'Signal Artist',
+    pic: '',
+    picId: '',
+    urlId: '',
+    lyricId: '',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve(null),
+    }) as any;
+  });
+
+  it('passes an AbortSignal down to fallback source searches', async () => {
+    vi.mocked(searchNetease).mockResolvedValue([]);
+    vi.mocked(searchQQ).mockResolvedValue([]);
+    const controller = new AbortController();
+
+    await expect(
+      getSongUrl('temp_signal', 'kuwo', '320k', songMeta, {
+        signal: controller.signal,
+      }),
+    ).resolves.toBeNull();
+
+    expect(vi.mocked(searchNetease).mock.calls[0][3]).toBeInstanceOf(AbortSignal);
+    expect(vi.mocked(searchQQ).mock.calls[0][3]).toBeInstanceOf(AbortSignal);
+  });
+
+  it('rejects with AbortError when the caller cancels during fallback', async () => {
+    const never = new Promise<never>(() => {});
+    vi.mocked(searchNetease).mockReturnValue(never);
+    vi.mocked(searchQQ).mockReturnValue(never);
+    const controller = new AbortController();
+
+    const request = getSongUrl('temp_abort', 'kuwo', '320k', songMeta, {
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('rejects immediately when the signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      parseSongFull('temp_pre_aborted', 'kuwo', '320k', songMeta, {
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(searchNetease).not.toHaveBeenCalled();
+    expect(searchQQ).not.toHaveBeenCalled();
   });
 });

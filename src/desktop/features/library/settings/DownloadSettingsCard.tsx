@@ -23,65 +23,53 @@ export default function DownloadSettingsCard({ model }: { model: SettingsViewMod
           onChange={(event) => model.setTempProxy(event.target.value)}
         />
       </div>
-      <div className="panel-field" style={{ marginTop: '14px' }}>
+      <div className="panel-field settings-field-block">
         <label>本地下载目录</label>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-          <input className="panel-input" style={{ flex: 1 }} readOnly value={model.downloadPath} placeholder="获取下载路径中..." />
-          <button type="button" className="soft-button" style={{ whiteSpace: 'nowrap' }} onClick={() => void model.selectDownloadDir()}>
+        <div className="settings-path-row">
+          <input className="panel-input settings-path-input" readOnly value={model.downloadPath} placeholder="获取下载路径中..." />
+          <button type="button" className="soft-button settings-path-button" onClick={() => void model.selectDownloadDir()}>
             更改目录
           </button>
-          <button type="button" className="soft-button" style={{ whiteSpace: 'nowrap' }} onClick={() => void model.resetDownloadDir()}>
+          <button type="button" className="soft-button settings-path-button" onClick={() => void model.resetDownloadDir()}>
             恢复默认
           </button>
         </div>
-        <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '6px', lineHeight: 1.4 }}>
+        <p className="settings-note">
           默认下载到当前应用的安装目录。
         </p>
       </div>
-      <div className="panel-field" style={{ marginTop: '14px' }}>
+      <div className="panel-field settings-field-block">
         <label>关闭主窗口时</label>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
-          {closeBehaviorOptions.map((option) => {
-            const active = model.closeBehavior === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                className={`soft-button ${active ? 'active' : ''}`}
-                style={{
-                  flex: '1 1 120px',
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  backgroundColor: active ? 'var(--accent)' : 'transparent',
-                  color: active ? 'var(--ios-card)' : 'var(--text)',
-                  border: active ? '1px solid var(--accent)' : '1px solid var(--line)',
-                  fontWeight: active ? 700 : 500,
-                }}
-                onClick={() => {
-                  model.setCloseBehavior(option.value);
-                  model.showToast(`关闭行为已设置为：${option.label}`, 'success');
-                }}
-              >
-                {option.label}
-              </button>
-            );
-          })}
+        <div className="settings-option-row is-wrap">
+          {closeBehaviorOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`soft-button settings-toggle-button ${model.closeBehavior === option.value ? 'active' : ''}`}
+              onClick={() => {
+                model.setCloseBehavior(option.value);
+                model.showToast(`关闭行为已设置为：${option.label}`, 'success');
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
-        <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '6px', lineHeight: 1.4 }}>
+        <p className="settings-note">
           {activeCloseBehavior?.hint}
         </p>
       </div>
-      <div className="panel-field" style={{ marginTop: '14px' }}>
+      <div className="panel-field settings-field-block">
         <label>安和昴 (486) 桌宠</label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+        <div className="settings-checkbox-row settings-field-inset">
           <input
             type="checkbox"
             id="pet-toggle"
-            style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent)' }}
+            className="settings-checkbox"
             checked={model.tempShowPet}
             onChange={(event) => model.setTempShowPet(event.target.checked)}
           />
-          <label htmlFor="pet-toggle" style={{ fontSize: '14px', cursor: 'pointer', userSelect: 'none', color: 'var(--text)' }}>
+          <label htmlFor="pet-toggle" className="settings-checkbox-label">
             启用桌面宠物
           </label>
         </div>

@@ -1,9 +1,11 @@
 mod cache;
 mod discovery_plan;
+mod json;
 mod rerank;
 mod response;
 
 pub use discovery_plan::build_discovery_plan;
+pub use json::{extract_json, response_sample};
 pub use rerank::enhance_recommendations;
 
 use rusqlite::{params, Connection};

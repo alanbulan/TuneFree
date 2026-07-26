@@ -13,12 +13,3 @@ export const readAndApplyDesktopLyricTheme = (): DesktopLyricStyleState => {
     lock: preferences.lockDesktopLyric,
   };
 };
-
-export const forceTransparentDocument = () => {
-  if (typeof document === 'undefined') return;
-
-  document.documentElement.style.setProperty('background', 'transparent', 'important');
-  document.body.style.setProperty('background', 'transparent', 'important');
-  document.documentElement.style.setProperty('background-color', 'transparent', 'important');
-  document.body.style.setProperty('background-color', 'transparent', 'important');
-};

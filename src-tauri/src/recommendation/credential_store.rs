@@ -2,10 +2,33 @@ use rusqlite::{params, Connection};
 
 use super::catalog;
 
+#[cfg(windows)]
 const SERVICE: &str = "com.alanbulan.tunefree";
+#[cfg(windows)]
 const ACCOUNT: &str = "llm-api-key-v1";
+#[cfg(windows)]
 const LEGACY_SERVICE: &str = "TuneFree";
+#[cfg(windows)]
 const LEGACY_ACCOUNT: &str = "openai-compatible-api-key";
+
+/// Error surfaced by write operations on the credential store.
+///
+/// `Unavailable` means the platform has no credential backend at all (only
+/// `set` reports it — reads degrade to the plaintext fallback instead), so the
+/// caller can map it to `ErrorCode::CredentialUnavailable`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CredentialStoreError {
+    Unavailable(String),
+    Failure(String),
+}
+
+impl std::fmt::Display for CredentialStoreError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unavailable(message) | Self::Failure(message) => formatter.write_str(message),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum CredentialId {
@@ -14,6 +37,11 @@ enum CredentialId {
 }
 
 trait CredentialStore {
+    /// Whether this platform has a real credential backend. When false, reads
+    /// fall back to the database plaintext and writes fail fast.
+    fn is_available(&self) -> bool {
+        true
+    }
     fn get(&self, id: CredentialId) -> Result<Option<String>, String>;
     fn set(&self, id: CredentialId, secret: &str) -> Result<(), String>;
     fn delete(&self, id: CredentialId) -> Result<(), String>;
@@ -58,8 +86,12 @@ impl CredentialStore for SystemCredentialStore {
 
 #[cfg(not(windows))]
 impl CredentialStore for SystemCredentialStore {
+    fn is_available(&self) -> bool {
+        false
+    }
+
     fn get(&self, _id: CredentialId) -> Result<Option<String>, String> {
-        Err("当前平台尚未配置系统凭据存储，无法读取模型 API Key".to_string())
+        Ok(None)
     }
 
     fn set(&self, _id: CredentialId, _secret: &str) -> Result<(), String> {
@@ -75,11 +107,11 @@ pub fn get_api_key(conn: &Connection) -> Result<String, String> {
     get_api_key_with_store(conn, &SystemCredentialStore)
 }
 
-pub fn save_api_key(conn: &Connection, secret: &str) -> Result<(), String> {
+pub fn save_api_key(conn: &Connection, secret: &str) -> Result<(), CredentialStoreError> {
     save_api_key_with_store(conn, &SystemCredentialStore, secret)
 }
 
-pub fn delete_api_key(conn: &Connection) -> Result<(), String> {
+pub fn delete_api_key(conn: &Connection) -> Result<(), CredentialStoreError> {
     delete_api_key_with_store(conn, &SystemCredentialStore)
 }
 
@@ -87,6 +119,14 @@ fn get_api_key_with_store(
     conn: &Connection,
     store: &impl CredentialStore,
 ) -> Result<String, String> {
+    // 无凭据后端的平台不迁移、不报错：读取直接降级到数据库明文，
+    // 让配置视图在 macOS/Linux 构建下依然可用。
+    if !store.is_available() {
+        if is_explicitly_deleted(conn)? {
+            return Ok(String::new());
+        }
+        return load_legacy_secret(conn);
+    }
     if let Some(secret) = store.get(CredentialId::Current)? {
         return Ok(secret);
     }
@@ -137,6 +177,19 @@ fn save_api_key_with_store(
     conn: &Connection,
     store: &impl CredentialStore,
     secret: &str,
+) -> Result<(), CredentialStoreError> {
+    if !store.is_available() {
+        return Err(CredentialStoreError::Unavailable(
+            "当前平台尚未配置系统凭据存储，无法保存模型 API Key".to_string(),
+        ));
+    }
+    save_api_key_available(conn, store, secret).map_err(CredentialStoreError::Failure)
+}
+
+fn save_api_key_available(
+    conn: &Connection,
+    store: &impl CredentialStore,
+    secret: &str,
 ) -> Result<(), String> {
     let previous = store.get(CredentialId::Current)?;
     set_and_verify(store, secret).inspect_err(|_| {
@@ -156,7 +209,15 @@ fn save_api_key_with_store(
 fn delete_api_key_with_store(
     conn: &Connection,
     store: &impl CredentialStore,
-) -> Result<(), String> {
+) -> Result<(), CredentialStoreError> {
+    // 删除在无后端平台上仍需生效：密钥只可能存在于数据库明文里。
+    if !store.is_available() {
+        return clear_legacy_secret(conn, true).map_err(CredentialStoreError::Failure);
+    }
+    delete_api_key_available(conn, store).map_err(CredentialStoreError::Failure)
+}
+
+fn delete_api_key_available(conn: &Connection, store: &impl CredentialStore) -> Result<(), String> {
     let current = store.get(CredentialId::Current)?;
     let legacy = store.get(CredentialId::Legacy)?;
     store.delete(CredentialId::Current)?;
@@ -218,166 +279,5 @@ fn clear_legacy_secret(conn: &Connection, deleted: bool) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::{cell::RefCell, collections::HashMap};
-
-    use super::*;
-    use crate::recommendation::migration;
-
-    #[cfg(windows)]
-    #[test]
-    #[ignore = "writes an isolated credential to Windows Credential Manager"]
-    fn windows_credential_manager_round_trip() {
-        let unique = format!(
-            "com.alanbulan.tunefree.integration-test-{}-{}",
-            std::process::id(),
-            catalog::now_ms()
-        );
-        let entry = keyring::Entry::new(&unique, "credential-round-trip").unwrap();
-        let first = "sk-测试-unicode-1";
-        let second = "sk-replaced-2";
-        let result = (|| {
-            entry.set_password(first)?;
-            assert_eq!(entry.get_password()?, first);
-            entry.set_password(second)?;
-            assert_eq!(entry.get_password()?, second);
-            entry.delete_credential()?;
-            assert!(matches!(entry.get_password(), Err(keyring::Error::NoEntry)));
-            Ok::<(), keyring::Error>(())
-        })();
-        let _ = entry.delete_credential();
-        result.unwrap();
-    }
-
-    #[derive(Default)]
-    struct MockStore {
-        values: RefCell<HashMap<CredentialId, String>>,
-        fail_set: RefCell<bool>,
-        current_get_count: RefCell<usize>,
-        corrupt_on_current_get: RefCell<Option<usize>>,
-        fail_delete: RefCell<Option<CredentialId>>,
-    }
-
-    impl CredentialStore for MockStore {
-        fn get(&self, id: CredentialId) -> Result<Option<String>, String> {
-            let value = self.values.borrow().get(&id).cloned();
-            if id == CredentialId::Current {
-                let mut count = self.current_get_count.borrow_mut();
-                *count += 1;
-                if *self.corrupt_on_current_get.borrow() == Some(*count) && value.is_some() {
-                    return Ok(Some("corrupted".to_string()));
-                }
-            }
-            Ok(value)
-        }
-
-        fn set(&self, id: CredentialId, secret: &str) -> Result<(), String> {
-            if *self.fail_set.borrow() {
-                return Err("mock set failure".to_string());
-            }
-            self.values.borrow_mut().insert(id, secret.to_string());
-            Ok(())
-        }
-
-        fn delete(&self, id: CredentialId) -> Result<(), String> {
-            if *self.fail_delete.borrow() == Some(id) {
-                return Err("mock delete failure".to_string());
-            }
-            self.values.borrow_mut().remove(&id);
-            Ok(())
-        }
-    }
-
-    fn database(secret: &str) -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        migration::run_migrations(&conn).unwrap();
-        conn.execute("UPDATE llm_config SET api_key = ?1", [secret])
-            .unwrap();
-        conn
-    }
-
-    #[test]
-    fn migrates_plaintext_only_after_verified_write() {
-        let conn = database("legacy-secret");
-        let store = MockStore::default();
-        assert_eq!(
-            get_api_key_with_store(&conn, &store).unwrap(),
-            "legacy-secret"
-        );
-        assert_eq!(
-            store.get(CredentialId::Current).unwrap().as_deref(),
-            Some("legacy-secret")
-        );
-        assert_eq!(load_legacy_secret(&conn).unwrap(), "");
-    }
-
-    #[test]
-    fn failed_verification_keeps_plaintext_and_restores_previous_entry() {
-        let conn = database("legacy-secret");
-        let store = MockStore::default();
-        store
-            .values
-            .borrow_mut()
-            .insert(CredentialId::Current, "old".to_string());
-        *store.corrupt_on_current_get.borrow_mut() = Some(2);
-        assert!(save_api_key_with_store(&conn, &store, "new").is_err());
-        *store.corrupt_on_current_get.borrow_mut() = None;
-        assert_eq!(
-            store.get(CredentialId::Current).unwrap().as_deref(),
-            Some("old")
-        );
-        assert_eq!(load_legacy_secret(&conn).unwrap(), "legacy-secret");
-    }
-
-    #[test]
-    fn migrates_old_keyring_alias_before_plaintext() {
-        let conn = database("plaintext");
-        let store = MockStore::default();
-        store
-            .values
-            .borrow_mut()
-            .insert(CredentialId::Legacy, "old-alias".to_string());
-        assert_eq!(get_api_key_with_store(&conn, &store).unwrap(), "old-alias");
-        assert!(store.get(CredentialId::Legacy).unwrap().is_none());
-        assert_eq!(load_legacy_secret(&conn).unwrap(), "");
-    }
-
-    #[test]
-    fn explicit_delete_clears_all_sources_and_prevents_resurrection() {
-        let conn = database("plaintext");
-        let store = MockStore::default();
-        store
-            .values
-            .borrow_mut()
-            .insert(CredentialId::Current, "current".to_string());
-        store
-            .values
-            .borrow_mut()
-            .insert(CredentialId::Legacy, "old".to_string());
-        delete_api_key_with_store(&conn, &store).unwrap();
-        conn.execute("UPDATE llm_config SET api_key = 'stale'", [])
-            .unwrap();
-        assert_eq!(get_api_key_with_store(&conn, &store).unwrap(), "");
-    }
-
-    #[test]
-    fn failed_legacy_delete_restores_current_and_preserves_database() {
-        let conn = database("plaintext");
-        let store = MockStore::default();
-        store
-            .values
-            .borrow_mut()
-            .insert(CredentialId::Current, "current".to_string());
-        store
-            .values
-            .borrow_mut()
-            .insert(CredentialId::Legacy, "old".to_string());
-        *store.fail_delete.borrow_mut() = Some(CredentialId::Legacy);
-        assert!(delete_api_key_with_store(&conn, &store).is_err());
-        assert_eq!(
-            store.get(CredentialId::Current).unwrap().as_deref(),
-            Some("current")
-        );
-        assert_eq!(load_legacy_secret(&conn).unwrap(), "plaintext");
-    }
-}
+#[path = "credential_store_tests.rs"]
+mod tests;

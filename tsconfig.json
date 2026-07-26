@@ -13,6 +13,11 @@
     "noUnusedParameters": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    // 开启后当前有 213 处报错（播放队列、歌词时间轴等大量数组下标访问），
+    // 需按 src/core/utils/lyrics → src/core/services → 组件层分阶段收敛，暂不启用。
+    "noUncheckedIndexedAccess": false,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
     "esModuleInterop": true,
@@ -21,7 +26,8 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
-    "incremental": true,
+    // 增量缓存（tsconfig.tsbuildinfo）会让 `tsc --noEmit` 漏报已有报错，类型检查必须全量执行。
+    "incremental": false,
     "types": [
       "vite/client",
       "node"

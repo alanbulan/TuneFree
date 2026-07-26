@@ -1,7 +1,6 @@
 use serde_json::json;
 
 use super::{
-    catalog,
     model::{ProfileToken, RecentEventSummary, RecommendationItem, RecommendationQuery},
     privacy,
 };
@@ -23,34 +22,14 @@ pub fn build_messages(
     } else {
         "home"
     };
-    let seed = query.seed.as_ref().map(|song| {
-        json!({
-            "track_key": catalog::track_key(song),
-            "name": song.name,
-            "artist": song.artist,
-        })
-    });
-    let candidate_payload: Vec<_> = candidates
-        .iter()
-        .map(|item| {
-            json!({
-                "track_key": catalog::track_key(&item.song),
-                "name": item.song.name,
-                "artist": item.song.artist,
-                "album": item.song.album,
-                "source": item.song.source,
-                "candidate_origin": item.recommendation_source,
-                "local_score": item.score,
-                "local_reasons": item.reasons,
-            })
-        })
-        .collect();
+    let seed = query.seed.as_ref().map(privacy::redact_rerank_seed);
+    let candidate_payload: Vec<_> = candidates.iter().map(privacy::redact_candidate).collect();
 
     let mut user_payload = json!({
         "scene": scene,
         "limit": limit,
         "context": query.context,
-        "profile_tokens": profile_tokens,
+        "profile_tokens": privacy::redact_profile(profile_tokens),
         "seed": seed,
         "candidates": candidate_payload,
         "rules": [
@@ -64,7 +43,10 @@ pub fn build_messages(
         user_payload
             .as_object_mut()
             .expect("推荐提示词必须是 JSON 对象")
-            .insert("recent_events".to_string(), json!(recent_events));
+            .insert(
+                "recent_events".to_string(),
+                privacy::redact_recent_events(recent_events),
+            );
     }
 
     vec![
@@ -85,33 +67,18 @@ pub fn build_discovery_messages(
     } else {
         "home"
     };
-    let seed = query.seed.as_ref().map(|song| {
-        json!({
-            "name": song.name,
-            "artist": song.artist,
-            "album": song.album,
-            "source": song.source,
-        })
-    });
+    let seed = query.seed.as_ref().map(privacy::redact_discovery_seed);
     let known_tracks: Vec<_> = local_candidates
         .iter()
         .take(40)
-        .map(|item| {
-            json!({
-                "name": item.song.name,
-                "artist": item.song.artist,
-                "album": item.song.album,
-                "source": item.song.source,
-                "reasons": item.reasons,
-            })
-        })
+        .map(privacy::redact_known_track)
         .collect();
 
     let mut user_payload = json!({
         "scene": scene,
         "limit": limit,
         "context": query.context,
-        "profile_tokens": profile_tokens,
+        "profile_tokens": privacy::redact_profile(profile_tokens),
         "seed": seed,
         "known_tracks": known_tracks,
         "rules": [
@@ -129,7 +96,10 @@ pub fn build_discovery_messages(
         user_payload
             .as_object_mut()
             .expect("发现提示词必须是 JSON 对象")
-            .insert("recent_events".to_string(), json!(recent_events));
+            .insert(
+                "recent_events".to_string(),
+                privacy::redact_recent_events(recent_events),
+            );
     }
 
     vec![
@@ -147,6 +117,7 @@ pub fn item_reason(reason: Option<&str>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::recommendation::model::RecSong;
 
     fn query() -> RecommendationQuery {
         RecommendationQuery {
@@ -180,5 +151,42 @@ mod tests {
         assert!(without_events.get("recent_events").is_none());
         assert_eq!(with_events["recent_events"][0]["songName"], "测试歌曲");
         assert!(with_events["recent_events"][0].get("sessionId").is_none());
+    }
+
+    #[test]
+    fn messages_never_leak_private_song_fields() {
+        let song = RecSong {
+            id: serde_json::json!(42),
+            source: "netease".to_string(),
+            name: "歌曲".to_string(),
+            artist: "歌手".to_string(),
+            album: "专辑".to_string(),
+            pic: Some("secret-pic-url".to_string()),
+            pic_id: Some("secret-pic-id".to_string()),
+            url_id: Some("secret-url-id".to_string()),
+            lyric_id: Some("secret-lyric-id".to_string()),
+            types: Some(vec!["flac".to_string()]),
+        };
+        let item = RecommendationItem {
+            song: song.clone(),
+            score: 0.7,
+            reasons: vec!["理由".to_string()],
+            recommendation_source: "local".to_string(),
+            request_id: "secret-request-id".to_string(),
+        };
+        let seeded_query = RecommendationQuery {
+            limit: Some(10),
+            seed: Some(song),
+            context: Some("similar".to_string()),
+        };
+        let candidates = vec![item];
+
+        let rerank = build_messages(&seeded_query, &[], &candidates, 10, None);
+        let discovery = build_discovery_messages(&seeded_query, &[], &candidates, 5, None);
+
+        for messages in [rerank, discovery] {
+            let raw = serde_json::to_string(&messages).unwrap();
+            assert!(!raw.contains("secret"), "消息中不得包含私有字段: {raw}");
+        }
     }
 }

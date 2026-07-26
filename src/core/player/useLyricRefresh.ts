@@ -1,26 +1,31 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getLyrics } from "../services/api";
-import { getSongKey, isSameSong } from "../types";
-import { LYRIC_DISPLAY_MODE_CHANGE_EVENT } from "../utils/lyricDisplayMode";
-import { shouldFetchBetterLyrics, shouldUseLyricCandidate } from "./playerUtils";
+import { getSongKey } from "../types";
 import {
-  getLyricRequest,
-  isSameLyricBinding,
-  notifyLyricTimelineMismatch,
-} from "./songMetadata";
+  LYRIC_DISPLAY_MODE_CHANGE_EVENT,
+  LYRIC_DISPLAY_MODE_STORAGE_KEY,
+} from "../utils/lyricDisplayMode";
+import { evictParsedCacheForSong, shouldFetchBetterLyrics } from "./playerUtils";
+import { getLyricRequest, updateLyrics } from "./songMetadata";
 import type { PlayerRuntime } from "./usePlayerRuntime";
 
 export const useLyricRefresh = (runtime: PlayerRuntime): void => {
   const [refreshNonce, setRefreshNonce] = useState(0);
-  const { currentSong, duration, refs, setCurrentSong, setPlayerNotice, setQueue } = runtime;
+  const { currentSong, refs } = runtime;
+  const runtimeRef = useRef(runtime);
+  runtimeRef.current = runtime;
 
   useEffect(() => {
     const requestRefresh = () => setRefreshNonce((value) => value + 1);
+    // storage 事件对同源所有键都会触发，这里只关心歌词显示模式（null 表示整体 clear）。
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key === LYRIC_DISPLAY_MODE_STORAGE_KEY) requestRefresh();
+    };
     window.addEventListener(LYRIC_DISPLAY_MODE_CHANGE_EVENT, requestRefresh);
-    window.addEventListener("storage", requestRefresh);
+    window.addEventListener("storage", handleStorage);
     return () => {
       window.removeEventListener(LYRIC_DISPLAY_MODE_CHANGE_EVENT, requestRefresh);
-      window.removeEventListener("storage", requestRefresh);
+      window.removeEventListener("storage", handleStorage);
     };
   }, []);
 
@@ -43,27 +48,11 @@ export const useLyricRefresh = (runtime: PlayerRuntime): void => {
 
     let cancelled = false;
     void getLyrics(lyricRequest.id, lyricRequest.source, lyricRequest.songMeta).then((lrc) => {
-      if (cancelled || !isSameLyricBinding(
-        refs.lyricBindings.current.get(getSongKey(currentSong)), binding,
-      ) || !shouldUseLyricCandidate(refs.currentSong.current?.lrc, lrc)) return;
-      notifyLyricTimelineMismatch({ duration, refs, setPlayerNotice }, currentSong, lrc);
-      refs.parsedSongCache.current.clear();
-      setCurrentSong((previous) => {
-        if (!previous || !isSameSong(previous, currentSong) ||
-            !shouldUseLyricCandidate(previous.lrc, lrc)) return previous;
-        const nextSong = { ...previous, lrc };
-        refs.currentSong.current = nextSong;
-        return nextSong;
-      });
-      setQueue((previous) => {
-        const nextQueue = previous.map((song) =>
-          isSameSong(song, currentSong) && shouldUseLyricCandidate(song.lrc, lrc)
-            ? { ...song, lrc } : song,
-        );
-        refs.queue.current = nextQueue;
-        return nextQueue;
-      });
+      if (cancelled) return;
+      if (!updateLyrics(runtimeRef.current, currentSong, binding, lrc)) return;
+      // 只作废当前歌曲的解析缓存，整表清空会连刚预加载好的下一首一起丢掉。
+      evictParsedCacheForSong(refs.parsedSongCache.current, currentSong);
     });
     return () => { cancelled = true; };
-  }, [currentSong, duration, refreshNonce, refs, setCurrentSong, setPlayerNotice, setQueue]);
+  }, [currentSong, refreshNonce, refs]);
 };

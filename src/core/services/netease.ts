@@ -1,6 +1,6 @@
 import { Song, TopList } from "../types";
 import { mergeLyricTracks } from "../utils/lyrics";
-import { proxyFetchJson } from "./proxy";
+import { proxyFetchJson, throwIfAborted } from "./proxy";
 import { normalizeMusicUrl } from "./utils";
 
 // ==============================
@@ -72,12 +72,15 @@ const buildNeteaseLyricV1Url = (id: string | number): string =>
 const buildNeteaseLyricLegacyUrl = (id: string | number): string =>
   `https://music.163.com/api/song/lyric?id=${id}&lv=-1&kv=-1&tv=-1&rv=-1&yv=-1&ytv=-1`;
 
-const fetchNeteaseLyricJson = async (url: string): Promise<any> => {
-  const proxied = await proxyFetchJson(url);
+const fetchNeteaseLyricJson = async (
+  url: string,
+  signal?: AbortSignal,
+): Promise<any> => {
+  const proxied = await proxyFetchJson(url, 8000, signal);
   if (proxied) return proxied;
 
   try {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { signal });
     return await resp.json();
   } catch {
     return null;
@@ -135,11 +138,12 @@ export const searchNetease = async (
   keyword: string,
   page: number,
   limit: number,
+  signal?: AbortSignal,
 ): Promise<Song[]> => {
   const offset = (page - 1) * limit;
   const url = `https://music.163.com/api/cloudsearch/pc?s=${encodeURIComponent(keyword)}&type=1&offset=${offset}&limit=${limit}`;
 
-  const data = await proxyFetchJson(url);
+  const data = await proxyFetchJson(url, 8000, signal);
   const songs = data?.result?.songs;
 
   if (!songs || !Array.isArray(songs)) return [];
@@ -218,16 +222,17 @@ export const getNeteaseTopListDetail = async (
  */
 export const fetchNeteaseLyrics = async (
   id: string | number,
+  signal?: AbortSignal,
 ): Promise<string> => {
   try {
-    const v1Data = await fetchNeteaseLyricJson(buildNeteaseLyricV1Url(id));
+    const v1Data = await fetchNeteaseLyricJson(buildNeteaseLyricV1Url(id), signal);
     const v1Tracks = extractNeteaseLyricTracks(v1Data);
 
     if (v1Tracks.karaoke) {
       return mergeNeteaseLyricPayload(v1Tracks);
     }
 
-    const legacyData = await fetchNeteaseLyricJson(buildNeteaseLyricLegacyUrl(id));
+    const legacyData = await fetchNeteaseLyricJson(buildNeteaseLyricLegacyUrl(id), signal);
     const legacyTracks = extractNeteaseLyricTracks(legacyData);
 
     if (legacyTracks.karaoke) {
@@ -240,6 +245,7 @@ export const fetchNeteaseLyrics = async (
 
     return hasAnyLyricTrack(legacyTracks) ? mergeNeteaseLyricPayload(legacyTracks) : "";
   } catch {
+    throwIfAborted(signal);
     return "";
   }
 };

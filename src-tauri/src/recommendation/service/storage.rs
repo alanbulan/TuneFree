@@ -2,19 +2,23 @@ use super::library::rebuild_cooccurrence_index;
 use super::*;
 
 impl RecommendationService {
-    pub fn get_llm_config(&self) -> Result<LlmConfigView, String> {
-        let conn = self.conn.lock();
+    pub fn get_llm_config(&self) -> CommandResult<LlmConfigView> {
+        let conn = self.conn_handle()?;
+        let conn = conn.lock();
         llm_config::view_config(
             &conn,
             self.database_size_bytes(),
             self.last_llm_error.lock().clone(),
         )
+        .map_err(CommandError::database)
     }
 
-    pub fn save_llm_config(&self, config: LlmConfigInput) -> Result<(), String> {
-        let conn = self.conn.lock();
-        llm_config::save_config(&conn, config)?;
-        drop(conn);
+    pub fn save_llm_config(&self, config: LlmConfigInput) -> CommandResult<()> {
+        let conn = self.conn_handle()?;
+        {
+            let conn = conn.lock();
+            llm_config::save_config(&conn, config)?;
+        }
         self.invalidate_and_schedule_refresh("推荐配置更新");
         Ok(())
     }
@@ -22,14 +26,16 @@ impl RecommendationService {
     pub async fn test_llm_provider(
         &self,
         input: Option<LlmConfigInput>,
-    ) -> Result<LlmProviderTestResult, String> {
+    ) -> CommandResult<LlmProviderTestResult> {
+        let conn_handle = self.conn_handle()?;
         let (config, api_key) = {
             let input_ref = input.as_ref();
             let config = if let Some(input) = input.clone() {
                 llm_config::config_from_input(&input)
             } else {
-                let conn = self.conn.lock();
-                llm_config::load_config(&conn).map_err(|e| format!("读取模型配置失败: {}", e))?
+                let conn = conn_handle.lock();
+                llm_config::load_config(&conn)
+                    .map_err(|e| CommandError::database(format!("读取模型配置失败: {}", e)))?
             };
             let api_key = if input_ref
                 .and_then(|value| value.clear_api_key)
@@ -49,8 +55,8 @@ impl RecommendationService {
                 {
                     Some(api_key) => api_key.to_string(),
                     None => {
-                        let conn = self.conn.lock();
-                        llm_config::get_api_key(&conn)?
+                        let conn = conn_handle.lock();
+                        llm_config::get_api_key(&conn).map_err(CommandError::internal)?
                     }
                 }
             };
@@ -61,25 +67,32 @@ impl RecommendationService {
         Ok(result)
     }
 
-    pub fn clear_data(&self) -> Result<RecommendationMaintenanceStats, String> {
+    pub fn clear_data(&self) -> CommandResult<RecommendationMaintenanceStats> {
+        let conn_handle = self.conn_handle()?;
+        self.cancel_inflight_cloud_job();
         self.recommendation_generation
             .fetch_add(1, Ordering::SeqCst);
         let clear_result = {
-            let conn = self.conn.lock();
+            let conn = conn_handle.lock();
             clear_recommendation_storage(&conn)
         };
         self.recommendation_jobs.lock().clear();
         self.dynamic_refresh_pending.store(false, Ordering::SeqCst);
         *self.last_llm_error.lock() = None;
-        clear_result.map_err(|e| format!("清空推荐数据失败: {}", e))?;
+        clear_result.map_err(|e| CommandError::database(format!("清空推荐数据失败: {}", e)))?;
         Ok(self.maintenance_stats())
     }
 
-    pub fn maintenance_stats(&self) -> RecommendationMaintenanceStats {
-        let conn = self.conn.lock();
-        let llm_cache_entries = conn
-            .query_row("SELECT COUNT(*) FROM llm_recommendation_cache", [], |row| {
-                row.get::<_, i64>(0)
+    fn maintenance_stats(&self) -> RecommendationMaintenanceStats {
+        let llm_cache_entries = self
+            .conn_handle()
+            .ok()
+            .and_then(|conn| {
+                let conn = conn.lock();
+                conn.query_row("SELECT COUNT(*) FROM llm_recommendation_cache", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .ok()
             })
             .unwrap_or(0)
             .max(0) as usize;
@@ -90,7 +103,9 @@ impl RecommendationService {
     }
 
     fn database_size_bytes(&self) -> u64 {
-        std::fs::metadata(&self.db_path)
+        self.db_handle()
+            .ok()
+            .and_then(|handle| std::fs::metadata(&handle.path).ok())
             .map(|meta| meta.len())
             .unwrap_or(0)
     }
@@ -99,12 +114,10 @@ impl RecommendationService {
         let service = self.clone();
         tauri::async_runtime::spawn(async move {
             loop {
-                let conn = Arc::clone(&service.conn);
-                let result = tauri::async_runtime::spawn_blocking(move || {
-                    let mut guard = conn.lock();
-                    run_recommendation_maintenance(&mut guard)
-                })
-                .await;
+                let worker = service.clone();
+                let result =
+                    tauri::async_runtime::spawn_blocking(move || worker.run_maintenance_once())
+                        .await;
                 match result {
                     Ok(Ok(true)) => {
                         log::info!("推荐数据库定期维护已完成并更新推荐状态");
@@ -117,6 +130,18 @@ impl RecommendationService {
                 tokio::time::sleep(std::time::Duration::from_millis(MAINTENANCE_POLL_MS)).await;
             }
         });
+    }
+
+    /// 维护在独立的第二个连接上执行：WAL 模式下与全局连接并存，
+    /// 全程不占用全局连接锁。内存降级模式没有磁盘路径，退回全局连接。
+    fn run_maintenance_once(&self) -> Result<bool, String> {
+        let handle = self.db_handle().map_err(|error| error.message.clone())?;
+        if handle.path.as_os_str().is_empty() {
+            let mut guard = handle.conn.lock();
+            return run_recommendation_maintenance(&mut guard);
+        }
+        let mut conn = db::open_maintenance_connection(&handle.path)?;
+        run_recommendation_maintenance(&mut conn)
     }
 }
 

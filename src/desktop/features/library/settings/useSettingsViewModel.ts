@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invokeCommand, isTauri } from '../../../../core/ipc';
+import { writeCachedDownloadDir } from '../../../utils/downloadDirCache';
 import { useLibrary, type LibraryImportMode, type LibraryImportPreview } from '../../../../core/contexts/LibraryContext';
 import { useDesktopPreferences } from '../../../../core/contexts/DesktopPreferencesContext';
 import { useTheme } from '../../../../core/contexts/ThemeContext';
@@ -14,6 +15,7 @@ import {
 } from '../../../../core/services/recommendation';
 import { useDesktopDialog } from '../../../components/DialogHost';
 import { useToast } from '../../../components/ToastHost';
+import { describeIpcFailure, retryWhileBusy } from '../ipcErrorFeedback';
 import { useStorageOverview } from './useStorageOverview';
 
 const defaultLlmConfig: LlmConfigView = {
@@ -31,9 +33,6 @@ const defaultLlmConfig: LlmConfigView = {
   llmCacheEntries: 0,
   lastError: null,
 };
-
-const getErrorMessage = (error: unknown, fallback: string) =>
-  error instanceof Error ? error.message : typeof error === 'string' ? error : fallback;
 
 export function useSettingsViewModel() {
   const preferences = useDesktopPreferences();
@@ -53,17 +52,36 @@ export function useSettingsViewModel() {
   const [testingLlm, setTestingLlm] = useState(false);
   const [savingLlm, setSavingLlm] = useState(false);
   const [maintainingRecommendation, setMaintainingRecommendation] = useState(false);
+  const [recommendationInitializing, setRecommendationInitializing] = useState(false);
+
+  // 推荐服务在后台线程初始化，未就绪时命令返回 BUSY，这里统一退避重试（契约 §7.7）。
+  const runRecommendationCommand = useCallback(
+    <T,>(run: () => Promise<T>): Promise<T> =>
+      retryWhileBusy(run, () => setRecommendationInitializing(true)).finally(() =>
+        setRecommendationInitializing(false),
+      ),
+    [],
+  );
+
+  /** 结构化错误按 code 分流；CANCELLED 静默，其余按语气展示后端中文文案。 */
+  const reportFailure = useCallback(
+    (error: unknown, fallback: string) => {
+      const { message, tone } = describeIpcFailure(error, fallback);
+      if (message) showToast(message, tone);
+    },
+    [showToast],
+  );
 
   const refreshLlmConfig = useCallback(async () => {
     try {
-      const config = await getLlmConfig();
+      const config = await runRecommendationCommand(getLlmConfig);
       setLlmConfig(config);
       setLocalRecommendationEnabled(config.localRecommendationEnabled);
       localStorage.setItem('tunefree_local_recommendation_enabled', config.localRecommendationEnabled ? 'true' : 'false');
     } catch {
       setLlmConfig(defaultLlmConfig);
     }
-  }, []);
+  }, [runRecommendationCommand]);
 
   useEffect(() => {
     setTempShowPet(localStorage.getItem('tunefree_desktop_show_pet') !== 'false');
@@ -72,32 +90,32 @@ export function useSettingsViewModel() {
     void refreshLlmConfig();
   }, [refreshLlmConfig]);
 
+  // 下载目录以后端为唯一事实来源，渲染层不再从 localStorage 读取或回传。
   useEffect(() => {
-    if (!('__TAURI_INTERNALS__' in window)) return;
-    const savedDir = localStorage.getItem('tunefree_download_dir');
-    if (savedDir) setDownloadPath(savedDir);
-    else invoke<string>('get_default_download_dir').then(setDownloadPath).catch(() => {});
+    if (!isTauri()) return;
+    invokeCommand('get_download_dir').then(setDownloadPath).catch(() => {});
   }, []);
 
   const selectDownloadDir = async () => {
     try {
-      const path = await invoke<string | null>('select_download_dir');
+      const path = await invokeCommand('select_download_dir');
       if (!path) return;
-      localStorage.setItem('tunefree_download_dir', path);
       setDownloadPath(path);
+      writeCachedDownloadDir(path);
       showToast('下载路径已成功更改', 'success');
     } catch (error: unknown) {
-      showToast(getErrorMessage(error, '选择目录失败'), 'error');
+      reportFailure(error, '选择目录失败');
     }
   };
 
   const resetDownloadDir = async () => {
     try {
-      localStorage.removeItem('tunefree_download_dir');
-      setDownloadPath(await invoke<string>('get_default_download_dir'));
-      showToast('下载路径已恢复为默认安装目录', 'success');
-    } catch {
-      showToast('恢复默认路径失败', 'error');
+      const path = await invokeCommand('reset_download_dir');
+      setDownloadPath(path);
+      writeCachedDownloadDir(path);
+      showToast('下载路径已恢复为默认目录', 'success');
+    } catch (error: unknown) {
+      reportFailure(error, '恢复默认路径失败');
     }
   };
 
@@ -183,13 +201,13 @@ export function useSettingsViewModel() {
     setSavingLlm(true);
     try {
       localStorage.setItem('tunefree_local_recommendation_enabled', localRecommendationEnabled ? 'true' : 'false');
-      await saveLlmConfig(getLlmInput());
+      await runRecommendationCommand(() => saveLlmConfig(getLlmInput()));
       setApiKey('');
       setClearApiKey(false);
       await refreshLlmConfig();
       showToast('推荐系统配置已保存', 'success');
     } catch (error: unknown) {
-      showToast(getErrorMessage(error, '保存推荐配置失败'), 'error');
+      reportFailure(error, '保存推荐配置失败');
     } finally {
       setSavingLlm(false);
     }
@@ -198,14 +216,14 @@ export function useSettingsViewModel() {
   const testProvider = async () => {
     setTestingLlm(true);
     try {
-      const result = await testLlmProvider(getLlmInput());
+      const result = await runRecommendationCommand(() => testLlmProvider(getLlmInput()));
       const message = result.ok
         ? `模型连接成功${result.latencyMs ? `，${result.latencyMs}ms` : ''}`
         : result.error || '模型连接失败';
       showToast(message, result.ok ? 'success' : 'error');
       await refreshLlmConfig();
     } catch (error: unknown) {
-      showToast(getErrorMessage(error, '模型连接失败'), 'error');
+      reportFailure(error, '模型连接失败');
     } finally {
       setTestingLlm(false);
     }
@@ -223,11 +241,13 @@ export function useSettingsViewModel() {
     }
     setMaintainingRecommendation(true);
     try {
-      await (action === 'rebuild' ? rebuildRecommendationIndex() : clearRecommendationData());
+      await runRecommendationCommand<unknown>(() =>
+        action === 'rebuild' ? rebuildRecommendationIndex() : clearRecommendationData(),
+      );
       await refreshLlmConfig();
       showToast(action === 'rebuild' ? '推荐索引已重建' : '推荐数据已清空', 'success');
     } catch (error: unknown) {
-      showToast(getErrorMessage(error, action === 'rebuild' ? '重建推荐索引失败' : '清空推荐数据失败'), 'error');
+      reportFailure(error, action === 'rebuild' ? '重建推荐索引失败' : '清空推荐数据失败');
     } finally {
       setMaintainingRecommendation(false);
     }
@@ -238,7 +258,7 @@ export function useSettingsViewModel() {
   return {
     core: { tempProxy, setTempProxy, tempShowPet, setTempShowPet, downloadPath, selectDownloadDir, resetDownloadDir, saveCoreSettings, ...preferences, showToast },
     appearance: { ...theme, lyricDisplayMode, changeLyricDisplayMode, showToast },
-    recommendation: { localRecommendationEnabled, setLocalRecommendationEnabled, llmConfig, setLlmConfig, apiKey, setApiKey, clearApiKey, setClearApiKey, testingLlm, savingLlm, maintainingRecommendation, saveRecommendationSettings, testProvider, maintainRecommendation },
+    recommendation: { localRecommendationEnabled, setLocalRecommendationEnabled, llmConfig, setLlmConfig, apiKey, setApiKey, clearApiKey, setClearApiKey, testingLlm, savingLlm, maintainingRecommendation, initializing: recommendationInitializing, saveRecommendationSettings, testProvider, maintainRecommendation },
     backup: { pendingImport, setPendingImport, favorites: library.favorites, playlists: library.playlists, exportLibrary, importFile, applyPendingImport, storageOverview },
   };
 }

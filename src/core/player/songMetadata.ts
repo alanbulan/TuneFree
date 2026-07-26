@@ -38,32 +38,34 @@ export const notifyLyricTimelineMismatch = (
   return true;
 };
 
-const updateLyrics = (
+/**
+ * Apply a freshly fetched lyric to the current song and its queue entry.
+ * Returns false when the response is stale or not an improvement over what is already shown.
+ */
+export const updateLyrics = (
   runtime: PlayerRuntime,
   song: Song,
-  binding: ResolvedLyricBinding,
+  binding: ResolvedLyricBinding | undefined,
   lrc: string,
-): void => {
-  const { refs, setCurrentSong, setQueue } = runtime;
-  if (!isSameLyricBinding(refs.lyricBindings.current.get(getSongKey(song)), binding)) return;
-  if (!isSameSong(refs.currentSong.current, song) ||
-      !shouldUseLyricCandidate(refs.currentSong.current?.lrc, lrc)) return;
+): boolean => {
+  const { commitCurrentSong, commitQueue, refs } = runtime;
+  if (!isSameLyricBinding(refs.lyricBindings.current.get(getSongKey(song)), binding)) return false;
+  const current = refs.currentSong.current;
+  if (!current || !isSameSong(current, song) ||
+      !shouldUseLyricCandidate(current.lrc, lrc)) return false;
   notifyLyricTimelineMismatch(runtime, song, lrc);
-  setCurrentSong((previous) => {
-    if (!previous || !isSameSong(previous, song) ||
-        !shouldUseLyricCandidate(previous.lrc, lrc)) return previous;
-    const nextSong = { ...previous, lrc };
-    refs.currentSong.current = nextSong;
-    return nextSong;
+  commitCurrentSong({ ...current, lrc });
+  commitQueue((previous) => {
+    let changed = false;
+    const nextQueue = previous.map((queuedSong) => {
+      if (!isSameSong(queuedSong, song) ||
+          !shouldUseLyricCandidate(queuedSong.lrc, lrc)) return queuedSong;
+      changed = true;
+      return { ...queuedSong, lrc };
+    });
+    return changed ? nextQueue : previous;
   });
-  setQueue((previous) => {
-    const nextQueue = previous.map((queuedSong) =>
-      isSameSong(queuedSong, song) && shouldUseLyricCandidate(queuedSong.lrc, lrc)
-        ? { ...queuedSong, lrc } : queuedSong,
-    );
-    refs.queue.current = nextQueue;
-    return nextQueue;
-  });
+  return true;
 };
 
 export const getLyricRequest = (
@@ -102,16 +104,15 @@ export const applyParsedMetadata = (
   let fullSong = current;
   if (Object.keys(patch).length > 0) {
     fullSong = { ...current, ...patch };
-    runtime.refs.currentSong.current = fullSong;
-    runtime.setCurrentSong((previous) =>
-      previous && isSameSong(previous, song) ? { ...previous, ...patch } : previous,
-    );
-    runtime.setQueue((previous) => {
-      const nextQueue = previous.map((queuedSong) =>
-        isSameSong(queuedSong, song) ? { ...queuedSong, ...patch } : queuedSong,
-      );
-      runtime.refs.queue.current = nextQueue;
-      return nextQueue;
+    runtime.commitCurrentSong(fullSong);
+    runtime.commitQueue((previous) => {
+      let changed = false;
+      const nextQueue = previous.map((queuedSong) => {
+        if (!isSameSong(queuedSong, song)) return queuedSong;
+        changed = true;
+        return { ...queuedSong, ...patch };
+      });
+      return changed ? nextQueue : previous;
     });
   }
   const lyricRequest = getLyricRequest(song, lyricBinding);

@@ -1,0 +1,67 @@
+version: 2
+
+# 桌面端代码只存在于 tauri 分支，所有依赖 PR 都必须以该分支为目标。
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    target-branch: tauri
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - javascript
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      # 类型定义与构建/测试工具链噪音大，合并成一条 PR。
+      dev-toolchain:
+        patterns:
+          - "*"
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: cargo
+    directory: "/src-tauri"
+    target-branch: tauri
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - rust
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      cargo-patch:
+        patterns:
+          - "*"
+        update-types:
+          - patch
+    ignore:
+      # keyring 被钉在 =3.6.3（Windows 凭据后端行为依赖该版本），升级需人工评估。
+      - dependency-name: keyring
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    target-branch: tauri
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "chore(ci)"

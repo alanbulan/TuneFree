@@ -28,7 +28,7 @@ pub(super) fn apply_llm_response(
     limit: usize,
     request_id: &str,
 ) -> Option<Vec<RecommendationItem>> {
-    let parsed: LlmResponse = serde_json::from_str(content.trim()).ok()?;
+    let parsed: LlmResponse = super::json::extract_json(content)?;
     if parsed.items.is_empty() {
         return None;
     }
@@ -178,5 +178,23 @@ mod tests {
         let items = apply_llm_response(content, local_items, 2, "request").unwrap();
         assert_eq!(catalog::track_key(&items[0].song), "netease:selected");
         assert!(items.iter().all(|item| (0.0..=1.0).contains(&item.score)));
+    }
+
+    #[test]
+    fn accepts_fenced_response_and_response_with_surrounding_prose() {
+        let fenced = "```json\n{\"items\":[{\"track_key\":\"netease:a\",\"rank\":1}]}\n```";
+        let prose = "重排结果如下：\n{\"items\":[{\"track_key\":\"netease:a\",\"rank\":1}]}\n完毕";
+        for content in [fenced, prose] {
+            let items =
+                apply_llm_response(content, vec![item("a", 0.9), item("b", 0.5)], 2, "request")
+                    .unwrap();
+            assert_eq!(catalog::track_key(&items[0].song), "netease:a");
+        }
+    }
+
+    #[test]
+    fn rejects_truncated_response() {
+        let content = "```json\n{\"items\":[{\"track_key\":\"netease:a\"";
+        assert!(apply_llm_response(content, vec![item("a", 0.9)], 1, "request").is_none());
     }
 }

@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { usePlayerNowPlaying, usePlayerProgress } from '../../core/contexts/PlayerContext';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { usePlayerNowPlaying } from '../../core/contexts/PlayerContext';
 import {
   MIRA_ACTION_POOLS, MIRA_ACTIONS, MIRA_FRAME_HEIGHT, MIRA_FRAME_WIDTH,
-  MIRA_SHEET_COLUMNS, MIRA_SHEET_ROWS, MIRA_SPRITESHEET_URL,
-  validateMiraActionCoverage, type MiraMood,
+  MIRA_SHEET_COLUMNS, MIRA_SHEET_ROWS, MIRA_SPRITESHEET_URL, type MiraMood,
 } from './miraPetAtlas';
 import { useMiraPetPosition, useReducedMotion } from './useMiraPetPosition';
 
@@ -18,10 +17,10 @@ const getMood = (
   hasSong: boolean,
   isPlaying: boolean,
   isLoading: boolean,
-  progressRatio: number,
+  isNearEnd: boolean,
 ): MiraMood => {
   if (isLoading) return 'loading';
-  if (isPlaying && progressRatio > 0.92) return 'celebrate';
+  if (isPlaying && isNearEnd) return 'celebrate';
   if (isPlaying) return 'playing';
   return hasSong ? 'paused' : 'empty';
 };
@@ -38,12 +37,10 @@ export default function MiraPet() {
   const [visible, setVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [actionIndex, setActionIndex] = useState(0);
-  const [frameIndex, setFrameIndex] = useState(0);
-  const validatedRef = useRef(false);
-  const { currentSong, isPlaying, isLoading } = usePlayerNowPlaying();
-  const { currentTime, duration } = usePlayerProgress();
+  // 只订阅低频的 isNearEnd 派生值，不为一个阈值判断承担 10Hz 进度重渲染。
+  const { currentSong, isPlaying, isLoading, isNearEnd } = usePlayerNowPlaying();
   const reducedMotion = useReducedMotion();
-  const mood = getMood(!!currentSong, isPlaying, isLoading, duration > 0 ? currentTime / duration : 0);
+  const mood = getMood(!!currentSong, isPlaying, isLoading, isNearEnd);
   const actionPool = useMemo(() => MIRA_ACTION_POOLS[mood], [mood]);
   const baseActionName = actionPool[actionIndex % actionPool.length];
   const positionState = useMiraPetPosition();
@@ -51,9 +48,13 @@ export default function MiraPet() {
     handlePointerDown, handlePointerMove, finishDrag, handleKeyDown } = positionState;
   const actionName = movementAction ?? baseActionName;
   const action = MIRA_ACTIONS[actionName];
-  const activeFrameIndex = frameIndex % action.frames.length;
-  const activeFrame = action.frames[activeFrameIndex] || action.frames[0];
-  const frameDuration = action.frameDurations[activeFrameIndex] ?? action.frameDurations[0];
+  // 帧序列由 desktop-widgets.css 的 step-end 关键帧驱动，这里只需要动作首帧作为静止兜底。
+  const restFrame = action.frames[0];
+  // CSS 动画每跑完一整轮触发一次 animationiteration，据此轮换到动作池的下一个动作。
+  const advanceAction = useCallback(
+    () => setActionIndex((current) => (current + 1) % actionPool.length),
+    [actionPool.length],
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -64,35 +65,15 @@ export default function MiraPet() {
     return () => window.removeEventListener('tunefree_pet_toggle', updateVisibility);
   }, []);
   useEffect(() => {
-    if (validatedRef.current || process.env.NODE_ENV === 'production') return;
-    validatedRef.current = true;
-    validateMiraActionCoverage();
-  }, []);
-  useEffect(() => {
     setActionIndex(0);
-    setFrameIndex(0);
     applyMovementAction(null);
   }, [applyMovementAction, mood]);
-  useEffect(() => { setFrameIndex(0); }, [actionName]);
+  // 减少动态时精灵帧动画被 CSS 关掉，收不到 animationiteration，用低频定时器轮换动作。
   useEffect(() => {
-    if (reducedMotion) {
-      const timer = window.setInterval(() => {
-        setFrameIndex(0);
-        setActionIndex((current) => (current + 1) % actionPool.length);
-      }, 5000);
-      return () => window.clearInterval(timer);
-    }
-    const timer = window.setInterval(() => {
-      setFrameIndex((current) => {
-        const nextFrame = current + 1;
-        if (nextFrame < action.frames.length) return nextFrame;
-        if (movementAction) return 0;
-        setActionIndex((currentAction) => (currentAction + 1) % actionPool.length);
-        return 0;
-      });
-    }, frameDuration);
+    if (!reducedMotion) return;
+    const timer = window.setInterval(advanceAction, 5000);
     return () => window.clearInterval(timer);
-  }, [action.frames.length, actionPool.length, frameDuration, movementAction, reducedMotion]);
+  }, [advanceAction, reducedMotion]);
 
   if (!mounted || !visible) return null;
   const movementStatus = getMovementStatus(movementAction);
@@ -103,8 +84,8 @@ export default function MiraPet() {
     width: MIRA_FRAME_WIDTH, height: MIRA_FRAME_HEIGHT,
     backgroundImage: `url(${MIRA_SPRITESHEET_URL})`,
     backgroundSize: `${MIRA_FRAME_WIDTH * MIRA_SHEET_COLUMNS}px ${MIRA_FRAME_HEIGHT * MIRA_SHEET_ROWS}px`,
-    '--mira-x': `${-activeFrame.col * MIRA_FRAME_WIDTH}px`,
-    '--mira-y': `${-activeFrame.row * MIRA_FRAME_HEIGHT}px`,
+    '--mira-x': `${-restFrame.col * MIRA_FRAME_WIDTH}px`,
+    '--mira-y': `${-restFrame.row * MIRA_FRAME_HEIGHT}px`,
   };
   const petStyle: CSSProperties | undefined = position
     ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : undefined;
@@ -118,7 +99,10 @@ export default function MiraPet() {
       onKeyDown={(event) => handleKeyDown(event, actionName)}>
       <div className="mira-pet-bubble" aria-hidden="true">{statusText}</div>
       <div className="mira-pet-shadow" />
-      <div className="mira-pet-frame"><div className="mira-pet-sprite" style={spriteStyle} /></div>
+      <div className="mira-pet-frame">
+        <div className="mira-pet-sprite" style={spriteStyle}
+          onAnimationIteration={() => { if (!movementAction) advanceAction(); }} />
+      </div>
     </div>
   );
 }

@@ -59,6 +59,20 @@ export const PRESET_COLORS: ReadonlyArray<{ name: string; color: string }> = [
 ];
 
 /**
+ * Whitelisted lyric font stacks, mirroring the appearance-settings dropdown.
+ * lyricFont ends up interpolated into CSS custom properties, so any value
+ * outside this list (tampered localStorage, legacy data) falls back to the
+ * default instead of being injected verbatim.
+ */
+export const LYRIC_FONT_OPTIONS: ReadonlyArray<{ label: string; value: string }> = [
+  { label: '系统默认', value: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif' },
+  { label: '优雅苹方', value: '"PingFang SC", "Helvetica Neue", sans-serif' },
+  { label: '微软雅黑', value: '"Microsoft YaHei", sans-serif' },
+  { label: '宋体', value: '"SimSun", serif' },
+  { label: '华文细黑', value: '"STXihei", "STHeiti", sans-serif' },
+];
+
+/**
  * Legacy named colors for backward compatibility with old localStorage values.
  */
 const LEGACY_COLOR_MAP: Record<string, string> = {
@@ -205,6 +219,19 @@ export const normalizeThemeColor = (value: unknown): ThemeColor => {
   return resolveHexColor(value);
 };
 
+const LYRIC_FONT_WHITELIST = new Set<string>([
+  DEFAULT_THEME_PREFERENCES.lyricFont,
+  ...LYRIC_FONT_OPTIONS.map((option) => option.value),
+]);
+
+export const normalizeLyricFont = (value: unknown): string => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (LYRIC_FONT_WHITELIST.has(trimmed)) return trimmed;
+  }
+  return DEFAULT_THEME_PREFERENCES.lyricFont;
+};
+
 export const clampLyricSize = (value: unknown): number => {
   const numeric = typeof value === 'number' ? value : parseInt(String(value ?? ''), 10);
   if (!Number.isFinite(numeric)) return DEFAULT_THEME_PREFERENCES.lyricSize;
@@ -257,7 +284,7 @@ export const applyThemeVariables = (
 
   if (lyric) {
     target.style.setProperty('--lyric-font-size', `${clampLyricSize(lyric.lyricSize)}px`);
-    target.style.setProperty('--lyric-font-family', lyric.lyricFont || DEFAULT_THEME_PREFERENCES.lyricFont);
+    target.style.setProperty('--lyric-font-family', normalizeLyricFont(lyric.lyricFont));
   }
 };
 
@@ -266,7 +293,7 @@ export const readThemePreferences = (storage: Storage): ThemePreferences => {
     themeMode: normalizeThemeMode(storage.getItem(THEME_STORAGE_KEYS.mode)),
     themeColor: normalizeThemeColor(storage.getItem(THEME_STORAGE_KEYS.color)),
     lyricSize: clampLyricSize(storage.getItem(THEME_STORAGE_KEYS.lyricSize)),
-    lyricFont: storage.getItem(THEME_STORAGE_KEYS.lyricFont) || DEFAULT_THEME_PREFERENCES.lyricFont,
+    lyricFont: normalizeLyricFont(storage.getItem(THEME_STORAGE_KEYS.lyricFont)),
     showDesktopLyric: storage.getItem(THEME_STORAGE_KEYS.showDesktopLyric) === 'true',
     lockDesktopLyric: storage.getItem(THEME_STORAGE_KEYS.lockDesktopLyric) === 'true',
   };

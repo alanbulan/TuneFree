@@ -34,14 +34,14 @@ describe('fixUrl', () => {
 
   it('should proxy kuwo HTTP URLs through self-hosted proxy', () => {
     const result = fixUrl('http://img1.kuwo.cn/abc.jpg');
-    // In test env (no window), proxyBase is "", so SELF_HOSTED_PROXY is "/api/cors-proxy?url="
-    expect(result).toContain('/api/cors-proxy?url=');
+    // 浏览器 dev 降级默认：token 为空串，但 token 参数始终在 url= 之前
+    expect(result).toContain('/api/cors-proxy?token=&url=');
     expect(result).toContain(encodeURIComponent('http://img1.kuwo.cn/abc.jpg'));
   });
 
   it('should proxy hdslb.com URLs through self-hosted proxy', () => {
     const result = fixUrl('https://i0.hdslb.com/abc.jpg');
-    expect(result).toContain('/api/cors-proxy?url=');
+    expect(result).toContain('/api/cors-proxy?token=&url=');
     expect(result).toContain(encodeURIComponent('https://i0.hdslb.com/abc.jpg'));
   });
 

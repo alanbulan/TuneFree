@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { getNextQueueIndex, getPrevQueueIndex } from "../contexts/playerQueue";
 import { getSongKey, isSameSong } from "../types";
 import type { Song } from "../types";
+import { resolveQueueStepIndex } from "./queueNavigation";
 import type { AudioLifecycle } from "./useAudioLifecycle";
 import type { PlaybackControls } from "./usePlaybackControls";
 import type { PlayerRuntime } from "./usePlayerRuntime";
@@ -15,7 +15,8 @@ export const useQueueControls = (
   recommendation: RecommendationPlayback,
   resolver: SongResolver,
 ) => {
-  const { refs, setCurrentSong, setDuration, setIsLoading, setIsPlaying, setPlayMode, setQueue } = runtime;
+  const { commitCurrentSong, commitQueue, refs, setDuration,
+    setIsLoading, setIsPlaying, setPlayMode } = runtime;
   const playQueue = useCallback(async (songs: Song[], startSong?: Song) => {
     const seen = new Set<string>();
     const nextQueue = songs.filter((song) => {
@@ -30,27 +31,23 @@ export const useQueueControls = (
       : nextQueue[0];
     if (!targetSong) return;
     refs.preloadedResolutionKey.current = null;
-    refs.queue.current = nextQueue;
-    setQueue(nextQueue);
+    commitQueue(nextQueue);
     const activeAudio = refs.audio.current;
     if (isSameSong(refs.currentSong.current, targetSong) && activeAudio?.src &&
         activeAudio.src !== window.location.href && !activeAudio.paused) {
-      const mergedSong = { ...refs.currentSong.current, ...targetSong } as Song;
-      refs.currentSong.current = mergedSong;
-      setCurrentSong(mergedSong);
+      commitCurrentSong({ ...refs.currentSong.current, ...targetSong } as Song);
       resolver.preloadNextSong(targetSong);
       return;
     }
     await refs.playSong.current(targetSong);
-  }, [refs, resolver, setCurrentSong, setQueue]);
+  }, [commitCurrentSong, commitQueue, refs, resolver]);
 
   const playNext = useCallback((force = true) => {
     const queue = refs.queue.current;
     const current = refs.currentSong.current;
-    const mode = refs.playMode.current;
     if (queue.length === 0) return;
     if (force) recommendation.logEarlySkipIfNeeded();
-    if (!force && mode === "loop") {
+    if (!force && refs.playMode.current === "loop") {
       if (refs.audio.current) {
         refs.audio.current.currentTime = 0;
         audio.updateCurrentTimeState(0);
@@ -59,7 +56,7 @@ export const useQueueControls = (
       }
       return;
     }
-    const nextIndex = getNextQueueIndex(queue, current, mode);
+    const nextIndex = resolveQueueStepIndex(refs, current, 1);
     const nextSong = nextIndex >= 0 ? queue[nextIndex] : undefined;
     if (!nextSong) return;
     if (current && isSameSong(nextSong, current)) {
@@ -81,16 +78,14 @@ export const useQueueControls = (
     }
     if (refs.queue.current.length === 0) return;
     recommendation.logEarlySkipIfNeeded();
-    const prevIndex = getPrevQueueIndex(
-      refs.queue.current, refs.currentSong.current, refs.playMode.current,
-    );
+    const prevIndex = resolveQueueStepIndex(refs, refs.currentSong.current, -1);
     if (prevIndex >= 0) void refs.playSong.current(refs.queue.current[prevIndex]);
   }, [audio, recommendation, refs]);
 
   const addToQueue = useCallback((song: Song) => {
-    setQueue((previous) => previous.some((queued) => isSameSong(queued, song))
+    commitQueue((previous) => previous.some((queued) => isSameSong(queued, song))
       ? previous : [...previous, song]);
-  }, [setQueue]);
+  }, [commitQueue]);
 
   const removeFromQueue = useCallback((songId: string | number, source?: string) => {
     const matches = (song: Song) => String(song.id) === String(songId) &&
@@ -99,20 +94,19 @@ export const useQueueControls = (
     const removedIndex = previousQueue.findIndex(matches);
     if (removedIndex < 0) return;
     const nextQueue = previousQueue.filter((song) => !matches(song));
-    refs.queue.current = nextQueue;
-    setQueue(nextQueue);
+    commitQueue(nextQueue);
     refs.preloadedResolutionKey.current = null;
     if (!refs.currentSong.current || !matches(refs.currentSong.current)) return;
     if (nextQueue.length === 0) {
       refs.playRequestId.current += 1;
+      refs.playAbort.current?.abort();
       const activeAudio = refs.audio.current;
       if (activeAudio) {
         activeAudio.pause();
         activeAudio.removeAttribute("src");
         activeAudio.load();
       }
-      refs.currentSong.current = null;
-      setCurrentSong(null);
+      commitCurrentSong(null);
       audio.updateCurrentTimeState(0);
       setDuration(0);
       setIsPlaying(false);
@@ -125,15 +119,12 @@ export const useQueueControls = (
     }
     const nextSong = nextQueue[Math.min(removedIndex, nextQueue.length - 1)] || nextQueue[0];
     if (nextSong) void refs.playSong.current(nextSong);
-  }, [audio, refs, setCurrentSong, setDuration,
-    setIsLoading, setIsPlaying, setQueue]);
+  }, [audio, commitCurrentSong, commitQueue, refs, setDuration, setIsLoading, setIsPlaying]);
 
   const clearQueue = useCallback(() => {
     refs.preloadedResolutionKey.current = null;
-    const nextQueue = refs.currentSong.current ? [refs.currentSong.current] : [];
-    refs.queue.current = nextQueue;
-    setQueue(nextQueue);
-  }, [refs, setQueue]);
+    commitQueue(refs.currentSong.current ? [refs.currentSong.current] : []);
+  }, [commitQueue, refs]);
 
   const togglePlayMode = useCallback(() => {
     setPlayMode((previous) => previous === "sequence" ? "loop" :
@@ -163,10 +154,13 @@ export const useQueueControls = (
       audio.updateMediaSession(runtime.currentSong, runtime.isPlaying ? "playing" : "paused");
     }
   }, [audio, runtime.currentSong, runtime.isPlaying]);
+  // 依赖里刻意不含 runtime.queue：预加载成功后必然 patch 队列，
+  // 把队列引用列进依赖会让本 effect 自我触发，形成级联解析。
+  // 函数内部读的是 refs.queue.current，始终是最新值。
   useEffect(() => {
     if (runtime.currentSong && runtime.isPlaying) resolver.preloadNextSong(runtime.currentSong);
   }, [resolver, runtime.audioQuality, runtime.currentSong,
-    runtime.isPlaying, runtime.playMode, runtime.queue]);
+    runtime.isPlaying, runtime.playMode]);
 
   return useMemo(() => ({
     playQueue, playNext, playPrev, addToQueue, removeFromQueue, clearQueue, togglePlayMode,

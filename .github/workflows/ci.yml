@@ -8,35 +8,11 @@ on:
 permissions:
   contents: read
 
+# 同一分支/PR 上的新提交会取消尚未完成的旧运行，避免排队浪费 Windows runner。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - run: npm install --global npm@11.6.2
-      - run: npm ci
-      - run: npm run version:check
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run architecture:check
-      - run: npm test -- --run
-      - run: npm run build
-      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings -D clippy::too_many_lines
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
-      - run: npx tauri build --no-bundle
-      - run: git diff --exit-code
+    uses: ./.github/workflows/validate.yml

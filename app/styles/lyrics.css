@@ -1,0 +1,176 @@
+/* ── 歌词层：歌词舞台、歌词行、逐字卡拉 OK（主窗口与歌词窗口共用） ── */
+.full-lyrics-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 560px;
+  display: grid;
+  align-content: stretch;
+  justify-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border-glass);
+  border-radius: 32px;
+  padding: 28px 38px;
+  background: var(--lyric-stage-bg);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 18px 54px var(--shadow-lg);
+}
+.lyric-orbit {
+  position: absolute;
+  width: min(48vw, 520px);
+  height: min(48vw, 520px);
+  border-radius: 999px;
+  border: 42px solid rgba(var(--accent-rgb),.055);
+  background: radial-gradient(circle, rgba(var(--accent-rgb),.09), transparent 60%);
+  animation: lyricFloat 7s ease-in-out infinite;
+}
+.lyric-score {
+  position: absolute;
+  inset: 26px 24px;
+  overflow: hidden;
+  opacity: .9;
+  pointer-events: none;
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+.score-staff {
+  position: absolute;
+  inset: 18% 0 auto;
+  height: 62%;
+  display: grid;
+  align-content: space-between;
+  transform: rotate(-3deg);
+}
+.score-staff span { height: 1px; background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb),.18), rgba(var(--accent-secondary-rgb),.13), transparent); }
+.score-note {
+  position: absolute;
+  color: rgba(var(--accent-rgb),.36);
+  font-size: clamp(18px, 2.4vw, 34px);
+  font-weight: 900;
+  text-shadow: 0 10px 24px rgba(var(--accent-rgb),.16);
+  transform: translate3d(-50%, 0, 0);
+  animation: scoreNoteFloat var(--note-duration) ease-in-out infinite;
+  animation-delay: var(--note-delay);
+}
+.dark-theme .lyric-score { opacity: 1; }
+.dark-theme .score-staff span {
+  background: linear-gradient(90deg, transparent, rgba(244,244,245,.28), rgba(var(--accent-rgb),.34), transparent);
+}
+.dark-theme .score-note {
+  color: rgba(244,244,245,.66);
+  text-shadow:
+    0 0 18px rgba(var(--accent-rgb),.34),
+    0 10px 26px rgba(0,0,0,.35);
+}
+.full-lyrics-content { position: relative; z-index: 1; width: 100%; max-width: 900px; height: 100%; color: var(--muted); text-align: center; }
+.lyric-scroll {
+  width: 100%;
+  min-height: 100%;
+}
+.lyric-scrollable {
+  position: relative;
+  height: 100%;
+  max-height: calc(100dvh - 250px);
+  min-height: 500px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 40vh 12px;
+  text-align: center;
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 25%, #000 75%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 25%, #000 75%, transparent 100%);
+}
+.lyric-scrollable::-webkit-scrollbar,
+.full-more-playlist-list::-webkit-scrollbar { width: 0; height: 0; }
+.lyric-empty { display: grid; justify-items: center; align-content: center; gap: 16px; color: var(--accent); }
+.lyric-line {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(100%, 860px);
+  margin: 0 auto 14px;
+  border: 0;
+  border-radius: 18px;
+  padding: 8px 18px;
+  color: var(--muted);
+  background: transparent;
+  font-family: var(--lyric-font-family, inherit);
+  font-size: clamp(16px, calc(var(--lyric-font-size, 22px) * .9), 26px);
+  font-weight: 850;
+  line-height: 1.42;
+  text-align: center;
+  opacity: .72;
+  transform-origin: 50% 50%;
+  transform: translateY(calc(var(--lyric-offset, 0) * 3px));
+  transition: color .14s ease, opacity .14s ease, transform .14s ease;
+}
+.lyric-line:hover { background: var(--glass-bg-faint); color: var(--text-dim); }
+.lyric-line span,
+.lyric-line em {
+  display: block;
+  overflow-wrap: anywhere;
+  font-family: var(--lyric-font-family, inherit);
+}
+.karaoke-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* 提高到 (0,2,0) 以压过 `.lyric-line span` 的 display: block，取代原先的强制优先级写法 */
+.lyric-line .karaoke-line { display: inline-flex; }
+.karaoke-word {
+  display: inline-block;
+  transform-origin: 50% 72%;
+  transition: color .12s ease, opacity .12s ease, filter .12s ease;
+  will-change: transform, opacity;
+}
+.karaoke-word.pending {
+  color: var(--muted);
+  opacity: .46;
+}
+.karaoke-word.done {
+  color: var(--accent);
+  opacity: .92;
+}
+.karaoke-word.active {
+  color: var(--accent);
+  opacity: 1;
+  filter: drop-shadow(0 0 10px rgba(var(--accent-rgb), .24));
+  animation: karaokeWordPop .26s cubic-bezier(.2,.9,.2,1) both;
+}
+.desktop-lyric-current-line .karaoke-word.pending { opacity: .38; }
+.desktop-lyric-current-line .karaoke-word.done,
+.desktop-lyric-current-line .karaoke-word.active { opacity: 1; }
+.lyric-line em { margin-top: 6px; color: var(--text-tertiary); font-size: .66em; font-style: normal; font-weight: 760; }
+/* 当前行不再对 font-size 做过渡（逐帧回流），放大登场交给合成器动画 */
+.lyric-line.active { color: var(--accent); font-size: clamp(28px, calc(var(--lyric-font-size, 22px) * 1.65), 52px); line-height: 1.22; letter-spacing: -.045em; opacity: 1; transform: translateY(0) scale(1); animation: lyricLineActivate .18s cubic-bezier(.2,.8,.2,1); }
+.lyric-line.active em { color: var(--text-soft); font-size: .45em; line-height: 1.32; letter-spacing: 0; }
+.lyric-line.dim { opacity: .34; }
+.lyric-loading-dot { width: 24px; height: 24px; border: 2px solid rgba(var(--accent-rgb),.20); border-top-color: var(--accent); border-radius: 50%; animation: coverSpin .9s linear infinite; }
+
+/* 逐字渐变填充：消费 KaraokeLyricText 写入的 --word-progress。
+   只在主窗口生效——桌面歌词窗口靠 text-shadow 保证透明背景上的可读性，
+   而 text-shadow 会盖在 background-clip: text 的渐变之上。 */
+.lyric-line .karaoke-word.active {
+  background-image: linear-gradient(
+    90deg,
+    var(--accent) var(--word-progress, 0%),
+    rgba(var(--accent-rgb), .34) var(--word-progress, 0%)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+/* 同步翻译的逐字着色：沿用逐字状态色，但不叠加主歌词的高亮特效 */
+.karaoke-translation-line {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.karaoke-translation-character {
+  transition: color .12s ease, opacity .12s ease;
+}
+.karaoke-translation-character.active {
+  filter: none;
+  animation: none;
+}
+.karaoke-translation-space { white-space: pre-wrap; }

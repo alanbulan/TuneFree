@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Lock } from 'lucide-react';
 import { usePlayerNowPlaying, usePlayerProgress } from '../../core/contexts/PlayerContext';
@@ -10,7 +10,7 @@ import { useToast } from './ToastHost';
 const getSecondary = (row: ParsedLyric | null): string =>
   row?.romanization || row?.pronunciation || row?.translation || row?.extra?.[0]?.text || '';
 
-export function TransportMiniLyric({ onExpand }: { onExpand: () => void }) {
+function MiniLyric({ onExpand }: { onExpand: () => void }) {
   const { currentSong } = usePlayerNowPlaying();
   const { currentTime, lyricOffsetSeconds } = usePlayerProgress();
   const displayMode = useLyricDisplayMode();
@@ -19,32 +19,26 @@ export function TransportMiniLyric({ onExpand }: { onExpand: () => void }) {
   const activeLyric = activeIndex >= 0 ? rows[activeIndex] : null;
   const secondary = getSecondary(activeLyric);
   return (
-    <button type="button" className="transport-mini-lyric" onClick={onExpand}
-      aria-label="打开全屏歌词" style={{ position: 'relative', overflow: 'hidden', display: 'flex',
-        flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+    <button type="button" className="transport-mini-lyric" onClick={onExpand} aria-label="打开全屏歌词">
       <AnimatePresence mode="popLayout">
         <motion.div key={activeLyric?.text || currentSong?.name || 'empty'}
+          className="transport-mini-lyric-body"
           initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -8, opacity: 0 }}
-          transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
-          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
-            width: '100%', pointerEvents: 'none' }}>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap',
-            overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '90%' }}>
+          transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}>
+          <span className="transport-mini-lyric-text">
             {activeLyric?.text || currentSong?.name || 'TuneFree Desktop'}
           </span>
-          {secondary && (
-            <em style={{ fontSize: '11px', fontStyle: 'normal', opacity: 0.65, marginTop: '2px',
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '90%' }}>
-              {secondary}
-            </em>
-          )}
+          {secondary && <em className="transport-mini-lyric-sub">{secondary}</em>}
         </motion.div>
       </AnimatePresence>
     </button>
   );
 }
 
-export function DesktopLyricToggle() {
+/** 迷你歌词自订阅 10Hz 进度，memo 至少把底栏其它状态变化挡在外面。 */
+export const TransportMiniLyric = memo(MiniLyric);
+
+function LyricToggle() {
   const { showDesktopLyric, setShowDesktopLyric, lockDesktopLyric, setLockDesktopLyric } = useTheme();
   const { showToast } = useToast();
   const state = !showDesktopLyric ? 'off' : lockDesktopLyric ? 'locked' : 'floating';
@@ -75,16 +69,12 @@ export function DesktopLyricToggle() {
         const nextLock = !lockDesktopLyric;
         setLockDesktopLyric(nextLock);
         showToast(nextLock ? '桌面歌词已锁定（鼠标穿透）' : '桌面歌词已解锁', 'success');
-      }}
-      style={{ background: 'transparent', fontSize: '11px', fontWeight: 800, padding: '4px 7px',
-        borderRadius: '6px', color: showDesktopLyric ? (lockDesktopLyric ? 'var(--ios-card)' : 'var(--accent)') : 'var(--muted)',
-        backgroundColor: showDesktopLyric ? (lockDesktopLyric ? 'var(--accent)' : 'rgba(var(--accent-rgb), 0.10)') : 'transparent',
-        border: showDesktopLyric ? '1px solid var(--accent)' : '1px solid var(--line)', cursor: 'pointer',
-        transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px',
-        flex: '0 0 auto', height: '24px', width: lockDesktopLyric ? '54px' : '42px', marginLeft: '6px',
-        lineHeight: 1, whiteSpace: 'nowrap', boxShadow: showDesktopLyric ? '0 2px 8px rgba(var(--accent-rgb), 0.35)' : 'none' }}>
-      {showDesktopLyric && lockDesktopLyric && <Lock size={10} style={{ flex: '0 0 auto' }} />}
-      <span style={{ flex: '0 0 auto' }}>{label}</span>
+      }}>
+      {showDesktopLyric && lockDesktopLyric && <Lock size={10} />}
+      <span>{label}</span>
     </button>
   );
 }
+
+/** 无 props，memo 后完全不受底栏其它状态影响。 */
+export const DesktopLyricToggle = memo(LyricToggle);

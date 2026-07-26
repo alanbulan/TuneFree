@@ -1,41 +1,27 @@
 
 import React, { useRef, useEffect } from 'react';
 import { usePlayerAnalyser } from '../contexts/PlayerContext';
+import {
+  BAR_COUNT,
+  DECAY_SPEED,
+  MIN_BAR_PERCENT,
+  RESPONSE_CURVE,
+  SMOOTHING_ALPHA,
+  calculateVisualizerCanvasSize,
+  readVisualizerBarColor,
+  renderVisualizerBar,
+  shouldScheduleVisualizerFrame,
+} from './audioVisualizerCore';
+
+export { calculateVisualizerCanvasSize, shouldScheduleVisualizerFrame } from './audioVisualizerCore';
 
 interface AudioVisualizerProps {
   isPlaying: boolean;
+  /** 为 true 时停止 rAF 循环并清空画布（如实例被全屏播放器完全遮挡时）。 */
+  suspended?: boolean;
 }
 
-// === 可视化配置 ===
-const BAR_COUNT = 220;
-const SMOOTHING_ALPHA = 0.35;           // 平滑系数 (越低越灵敏)
-const RESPONSE_CURVE = 0.7;             // 非线性响应曲线指数
-const MIN_BAR_PERCENT = 0.04;           // 最小可见高度百分比
-const DECAY_SPEED = 0.92;               // 暂停时衰减系数 (越接近1越慢)
-
-export const shouldScheduleVisualizerFrame = (
-  isPlaying: boolean,
-  pauseAnimationSettled: boolean,
-): boolean => isPlaying || !pauseAnimationSettled;
-
-export const calculateVisualizerCanvasSize = (
-  width: number,
-  height: number,
-  devicePixelRatio: number,
-) => {
-  const logicalWidth = Number.isFinite(width) ? Math.max(0, width) : 0;
-  const logicalHeight = Number.isFinite(height) ? Math.max(0, height) : 0;
-  const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
-  return {
-    width: logicalWidth,
-    height: logicalHeight,
-    dpr,
-    pixelWidth: Math.max(1, Math.round(logicalWidth * dpr)),
-    pixelHeight: Math.max(1, Math.round(logicalHeight * dpr)),
-  };
-};
-
-const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
+const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying, suspended = false }) => {
   const { analyser } = usePlayerAnalyser();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -78,52 +64,22 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
 
     syncCanvasSize();
 
+    if (suspended) {
+      ctx.clearRect(0, 0, canvasSize.width, canvasSize.height);
+      return;
+    }
+
+    // 主题色可缓存：只在初始化与主题变化（themeObserver 回调）时读取，
+    // 避免每个 rAF 帧触发 getComputedStyle 强制样式计算
+    let barColor = readVisualizerBarColor(canvas);
+
     const dataArray = new Uint8Array(analyser ? analyser.frequencyBinCount : 0);
     let animationId: number | null = null;
-
-    // === 渲染单个柱子（简洁风格，无峰值指示器）===
-    const renderBar = (
-        ctx: CanvasRenderingContext2D,
-        x: number,
-        percent: number,
-        h: number,
-        w: number,
-        color: string,
-    ) => {
-        if (percent < MIN_BAR_PERCENT) percent = MIN_BAR_PERCENT;
-
-        const barHeight = percent * h;
-        const radius = w / 2;
-        const y = h - barHeight;
-
-        // 颜色跟随当前主题，强度越大越不透明
-        const alpha = 0.12 + percent * 0.38;
-        ctx.fillStyle = `rgba(${color}, ${alpha})`;
-
-        // 绘制圆角柱子
-        ctx.beginPath();
-        if (typeof ctx.roundRect === 'function') {
-            ctx.roundRect(x, y, w, barHeight, radius);
-        } else {
-            ctx.moveTo(x + radius, y);
-            ctx.arcTo(x + w, y, x + w, y + radius, radius);
-            ctx.lineTo(x + w, y + barHeight - radius);
-            ctx.arcTo(x + w, y + barHeight, x + w - radius, y + barHeight, radius);
-            ctx.lineTo(x + radius, y + barHeight);
-            ctx.arcTo(x, y + barHeight, x, y + barHeight - radius, radius);
-            ctx.lineTo(x, y + radius);
-            ctx.arcTo(x, y, x + radius, y, radius);
-        }
-        ctx.fill();
-    };
 
     const draw = () => {
       const width = canvasSize.width;
       const height = canvasSize.height;
       ctx.clearRect(0, 0, width, height);
-      const barColor = getComputedStyle(canvas)
-        .getPropertyValue('--visualizer-bar-rgb')
-        .trim() || '0, 0, 0';
 
       const totalSpace = width / BAR_COUNT;
       const barWidth = totalSpace * 0.92;
@@ -173,7 +129,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
                 state.displayValues[i] += (percent - state.displayValues[i]) * 0.15;
             }
 
-            renderBar(ctx, x, state.displayValues[i], height, barWidth, barColor);
+            renderVisualizerBar(ctx, x, state.displayValues[i], height, barWidth, barColor);
             x += totalSpace;
           }
 
@@ -209,7 +165,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
              percent = Math.pow(percent, RESPONSE_CURVE);
              state.displayValues[i] = percent;
 
-             renderBar(ctx, x, percent, height, barWidth, barColor);
+             renderVisualizerBar(ctx, x, percent, height, barWidth, barColor);
              x += totalSpace;
           }
 
@@ -221,7 +177,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
               if (state.displayValues[i] > MIN_BAR_PERCENT + 0.005) {
                   allSettled = false;
               }
-              renderBar(ctx, x, state.displayValues[i], height, barWidth, barColor);
+              renderVisualizerBar(ctx, x, state.displayValues[i], height, barWidth, barColor);
               x += totalSpace;
           }
 
@@ -232,14 +188,14 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
               x = (totalSpace - barWidth) / 2;
               for (let i = 0; i < BAR_COUNT; i++) {
                   state.displayValues[i] = 0;
-                  renderBar(ctx, x, MIN_BAR_PERCENT, height, barWidth, barColor);
+                  renderVisualizerBar(ctx, x, MIN_BAR_PERCENT, height, barWidth, barColor);
                   x += totalSpace;
               }
               pauseAnimationSettled = true;
           }
       }
 
-      if (shouldScheduleVisualizerFrame(isPlaying, pauseAnimationSettled)) {
+      if (shouldScheduleVisualizerFrame(isPlaying, pauseAnimationSettled, suspended)) {
         animationId = requestAnimationFrame(draw);
       } else {
         animationId = null;
@@ -257,10 +213,15 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
     const themeObserver = typeof MutationObserver === 'undefined'
       ? null
       : new MutationObserver(() => {
+        barColor = readVisualizerBarColor(canvas);
         if (animationId === null) draw();
       });
     resizeObserver?.observe(canvas);
-    themeObserver?.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    // 主题色可能随 class（深/浅色）或 style（主题变量下发）变化，两者都要重读缓存的颜色
+    themeObserver?.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'style'],
+    });
     window.addEventListener('resize', handleResize);
 
     return () => {
@@ -269,13 +230,10 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
       window.removeEventListener('resize', handleResize);
       if (animationId !== null) cancelAnimationFrame(animationId);
     };
-  }, [analyser, isPlaying]);
+  }, [analyser, isPlaying, suspended]);
 
   return (
-    <canvas
-        ref={canvasRef}
-        style={{ width: '100%', height: '100%', display: 'block' }}
-    />
+    <canvas ref={canvasRef} className="audio-visualizer-canvas" />
   );
 };
 

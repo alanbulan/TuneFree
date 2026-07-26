@@ -13,6 +13,9 @@ node_modules
 .next
 out
 
+# Test coverage (produced by `npm run test:coverage`, uploaded as a CI artifact)
+coverage
+
 # Local tooling
 .playwright-mcp
 .reference
