@@ -10,6 +10,7 @@
     "lint": "oxlint --config .oxlintrc.json src app scripts bump-version.js --deny-warnings",
     "typecheck": "tsc --noEmit",
     "architecture:check": "node scripts/check-architecture.mjs && node scripts/check-ipc-contract.mjs",
+    "smoke": "node scripts/smoke-test.mjs",
     "api:verify:gd": "node scripts/verify-gd-studio-api.mjs",
     "audit": "npm audit --audit-level=high",
     "test": "vitest",

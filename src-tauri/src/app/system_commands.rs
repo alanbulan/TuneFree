@@ -33,8 +33,11 @@ pub(crate) struct AppLifecycleState {
     pub(crate) shutdown_tx: tokio::sync::watch::Sender<bool>,
 }
 
+/// First command the renderer issues, so it doubles as the startup readiness
+/// signal consumed by `scripts/smoke-test.mjs`.
 #[tauri::command]
 pub(crate) fn get_local_server_info(state: State<'_, LocalServerState>) -> LocalServerInfo {
+    super::smoke::record_frontend_ready(state.port);
     LocalServerInfo {
         port: state.port,
         token: state.token.clone(),
