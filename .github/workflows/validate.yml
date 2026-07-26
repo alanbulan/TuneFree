@@ -76,4 +76,10 @@ jobs:
       # 不要在此之外再单独跑一次前端构建。
       - run: npx tauri build --no-bundle
 
+      # 启动构建产物并断言前端完成首次 IPC 往返。编译、clippy 与单元测试都
+      # 无法发现「能编译但起不来」的故障（v1.1.28 即如此发布），这一步是唯一
+      # 真正运行应用的检查。
+      - name: Startup smoke test
+        run: npm run smoke
+
       - run: git diff --exit-code

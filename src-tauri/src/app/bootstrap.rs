@@ -193,6 +193,15 @@ fn setup_application(
     app: &mut tauri::App,
     context: SetupContext,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Windows are created — and start loading the frontend — before `setup`
+    // runs, so any state the renderer's first commands need must already be
+    // registered. v1.1.28 shipped with `LocalServerState` managed here instead
+    // and lost that race on slower machines, failing every launch with
+    // "state not managed". Assert the invariant so a future move is caught.
+    debug_assert!(
+        app.try_state::<LocalServerState>().is_some(),
+        "LocalServerState 必须在 Builder 链上注册，不能放在 setup 中"
+    );
     if let Some(window) = app.get_webview_window("desktop-lyric") {
         desktop_lyric_bounds::apply_desktop_lyric_bounds(&window);
     }

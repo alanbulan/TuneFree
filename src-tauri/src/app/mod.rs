@@ -5,6 +5,7 @@ mod desktop_lyric_render;
 mod downloads;
 pub mod error;
 mod recommendation_commands;
+mod smoke;
 mod system_commands;
 mod updater;
 
