@@ -13,6 +13,7 @@ import VirtualRail from '../../components/VirtualRail';
 import type { DesktopView } from '../../types';
 import { ContextSearchPanel, HomeHero, HomeSourceTabs } from './HomePanels';
 import { attachContextSearchMeta, isCurrentContextSearch } from './contextSearch';
+import { isBusyError } from './recommendationJobWatcher';
 import { useRecommendationJob } from './useRecommendationJob';
 
 const topListCache = new Map<string, { lists: TopList[]; ts: number }>();
@@ -187,7 +188,10 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
     void saveRecommendationFeedback(feedback).then(() => {
       recommendation.removeSong(song);
       showToast('已减少类似推荐', 'success');
-    }).catch(() => showToast('操作失败，请稍后再试', 'error'));
+    }).catch((cause: unknown) => {
+      if (isBusyError(cause)) showToast('推荐服务正在初始化，请稍后再试', 'info');
+      else showToast('操作失败，请稍后再试', 'error');
+    });
   };
 
   return (
@@ -203,9 +207,14 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
         onSearch={() => onViewChange('search')}
       />
       <HomeSourceTabs activeSource={activeSource} onChange={setActiveSource} />
+      {isRecommendationSource && recommendation.initializing && (
+        <div className="content-card home-status-card">
+          <span className="home-status-text">推荐服务正在初始化，请稍候…</span>
+        </div>
+      )}
       {error && (
-        <div className="content-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><ErrorIcon size={18} /> {error}</span>
+        <div className="content-card home-status-card">
+          <span className="home-status-text"><ErrorIcon size={18} /> {error}</span>
           {isRecommendationSource && <button type="button" className="soft-button" onClick={() => onViewChange('settings')}>打开设置</button>}
         </div>
       )}

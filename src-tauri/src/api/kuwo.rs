@@ -3,6 +3,17 @@ use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use reqwest::Client;
 
+/// Block-cipher key for the Kuwo mobile "convert_url" API.
+///
+/// This is a public protocol constant baked into the Kuwo mobile client, not
+/// an application secret. It must be updated in lockstep if Kuwo changes its
+/// request encryption protocol.
+const KUWO_REQUEST_KEY: &str = "ylzsxkwm";
+
+/// Kuwo mobile API endpoint prefix for encrypted convert_url queries.
+/// Public protocol constant; update if the upstream protocol changes.
+const KUWO_MOBI_ENDPOINT: &str = "https://mobi.kuwo.cn/mobi.s?f=kuwo&q=";
+
 /// Compression permutation table (64 entries) for the Kuwo block cipher.
 ///
 /// Derived from the Kuwo mobile client's encryption routine. Each entry
@@ -261,7 +272,12 @@ fn parse_kuwo_url(body: &str) -> Result<String, ApiError> {
         }
     }
 
-    Err(ApiError::Parse(format!("Kuwo parsing failed: {body}")))
+    // The raw body may contain upstream infrastructure details; log it for
+    // diagnosis and keep the caller-facing error generic.
+    log::warn!("Kuwo response did not contain a playable url: {body}");
+    Err(ApiError::Parse(
+        "Kuwo response did not contain a playable url".to_string(),
+    ))
 }
 
 /// Resolves a playable audio URL from Kuwo Music.
@@ -297,11 +313,10 @@ pub async fn get_kuwo_url(
         bitrate, format, songmid
     );
 
-    let enc_bytes = kuwo_encrypt(&params, "ylzsxkwm");
+    let enc_bytes = kuwo_encrypt(&params, KUWO_REQUEST_KEY);
     let q_params = BASE64_STANDARD.encode(&enc_bytes);
 
-    let endpoint = "https://mobi.kuwo.cn/mobi.s?f=kuwo&q=";
-    let api_url = format!("{}{}", endpoint, q_params);
+    let api_url = format!("{}{}", KUWO_MOBI_ENDPOINT, q_params);
 
     let resp = client
         .get(&api_url)
@@ -325,7 +340,7 @@ mod tests {
     #[test]
     fn test_kuwo_crypto() {
         let params = "type=convert_url&br=128kmp3&format=mp3&sig=0&rid=2423984&network=wifi&response=url&prod=kwplayer_ar_10.3.3.0";
-        let enc_bytes = kuwo_encrypt(params, "ylzsxkwm");
+        let enc_bytes = kuwo_encrypt(params, KUWO_REQUEST_KEY);
         use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
         let q_params = BASE64_STANDARD.encode(&enc_bytes);
         assert_eq!(

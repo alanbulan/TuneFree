@@ -1,0 +1,79 @@
+name: Validate
+
+# 质量门禁的唯一事实来源：ci.yml（push / PR）与 release.yml（v* 标签）都通过
+# workflow_call 复用本文件，保证"能发布"和"CI 通过"是同一套检查。
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend (lint / typecheck / test)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm install --global npm@11.6.2
+      - run: npm ci
+
+      - run: npm run version:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run architecture:check
+      - run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          if-no-files-found: warn
+          retention-days: 7
+
+      # 非阻塞：让已知漏洞在流水线里可见，但不阻断发布。
+      - name: Audit npm dependencies
+        continue-on-error: true
+        run: npm run audit
+
+  rust:
+    name: Rust (fmt / clippy / test / build)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm install --global npm@11.6.2
+      - run: npm ci
+
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+      # lint 姿态固化在 src-tauri/Cargo.toml 的 [lints] 段，这里只负责把告警提升为错误。
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+      # tauri.conf.json 的 beforeBuildCommand 已经会执行 `npm run build`（tsc + vite build），
+      # 不要在此之外再单独跑一次前端构建。
+      - run: npx tauri build --no-bundle
+
+      - run: git diff --exit-code

@@ -103,14 +103,12 @@ export function ContextSearchPanel({
   onSearch: (query: string) => void;
 }) {
   return (
-    <div className="ai-rainbow-flow-border" style={{ margin: '8px 0 20px 0', padding: '22px 20px' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+    <div className="ai-rainbow-flow-border context-search-panel">
+      <div className="context-search-body">
+        <div className="context-search-head">
           <div>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 900 }}>语境搜歌</h3>
-            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--muted)' }}>
-              描述想听的音乐意境、情感或特定场景，生成更贴近当下语境的歌单。
-            </p>
+            <h3>语境搜歌</h3>
+            <p>描述想听的音乐意境、情感或特定场景，生成更贴近当下语境的歌单。</p>
           </div>
           {currentSong && (
             <button
@@ -118,58 +116,41 @@ export function ContextSearchPanel({
               className="ai-radar-btn"
               onClick={() => onSearch(`和 ${currentSong.name} - ${currentSong.artist} 意境相似的歌曲`)}
             >
-              <Sparkles size={13} style={{ marginRight: '5px' }} />
+              <Sparkles size={13} />
               <span>开启相似音乐流</span>
             </button>
           )}
         </div>
         <form
+          className="context-search-form"
           onSubmit={(event) => {
             event.preventDefault();
             if (query.trim()) onSearch(query.trim());
           }}
-          style={{ display: 'flex', gap: 10, width: '100%' }}
         >
           <input
             type="text"
+            className="context-search-input"
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Tell me what you want to hear... (例如：适合沉浸写代码的纯音乐)"
-            style={{
-              flex: 1, minHeight: '40px', padding: '0 14px', borderRadius: '10px',
-              border: '1px solid var(--border-soft)', background: 'var(--surface-soft)',
-              color: 'var(--text)', fontSize: '13px', outline: 'none',
-            }}
           />
           <button
             type="submit"
-            className="primary-button"
-            style={{ minHeight: '40px', padding: '0 20px', borderRadius: '10px', fontWeight: 900 }}
+            className="primary-button context-search-submit"
             disabled={loading || !query.trim()}
           >
             {loading ? '分析中…' : '语境搜歌'}
           </button>
         </form>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 800 }}>推荐语境：</span>
+        <div className="context-tag-row">
+          <span className="context-tag-label">推荐语境：</span>
           {contextTags.map((tag) => (
             <button
               key={tag}
               type="button"
+              className="context-tag"
               onClick={() => { onQueryChange(tag); onSearch(tag); }}
-              style={{
-                padding: '5px 12px', borderRadius: '8px', border: '1px solid var(--border-soft)',
-                background: 'var(--surface-soft)', color: 'var(--text-soft)', fontSize: '11px',
-                fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease',
-              }}
-              onMouseEnter={(event) => {
-                event.currentTarget.style.borderColor = 'var(--accent)';
-                event.currentTarget.style.color = 'var(--text)';
-              }}
-              onMouseLeave={(event) => {
-                event.currentTarget.style.borderColor = 'var(--border-soft)';
-                event.currentTarget.style.color = 'var(--text-soft)';
-              }}
             >
               {tag}
             </button>

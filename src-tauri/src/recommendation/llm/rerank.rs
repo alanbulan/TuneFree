@@ -189,6 +189,8 @@ fn finish_enhancement(
             LlmEnhancementResult::ok(items)
         }
         None => {
+            let sample = response_sample(content);
+            log::warn!("模型重排响应无法解析为推荐 JSON，响应样本: {}", sample);
             log_rerank_failure(
                 completion.conn,
                 completion.request_id,
@@ -196,7 +198,7 @@ fn finish_enhancement(
                 "invalid_json",
                 completion.candidate_count,
                 completion.latency_ms,
-                "模型响应 JSON 不符合推荐格式",
+                &sample,
             );
             LlmEnhancementResult::failed(local_items, "模型响应 JSON 不符合推荐格式".to_string())
         }

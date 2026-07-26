@@ -53,10 +53,10 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
     return lyricRows.slice(start, end).map((row, offset) => ({ row, index: start + offset }));
   }, [activeLyricIndex, lyricRows]);
   const scoreText = activeLyric?.text || currentSong?.name || 'TuneFree Desktop';
-  const scoreNotes = useMemo(
-    () => buildScoreNotes(scoreText, currentTime),
-    [currentTime, scoreText],
-  );
+  // 漂浮音符是纯装饰的 infinite 动画，只在换行时重建一次；相位错开完全由 index 派生的
+  // 固定负延迟给出（传 0 即取消对播放进度的依赖），不能跟着 10Hz 的 currentTime 重算，
+  // 否则每 100ms 就会重设一次动画相位，音符会加速并微跳。
+  const scoreNotes = useMemo(() => buildScoreNotes(scoreText, 0), [scoreText]);
   const hasSong = !!currentSong;
   const lyricsLoading = isLoading && hasSong && !rawLyrics;
 
@@ -134,7 +134,7 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
           );
         })}
       </div>
-      <div className="full-lyrics-content" style={{ position: 'relative', overflow: 'hidden' }}>
+      <div className="full-lyrics-content">
         <AnimatePresence mode="wait">
           {lyricWindow.length > 0 ? (
             <motion.div
@@ -145,7 +145,6 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
               className="lyric-scroll lyric-scrollable"
-              style={{ width: '100%', height: '100%' }}
             >
               {lyricWindow.map(({ row, index }: { row: ParsedLyric; index: number }) => {
                 const offset = index - activeLyricIndex;
@@ -184,10 +183,9 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
               transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
               className="lyric-scroll lyric-empty"
               aria-live="polite"
-              style={{ width: '100%', height: '100%', display: 'grid', justifyItems: 'center', alignContent: 'center', gap: '16px' }}
             >
               {lyricsLoading ? <span className="lyric-loading-dot" /> : <MusicIcon size={30} />}
-              <p className="lyric-line active" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+              <p className="lyric-line active">
                 <span>{lyricsLoading ? '加载歌词中...' : currentSong?.name || 'TuneFree Desktop'}</span>
                 <em>{lyricsLoading ? currentSong?.name || '' : currentSong?.artist || '选择一首音乐开始'}</em>
               </p>

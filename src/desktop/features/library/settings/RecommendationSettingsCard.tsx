@@ -12,30 +12,30 @@ export default function RecommendationSettingsCard({ model }: { model: SettingsV
       <h3><SettingsIcon size={18} /> 推荐系统</h3>
       <div className="panel-field">
         <label>本地推荐</label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="settings-checkbox-row">
           <input
             type="checkbox"
             id="local-recommendation-toggle"
-            style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent)' }}
+            className="settings-checkbox"
             checked={model.localRecommendationEnabled}
             onChange={(event) => model.setLocalRecommendationEnabled(event.target.checked)}
           />
-          <label htmlFor="local-recommendation-toggle" style={{ fontSize: '14px', cursor: 'pointer', userSelect: 'none', color: 'var(--text)', textTransform: 'none', letterSpacing: 0 }}>
+          <label htmlFor="local-recommendation-toggle" className="settings-checkbox-label">
             启用本地推荐
           </label>
         </div>
       </div>
       <div className="panel-field">
         <label>云端发现与重排</label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="settings-checkbox-row">
           <input
             type="checkbox"
             id="llm-recommendation-toggle"
-            style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--accent)' }}
+            className="settings-checkbox"
             checked={model.llmConfig.enabled}
             onChange={(event) => updateConfig({ enabled: event.target.checked })}
           />
-          <label htmlFor="llm-recommendation-toggle" style={{ fontSize: '14px', cursor: 'pointer', userSelect: 'none', color: 'var(--text)', textTransform: 'none', letterSpacing: 0 }}>
+          <label htmlFor="llm-recommendation-toggle" className="settings-checkbox-label">
             启用 OpenAI 兼容模型发现与重排
           </label>
         </div>
@@ -57,20 +57,20 @@ export default function RecommendationSettingsCard({ model }: { model: SettingsV
           value={model.apiKey}
           onChange={(event) => model.setApiKey(event.target.value)}
         />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="settings-checkbox-row">
           <input
             type="checkbox"
             id="clear-llm-key"
-            style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--accent)' }}
+            className="settings-checkbox is-small"
             checked={model.clearApiKey}
             onChange={(event) => model.setClearApiKey(event.target.checked)}
           />
-          <label htmlFor="clear-llm-key" style={{ fontSize: '12px', cursor: 'pointer', userSelect: 'none', color: 'var(--text-soft)', textTransform: 'none', letterSpacing: 0 }}>
+          <label htmlFor="clear-llm-key" className="settings-checkbox-label is-small">
             清除已保存密钥
           </label>
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px' }}>
+      <div className="settings-number-grid">
         <div className="panel-field">
           <label>超时 ms</label>
           <input className="panel-input" type="number" min={1000} max={60000} value={model.llmConfig.timeoutMs} onChange={(event) => updateConfig({ timeoutMs: Number(event.target.value) })} />
@@ -86,31 +86,34 @@ export default function RecommendationSettingsCard({ model }: { model: SettingsV
       </div>
       <div className="panel-field">
         <label>隐私</label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="settings-checkbox-row">
           <input
             type="checkbox"
             id="upload-recent-events"
-            style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--accent)' }}
+            className="settings-checkbox is-small"
             checked={model.llmConfig.uploadRecentEvents}
             onChange={(event) => updateConfig({ uploadRecentEvents: event.target.checked })}
           />
-          <label htmlFor="upload-recent-events" style={{ fontSize: '12px', cursor: 'pointer', userSelect: 'none', color: 'var(--text-soft)', textTransform: 'none', letterSpacing: 0 }}>
+          <label htmlFor="upload-recent-events" className="settings-checkbox-label is-small">
             允许上传最近少量事件摘要
           </label>
         </div>
-        <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '6px', lineHeight: 1.4 }}>
+        <p className="settings-note">
           云端发现与重排始终会发送候选歌曲元数据和画像摘要；关闭后仅不附带最近事件摘要。
         </p>
       </div>
-      <div className="backup-detail-list" style={{ margin: '10px 0 14px' }}>
+      <div className="backup-detail-list settings-inline-detail-list">
         <span>推荐数据库：{formatBytes(model.llmConfig.databaseSizeBytes)}</span>
         <span>模型缓存：{model.llmConfig.llmCacheEntries} 条</span>
         <span>密钥状态：{model.llmConfig.hasApiKey ? '已保存到本地配置' : '未保存'}</span>
       </div>
-      {model.llmConfig.lastError && (
-        <p style={{ color: 'var(--danger)', fontSize: '12px', margin: '0 0 12px' }}>{model.llmConfig.lastError}</p>
+      {model.initializing && (
+        <p className="settings-note">推荐服务正在初始化，稍后会自动重试。</p>
       )}
-      <div className="panel-actions backup-actions" style={{ marginTop: 'auto' }}>
+      {model.llmConfig.lastError && (
+        <p className="settings-error-text">{model.llmConfig.lastError}</p>
+      )}
+      <div className="panel-actions backup-actions">
         <button type="button" className="primary-button" onClick={() => void model.saveRecommendationSettings()} disabled={model.savingLlm}>
           {model.savingLlm ? '保存中' : '保存推荐配置'}
         </button>

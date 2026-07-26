@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { memo, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   CloseIcon,
   DownloadIcon,
@@ -27,7 +27,7 @@ interface FullPlayerActionsProps {
   onSearch: (query: string) => void;
 }
 
-export default function FullPlayerActions({
+function FullPlayerActions({
   showMorePanel,
   setShowMorePanel,
   onSearch,
@@ -246,3 +246,6 @@ export default function FullPlayerActions({
     </>
   );
 }
+
+/** props 只有一个布尔量、setState 与 DesktopShell 里 useCallback 过的 onSearch，引用稳定。 */
+export default memo(FullPlayerActions);

@@ -30,7 +30,7 @@ npm run tauri dev
 开发模式会启动：
 
 - Vite：`http://127.0.0.1:3101`
-- Tauri 本地服务：`http://127.0.0.1:3002`
+- Tauri 本地服务：`http://127.0.0.1` 上的随机端口，端口和访问令牌由 `get_local_server_info` 命令下发
 
 ## 本地构建
 
@@ -52,7 +52,7 @@ npm run tauri build
 src-tauri/target/release/bundle/nsis/
 ```
 
-`node_modules/`、`out/` 和 `src-tauri/target/` 是本地依赖或构建缓存，均已被 Git 忽略。
+`node_modules/`、`out/`、`coverage/` 和 `src-tauri/target/` 是本地依赖、测试覆盖率或构建缓存，不应提交。
 
 ## 常用检查
 
@@ -62,7 +62,11 @@ npm run typecheck
 npm run lint
 npm run architecture:check
 npm test -- --run
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml --locked
 ```
 
-完整发布验证以 [RELEASE.md](./RELEASE.md) 和 CI 工作流为准。
+`npm run test:coverage` 会额外生成 `coverage/lcov.info`。Clippy 的严格规则写在
+`src-tauri/Cargo.toml` 的 `[lints]` 段，本地和 CI 的结论一致。
+
+完整发布验证以 [RELEASE.md](./RELEASE.md) 和 `.github/workflows/validate.yml` 为准。

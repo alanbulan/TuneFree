@@ -1,5 +1,5 @@
 import { type MouseEvent as ReactMouseEvent } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invokeCommand, isTauri } from '../../../core/ipc';
 import {
   BoxesIcon,
   CloudIcon,
@@ -73,12 +73,9 @@ export default function AboutView() {
 
   const handleOpenExternal = async (event: ReactMouseEvent<HTMLAnchorElement>, url: string) => {
     event.preventDefault();
-    const isTauri =
-      typeof window !== 'undefined' &&
-      '__TAURI_INTERNALS__' in window;
-    if (isTauri) {
+    if (isTauri()) {
       try {
-        await invoke('open_external_url', { url });
+        await invokeCommand('open_external_url', { url });
         return;
       } catch {
         // Fall back to the browser path below.

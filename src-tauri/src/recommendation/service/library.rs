@@ -1,13 +1,14 @@
 use super::*;
 
 impl RecommendationService {
-    pub fn sync_library(&self, snapshot: LibrarySnapshot) -> Result<(), String> {
+    pub fn sync_library(&self, snapshot: LibrarySnapshot) -> CommandResult<()> {
+        let conn = self.conn_handle()?;
         let library_changed = {
-            let mut conn = self.conn.lock();
+            let mut conn = conn.lock();
             if let Some(delta) = snapshot.delta.as_ref() {
-                apply_library_delta(&mut conn, delta)?
+                apply_library_delta(&mut conn, delta).map_err(CommandError::database)?
             } else {
-                sync_library_snapshot(&mut conn, &snapshot)?
+                sync_library_snapshot(&mut conn, &snapshot).map_err(CommandError::database)?
             }
         };
 
@@ -17,14 +18,16 @@ impl RecommendationService {
         Ok(())
     }
 
-    pub fn rebuild_index(&self) -> Result<(), String> {
-        let mut conn = self.conn.lock();
+    pub fn rebuild_index(&self) -> CommandResult<()> {
+        let conn = self.conn_handle()?;
+        let mut conn = conn.lock();
         let tx = conn
             .transaction()
-            .map_err(|e| format!("开启共现索引事务失败: {}", e))?;
-        rebuild_cooccurrence_index(&tx).map_err(|e| format!("重建共现索引失败: {}", e))?;
+            .map_err(|e| CommandError::database(format!("开启共现索引事务失败: {}", e)))?;
+        rebuild_cooccurrence_index(&tx)
+            .map_err(|e| CommandError::database(format!("重建共现索引失败: {}", e)))?;
         tx.commit()
-            .map_err(|e| format!("提交共现索引事务失败: {}", e))?;
+            .map_err(|e| CommandError::database(format!("提交共现索引事务失败: {}", e)))?;
         Ok(())
     }
 }

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { MusicIcon } from '../../core/components/Icons';
 import { getImgReferrerPolicy } from '../../core/services/api';
 
@@ -8,7 +9,8 @@ interface CoverArtProps {
   iconSize?: number;
 }
 
-export default function CoverArt({ src, alt, className = 'cover-art', iconSize = 42 }: CoverArtProps) {
+/** 封面块。props 全是原始值，memo 可以直接切断父级高频重渲染。 */
+function CoverArt({ src, alt, className = 'cover-art', iconSize = 42 }: CoverArtProps) {
   return (
     <div className={className}>
       {src ? (
@@ -19,3 +21,5 @@ export default function CoverArt({ src, alt, className = 'cover-art', iconSize =
     </div>
   );
 }
+
+export default memo(CoverArt);

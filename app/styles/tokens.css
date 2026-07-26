@@ -1,0 +1,141 @@
+/* ── 设计令牌：主题变量、色彩体系、字体栈 ───────────────────── */
+:root {
+  color-scheme: light;
+  --ios-bg: #f2f2f7;
+  --ios-card: #ffffff;
+  --ios-text: #000000;
+  --ios-subtext: #8e8e93;
+  --ios-separator: #c6c6c8;
+  --ios-blue: #007aff;
+  --ios-red: #fa233b;
+  --surface: #f7f7fa;
+  --surface-2: #eeeeef;
+  --surface-hover: #f1f1f4;
+  --line: rgba(198, 198, 200, 0.58);
+  --line-strong: rgba(198, 198, 200, 0.92);
+  --text: var(--ios-text);
+  --text-soft: #2f2f35;
+  --muted: var(--ios-subtext);
+  --faint: #b2b2b8;
+  /* 与 theme.ts 的 DEFAULT_ACCENT_COLOR 保持一致，避免首帧默认色与 JS 默认色不符 */
+  --accent: #fa233b;
+  --accent-rgb: 250, 35, 59;
+  /* 装饰性双色渐变的第二色相（仅用于光晕/渐变，不参与语义着色） */
+  --accent-secondary-rgb: 0, 122, 255;
+  --accent-2: var(--ios-red);
+  --visualizer-bar-rgb: 0, 0, 0;
+  --play: var(--accent);
+  --danger: var(--ios-red);
+  --danger-rgb: 250, 35, 59;
+  /* 语义状态色 */
+  --success: #10b981;
+  --success-rgb: 16, 185, 129;
+  --info: #2563eb;
+  --info-rgb: 37, 99, 235;
+  --bg-rgb: 242, 242, 247;
+  --card-rgb: 255, 255, 255;
+  --radius-card: 18px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  /* Semantic glass/blur backgrounds */
+  --glass-bg: rgba(255,255,255,.86);
+  --glass-bg-strong: rgba(255,255,255,.92);
+  --glass-bg-soft: rgba(255,255,255,.72);
+  --glass-bg-light: rgba(255,255,255,.68);
+  --glass-bg-faint: rgba(255,255,255,.42);
+  /* Card/solid backgrounds */
+  --card-solid: #fff;
+  --card-soft: #fbfbfd;
+  /* Surface soft variants */
+  --surface-soft: rgba(247,247,250,.86);
+  --surface-soft-2: rgba(251,251,253,.92);
+  --surface-soft-3: rgba(247,247,250,.78);
+  --surface-soft-4: rgba(251,251,253,.70);
+  /* Borders */
+  --border-soft: rgba(0,0,0,.08);
+  --border-glass: rgba(255,255,255,.72);
+  /* Shadows */
+  --shadow-sm: rgba(0,0,0,.045);
+  --shadow-md: rgba(0,0,0,.06);
+  --shadow-lg: rgba(0,0,0,.07);
+  --shadow-xl: rgba(0,0,0,.18);
+  /* Text colors */
+  --text-tertiary: #7f7f86;
+  --text-quaternary: #57575f;
+  --text-dim: #3a3a40;
+  --text-faint: #686870;
+  /* Accent soft background */
+  --accent-soft: rgba(var(--accent-rgb),.12);
+  /* Gradients */
+  --cover-gradient: linear-gradient(135deg, #f4f4f7, #e7e7ec);
+  --card-gradient: linear-gradient(180deg, #fff 0%, #fbfbfd 100%);
+  /* Glass inner highlight */
+  --glass-highlight: rgba(255,255,255,.86);
+  --glass-inner: rgba(255,255,255,.7);
+  /* Lyric stage gradient */
+  --lyric-stage-bg: linear-gradient(180deg, rgba(255,255,255,.70), rgba(242,242,247,.78));
+  /* Full player panel gradient overlay */
+  --player-overlay: linear-gradient(90deg, rgba(255,255,255,.92) 0%, rgba(255,255,255,.84) 47%, rgba(255,255,255,.96) 62%, #fff 72%, #fff 100%);
+  --view-fade-from: rgba(255,255,255,.22);
+}
+
+/* 深色模式全局变量 */
+.dark-theme {
+  color-scheme: dark;
+  --ios-bg: #09090b;
+  --ios-card: #18181b;
+  --ios-text: #f4f4f5;
+  --ios-subtext: #a1a1aa;
+  --ios-separator: #27272a;
+  --surface: #09090b;
+  --surface-2: #202023;
+  --surface-hover: #27272a;
+  --line: rgba(63, 63, 70, 0.45);
+  --line-strong: rgba(63, 63, 70, 0.85);
+  --text: var(--ios-text);
+  --text-soft: #e4e4e7;
+  --muted: var(--ios-subtext);
+  --faint: #52525b;
+  --visualizer-bar-rgb: 244, 244, 245;
+  --accent-secondary-rgb: 10, 132, 255;
+  --bg-rgb: 9, 9, 11;
+  --card-rgb: 24, 24, 27;
+  /* Semantic glass/blur backgrounds */
+  --glass-bg: rgba(24,24,27,.85);
+  --glass-bg-strong: rgba(24,24,27,.92);
+  --glass-bg-soft: rgba(39,39,42,.72);
+  --glass-bg-light: rgba(39,39,42,.68);
+  --glass-bg-faint: rgba(24,24,27,.58);
+  /* Card/solid backgrounds */
+  --card-solid: #18181b;
+  --card-soft: #1a1a1c;
+  --surface-soft: rgba(39,39,42,.78);
+  --surface-soft-2: rgba(18,18,20,.92);
+  --surface-soft-3: rgba(39,39,42,.72);
+  --surface-soft-4: rgba(24,24,27,.70);
+  /* Borders */
+  --border-soft: rgba(255,255,255,.08);
+  --border-glass: rgba(255,255,255,.06);
+  /* Shadows */
+  --shadow-sm: rgba(0,0,0,.18);
+  --shadow-md: rgba(0,0,0,.25);
+  --shadow-lg: rgba(0,0,0,.3);
+  --shadow-xl: rgba(0,0,0,.5);
+  /* Text colors */
+  --text-tertiary: rgba(255,255,255,.5);
+  --text-quaternary: rgba(255,255,255,.4);
+  --text-dim: var(--text-soft);
+  --text-faint: var(--text-soft);
+  /* Accent soft background */
+  --accent-soft: rgba(var(--accent-rgb),.08);
+  /* Gradients */
+  --cover-gradient: linear-gradient(135deg, #27272a, #18181b);
+  --card-gradient: linear-gradient(180deg, rgba(39,39,42,.78) 0%, rgba(24,24,27,.72) 100%);
+  /* Glass inner highlight */
+  --glass-highlight: rgba(255,255,255,.06);
+  --glass-inner: rgba(255,255,255,.06);
+  /* Lyric stage gradient */
+  --lyric-stage-bg: linear-gradient(180deg, rgba(24,24,27,.70), rgba(9,9,11,.78));
+  /* Full player panel gradient overlay */
+  --player-overlay: linear-gradient(180deg, rgba(24,24,27,.10), rgba(9,9,11,.34));
+  --view-fade-from: transparent;
+}

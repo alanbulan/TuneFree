@@ -1,8 +1,8 @@
 import { useMemo } from "react";
+import { NEAR_END_PROGRESS_RATIO } from "./playerUtils";
 import type {
   PlayerActions,
   PlayerAnalyser,
-  PlayerContextValue,
   PlayerNoticeState,
   PlayerNowPlaying,
   PlayerProgress,
@@ -21,7 +21,6 @@ import { useSongPlayback } from "./useSongPlayback";
 import { useSongResolver } from "./useSongResolver";
 
 export interface PlayerController {
-  contextValue: PlayerContextValue;
   actionsValue: PlayerActions;
   nowPlayingValue: PlayerNowPlaying;
   queueStateValue: PlayerQueueState;
@@ -55,11 +54,15 @@ export const usePlayerController = (): PlayerController => {
     initAudioContext: audio.initAudioContext,
   }), [audio.initAudioContext, playSong, playback, queue, settings]);
 
-  const nowPlayingValue = useMemo(() => ({
+  // 布尔量而不是进度本身进入低频 context，翻转时才会触发订阅方重渲染。
+  const isNearEnd = runtime.duration > 0 &&
+    runtime.currentTime / runtime.duration > NEAR_END_PROGRESS_RATIO;
+  const nowPlayingValue = useMemo<PlayerNowPlaying>(() => ({
     currentSong: runtime.currentSong,
     isPlaying: runtime.isPlaying,
     isLoading: runtime.isLoading,
-  }), [runtime.currentSong, runtime.isLoading, runtime.isPlaying]);
+    isNearEnd,
+  }), [isNearEnd, runtime.currentSong, runtime.isLoading, runtime.isPlaying]);
   const queueStateValue = useMemo(() => ({
     queue: runtime.queue, playMode: runtime.playMode,
   }), [runtime.playMode, runtime.queue]);
@@ -74,20 +77,8 @@ export const usePlayerController = (): PlayerController => {
   const noticeValue = useMemo(() => ({ playerNotice: runtime.playerNotice }),
     [runtime.playerNotice]);
 
-  const contextValue = useMemo<PlayerContextValue>(() => ({
-    currentSong: runtime.currentSong, isPlaying: runtime.isPlaying,
-    isLoading: runtime.isLoading, currentTime: runtime.currentTime,
-    duration: runtime.duration, lyricOffsetSeconds: runtime.lyricOffsetSeconds,
-    volume: runtime.volume, playMode: runtime.playMode, queue: runtime.queue,
-    analyser: runtime.analyser, audioQuality: runtime.audioQuality,
-    playerNotice: runtime.playerNotice, ...actionsValue,
-  }), [actionsValue, runtime.analyser, runtime.audioQuality, runtime.currentSong,
-    runtime.currentTime, runtime.duration, runtime.isLoading, runtime.isPlaying,
-    runtime.lyricOffsetSeconds, runtime.playMode, runtime.playerNotice,
-    runtime.queue, runtime.volume]);
-
   return {
-    contextValue, actionsValue, nowPlayingValue, queueStateValue,
+    actionsValue, nowPlayingValue, queueStateValue,
     settingsValue, analyserValue, progressValue, noticeValue,
   };
 };

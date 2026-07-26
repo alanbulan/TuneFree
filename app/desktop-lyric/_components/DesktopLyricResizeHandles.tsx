@@ -1,3 +1,5 @@
+import { getCurrentWindow, isTauri } from '../../../src/core/ipc';
+
 type ResizeDirection = 'East' | 'North' | 'NorthEast' | 'NorthWest' | 'South' | 'SouthEast' | 'SouthWest' | 'West';
 
 const RESIZE_HANDLES: Array<{
@@ -23,10 +25,9 @@ export function DesktopLyricResizeHandles({ disabled = false }: DesktopLyricResi
   if (disabled) return null;
 
   const startResize = async (direction: ResizeDirection) => {
-    if (typeof window === 'undefined' || !(window as any).__TAURI_INTERNALS__) return;
+    if (!isTauri()) return;
 
     try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
       await getCurrentWindow().startResizeDragging(direction);
     } catch (e) {
       console.warn('Failed to start desktop lyric resize:', e);

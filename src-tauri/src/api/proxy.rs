@@ -90,6 +90,12 @@ const ALLOWED_HOSTS: [&str; 22] = [
     "hdslb.com",
 ];
 
+/// Returns the proxy host whitelist for the `/api/allowed-hosts` endpoint,
+/// letting the frontend self-check instead of keeping a manual copy.
+pub(crate) fn allowed_hosts() -> &'static [&'static str] {
+    &ALLOWED_HOSTS
+}
+
 /// Checks if `host` is in the allowed-hosts whitelist.
 ///
 /// Matches exact hostnames and subdomains (e.g. "sub.kuwo.cn" matches "kuwo.cn").
@@ -229,11 +235,12 @@ pub async fn handle_cors_proxy(
             *response.headers_mut() = response_headers;
             response.into_response()
         }
-        Err(e) => (
-            StatusCode::BAD_GATEWAY,
-            format!("Proxy fetch failed: {}", e),
-        )
-            .into_response(),
+        Err(e) => {
+            // reqwest error strings can embed upstream hostnames, ports, and
+            // DNS details; keep them in the log and return a generic body.
+            log::warn!("Proxy upstream request failed: {}", e);
+            (StatusCode::BAD_GATEWAY, "Proxy upstream request failed").into_response()
+        }
     }
 }
 
@@ -249,6 +256,7 @@ mod tests {
         headers.insert("if-range", HeaderValue::from_static("etag-value"));
         headers.insert("cookie", HeaderValue::from_static("session=secret"));
         headers.insert("host", HeaderValue::from_static("127.0.0.1:3002"));
+        headers.insert("x-tunefree-token", HeaderValue::from_static("local-token"));
 
         let forwarded = collect_forwarded_request_headers(&headers);
 
@@ -256,6 +264,19 @@ mod tests {
         assert_eq!(forwarded.get("if-range").unwrap(), "etag-value");
         assert!(forwarded.get("cookie").is_none());
         assert!(forwarded.get("host").is_none());
+        assert!(forwarded.get("x-tunefree-token").is_none());
+    }
+
+    #[test]
+    fn proxy_query_ignores_local_token_parameter() {
+        let uri: axum::http::Uri =
+            "http://127.0.0.1:1/api/cors-proxy?token=abc123&url=https%3A%2F%2Fmusic.163.com%2Fsong%3Fid%3D1%26br%3D320"
+                .parse()
+                .unwrap();
+
+        let Query(query) = Query::<ProxyQuery>::try_from_uri(&uri).unwrap();
+
+        assert_eq!(query.url, "https://music.163.com/song?id=1&br=320");
     }
 
     #[test]

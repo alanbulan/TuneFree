@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   attachRecommendationMeta,
-  getHomeRecommendations,
+  getLatestRecommendationJob,
+  getSimilarSongs,
   logRecommendationEvent,
   recommendationFeedbackFromSong,
 } from '../recommendation';
@@ -9,7 +10,13 @@ import type { RecommendationItem } from '../recommendation';
 
 describe('recommendation service', () => {
   it('returns empty results outside Tauri', async () => {
-    await expect(getHomeRecommendations({ limit: 10 })).resolves.toEqual([]);
+    await expect(
+      getSimilarSongs(
+        { id: '1', source: 'netease', name: 'Song', artist: 'Artist', album: 'Album' },
+        { limit: 10 },
+      ),
+    ).resolves.toEqual([]);
+    await expect(getLatestRecommendationJob()).resolves.toBeNull();
     await expect(logRecommendationEvent({ eventType: 'play_start' })).resolves.toBeUndefined();
   });
 

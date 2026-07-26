@@ -29,7 +29,7 @@ import {
   type GdStudioSource,
   type GdStudioTrack,
 } from './gdStudioModel';
-import { proxyFetch } from './proxy';
+import { proxyFetch, throwIfAborted } from './proxy';
 import { fixUrl } from './utils';
 
 export { syncServerTime } from './gdStudioClient';
@@ -49,6 +49,7 @@ export const searchGDStudio = async (
   source: GdStudioSource,
   page: number,
   limit: number,
+  signal?: AbortSignal,
 ): Promise<Song[]> => {
   const data = await fetchGDStudioData<GdStudioTrack[]>({
     types: "search",
@@ -56,7 +57,7 @@ export const searchGDStudio = async (
     name: keyword,
     count: limit,
     pages: page,
-  });
+  }, signal);
 
   if (!Array.isArray(data)) {
     throw new GDStudioApiError('BAD_RESPONSE', 200, 'search response must be an array');
@@ -126,9 +127,10 @@ export const getGDStudioSongUrl = async (
   id: string | number,
   source: GdStudioSource,
   quality: string = "320k",
+  options?: { signal?: AbortSignal; forceRefresh?: boolean },
 ): Promise<string | null> => {
   const cacheKey = getUrlCacheKey(id, source, quality);
-  const cached = urlCache.get(cacheKey);
+  const cached = options?.forceRefresh ? undefined : urlCache.get(cacheKey);
 
   if (cached && cached.expiresAt > Date.now()) {
     return cached.url;
@@ -143,7 +145,7 @@ export const getGDStudioSongUrl = async (
       source,
       id: requestId,
       br: normalizeBitrate(quality),
-    });
+    }, options?.signal);
 
     const url = fixUrl(typeof data?.url === "string" ? data.url : "");
     if (!url) return null;
@@ -155,6 +157,7 @@ export const getGDStudioSongUrl = async (
 
     return url;
   } catch {
+    throwIfAborted(options?.signal);
     return null;
   }
 };
@@ -162,12 +165,13 @@ export const getGDStudioSongUrl = async (
 export const getGDStudioLyrics = async (
   id: string | number,
   source: GdStudioSource,
+  options?: { signal?: AbortSignal; forceRefresh?: boolean },
 ): Promise<string> => {
   const trackMeta = resolveTrackMeta(id, source);
   const requestId = trackMeta.lyricId || String(id);
   const cacheKey = getTrackKey(requestId, source);
 
-  if (lyricCache.has(cacheKey)) {
+  if (!options?.forceRefresh && lyricCache.has(cacheKey)) {
     return lyricCache.get(cacheKey) || "";
   }
 
@@ -194,7 +198,7 @@ export const getGDStudioLyrics = async (
       types: "lyric",
       source,
       id: requestId,
-    });
+    }, options?.signal);
 
     const main = (typeof data?.lyric === "string" ? data.lyric : data?.lrc || "").trim();
     const trans = [data?.tlyric, data?.trans, data?.translation, data?.translations]
@@ -221,6 +225,7 @@ export const getGDStudioLyrics = async (
     rememberTrackMeta(id, source, { lyricId: requestId });
     return lrc;
   } catch {
+    throwIfAborted(options?.signal);
     return "";
   }
 };
@@ -230,6 +235,7 @@ export const getGDStudioPic = async (
   picId: string,
   size: 300 | 500 = 500,
   songId?: string | number,
+  signal?: AbortSignal,
 ): Promise<string> => {
   if (!picId) return "";
 
@@ -250,7 +256,7 @@ export const getGDStudioPic = async (
     try {
       const targetId = songId || picId;
       const url = `https://music.163.com/api/song/detail/?id=${targetId}&ids=[${targetId}]`;
-      const response = await proxyFetch(url, {}, 8000);
+      const response = await proxyFetch(url, { signal }, 8000);
       if (response) {
         const text = decodeResponseText(await response.arrayBuffer());
         const data = tryParseJson(text);
@@ -262,6 +268,7 @@ export const getGDStudioPic = async (
         }
       }
     } catch (err) {
+      throwIfAborted(signal);
       console.warn("[GDStudio] Failed to fetch native netease cover:", err);
     }
   }
@@ -289,7 +296,7 @@ export const getGDStudioPic = async (
       source,
       id: picId,
       size,
-    });
+    }, signal);
 
     const pic = fixUrl(typeof data?.url === "string" ? data.url : "");
     if (pic) {
@@ -297,6 +304,7 @@ export const getGDStudioPic = async (
       return pic;
     }
   } catch {
+    throwIfAborted(signal);
     // skip
   }
 
@@ -307,6 +315,7 @@ export const resolveGDStudioPic = async (
   id: string | number,
   source: GdStudioSource,
   songMeta?: Pick<Song, "pic" | "picId">,
+  signal?: AbortSignal,
 ): Promise<string> => {
   if (songMeta?.pic) return fixUrl(songMeta.pic);
 
@@ -315,7 +324,7 @@ export const resolveGDStudioPic = async (
 
   if (!picId) return "";
 
-  const pic = await getGDStudioPic(source, picId, 500, id);
+  const pic = await getGDStudioPic(source, picId, 500, id, signal);
   if (pic) {
     rememberTrackMeta(id, source, { pic, picId });
   }
@@ -328,11 +337,12 @@ export const parseGDStudioSongFull = async (
   source: GdStudioSource,
   quality: string = "320k",
   songMeta?: Pick<Song, "pic" | "picId">,
+  options?: { signal?: AbortSignal; forceRefresh?: boolean },
 ): Promise<{ url: string | null; lrc: string; pic: string } | null> => {
   const [url, lrc, pic] = await Promise.all([
-    getGDStudioSongUrl(id, source, quality),
-    getGDStudioLyrics(id, source),
-    resolveGDStudioPic(id, source, songMeta),
+    getGDStudioSongUrl(id, source, quality, options),
+    getGDStudioLyrics(id, source, options),
+    resolveGDStudioPic(id, source, songMeta, options?.signal),
   ]);
 
   if (!url && !lrc && !pic) return null;
@@ -351,6 +361,7 @@ export const parseGDStudioSongFull = async (
 export const resolveAutosource = async (
   song: Pick<Song, "name" | "artist" | "album" | "source">,
   quality: string = "320k",
+  signal?: AbortSignal,
 ): Promise<{
   url: string;
   lrc: string;
@@ -386,7 +397,7 @@ export const resolveAutosource = async (
     source: song.source || "embeat",
     name: nameStr,
     br: normalizeBitrate(quality),
-  });
+  }, signal);
 
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     throw new GDStudioApiError('BAD_RESPONSE', 200, 'autosource response must be an object');

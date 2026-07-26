@@ -2,7 +2,6 @@ import React, { createContext, useContext } from "react";
 import type {
   PlayerActions,
   PlayerAnalyser,
-  PlayerContextValue,
   PlayerNoticeState,
   PlayerNowPlaying,
   PlayerProgress,
@@ -13,7 +12,6 @@ import { usePlayerController } from "../player/usePlayerController";
 
 export type { PlayerNotice } from "../player/types";
 
-const PlayerContext = createContext<PlayerContextValue | undefined>(undefined);
 const PlayerActionsContext = createContext<PlayerActions | undefined>(undefined);
 const PlayerNowPlayingContext = createContext<PlayerNowPlaying | undefined>(undefined);
 const PlayerQueueStateContext = createContext<PlayerQueueState | undefined>(undefined);
@@ -32,9 +30,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             <PlayerAnalyserContext.Provider value={controller.analyserValue}>
               <PlayerProgressContext.Provider value={controller.progressValue}>
                 <PlayerNoticeContext.Provider value={controller.noticeValue}>
-                  <PlayerContext.Provider value={controller.contextValue}>
-                    {children}
-                  </PlayerContext.Provider>
+                  {children}
                 </PlayerNoticeContext.Provider>
               </PlayerProgressContext.Provider>
             </PlayerAnalyserContext.Provider>
@@ -54,7 +50,7 @@ const DEFAULT_ACTIONS: PlayerActions = {
   setAudioQuality: () => {}, initAudioContext: () => {},
 };
 const DEFAULT_NOW_PLAYING: PlayerNowPlaying = {
-  currentSong: null, isPlaying: false, isLoading: false,
+  currentSong: null, isPlaying: false, isLoading: false, isNearEnd: false,
 };
 const DEFAULT_QUEUE_STATE: PlayerQueueState = { queue: [], playMode: "sequence" };
 const DEFAULT_SETTINGS: PlayerSettings = { audioQuality: "320k" };
@@ -63,11 +59,6 @@ const DEFAULT_PROGRESS: PlayerProgress = {
   currentTime: 0, duration: 0, lyricOffsetSeconds: 0,
 };
 const DEFAULT_NOTICE: PlayerNoticeState = { playerNotice: null };
-const PLAYER_DEFAULTS: PlayerContextValue = {
-  ...DEFAULT_NOW_PLAYING, ...DEFAULT_QUEUE_STATE, ...DEFAULT_SETTINGS,
-  ...DEFAULT_ANALYSER, ...DEFAULT_PROGRESS, ...DEFAULT_NOTICE,
-  volume: 1, ...DEFAULT_ACTIONS,
-};
 
 const useContextValue = <T,>(
   context: React.Context<T | undefined>,
@@ -82,8 +73,6 @@ const useContextValue = <T,>(
   return value;
 };
 
-export const usePlayer = (): PlayerContextValue =>
-  useContextValue(PlayerContext, PLAYER_DEFAULTS, "usePlayer");
 export const usePlayerActions = (): PlayerActions =>
   useContextValue(PlayerActionsContext, DEFAULT_ACTIONS, "usePlayerActions");
 export const usePlayerNowPlaying = (): PlayerNowPlaying =>

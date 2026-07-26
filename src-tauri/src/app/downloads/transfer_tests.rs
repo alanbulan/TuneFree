@@ -1,5 +1,5 @@
 use super::*;
-use std::path::{Path, PathBuf};
+use crate::app::error::ErrorCode;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 async fn test_http_response(
@@ -78,9 +78,9 @@ fn download_limits_and_task_ids_are_validated() {
     assert!(validate_download_task_id("").is_err());
     assert!(validate_download_task_id("download:invalid/id").is_err());
     assert!(validate_download_size(MAX_AUDIO_DOWNLOAD_BYTES, MAX_AUDIO_DOWNLOAD_BYTES).is_ok());
-    assert!(
-        validate_download_size(MAX_AUDIO_DOWNLOAD_BYTES + 1, MAX_AUDIO_DOWNLOAD_BYTES).is_err()
-    );
+    let oversize =
+        validate_download_size(MAX_AUDIO_DOWNLOAD_BYTES + 1, MAX_AUDIO_DOWNLOAD_BYTES).unwrap_err();
+    assert_eq!(oversize.code, ErrorCode::DownloadFailed);
     assert!(checked_downloaded_size(4, 2, 5).is_err());
 }
 
@@ -88,7 +88,8 @@ fn download_limits_and_task_ids_are_validated() {
 fn download_task_registry_registers_cancels_and_finishes_tasks() {
     let registry = DownloadTaskRegistry::default();
     let cancellation = registry.register("download:test").unwrap();
-    assert!(registry.register("download:test").is_err());
+    let duplicate = registry.register("download:test").unwrap_err();
+    assert_eq!(duplicate.code, ErrorCode::Busy);
     assert!(!cancellation.is_cancelled());
     assert!(registry.cancel("download:test"));
     assert!(cancellation.is_cancelled());
@@ -96,14 +97,110 @@ fn download_task_registry_registers_cancels_and_finishes_tasks() {
     assert!(!registry.cancel("download:test"));
 }
 
+#[test]
+fn download_task_registry_tracks_active_partials() {
+    let registry = DownloadTaskRegistry::default();
+    let partial = PathBuf::from("track.mp3.partial-1");
+    assert!(registry.active_partial_snapshot().is_empty());
+    registry.track_partial(&partial);
+    assert!(registry.active_partial_snapshot().contains(&partial));
+    registry.untrack_partial(&partial);
+    assert!(registry.active_partial_snapshot().is_empty());
+}
+
+/// 最高危的回归点：清理陈旧 partial 时必须跳过在途下载持有的临时文件，
+/// 否则 Windows 上删除被占用的临时文件会让最终 rename 失败、下载静默丢失。
+#[test]
+fn stale_cleanup_skips_partials_owned_by_running_downloads() {
+    use super::super::path::{cleanup_stale_partials_at, STALE_PARTIAL_MAX_AGE};
+
+    let dir = temp_download_path("registry-cleanup")
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    std::fs::create_dir_all(&dir).unwrap();
+    let running = dir.join("running.mp3.partial-1");
+    let abandoned = dir.join("abandoned.mp3.partial-2");
+    std::fs::write(&running, b"in flight").unwrap();
+    std::fs::write(&abandoned, b"crashed").unwrap();
+
+    let registry = DownloadTaskRegistry::default();
+    registry.track_partial(&running);
+    // 把"现在"推到远未来，让所有文件都满足陈旧条件，只留活跃集合这一道防线。
+    let future = std::time::SystemTime::now() + STALE_PARTIAL_MAX_AGE + Duration::from_secs(60);
+    cleanup_stale_partials_at(&dir, &registry.active_partial_snapshot(), future);
+
+    assert!(running.exists(), "在途下载的 partial 不得被清理");
+    assert!(!abandoned.exists(), "陈旧的 partial 应被清理");
+
+    // 下载结束、解除跟踪后，同一个文件才允许被回收。
+    registry.untrack_partial(&running);
+    cleanup_stale_partials_at(&dir, &registry.active_partial_snapshot(), future);
+    assert!(!running.exists());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn failed_download_keeps_the_previously_downloaded_file_intact() {
+    let file_path = temp_download_path("keep-old-file");
+    std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+    std::fs::write(&file_path, b"previous audio").unwrap();
+    let partial_path = super::super::path::partial_path_for(&file_path).unwrap();
+
+    let response = test_http_response(None, b"too-large".to_vec(), Duration::ZERO).await;
+    let error = persist_download_response(
+        response,
+        &file_path,
+        &partial_path,
+        Duration::from_secs(1),
+        4,
+        &DownloadCancellation::default(),
+        |_| {},
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::DownloadFailed);
+    assert_eq!(std::fs::read(&file_path).unwrap(), b"previous audio");
+    assert_no_partial_file(&file_path);
+    let _ = std::fs::remove_dir_all(file_path.parent().unwrap());
+}
+
+#[tokio::test]
+async fn successful_download_replaces_an_existing_file_atomically() {
+    let file_path = temp_download_path("replace-file");
+    std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+    std::fs::write(&file_path, b"previous audio").unwrap();
+    let partial_path = super::super::path::partial_path_for(&file_path).unwrap();
+
+    let response = test_http_response(Some(5), b"audio".to_vec(), Duration::ZERO).await;
+    persist_download_response(
+        response,
+        &file_path,
+        &partial_path,
+        Duration::from_secs(1),
+        16,
+        &DownloadCancellation::default(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(std::fs::read(&file_path).unwrap(), b"audio");
+    assert_no_partial_file(&file_path);
+    let _ = std::fs::remove_dir_all(file_path.parent().unwrap());
+}
+
 #[tokio::test]
 async fn persist_download_response_writes_and_renames_the_partial_file() {
     let file_path = temp_download_path("success");
+    let partial_path = super::super::path::partial_path_for(&file_path).unwrap();
     let response = test_http_response(Some(5), b"audio".to_vec(), Duration::ZERO).await;
     let mut progress = Vec::new();
     persist_download_response(
         response,
         &file_path,
+        &partial_path,
         Duration::from_secs(1),
         16,
         &DownloadCancellation::default(),
@@ -125,11 +222,14 @@ async fn assert_failed_download_cleanup(
     max_bytes: u64,
     cancellation: &DownloadCancellation,
     expected_error: &str,
+    expected_code: ErrorCode,
 ) {
     let file_path = temp_download_path(test_name);
+    let partial_path = super::super::path::partial_path_for(&file_path).unwrap();
     let error = persist_download_response(
         response,
         &file_path,
+        &partial_path,
         timeout,
         max_bytes,
         cancellation,
@@ -137,7 +237,8 @@ async fn assert_failed_download_cleanup(
     )
     .await
     .unwrap_err();
-    assert!(error.contains(expected_error));
+    assert!(error.message.contains(expected_error));
+    assert_eq!(error.code, expected_code);
     assert!(!file_path.exists());
     assert_no_partial_file(&file_path);
     let _ = tokio::fs::remove_dir_all(file_path.parent().unwrap()).await;
@@ -153,6 +254,7 @@ async fn persist_download_response_removes_partial_when_stream_exceeds_limit() {
         4,
         &DownloadCancellation::default(),
         "大小限制",
+        ErrorCode::DownloadFailed,
     )
     .await;
 }
@@ -167,6 +269,7 @@ async fn persist_download_response_removes_partial_after_idle_timeout() {
         16,
         &DownloadCancellation::default(),
         "读取超时",
+        ErrorCode::DownloadFailed,
     )
     .await;
 }
@@ -187,6 +290,7 @@ async fn persist_download_response_removes_partial_after_cancellation() {
         16,
         &cancellation,
         "已取消",
+        ErrorCode::Cancelled,
     )
     .await;
 }

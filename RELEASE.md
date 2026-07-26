@@ -26,20 +26,26 @@ npm run version:check
 
 ## 发布前验证
 
+下面这组命令与 `.github/workflows/validate.yml` 一一对应。打标签后 `Release signed desktop app`
+工作流会先复用同一个 `Validate` 工作流，未通过则不会进入构建与签名步骤，所以本地跑通只是提前发现问题。
+
 ```powershell
 npm ci
 npm run version:check
 npm run lint
 npm run typecheck
 npm run architecture:check
-npm test -- --run
-npm run build
+npm run test:coverage
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings -D clippy::too_many_lines
+cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml --locked
 npx tauri build --no-bundle
-git diff --check
+git diff --exit-code
 ```
+
+Clippy 的严格规则固化在 `src-tauri/Cargo.toml` 的 `[lints]` 段（`too_many_lines`、`dbg_macro`、
+`todo`、`unsafe_code`），命令行不再重复列举；`npx tauri build --no-bundle` 已经通过
+`beforeBuildCommand` 执行过 `npm run build`，不需要另外单独构建前端。
 
 ## 提交与标签
 
@@ -53,12 +59,27 @@ git push origin tauri
 git push origin v1.1.24
 ```
 
-推送 `v*` 标签后，GitHub Actions 的 `Release signed desktop app` 工作流会构建、签名并发布：
+推送 `v*` 标签后，GitHub Actions 的 `Release signed desktop app` 工作流按顺序执行：
+
+1. `Validate` 可复用工作流（lint / typecheck / architecture / vitest / fmt / clippy / cargo test / tauri build）。
+2. 校验标签与 `src-tauri/tauri.conf.json` 的版本号一致。
+3. 构建、签名并创建**草稿 Release**，附带：
 
 - `TuneFree_{version}_x64-setup.exe`
 - `TuneFree_{version}_x64-setup.exe.sig`
 - `latest.json`
 - 自动生成的版本说明
+
+## 手动发布闸门
+
+工作流只创建草稿（`releaseDraft: true`），不会自动公开。
+
+`src-tauri/tauri.conf.json` 的 updater endpoint 指向
+`https://github.com/alanbulan/TuneFree_Mobile/releases/latest/download/latest.json`，
+只要草稿被 Publish 为正式 Release，所有已安装客户端下一次检查更新就会立即拉到该版本。
+因此必须先完成下面的"发布后核验"，确认无误后再在 GitHub Releases 页面手动点击 Publish。
+
+草稿如需作废，直接删除草稿 Release 与对应标签即可，不会影响任何已安装客户端。
 
 ## 签名配置
 
@@ -80,11 +101,14 @@ $password = [System.Net.NetworkCredential]::new('', (ConvertTo-SecureString $enc
 
 ## 发布后核验
 
-1. 工作流结论为 success。
+以下 1-6 项在草稿状态下完成，全部通过后再手动 Publish，第 7 项在 Publish 之后确认。
+
+1. `validate` 与 `release-windows-x64` 两个 job 结论均为 success。
 2. Release 标签和目标提交与本次发布一致。
 3. 三个发布资产均存在且非空。
 4. `latest.json.version` 与标签一致。
 5. `latest.json` 的 `windows-x86_64` URL 指向本次安装包，签名字段非空。
 6. 本地 `tauri` 分支与 `origin/tauri` 同步且工作区干净。
+7. Publish 后用一台旧版本客户端验证自动更新链路可用。
 
 安装包只发布到 GitHub Releases，不提交到源码目录。

@@ -1,14 +1,14 @@
-import { FormEvent, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { FormEvent, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { invoke } from '@tauri-apps/api/core';
 import { useDesktopPreferences } from '../../core/contexts/DesktopPreferencesContext';
-import { usePlayerNotice, usePlayerNowPlaying, usePlayerProgress } from '../../core/contexts/PlayerContext';
+import { usePlayerNotice } from '../../core/contexts/PlayerContext';
 import { useTheme } from '../../core/contexts/ThemeContext';
-import { useLyricDisplayMode } from '../../core/hooks/useLyricDisplayMode';
+import { getCurrentWindow, invokeCommand, isTauri } from '../../core/ipc';
 import DesktopHome from '../features/home/DesktopHome';
 import type { DesktopView, LibraryView } from '../types';
 import DesktopFullPlayer from './DesktopFullPlayer';
 import DesktopTransport from './DesktopTransport';
+import LyricSyncBridge from './LyricSyncBridge';
 import MiraPet from './MiraPet';
 import { useToast } from './ToastHost';
 import { useLyricControlListener } from '../hooks/useLyricControlListener';
@@ -17,8 +17,8 @@ import { DesktopSidebar, WindowBar } from './DesktopShellChrome';
 
 // P3-16: Lazy-load non-first-screen views for code splitting
 const LoadingSpinner = () => (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px' }}>
-    <span style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>加载中…</span>
+  <div className="view-loading">
+    <span className="view-loading-label">加载中…</span>
   </div>
 );
 const DesktopLibrary = lazy(() => import('../features/library/DesktopLibrary'));
@@ -31,72 +31,38 @@ interface DesktopShellProps {
 
 const libraryViews: LibraryView[] = ['favorites', 'playlists', 'downloads', 'settings', 'about'];
 
-const isTauri = typeof window !== 'undefined' &&
-  ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+/**
+ * Animation key for the view transition layer.
+ *
+ * All library sub-views collapse to one key so switching between them only
+ * swaps `activeView` instead of remounting the whole `DesktopLibrary` tree.
+ */
+const getSectionKey = (view: DesktopView): string =>
+  libraryViews.includes(view as LibraryView) ? 'library' : view;
 
-const LYRIC_SYNC_INTERVAL_MS = 500;
+/**
+ * Remembers each view's scroll offset on the shared scroll container.
+ *
+ * The container used to be keyed by view, which remounted it on every
+ * navigation and discarded the offset along with it.
+ */
+function useViewScrollMemory(view: DesktopView) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const offsetsRef = useRef<Partial<Record<DesktopView, number>>>({});
+  const activeViewRef = useRef<DesktopView>(view);
 
-function LyricSyncBridge() {
-  const { currentSong, isPlaying } = usePlayerNowPlaying();
-  const { currentTime, duration, lyricOffsetSeconds } = usePlayerProgress();
-  const lyricDisplayMode = useLyricDisplayMode();
-  const { showDesktopLyric } = useTheme();
-  const lastSyncAtRef = useRef(0);
-  const lastSignatureRef = useRef('');
-  const lastSyncedTimeRef = useRef(0);
+  const handleScroll = useCallback(() => {
+    const container = containerRef.current;
+    if (container) offsetsRef.current[activeViewRef.current] = container.scrollTop;
+  }, []);
 
-  useEffect(() => {
-    if (!isTauri || !showDesktopLyric) return;
+  useLayoutEffect(() => {
+    activeViewRef.current = view;
+    const container = containerRef.current;
+    if (container) container.scrollTop = offsetsRef.current[view] ?? 0;
+  }, [view]);
 
-    const signature = [
-      currentSong?.source ?? '',
-      currentSong?.id ?? '',
-      currentSong?.lrc ?? '',
-      isPlaying ? '1' : '0',
-      duration,
-      lyricOffsetSeconds,
-      lyricDisplayMode,
-    ].join('');
-    const now = Date.now();
-    const stateChanged = signature !== lastSignatureRef.current;
-    const seeked = Math.abs(currentTime - lastSyncedTimeRef.current) > 1.5;
-    const throttled = now - lastSyncAtRef.current < LYRIC_SYNC_INTERVAL_MS;
-
-    if (!stateChanged && !seeked && throttled) return;
-
-    lastSignatureRef.current = signature;
-    lastSyncedTimeRef.current = currentTime;
-    lastSyncAtRef.current = now;
-
-    const syncLyric = async () => {
-      try {
-        const { emit } = await import('@tauri-apps/api/event');
-        await emit('lyric-update', {
-          song: currentSong ? {
-            id: currentSong.id,
-            name: currentSong.name,
-            artist: currentSong.artist,
-            source: currentSong.source,
-            pic: currentSong.pic,
-            lrc: currentSong.lrc,
-          } : null,
-          currentTime,
-          duration,
-          isPlaying,
-          playbackRate: 1,
-          lyricOffsetSeconds,
-          lyricDisplayMode,
-          sentAt: now,
-        });
-      } catch (e) {
-        console.error('Failed to emit lyric-update:', e);
-      }
-    };
-
-    void syncLyric();
-  }, [currentSong, isPlaying, currentTime, duration, lyricOffsetSeconds, lyricDisplayMode, showDesktopLyric]);
-
-  return null;
+  return { containerRef, handleScroll };
 }
 
 export default function DesktopShell({ view, onViewChange }: DesktopShellProps) {
@@ -110,6 +76,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [closePromptOpen, setClosePromptOpen] = useState(false);
   const [rememberCloseChoice, setRememberCloseChoice] = useState(false);
+  const { containerRef, handleScroll } = useViewScrollMemory(view);
 
   // P2-6: Refs and player-control listeners extracted to hook.
   const { closeBehaviorRef, closePromptOpenRef } = useLyricControlListener({
@@ -124,9 +91,8 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   }, [playerNotice, showToast]);
 
   const hideMainToTray = useCallback(async () => {
-    if (!isTauri) return;
+    if (!isTauri()) return;
     try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
       await getCurrentWindow().hide();
       showToast('TuneFree 已在后台继续运行，可从系统托盘恢复', 'info');
     } catch (e) {
@@ -136,9 +102,9 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   }, [showToast]);
 
   const quitApplication = useCallback(async () => {
-    if (!isTauri) return;
+    if (!isTauri()) return;
     try {
-      await invoke('quit_app');
+      await invokeCommand('quit_app');
     } catch (e) {
       console.error('Failed to quit app:', e);
       showToast('退出应用失败', 'error');
@@ -146,13 +112,12 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   }, [showToast]);
 
   useEffect(() => {
-    if (!isTauri) return;
+    if (!isTauri()) return;
 
     let unlisten: (() => void) | null = null;
 
     const setupCloseListener = async () => {
       try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
         unlisten = await getCurrentWindow().onCloseRequested((event) => {
           event.preventDefault();
           const behavior = closeBehaviorRef.current;
@@ -184,7 +149,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
     };
   }, [hideMainToTray, quitApplication, closeBehaviorRef, closePromptOpenRef]);
 
-  const resolveClosePrompt = (action: 'tray' | 'exit' | 'cancel') => {
+  const resolveClosePrompt = useCallback((action: 'tray' | 'exit' | 'cancel') => {
     if (action === 'cancel') {
       setClosePromptOpen(false);
       return;
@@ -200,15 +165,26 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
     } else {
       void quitApplication();
     }
-  };
+  }, [hideMainToTray, quitApplication, rememberCloseChoice, setCloseBehavior]);
 
-  const submitSearch = (query: string) => {
+  // memo 过的子树（FullPlayerActions / TransportMiniLyric）拿到的必须是稳定引用，
+  // 而 onViewChange 由外层每次渲染重新创建，这里用 ref 兜住它。
+  const viewChangeRef = useRef(onViewChange);
+  useEffect(() => {
+    viewChangeRef.current = onViewChange;
+  });
+
+  const submitSearch = useCallback((query: string) => {
     const clean = query.trim();
     if (!clean) return;
     localStorage.setItem('tunefree_desktop_pending_query', clean);
     setSearchRequest((prev) => ({ query: clean, nonce: prev.nonce + 1 }));
-    onViewChange('search');
-  };
+    viewChangeRef.current('search');
+  }, []);
+
+  const openFullPlayer = useCallback(() => setFullPlayerOpen(true), []);
+  const closeFullPlayer = useCallback(() => setFullPlayerOpen(false), []);
+  const toggleSidebar = useCallback(() => setSidebarCollapsed((previous) => !previous), []);
 
   const handleCommandSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -220,11 +196,11 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
       <WindowBar view={view} commandQuery={commandQuery}
         onCommandQueryChange={setCommandQuery} onCommandSearch={handleCommandSearch} />
       <DesktopSidebar view={view} collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed((previous) => !previous)} onViewChange={onViewChange} />
+        onToggle={toggleSidebar} onViewChange={onViewChange} />
 
       <main className="workspace">
-        <div className="view-scroll" key={view}>
-          <div className="view-transition-panel">
+        <div className="view-scroll" ref={containerRef} onScroll={handleScroll}>
+          <div className="view-transition-panel" key={getSectionKey(view)}>
             {view === 'home' && <DesktopHome onViewChange={onViewChange} />}
             <Suspense fallback={<LoadingSpinner />}>
               {view === 'search' && <DesktopSearch commandQuery={searchRequest.query} commandNonce={searchRequest.nonce} />}
@@ -236,10 +212,10 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
 
       <MiraPet />
       <LyricSyncBridge />
-      <DesktopTransport onExpand={() => setFullPlayerOpen(true)} />
+      <DesktopTransport onExpand={openFullPlayer} suspended={fullPlayerOpen} />
       <AnimatePresence>
         {fullPlayerOpen && (
-          <DesktopFullPlayer isOpen={fullPlayerOpen} onClose={() => setFullPlayerOpen(false)} onSearch={submitSearch} />
+          <DesktopFullPlayer isOpen={fullPlayerOpen} onClose={closeFullPlayer} onSearch={submitSearch} />
         )}
       </AnimatePresence>
 

@@ -70,6 +70,17 @@ pub struct RecommendationJob {
     pub updated_at: i64,
 }
 
+/// Payload for the `recommendation-job-update` event. Never carries items:
+/// the renderer re-fetches the full job once it sees `status == "done"`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecommendationJobUpdatePayload {
+    pub job_id: String,
+    pub status: RecommendationJobStatus,
+    pub stage: RecommendationJobStage,
+    pub detail: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecommendationEvent {

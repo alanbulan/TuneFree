@@ -17,7 +17,6 @@ import { useLibrary } from '../../core/contexts/LibraryContext';
 import {
   usePlayerActions,
   usePlayerNowPlaying,
-  usePlayerProgress,
   usePlayerQueueState,
   usePlayerSettings,
 } from '../../core/contexts/PlayerContext';
@@ -28,7 +27,7 @@ import { type CoverPanelStyle } from '../utils/formatting';
 import FullPlayerLyrics from './fullplayer/FullPlayerLyrics';
 import FullPlayerQueue from './fullplayer/FullPlayerQueue';
 import FullPlayerActions from './fullplayer/FullPlayerActions';
-import PlayerProgressSlider from './PlayerProgressSlider';
+import ConnectedProgressSlider from './ConnectedProgressSlider';
 import QualitySelector from './QualitySelector';
 
 interface DesktopFullPlayerProps {
@@ -39,7 +38,6 @@ interface DesktopFullPlayerProps {
 
 export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: DesktopFullPlayerProps) {
   const { currentSong, isPlaying, isLoading } = usePlayerNowPlaying();
-  const { currentTime, duration } = usePlayerProgress();
   const { playMode } = usePlayerQueueState();
   const { audioQuality } = usePlayerSettings();
   const { toggleFavorite, isFavorite } = useLibrary();
@@ -50,7 +48,6 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
     playPrev,
     playNext,
     togglePlay,
-    seek,
     togglePlayMode,
     setAudioQuality,
   } = usePlayerActions();
@@ -108,7 +105,6 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
       initial="hidden"
       animate="visible"
       exit="exit"
-      style={{ overflow: 'hidden' }}
     >
       <motion.div
         className="full-player-backdrop"
@@ -117,11 +113,10 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
         animate={{ opacity: 1, backdropFilter: 'blur(18px)' }}
         exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
         transition={{ duration: 0.35, ease: 'easeInOut' }}
-        style={{ transition: 'none' }}
       />
       <motion.section
         className={`full-player-panel ${currentSong?.pic ? 'has-cover-bg' : ''} ${isPlaying ? 'is-playing' : ''}`}
-        style={{ ...panelStyle, transition: 'none' }}
+        style={panelStyle}
         role="dialog"
         aria-modal="true"
         aria-label="全屏播放器"
@@ -143,15 +138,15 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
             className={`full-cover-art spinning-cover ${isPlaying ? 'is-rotating' : ''}`}
             iconSize={64}
           />
-          <div className="full-song-meta" style={{ position: 'relative', minHeight: '80px', overflow: 'hidden' }}>
+          <div className="full-song-meta">
             <AnimatePresence mode="popLayout">
               <motion.div
                 key={currentSong?.id || 'none'}
+                className="full-song-meta-swap"
                 initial={{ y: 12, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: -12, opacity: 0 }}
                 transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
-                style={{ width: '100%' }}
               >
                 <h2>{currentSong?.name || '未在播放'}</h2>
                 <p>{currentSong?.artist || '从排行榜、搜索或资料库中选择音乐'}</p>
@@ -203,7 +198,7 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
                 <NextIcon size={19} />
               </button>
             </div>
-            <PlayerProgressSlider currentTime={currentTime} duration={duration} onSeek={seek} />
+            <ConnectedProgressSlider />
           </div>
           <div className="transport-tools">
             <button

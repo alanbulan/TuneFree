@@ -1,4 +1,4 @@
-import { API_PREFIX } from "./config";
+import { API_PREFIX, buildLocalServerHeaders } from "./config";
 import { normalizeMusicUrl } from "./utils";
 import { fetchNeteaseLyrics, searchNetease } from "./netease";
 import { fetchQQLyrics, searchQQ } from "./qq";
@@ -12,10 +12,25 @@ import {
   resolveAutosource,
   searchGDStudio,
 } from "./gdStudio";
+import {
+  abortReasonError,
+  buildFallbackQuery,
+  firstSuccessfulWithConcurrency,
+  hasPlayableId,
+  isLikelySameSong,
+  type SongMeta,
+} from "./resolverMatch";
 import type { Song } from "../types";
 
-type SongMeta = Pick<Song, "pic" | "picId" | "urlId" | "lyricId"> &
-  Partial<Pick<Song, "name" | "artist" | "album">>;
+/**
+ * 解析链路的公共可选项：
+ * - signal 会贯穿到底层每一次 fetch，取消时以 AbortError reject（而非返回 null）；
+ * - forceRefresh 跳过歌词 / 播放链接缓存读取。
+ */
+export interface ResolveOptions {
+  signal?: AbortSignal;
+  forceRefresh?: boolean;
+}
 
 export type ParsedSongFull = {
   url: string | null;
@@ -40,144 +55,48 @@ const FALLBACK_SOURCES = ["netease", "qq", "kuwo", "joox", "bilibili"] as const;
 const KUWO_FALLBACK_SOURCES = ["qq", "netease", "joox", "bilibili"] as const;
 const NATIVE_LYRIC_SOURCES = new Set(["netease", "qq", "kuwo"]);
 
-const firstSuccessfulWithConcurrency = async <T, R>(
-  items: readonly T[],
-  concurrency: number,
-  timeoutMs: number,
-  worker: (item: T, signal: AbortSignal) => Promise<R | null>,
-): Promise<R | null> => {
-  if (items.length === 0) return null;
-
-  return new Promise((resolve) => {
-    let nextIndex = 0;
-    let activeCount = 0;
-    let settled = false;
-    const controller = new AbortController();
-
-    const finish = (result: R | null) => {
-      if (settled) return;
-      settled = true;
-      controller.abort();
-      clearTimeout(timeoutId);
-      resolve(result);
-    };
-
-    const launch = () => {
-      while (
-        !settled &&
-        activeCount < concurrency &&
-        nextIndex < items.length
-      ) {
-        const item = items[nextIndex++];
-        activeCount += 1;
-
-        void worker(item, controller.signal)
-          .then((result) => {
-            activeCount -= 1;
-            if (settled) return;
-            if (result !== null) {
-              finish(result);
-              return;
-            }
-            if (nextIndex >= items.length && activeCount === 0) {
-              finish(null);
-              return;
-            }
-            launch();
-          })
-          .catch(() => {
-            activeCount -= 1;
-            if (settled) return;
-            if (nextIndex >= items.length && activeCount === 0) {
-              finish(null);
-              return;
-            }
-            launch();
-          });
-      }
-    };
-
-    const timeoutId = setTimeout(() => finish(null), timeoutMs);
-    launch();
-  });
-};
-
-const hasPlayableId = (id: string | number | undefined | null): boolean => {
-  const normalized = id === null || id === undefined ? "" : String(id).trim();
-  return !!normalized && !normalized.startsWith("temp_");
-};
-
-const normalizeComparableText = (value: unknown): string => {
-  if (value === null || value === undefined) return "";
-  return String(value)
-    .toLowerCase()
-    .replace(/[（(].*?[)）]/g, "")
-    .replace(/[\s·・.。\-_—–,，、/\\|:：]+/g, "")
-    .trim();
-};
-
-const isUnknownText = (value: unknown): boolean => {
-  const text = String(value || "").trim().toLowerCase();
-  return !text || text === "unknown song" || text === "unknown artist";
-};
-
-const splitArtistTokens = (artist: unknown): string[] =>
-  String(artist || "")
-    .split(/[,&，、/\\|]+|\s+(?:and|feat\.?|ft\.?)\s+/i)
-    .map(normalizeComparableText)
-    .filter((token) => token.length > 1);
-
-const buildFallbackQuery = (songMeta?: SongMeta): string => {
-  if (!songMeta || isUnknownText(songMeta.name)) return "";
-  const parts = [songMeta.name];
-  if (!isUnknownText(songMeta.artist)) parts.push(songMeta.artist);
-  return parts.join(" ").trim();
-};
-
-const isLikelySameSong = (candidate: Song, songMeta?: SongMeta): boolean => {
-  if (!songMeta || isUnknownText(songMeta.name)) return true;
-
-  const targetName = normalizeComparableText(songMeta.name);
-  const candidateName = normalizeComparableText(candidate.name);
-  if (!targetName || !candidateName) return false;
-
-  const nameMatches =
-    candidateName === targetName ||
-    candidateName.includes(targetName) ||
-    targetName.includes(candidateName);
-  if (!nameMatches) return false;
-
-  const targetArtists = splitArtistTokens(songMeta.artist);
-  if (targetArtists.length === 0) return true;
-
-  const candidateArtist = normalizeComparableText(candidate.artist);
-  if (!candidateArtist) return true;
-
-  return targetArtists.some(
-    (artist) => candidateArtist.includes(artist) || artist.includes(candidateArtist),
-  );
+const readJsonBody = async (resp: Response): Promise<any> => {
+  try {
+    return await resp.json();
+  } catch {
+    return null;
+  }
 };
 
 export const fetchNativeUrl = async (
   id: string,
   platform: string,
   quality: string,
+  signal?: AbortSignal,
 ): Promise<string | null> => {
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abortFromCaller();
+  signal?.addEventListener("abort", abortFromCaller, { once: true });
   const timeoutId = setTimeout(() => controller.abort(), NATIVE_URL_TIMEOUT_MS);
   try {
     const resp = await fetch(
       `${API_PREFIX}/api/url?platform=${encodeURIComponent(platform)}&id=${encodeURIComponent(id)}&quality=${encodeURIComponent(quality)}`,
-      { signal: controller.signal },
+      { signal: controller.signal, headers: buildLocalServerHeaders() },
     );
+    const data = await readJsonBody(resp);
+    // 后端 /api/url 失败时会返回结构化 error 字段，必须落日志，
+    // 否则代理白名单 403 与"平台不可用"完全不可区分。
+    const detail = typeof data?.error === "string" ? `：${data.error}` : "";
     if (resp.ok) {
-      const data = await resp.json();
       if (data?.url) return data.url as string;
+      console.warn(`[Resolver] /api/url 未返回可用链接 (${platform}:${id})${detail}`);
+    } else {
+      console.warn(
+        `[Resolver] /api/url 请求失败 (${platform}:${id}) HTTP ${resp.status}${detail}`,
+      );
     }
   } catch {
+    if (signal?.aborted) throw abortReasonError(signal);
     // native resolver unavailable
   } finally {
     clearTimeout(timeoutId);
+    signal?.removeEventListener("abort", abortFromCaller);
   }
   return null;
 };
@@ -185,40 +104,45 @@ export const fetchNativeUrl = async (
 export const fetchFallbackLyrics = async (
   id: string | number,
   source: string,
+  options?: ResolveOptions,
 ): Promise<string> => {
   const cacheKey = `lrc:${source}:${id}`;
-  const cached = _lyricsCache.get(cacheKey);
-  if (cached !== undefined) return cached;
+  if (!options?.forceRefresh) {
+    const cached = _lyricsCache.get(cacheKey);
+    if (cached !== undefined) return cached;
 
-  const pending = _lyricsPending.get(cacheKey);
-  if (pending) return pending;
+    // 可取消请求不共享 in-flight Promise，避免一次 abort 波及其它调用方。
+    const pending = _lyricsPending.get(cacheKey);
+    if (pending && !options?.signal) return pending;
+  }
 
   const request = (async () => {
     let lrc = "";
 
     try {
       if (source === "netease") {
-        lrc = await fetchNeteaseLyrics(id);
+        lrc = await fetchNeteaseLyrics(id, options?.signal);
       } else if (source === "qq") {
-        lrc = await fetchQQLyrics(id);
+        lrc = await fetchQQLyrics(id, options?.signal);
       } else if (source === "kuwo") {
-        lrc = await fetchKuwoLyrics(id);
+        lrc = await fetchKuwoLyrics(id, options?.signal);
       }
 
       if (!lrc && isGDStudioSource(source)) {
-        lrc = await getGDStudioLyrics(id, source);
+        lrc = await getGDStudioLyrics(id, source, options);
       }
     } catch (e) {
+      if (options?.signal?.aborted) throw abortReasonError(options.signal);
       console.warn(`[Resolver] fetchFallbackLyrics failed (${source}:${id}):`, e);
     } finally {
-      _lyricsPending.delete(cacheKey);
+      if (!options?.signal) _lyricsPending.delete(cacheKey);
     }
 
     if (lrc) _lyricsCache.set(cacheKey, lrc);
     return lrc;
   })();
 
-  _lyricsPending.set(cacheKey, request);
+  if (!options?.signal) _lyricsPending.set(cacheKey, request);
   return request;
 };
 
@@ -226,36 +150,38 @@ export const getLyrics = async (
   id: string | number,
   source: string,
   songMeta?: SongMeta,
+  options?: ResolveOptions,
 ): Promise<string> => {
   const lyricId = songMeta?.lyricId || id;
 
   if (isGDStudioOnlySource(source)) {
-    return getGDStudioLyrics(lyricId, source);
+    return getGDStudioLyrics(lyricId, source, options);
   }
 
   if (NATIVE_LYRIC_SOURCES.has(source)) {
-    return fetchFallbackLyrics(lyricId, source);
+    return fetchFallbackLyrics(lyricId, source, options);
   }
 
   if (isGDStudioSource(source)) {
-    const gdLyrics = await getGDStudioLyrics(lyricId, source);
+    const gdLyrics = await getGDStudioLyrics(lyricId, source, options);
     if (gdLyrics) return gdLyrics;
   }
 
-  return fetchFallbackLyrics(lyricId, source);
+  return fetchFallbackLyrics(lyricId, source, options);
 };
 
 const getDirectSongUrl = async (
   id: string | number,
   source: string,
   quality: string = "320k",
+  options?: ResolveOptions,
 ): Promise<string | null> => {
   if (!hasPlayableId(id) || !source || source === "undefined") {
     return null;
   }
 
   if (isGDStudioSource(source)) {
-    const gdUrl = await getGDStudioSongUrl(id, source, quality);
+    const gdUrl = await getGDStudioSongUrl(id, source, quality, options);
     if (gdUrl) return gdUrl;
   }
 
@@ -263,7 +189,7 @@ const getDirectSongUrl = async (
     return null;
   }
 
-  const nativeUrl = await fetchNativeUrl(String(id), source, quality);
+  const nativeUrl = await fetchNativeUrl(String(id), source, quality, options?.signal);
   if (nativeUrl) return normalizeMusicUrl(nativeUrl) || null;
 
   return null;
@@ -272,12 +198,13 @@ const getDirectSongUrl = async (
 const searchFallbackSource = async (
   keyword: string,
   source: string,
+  signal?: AbortSignal,
 ): Promise<Song[]> => {
-  if (source === "netease") return searchNetease(keyword, 1, FALLBACK_SEARCH_LIMIT);
-  if (source === "qq") return searchQQ(keyword, 1, FALLBACK_SEARCH_LIMIT);
-  if (source === "kuwo") return searchKuwo(keyword, 1, FALLBACK_SEARCH_LIMIT);
+  if (source === "netease") return searchNetease(keyword, 1, FALLBACK_SEARCH_LIMIT, signal);
+  if (source === "qq") return searchQQ(keyword, 1, FALLBACK_SEARCH_LIMIT, signal);
+  if (source === "kuwo") return searchKuwo(keyword, 1, FALLBACK_SEARCH_LIMIT, signal);
   if (isGDStudioOnlySource(source)) {
-    return searchGDStudio(keyword, source, 1, FALLBACK_SEARCH_LIMIT);
+    return searchGDStudio(keyword, source, 1, FALLBACK_SEARCH_LIMIT, signal);
   }
   return [];
 };
@@ -287,13 +214,14 @@ const resolveDirectSongFull = async (
   platform: string,
   quality: string = "320k",
   songMeta?: SongMeta,
+  options?: ResolveOptions,
 ): Promise<ParsedSongFull | null> => {
   if (!hasPlayableId(id) || !platform || platform === "undefined") {
     return null;
   }
 
   if (isGDStudioOnlySource(platform)) {
-    const parsed = await parseGDStudioSongFull(id, platform, quality, songMeta);
+    const parsed = await parseGDStudioSongFull(id, platform, quality, songMeta, options);
     return parsed ? {
       ...parsed,
       resolvedSource: platform,
@@ -303,8 +231,8 @@ const resolveDirectSongFull = async (
   }
 
   const [url, lrc] = await Promise.all([
-    getDirectSongUrl(id, platform, quality),
-    getLyrics(id, platform, songMeta),
+    getDirectSongUrl(id, platform, quality, options),
+    getLyrics(id, platform, songMeta, options),
   ]);
   const pic = songMeta?.pic ? normalizeMusicUrl(songMeta.pic) : "";
 
@@ -329,6 +257,7 @@ const resolveFallbackSongFull = async (
   originalSource: string,
   quality: string,
   songMeta?: SongMeta,
+  options?: ResolveOptions,
 ): Promise<ParsedSongFull | null> => {
   const query = buildFallbackQuery(songMeta);
   if (!query) return null;
@@ -341,7 +270,7 @@ const resolveFallbackSongFull = async (
     FALLBACK_TOTAL_TIMEOUT_MS,
     async (source, signal) => {
       try {
-        const results = await searchFallbackSource(query, source);
+        const results = await searchFallbackSource(query, source, signal);
         if (signal.aborted || !Array.isArray(results)) return null;
 
         const candidates = results
@@ -360,6 +289,7 @@ const resolveFallbackSongFull = async (
             candidate.source,
             quality,
             candidate,
+            { ...options, signal },
           );
 
           if (signal.aborted) return null;
@@ -375,10 +305,13 @@ const resolveFallbackSongFull = async (
           }
         }
       } catch (error) {
-        console.warn(`[Resolver] fallback source failed (${source}):`, error);
+        if (!signal.aborted) {
+          console.warn(`[Resolver] fallback source failed (${source}):`, error);
+        }
       }
       return null;
     },
+    options?.signal,
   );
 };
 
@@ -387,6 +320,7 @@ export const getSongUrl = async (
   source: string,
   quality: string = "320k",
   songMeta?: SongMeta,
+  options?: ResolveOptions,
 ): Promise<string | null> => {
   // embeat 源：走 autosource 跨源匹配
   if (source === "embeat" && songMeta) {
@@ -396,20 +330,21 @@ export const getSongUrl = async (
         artist: songMeta.artist || "",
         album: songMeta.album || "",
         source: "embeat",
-      }, quality);
+      }, quality, options?.signal);
       if (autosource?.url) return autosource.url;
     } catch (e) {
+      if (options?.signal?.aborted) throw abortReasonError(options.signal);
       console.warn("[Resolver] resolveAutosource failed in getSongUrl, falling back:", e);
     }
     // autosource 失败走常规 fallback
-    const fallback = await resolveFallbackSongFull(source, quality, songMeta);
+    const fallback = await resolveFallbackSongFull(source, quality, songMeta, options);
     return fallback?.url || null;
   }
 
-  const directUrl = await getDirectSongUrl(id, source, quality);
+  const directUrl = await getDirectSongUrl(id, source, quality, options);
   if (directUrl) return directUrl;
 
-  const fallback = await resolveFallbackSongFull(source, quality, songMeta);
+  const fallback = await resolveFallbackSongFull(source, quality, songMeta, options);
   return fallback?.url || null;
 };
 
@@ -418,6 +353,7 @@ export const parseSongFull = async (
   platform: string,
   quality: string = "320k",
   songMeta?: SongMeta,
+  options?: ResolveOptions,
 ): Promise<ParsedSongFull | null> => {
   if (!platform || platform === "undefined") return null;
 
@@ -429,7 +365,7 @@ export const parseSongFull = async (
         artist: songMeta.artist || "",
         album: songMeta.album || "",
         source: "embeat",
-      }, quality);
+      }, quality, options?.signal);
       if (autosource?.url) {
         return {
           ...autosource,
@@ -439,18 +375,19 @@ export const parseSongFull = async (
         };
       }
     } catch (e) {
+      if (options?.signal?.aborted) throw abortReasonError(options.signal);
       console.warn("[Resolver] resolveAutosource failed in parseSongFull, falling back:", e);
     }
     // autosource 失败时走常规 fallback
-    const fallback = await resolveFallbackSongFull(platform, quality, songMeta);
+    const fallback = await resolveFallbackSongFull(platform, quality, songMeta, options);
     if (fallback?.url) return fallback;
     return null;
   }
 
-  const direct = await resolveDirectSongFull(id, platform, quality, songMeta);
+  const direct = await resolveDirectSongFull(id, platform, quality, songMeta, options);
   if (direct?.url) return direct;
 
-  const fallback = await resolveFallbackSongFull(platform, quality, songMeta);
+  const fallback = await resolveFallbackSongFull(platform, quality, songMeta, options);
   if (fallback?.url) return fallback;
 
   return direct;

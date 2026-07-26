@@ -1,180 +1,181 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
+use crate::app::error::{CommandError, CommandResult, ErrorCode};
+
+use super::meta::{read_downloads_json, write_downloads_json, DownloadMetaEntry};
 use super::path::{
-    canonicalize_dir, cleanup_stale_partials, now_millis, resolve_download_dir,
+    canonicalize_dir, clear_approved_download_dir, display_path, resolve_default_download_dir,
     resolve_safe_download_dir, sanitize_filename, save_approved_download_dir,
     verified_existing_download_path, AUDIO_FILE_EXTENSIONS,
 };
+use super::DownloadMetaStore;
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) struct DownloadMetaEntry {
-    filename: String,
-    song: serde_json::Value,
-    quality: String,
-    create_time: f64,
-    #[serde(default)]
-    size: u64,
+/// Runs blocking download filesystem work off the async runtime threads.
+pub(super) async fn run_downloads_blocking<T, F>(operation: F) -> CommandResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> CommandResult<T> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(operation)
+        .await
+        .map_err(|error| {
+            log::warn!("下载后台任务异常: {}", error);
+            CommandError::internal("下载后台任务异常")
+        })?
 }
 
 /// Result returned by resolve_local_playback for offline playback.
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ResolvedPlayback {
     filepath: String,
     song: serde_json::Value,
     quality: String,
 }
 
-/// Reads the downloads.json sidecar file from the download directory.
-fn read_downloads_json(dir: &std::path::Path) -> Vec<DownloadMetaEntry> {
-    let path = dir.join("downloads.json");
-    if !path.exists() {
-        return Vec::new();
-    }
-    std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
-}
+fn scan_download_dir_blocking(
+    app_handle: &tauri::AppHandle,
+    store: &DownloadMetaStore,
+) -> CommandResult<Vec<DownloadMetaEntry>> {
+    let dir = resolve_safe_download_dir(app_handle)?;
+    store.with_lock(|| {
+        let mut entries = read_downloads_json(&dir);
+        let before = entries.len();
+        let mut kept = Vec::with_capacity(before);
+        for mut entry in entries.drain(..) {
+            // One resolution per entry: it both validates that the file still
+            // lives inside the download directory and yields its size.
+            let Ok(path) =
+                verified_existing_download_path(&dir, &entry.filename, AUDIO_FILE_EXTENSIONS)
+            else {
+                continue;
+            };
+            if let Ok(meta) = std::fs::metadata(path) {
+                entry.size = meta.len();
+            }
+            kept.push(entry);
+        }
 
-/// Writes the downloads.json sidecar file.
-fn write_downloads_json(dir: &Path, entries: &[DownloadMetaEntry]) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| format!("创建下载目录失败: {}", e))?;
-    let path = dir.join("downloads.json");
-    let temp_path = dir.join(format!("downloads.json.partial-{}", now_millis()));
-    let json = serde_json::to_string_pretty(entries)
-        .map_err(|e| format!("序列化 downloads.json 失败: {}", e))?;
-    std::fs::write(&temp_path, json).map_err(|e| format!("写入 downloads.json 失败: {}", e))?;
-    if path.exists() {
-        let _ = std::fs::remove_file(&path);
-    }
-    std::fs::rename(&temp_path, &path).map_err(|e| format!("更新 downloads.json 失败: {}", e))
+        // Entries removed means files were deleted externally; persist the pruned list.
+        if kept.len() != before {
+            write_downloads_json(&dir, &kept)?;
+        }
+
+        kept.sort_by(|a, b| {
+            b.create_time
+                .partial_cmp(&a.create_time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        Ok(kept)
+    })
 }
 
 /// Scans the download directory and returns all downloads with metadata.
 ///
-/// Reads downloads.json for song metadata, cross-references with actual files
-/// on disk, and removes orphaned entries (files deleted externally).
+/// Pure read operation: it never deletes partial files (cleanup only runs
+/// when a download starts).
 #[tauri::command]
-pub(crate) fn scan_download_dir(
+pub(crate) async fn scan_download_dir(
     app_handle: tauri::AppHandle,
-    custom_dir: Option<String>,
-) -> Result<Vec<DownloadMetaEntry>, String> {
-    let dir = resolve_safe_download_dir(&app_handle, custom_dir.as_deref())?;
-    cleanup_stale_partials(&dir);
-
-    let mut entries = read_downloads_json(&dir);
-
-    // Retain only entries whose sanitized filename still resolves inside the download directory.
-    let before = entries.len();
-    entries.retain(|e| {
-        verified_existing_download_path(&dir, &e.filename, AUDIO_FILE_EXTENSIONS).is_ok()
-    });
-
-    // If entries were removed (files deleted externally or metadata was invalid), update the JSON.
-    if entries.len() != before {
-        write_downloads_json(&dir, &entries)?;
-    }
-
-    // Populate file size from disk metadata.
-    for entry in &mut entries {
-        if let Ok(path) =
-            verified_existing_download_path(&dir, &entry.filename, AUDIO_FILE_EXTENSIONS)
-        {
-            if let Ok(meta) = std::fs::metadata(path) {
-                entry.size = meta.len();
-            }
-        }
-    }
-
-    // Sort by create_time descending (newest first).
-    entries.sort_by(|a, b| {
-        b.create_time
-            .partial_cmp(&a.create_time)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    Ok(entries)
+) -> CommandResult<Vec<DownloadMetaEntry>> {
+    let store = DownloadMetaStore::resolve(&app_handle);
+    run_downloads_blocking(move || scan_download_dir_blocking(&app_handle, &store)).await
 }
 
-/// Saves download metadata to downloads.json after a successful download.
-#[tauri::command]
-pub(crate) fn save_download_meta(
-    app_handle: tauri::AppHandle,
-    filename: String,
+fn save_download_meta_blocking(
+    app_handle: &tauri::AppHandle,
+    store: &DownloadMetaStore,
+    filename: &str,
     song: serde_json::Value,
     quality: String,
     create_time: f64,
-    custom_dir: Option<String>,
-) -> Result<(), String> {
-    let dir = resolve_safe_download_dir(&app_handle, custom_dir.as_deref())?;
-    let safe_filename = sanitize_filename(&filename, None, AUDIO_FILE_EXTENSIONS)?;
+) -> CommandResult<()> {
+    let dir = resolve_safe_download_dir(app_handle)?;
+    let safe_filename = sanitize_filename(filename, None, AUDIO_FILE_EXTENSIONS)?;
     let size = verified_existing_download_path(&dir, &safe_filename, AUDIO_FILE_EXTENSIONS)
         .ok()
         .and_then(|path| std::fs::metadata(path).ok())
         .map(|meta| meta.len())
         .unwrap_or(0);
 
-    let mut entries = read_downloads_json(&dir);
+    store.with_lock(|| {
+        let mut entries = read_downloads_json(&dir);
+        entries.retain(|e| e.filename != safe_filename);
+        entries.push(DownloadMetaEntry {
+            filename: safe_filename,
+            song,
+            quality,
+            create_time,
+            size,
+        });
+        write_downloads_json(&dir, &entries)
+    })
+}
 
-    // Remove any existing entry with the same filename.
-    entries.retain(|e| e.filename != safe_filename);
+/// Saves download metadata to downloads.json after a successful download.
+#[tauri::command]
+pub(crate) async fn save_download_meta(
+    app_handle: tauri::AppHandle,
+    filename: String,
+    song: serde_json::Value,
+    quality: String,
+    create_time: f64,
+) -> CommandResult<()> {
+    let store = DownloadMetaStore::resolve(&app_handle);
+    run_downloads_blocking(move || {
+        save_download_meta_blocking(&app_handle, &store, &filename, song, quality, create_time)
+    })
+    .await
+}
 
-    entries.push(DownloadMetaEntry {
-        filename: safe_filename,
-        song,
-        quality,
-        create_time,
-        size,
-    });
+fn delete_download_file_blocking(
+    app_handle: &tauri::AppHandle,
+    store: &DownloadMetaStore,
+    filename: &str,
+) -> CommandResult<()> {
+    let dir = resolve_safe_download_dir(app_handle)?;
+    let safe_filename = sanitize_filename(filename, None, AUDIO_FILE_EXTENSIONS)?;
 
-    write_downloads_json(&dir, &entries)
+    store.with_lock(|| {
+        if let Ok(file_path) =
+            verified_existing_download_path(&dir, &safe_filename, AUDIO_FILE_EXTENSIONS)
+        {
+            std::fs::remove_file(&file_path)
+                .map_err(|e| CommandError::io(format!("删除文件失败: {}", e)))?;
+        }
+
+        let mut entries = read_downloads_json(&dir);
+        let before = entries.len();
+        entries.retain(|e| e.filename != safe_filename);
+        if entries.len() != before {
+            write_downloads_json(&dir, &entries)?;
+        }
+        Ok(())
+    })
 }
 
 /// Deletes a downloaded file and removes its metadata entry.
 #[tauri::command]
-pub(crate) fn delete_download_file(
+pub(crate) async fn delete_download_file(
     app_handle: tauri::AppHandle,
     filename: String,
-    custom_dir: Option<String>,
-) -> Result<(), String> {
-    let dir = resolve_safe_download_dir(&app_handle, custom_dir.as_deref())?;
-    let safe_filename = sanitize_filename(&filename, None, AUDIO_FILE_EXTENSIONS)?;
-
-    if let Ok(file_path) =
-        verified_existing_download_path(&dir, &safe_filename, AUDIO_FILE_EXTENSIONS)
-    {
-        std::fs::remove_file(&file_path).map_err(|e| format!("删除文件失败: {}", e))?;
-    }
-
-    // Remove from downloads.json.
-    let mut entries = read_downloads_json(&dir);
-    let before = entries.len();
-    entries.retain(|e| e.filename != safe_filename);
-
-    if entries.len() != before {
-        write_downloads_json(&dir, &entries)?;
-    }
-
-    Ok(())
+) -> CommandResult<()> {
+    let store = DownloadMetaStore::resolve(&app_handle);
+    run_downloads_blocking(move || delete_download_file_blocking(&app_handle, &store, &filename))
+        .await
 }
 
-/// Resolves a local file path for offline playback.
-///
-/// Searches downloads.json for a matching song (by ID and source), preferring
-/// the requested quality but falling back to any available quality.
-/// Returns the filepath, song metadata, and quality if found.
-#[tauri::command]
-pub(crate) fn resolve_local_playback(
-    app_handle: tauri::AppHandle,
-    song_id: String,
-    source: String,
+fn resolve_local_playback_blocking(
+    app_handle: &tauri::AppHandle,
+    store: &DownloadMetaStore,
+    song_id: &str,
+    source: &str,
     quality: Option<String>,
-    custom_dir: Option<String>,
-) -> Result<Option<ResolvedPlayback>, String> {
-    let dir = resolve_safe_download_dir(&app_handle, custom_dir.as_deref())?;
-    let entries = read_downloads_json(&dir);
+) -> CommandResult<Option<ResolvedPlayback>> {
+    let dir = resolve_safe_download_dir(app_handle)?;
+    let entries = store.with_lock(|| read_downloads_json(&dir));
 
     let mut matches: Vec<&DownloadMetaEntry> = entries
         .iter()
@@ -210,7 +211,7 @@ pub(crate) fn resolve_local_playback(
             app_handle
                 .asset_protocol_scope()
                 .allow_file(&file_path)
-                .map_err(|e| format!("授权本地音频播放失败: {}", e))?;
+                .map_err(|e| CommandError::internal(format!("授权本地音频播放失败: {}", e)))?;
             return Ok(Some(ResolvedPlayback {
                 filepath: file_path.to_string_lossy().to_string(),
                 song: entry.song.clone(),
@@ -221,79 +222,86 @@ pub(crate) fn resolve_local_playback(
 
     Ok(None)
 }
+
+/// Resolves a local file path for offline playback.
+///
+/// Searches downloads.json for a matching song (by ID and source), preferring
+/// the requested quality but falling back to any available quality.
 #[tauri::command]
-pub(crate) async fn open_download_dir(
+pub(crate) async fn resolve_local_playback(
     app_handle: tauri::AppHandle,
-    custom_dir: Option<String>,
-) -> Result<(), String> {
-    let dir = resolve_safe_download_dir(&app_handle, custom_dir.as_deref())?;
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg(&dir)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&dir)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&dir)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    song_id: String,
+    source: String,
+    quality: Option<String>,
+) -> CommandResult<Option<ResolvedPlayback>> {
+    let store = DownloadMetaStore::resolve(&app_handle);
+    run_downloads_blocking(move || {
+        resolve_local_playback_blocking(&app_handle, &store, &song_id, &source, quality)
+    })
+    .await
 }
 
-/// Tauri command to get the download directory path.
-///
-/// If `use_default` is `Some(true)`, returns the executable's parent
-/// directory (portable mode). Otherwise, returns the OS download directory.
-///
-/// # Arguments
-/// * `app_handle` - Tauri app handle.
-/// * `use_default` - If `true`, use the executable's parent directory.
+/// Opens the effective download directory in the OS file explorer.
 #[tauri::command]
-pub(crate) fn get_download_dir(
-    app_handle: tauri::AppHandle,
-    use_default: Option<bool>,
-) -> Result<String, String> {
-    resolve_download_dir(&app_handle, use_default.unwrap_or(false))
-        .map(|p| p.to_string_lossy().to_string())
+pub(crate) async fn open_download_dir(app_handle: tauri::AppHandle) -> CommandResult<()> {
+    run_downloads_blocking(move || {
+        let dir = display_path(&resolve_safe_download_dir(&app_handle)?);
+        #[cfg(target_os = "windows")]
+        let launcher = "explorer";
+        #[cfg(target_os = "macos")]
+        let launcher = "open";
+        #[cfg(target_os = "linux")]
+        let launcher = "xdg-open";
+        std::process::Command::new(launcher)
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| CommandError::io(format!("打开下载目录失败: {}", e)))?;
+        Ok(())
+    })
+    .await
 }
 
-/// Tauri command to get the default (portable) download directory.
+/// Returns the effective download directory (single source of truth).
 ///
-/// Returns the executable's parent directory, falling back to the OS
-/// download directory if the executable path cannot be determined.
-///
-/// # Arguments
-/// * `app_handle` - Tauri app handle.
+/// The approved directory when one is recorded, otherwise the default
+/// directory; the directory is created on demand.
 #[tauri::command]
-pub(crate) fn get_default_download_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
-    resolve_download_dir(&app_handle, true).map(|p| p.to_string_lossy().to_string())
+pub(crate) async fn get_download_dir(app_handle: tauri::AppHandle) -> CommandResult<String> {
+    run_downloads_blocking(move || {
+        resolve_safe_download_dir(&app_handle).map(|dir| display_path(&dir))
+    })
+    .await
 }
 
-/// Tauri command to open a folder picker dialog for selecting a download directory.
+/// Returns the default download directory without creating it.
+///
+/// Portable installs (portable.txt next to the exe) resolve to the exe
+/// directory; installed builds resolve to `<OS downloads>/TuneFree`.
+#[tauri::command]
+pub(crate) fn get_default_download_dir(app_handle: tauri::AppHandle) -> CommandResult<String> {
+    resolve_default_download_dir(&app_handle).map(|dir| display_path(&dir))
+}
+
+/// Drops the approved directory so downloads fall back to the default one.
+///
+/// Returns the directory now in effect.
+#[tauri::command]
+pub(crate) async fn reset_download_dir(app_handle: tauri::AppHandle) -> CommandResult<String> {
+    run_downloads_blocking(move || {
+        clear_approved_download_dir(&app_handle)?;
+        resolve_default_download_dir(&app_handle).map(|dir| display_path(&dir))
+    })
+    .await
+}
+
+/// Opens a folder picker and records the selection as the approved directory.
 ///
 /// Wraps the dialog callback in a 5-minute timeout to prevent indefinite
-/// blocking if the user never responds.
-///
-/// # Arguments
-/// * `app_handle` - Tauri app handle.
-///
-/// # Returns
-/// `Some(path)` if a folder was selected, `None` if the dialog was cancelled.
+/// blocking if the user never responds. Returns `None` when cancelled.
 #[tauri::command]
 pub(crate) async fn select_download_dir(
     app_handle: tauri::AppHandle,
-) -> Result<Option<String>, String> {
+) -> CommandResult<Option<String>> {
     let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
 
     app_handle.dialog().file().pick_folder(move |folder_path| {
@@ -312,15 +320,24 @@ pub(crate) async fn select_download_dir(
     // 5-minute timeout to prevent indefinite blocking.
     let selected = match tokio::time::timeout(std::time::Duration::from_secs(300), rx).await {
         Ok(Ok(result)) => result,
-        Ok(Err(e)) => return Err(format!("对话框通道错误: {}", e)),
-        Err(_) => return Err("选择下载目录超时（5分钟）".to_string()),
+        Ok(Err(e)) => {
+            return Err(CommandError::internal(format!("对话框通道错误: {}", e)));
+        }
+        Err(_) => {
+            return Err(CommandError::new(
+                ErrorCode::Timeout,
+                "选择下载目录超时（5分钟）",
+            ));
+        }
     };
 
-    if let Some(path) = selected {
+    let Some(path) = selected else {
+        return Ok(None);
+    };
+    run_downloads_blocking(move || {
         let canonical = canonicalize_dir(PathBuf::from(path))?;
         save_approved_download_dir(&app_handle, &canonical)?;
-        Ok(Some(canonical.to_string_lossy().into_owned()))
-    } else {
-        Ok(None)
-    }
+        Ok(Some(display_path(&canonical)))
+    })
+    .await
 }

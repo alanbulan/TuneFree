@@ -143,6 +143,53 @@ fn session_cooccurrence_ignores_legacy_sessions_and_uses_bounded_window() {
 }
 
 #[test]
+fn wal_mode_allows_second_maintenance_connection() {
+    let dir = std::env::temp_dir().join(format!(
+        "tunefree-rec-wal-test-{}-{}",
+        std::process::id(),
+        catalog::now_ms()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("recommendation.sqlite");
+
+    let database = db::open_database_at(path.clone()).unwrap();
+    let mode: String = database
+        .conn
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(mode.to_lowercase(), "wal");
+
+    // 主连接存活时，第二个维护连接必须能独立打开并写入。
+    let second = db::open_maintenance_connection(&path).unwrap();
+    second
+        .execute(
+            r#"
+            INSERT INTO recommendation_maintenance (id, last_run_at) VALUES (1, 42)
+            ON CONFLICT(id) DO UPDATE SET last_run_at = excluded.last_run_at
+            "#,
+            [],
+        )
+        .unwrap();
+    let value: i64 = database
+        .conn
+        .query_row(
+            "SELECT last_run_at FROM recommendation_maintenance WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(value, 42);
+
+    // 迁移标记的重建可以在第二连接上完成（新库的迁移会留下待重建标记）。
+    assert!(migration::run_pending_rebuilds(&second).unwrap());
+    assert!(!migration::run_pending_rebuilds(&second).unwrap());
+
+    drop(second);
+    drop(database);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn clear_recommendation_storage_removes_cloud_snapshots() {
     let conn = Connection::open_in_memory().unwrap();
     migration::run_migrations(&conn).unwrap();

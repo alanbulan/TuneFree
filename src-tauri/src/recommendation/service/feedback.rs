@@ -1,15 +1,17 @@
 use super::*;
 
 impl RecommendationService {
-    pub fn dismiss(&self, song: RecSong, reason: Option<String>) -> Result<(), String> {
+    pub fn dismiss(&self, song: RecSong, reason: Option<String>) -> CommandResult<()> {
+        let conn = self.conn_handle()?;
         {
-            let mut conn = self.conn.lock();
+            let mut conn = conn.lock();
             let tx = conn
                 .transaction()
-                .map_err(|e| format!("开启不感兴趣事务失败: {}", e))?;
-            record_dismissal(&tx, &song, reason.as_deref(), "recommendation")?;
+                .map_err(|e| CommandError::database(format!("开启不感兴趣事务失败: {}", e)))?;
+            record_dismissal(&tx, &song, reason.as_deref(), "recommendation")
+                .map_err(CommandError::database)?;
             tx.commit()
-                .map_err(|e| format!("提交不感兴趣事务失败: {}", e))?;
+                .map_err(|e| CommandError::database(format!("提交不感兴趣事务失败: {}", e)))?;
         }
         let dismissed_identity = catalog::song_identity(&song);
         for job in self.recommendation_jobs.lock().values_mut() {
@@ -20,10 +22,11 @@ impl RecommendationService {
         Ok(())
     }
 
-    pub fn save_feedback(&self, feedback: RecommendationFeedback) -> Result<(), String> {
+    pub fn save_feedback(&self, feedback: RecommendationFeedback) -> CommandResult<()> {
+        let conn = self.conn_handle()?;
         {
-            let mut conn = self.conn.lock();
-            record_recommendation_feedback(&mut conn, &feedback)?;
+            let mut conn = conn.lock();
+            record_recommendation_feedback(&mut conn, &feedback).map_err(CommandError::database)?;
         }
         self.invalidate_and_schedule_refresh("推荐反馈");
         Ok(())

@@ -3,6 +3,14 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::Value;
 
+/// QQ Music unified gateway endpoint for vkey queries.
+/// Public protocol constant; update if the upstream protocol changes.
+const QQ_MUSICU_ENDPOINT: &str = "https://u.y.qq.com/cgi-bin/musicu.fcg";
+
+/// Fallback stream host used when the vkey response omits `sip` entries.
+/// Public protocol constant; update if the upstream protocol changes.
+const QQ_DEFAULT_STREAM_BASE: &str = "https://ws.stream.qqmusic.qq.com/";
+
 /// Rotating user-agent strings to avoid rate-limiting on QQ Music APIs.
 const USER_AGENTS: [&str; 4] = [
     "Mozilla/5.0 (iPhone; CPU iPhone OS 9_1 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Version/9.0 Mobile/13B143 Safari/601.1",
@@ -52,7 +60,7 @@ fn parse_vkey_url(data: &Value) -> Result<String, ApiError> {
                 .filter_map(Value::as_str)
                 .find(|value| !value.trim().is_empty())
         })
-        .unwrap_or("https://ws.stream.qqmusic.qq.com/");
+        .unwrap_or(QQ_DEFAULT_STREAM_BASE);
     let base = reqwest::Url::parse(base_url)
         .map_err(|e| ApiError::Parse(format!("QQ Music invalid stream base URL: {e}")))?;
     let resolved = base
@@ -120,10 +128,8 @@ pub async fn get_qq_url(client: &Client, songmid: &str, quality: &str) -> Result
     })
     .to_string();
 
-    let api_url = "https://u.y.qq.com/cgi-bin/musicu.fcg";
-
     let resp = client
-        .get(api_url)
+        .get(QQ_MUSICU_ENDPOINT)
         .query(&[("data", &data_param)])
         .header("User-Agent", get_random_user_agent())
         .header("Origin", "https://y.qq.com")

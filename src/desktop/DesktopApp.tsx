@@ -1,17 +1,18 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { DesktopPreferencesProvider } from '../core/contexts/DesktopPreferencesContext';
-import { LibraryProvider, useLibrary } from '../core/contexts/LibraryContext';
+import { LibraryProvider, useLibraryData } from '../core/contexts/LibraryContext';
 import { PlayerProvider } from '../core/contexts/PlayerContext';
 import { ThemeProvider } from '../core/contexts/ThemeContext';
-import { setLocalServerPort } from '../core/services/config';
+import { invokeCommand, isTauri, toIpcError } from '../core/ipc';
+import { setLocalServerInfo } from '../core/services/config';
 import {
   syncRecommendationLibrary,
   type LibraryDelta,
   type LibraryMembershipChange,
 } from '../core/services/recommendation';
+import { verifyProxyAllowlist } from '../core/services/serverAllowlist';
 import { getSongKey, type Song } from '../core/types';
 import { DialogProvider } from './components/DialogHost';
 import DesktopShell from './components/DesktopShell';
@@ -42,7 +43,8 @@ const getViewFromPath = (fallback: DesktopView): DesktopView => {
 };
 
 function RecommendationSyncBridge() {
-  const { favorites, playlists } = useLibrary();
+  // 只订阅曲库数据切片，避免收藏/歌单以外的变更触发同步重算。
+  const { favorites, playlists } = useLibraryData();
   const syncedMembershipsRef = useRef<Map<string, RecommendationMembership> | null>(null);
   const syncQueueRef = useRef<Promise<void>>(Promise.resolve());
 
@@ -168,23 +170,23 @@ export default function DesktopApp({ initialView = 'home' }: { initialView?: Des
   const [serverError, setServerError] = useState('');
 
   useEffect(() => {
-    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-    if (!isTauri) {
+    if (!isTauri()) {
       setServerReady(true);
       return;
     }
 
     let cancelled = false;
-    void invoke<number>('get_local_server_port')
-      .then((port) => {
+    void invokeCommand('get_local_server_info')
+      .then((info) => {
         if (cancelled) return;
-        setLocalServerPort(port);
+        setLocalServerInfo(info);
         setServerReady(true);
+        // 端口与令牌就位后才能带鉴权访问 /api/allowed-hosts；失败只告警，不阻断启动。
+        void verifyProxyAllowlist();
       })
       .catch((error: unknown) => {
         if (cancelled) return;
-        const message = error instanceof Error ? error.message : String(error || '未知错误');
-        setServerError(`本地音乐服务启动失败：${message}`);
+        setServerError(`本地音乐服务启动失败：${toIpcError(error).message}`);
       });
 
     return () => {
@@ -201,8 +203,7 @@ export default function DesktopApp({ initialView = 'home' }: { initialView?: Des
 
   // 禁用右键和刷新等浏览器原生行为，确保原生桌面体验
   useEffect(() => {
-    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
-    if (!isTauri) return;
+    if (!isTauri()) return;
 
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
@@ -252,8 +253,8 @@ export default function DesktopApp({ initialView = 'home' }: { initialView?: Des
 
   if (!serverReady) {
     return (
-      <div className="desktop-app" style={{ display: 'grid', placeItems: 'center', height: '100%', padding: '24px' }}>
-        <p style={{ margin: 0, color: serverError ? 'var(--danger)' : 'var(--muted)' }}>
+      <div className="desktop-app is-booting">
+        <p className={`boot-notice ${serverError ? 'is-error' : ''}`}>
           {serverError || '正在启动本地音乐服务…'}
         </p>
       </div>
@@ -269,13 +270,7 @@ export default function DesktopApp({ initialView = 'home' }: { initialView?: Des
               <ToastProvider>
                 <DownloadProvider>
                   <RecommendationSyncBridge />
-                  <div className="desktop-app" style={{
-                    opacity: isReady ? 1 : 0,
-                    transition: 'opacity 0.35s ease-in-out',
-                    height: '100%',
-                    width: '100%',
-                    backgroundColor: 'var(--ios-bg)'
-                  }}>
+                  <div className={`desktop-app app-root ${isReady ? 'is-ready' : ''}`}>
                     <DesktopShell view={view} onViewChange={handleViewChange} />
                   </div>
                 </DownloadProvider>

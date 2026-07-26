@@ -1,44 +1,62 @@
 use super::storage::load_latest_cloud_recommendation_job;
 use super::*;
 
-mod cloud;
+pub(super) mod cloud;
+mod updates;
 
-use cloud::{run_cloud_job, CloudJobTask};
+use cloud::{cloud_job_timeout_ms, run_cloud_job, CloudJobTask};
+use updates::{
+    emit_job_payload, emit_job_update, job_update_payload, mark_job_stage,
+    update_recommendation_job, JobTransition,
+};
 
 struct PreparedJob {
     job: RecommendationJob,
     task: Option<CloudJobTask>,
 }
 
+/// Per-job LLM parameters read from `llm_config` in a single lock scope.
+struct CloudJobConfig {
+    candidate_window: usize,
+    per_request_timeout_ms: u64,
+}
+
 impl RecommendationService {
     pub fn start_recommendation_job(
         &self,
         query: RecommendationQuery,
-    ) -> Result<RecommendationJob, String> {
+    ) -> CommandResult<RecommendationJob> {
+        self.db_handle()?;
         self.prune_recommendation_jobs();
         if !self.is_recommendation_enabled() {
             return Ok(disabled_job());
+        }
+        // 并发防抖：同一时刻只允许一个云端任务，重复触发直接复用现有任务。
+        if let Some(job) = self.running_recommendation_job() {
+            return Ok(job);
         }
         let prepared = self.prepare_recommendation_job(query)?;
         let job = prepared.job;
         self.recommendation_jobs
             .lock()
             .insert(job.job_id.clone(), job.clone());
+        emit_job_update(self.app_handle(), &job);
         if let Some(task) = prepared.task {
             self.last_dynamic_refresh_at
                 .store(catalog::now_ms(), Ordering::SeqCst);
-            tauri::async_runtime::spawn(run_cloud_job(task));
+            let cancel_rx = self.next_cloud_cancel_receiver();
+            tauri::async_runtime::spawn(run_cloud_job(task, cancel_rx));
         }
         Ok(job)
     }
 
-    fn prepare_recommendation_job(
-        &self,
-        query: RecommendationQuery,
-    ) -> Result<PreparedJob, String> {
+    fn prepare_recommendation_job(&self, query: RecommendationQuery) -> CommandResult<PreparedJob> {
+        let conn = self.conn_handle()?;
         let context = recommendation_context(&query);
         let persisted_items = self.latest_cloud_recommendation_items(&context);
-        let (local, request_id) = self.local_items_with_request(&query)?;
+        let (local, request_id) = self
+            .local_items_with_request(&query)
+            .map_err(CommandError::database)?;
         let can_use_cloud = self.has_cloud_recommendation_config();
         let visible_items = if can_use_cloud {
             persisted_items.unwrap_or_default()
@@ -46,8 +64,10 @@ impl RecommendationService {
             local.clone()
         };
         let job = build_initial_job(can_use_cloud, &local, visible_items.clone());
+        let config = self.cloud_job_config();
         let task = can_use_cloud.then(|| CloudJobTask {
-            conn: Arc::clone(&self.conn),
+            conn,
+            app: self.app.clone(),
             provider: self.provider.clone(),
             client: self.client.clone(),
             jobs: Arc::clone(&self.recommendation_jobs),
@@ -59,7 +79,8 @@ impl RecommendationService {
             local,
             request_id,
             context,
-            candidate_window: self.llm_candidate_window(),
+            candidate_window: config.candidate_window,
+            total_timeout_ms: cloud_job_timeout_ms(config.per_request_timeout_ms),
             fallback_items: visible_items,
         });
         Ok(PreparedJob { job, task })
@@ -69,8 +90,7 @@ impl RecommendationService {
         &self,
         query: &RecommendationQuery,
     ) -> Result<(Vec<RecommendationItem>, String), String> {
-        let conn = self.conn.lock();
-        let items = self.local_recommendations(&conn, query, "local")?;
+        let items = self.local_recommendations(query, "local")?;
         let request_id = items
             .first()
             .map(|item| item.request_id.clone())
@@ -78,14 +98,27 @@ impl RecommendationService {
         Ok((items, request_id))
     }
 
-    fn llm_candidate_window(&self) -> usize {
-        let conn = self.conn.lock();
-        llm_config::load_config(&conn)
-            .map(|config| config.max_candidates)
-            .unwrap_or(MERGED_CANDIDATE_LIMIT)
+    fn cloud_job_config(&self) -> CloudJobConfig {
+        let fallback = CloudJobConfig {
+            candidate_window: MERGED_CANDIDATE_LIMIT,
+            per_request_timeout_ms: 8000,
+        };
+        let Ok(conn) = self.conn_handle() else {
+            return fallback;
+        };
+        let guard = conn.lock();
+        llm_config::load_config(&guard)
+            .map(|config| CloudJobConfig {
+                candidate_window: config.max_candidates,
+                per_request_timeout_ms: config.timeout_ms,
+            })
+            .unwrap_or(fallback)
     }
 
-    pub fn start_startup_recommendation_job(&self) -> Result<Option<RecommendationJob>, String> {
+    pub(super) fn start_startup_recommendation_job(
+        &self,
+    ) -> CommandResult<Option<RecommendationJob>> {
+        self.db_handle()?;
         self.prune_recommendation_jobs();
         if !self.is_recommendation_enabled() {
             return Ok(None);
@@ -101,22 +134,28 @@ impl RecommendationService {
         .map(Some)
     }
 
-    pub fn get_latest_recommendation_job(&self) -> Option<RecommendationJob> {
+    pub fn get_latest_recommendation_job(&self) -> CommandResult<Option<RecommendationJob>> {
+        self.db_handle()?;
         self.prune_recommendation_jobs();
         if !self.is_recommendation_enabled() {
-            return None;
+            return Ok(None);
         }
-        self.latest_recommendation_job()
-            .or_else(|| self.latest_cloud_recommendation_job("home"))
+        Ok(self
+            .latest_recommendation_job()
+            .or_else(|| self.latest_cloud_recommendation_job("home")))
     }
 
+    /// 纯内存查询：不触碰数据库，未初始化时也可安全调用。
     pub fn get_recommendation_job(&self, job_id: String) -> Option<RecommendationJob> {
         self.prune_recommendation_jobs();
         self.recommendation_jobs.lock().get(&job_id).cloned()
     }
 
     fn has_cloud_recommendation_config(&self) -> bool {
-        let conn = self.conn.lock();
+        let Ok(conn) = self.conn_handle() else {
+            return false;
+        };
+        let conn = conn.lock();
         let Ok(config) = llm_config::load_config(&conn) else {
             return false;
         };
@@ -129,7 +168,10 @@ impl RecommendationService {
     }
 
     fn is_recommendation_enabled(&self) -> bool {
-        let conn = self.conn.lock();
+        let Ok(conn) = self.conn_handle() else {
+            return false;
+        };
+        let conn = conn.lock();
         llm_config::load_recommendation_enabled(&conn).unwrap_or(true)
     }
 
@@ -158,15 +200,19 @@ impl RecommendationService {
     }
 
     pub(super) fn invalidate_and_schedule_refresh(&self, reason: &'static str) {
-        invalidate_recommendation_state(
+        self.cancel_inflight_cloud_job();
+        let transitions = invalidate_recommendation_state(
             &self.recommendation_generation,
             &self.recommendation_jobs,
             &self.dynamic_refresh_pending,
         );
+        for payload in transitions {
+            emit_job_payload(self.app_handle(), payload);
+        }
         self.schedule_dynamic_recommendation_refresh(reason);
     }
 
-    fn schedule_dynamic_recommendation_refresh(&self, reason: &'static str) {
+    pub(super) fn schedule_dynamic_recommendation_refresh(&self, reason: &'static str) {
         if !self.is_recommendation_enabled() {
             return;
         }
@@ -201,11 +247,12 @@ impl RecommendationService {
                     continue;
                 }
 
-                if let Err(e) = service.start_recommendation_job(RecommendationQuery {
+                let refresh = service.start_recommendation_job(RecommendationQuery {
                     limit: Some(30),
                     seed: None,
                     context: Some("home".to_string()),
-                }) {
+                });
+                if let Err(e) = refresh {
                     log::error!("动态刷新智能推荐失败({}): {}", reason, e);
                 } else {
                     log::info!("已触发动态智能推荐刷新: {}", reason);
@@ -224,7 +271,8 @@ impl RecommendationService {
     }
 
     fn latest_cloud_recommendation_items(&self, context: &str) -> Option<Vec<RecommendationItem>> {
-        let conn = self.conn.lock();
+        let conn = self.conn_handle().ok()?;
+        let conn = conn.lock();
         let job = match load_latest_cloud_recommendation_job(&conn, context) {
             Ok(job) => job?,
             Err(error) => {
@@ -241,7 +289,8 @@ impl RecommendationService {
     }
 
     fn latest_cloud_recommendation_job(&self, context: &str) -> Option<RecommendationJob> {
-        let conn = self.conn.lock();
+        let conn = self.conn_handle().ok()?;
+        let conn = conn.lock();
         let mut job = match load_latest_cloud_recommendation_job(&conn, context) {
             Ok(job) => job?,
             Err(error) => {
@@ -341,14 +390,17 @@ pub(super) fn is_current_generation(task_generation: u64, current_generation: u6
     task_generation == current_generation
 }
 
+/// Marks running jobs as superseded and bumps the generation. Returns the
+/// event payloads for the transitions so callers can notify the renderer.
 pub(super) fn invalidate_recommendation_state(
     generation: &AtomicU64,
     jobs: &Mutex<HashMap<String, RecommendationJob>>,
     refresh_pending: &AtomicBool,
-) {
+) -> Vec<RecommendationJobUpdatePayload> {
     let mut jobs = jobs.lock();
     generation.fetch_add(1, Ordering::SeqCst);
     let now = catalog::now_ms();
+    let mut transitions = Vec::new();
     for job in jobs.values_mut() {
         if matches!(&job.status, RecommendationJobStatus::Running) {
             job.status = RecommendationJobStatus::Done;
@@ -356,9 +408,11 @@ pub(super) fn invalidate_recommendation_state(
             job.detail = "推荐数据已更新，当前任务已失效并等待重新生成".to_string();
             job.error = None;
             job.updated_at = now;
+            transitions.push(job_update_payload(job));
         }
     }
     refresh_pending.store(false, Ordering::SeqCst);
+    transitions
 }
 
 fn recommendation_context(query: &RecommendationQuery) -> String {
@@ -372,28 +426,4 @@ fn recommendation_context(query: &RecommendationQuery) -> String {
             "home"
         })
         .to_string()
-}
-
-fn update_recommendation_job(
-    jobs: &Arc<Mutex<HashMap<String, RecommendationJob>>>,
-    job_id: &str,
-    status: RecommendationJobStatus,
-    stage: RecommendationJobStage,
-    detail: &str,
-    items: Option<Vec<RecommendationItem>>,
-    error: Option<String>,
-) {
-    if let Some(job) = jobs.lock().get_mut(job_id) {
-        if !matches!(&job.status, RecommendationJobStatus::Running) {
-            return;
-        }
-        job.status = status;
-        job.stage = stage;
-        job.detail = detail.to_string();
-        if let Some(items) = items {
-            job.items = items;
-        }
-        job.error = error;
-        job.updated_at = catalog::now_ms();
-    }
 }

@@ -1,14 +1,27 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
-import { resolve } from 'path';
 
 export default defineConfig({
     test: {
-        environment: 'node',
+        environment: 'happy-dom',
         globals: true,
+        coverage: {
+            provider: 'v8',
+            reporter: ['text', 'lcov'],
+            reportsDirectory: './coverage',
+            include: ['src/**/*.{ts,tsx}', 'app/**/*.{ts,tsx}'],
+            exclude: [
+                '**/__tests__/**',
+                '**/*.test.{ts,tsx}',
+                '**/*.d.ts',
+                'src/main.tsx',
+                'src/desktopLyricMain.tsx',
+            ],
+        },
     },
     resolve: {
         alias: {
-            '@': resolve(__dirname, './src'),
+            '@': fileURLToPath(new URL('./src', import.meta.url)),
         },
     },
 });

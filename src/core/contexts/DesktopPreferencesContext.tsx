@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 export type CloseBehavior = 'ask' | 'tray' | 'exit';
 
@@ -35,8 +35,12 @@ export const DesktopPreferencesProvider: React.FC<{ children: React.ReactNode }>
     }
   }, []);
 
+  const value = useMemo(
+    () => ({ closeBehavior, setCloseBehavior }), [closeBehavior, setCloseBehavior],
+  );
+
   return (
-    <DesktopPreferencesContext.Provider value={{ closeBehavior, setCloseBehavior }}>
+    <DesktopPreferencesContext.Provider value={value}>
       {children}
     </DesktopPreferencesContext.Provider>
   );

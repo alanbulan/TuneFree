@@ -4,6 +4,7 @@ use reqwest::Client;
 use serde_json::json;
 
 use super::{
+    llm::extract_json,
     model::{LlmConfig, LlmProviderTestResult},
     privacy,
 };
@@ -236,7 +237,7 @@ impl OpenAiCompatibleProvider {
             .await
         {
             Ok(content) => {
-                let ok = serde_json::from_str::<serde_json::Value>(&content)
+                let ok = extract_json::<serde_json::Value>(&content)
                     .map(|value| value.get("ok").and_then(|ok| ok.as_bool()).unwrap_or(false))
                     .unwrap_or(false);
                 LlmProviderTestResult {
@@ -255,7 +256,7 @@ impl OpenAiCompatibleProvider {
                 let started = Instant::now();
                 match self.chat_json(config, api_key, messages, false).await {
                     Ok(content) => {
-                        let ok = serde_json::from_str::<serde_json::Value>(&content).is_ok();
+                        let ok = extract_json::<serde_json::Value>(&content).is_some();
                         LlmProviderTestResult {
                             ok,
                             status: if ok {

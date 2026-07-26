@@ -95,16 +95,25 @@ export const normalizePlaylistArray = (value: unknown): Playlist[] | null => {
     .filter((playlist) => !seen.has(playlist.id) && Boolean(seen.add(playlist.id)));
 };
 
+// 损坏数据备份后必须移除原键，否则每次启动都会重新备份一份，最终把配额撑爆。
 const backupCorruptStorage = (key: string, rawValue: string) => {
   try {
     localStorage.setItem(`${key}_corrupt_${Date.now()}`, rawValue);
   } catch (error) {
     console.warn('备份损坏的本地数据失败', error);
   }
+  removeStoredValue(key);
 };
 
-export const getStoredValue = (key: string, fallback: string) =>
-  typeof window === 'undefined' ? fallback : localStorage.getItem(key) || fallback;
+export const getStoredValue = (key: string, fallback: string) => {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    return localStorage.getItem(key) || fallback;
+  } catch (error) {
+    console.warn(`读取本地数据失败: ${key}`, error);
+    return fallback;
+  }
+};
 
 export const setStoredValue = (key: string, value: string) => {
   if (typeof window === 'undefined') return false;
@@ -117,13 +126,28 @@ export const setStoredValue = (key: string, value: string) => {
   }
 };
 
+export const removeStoredValue = (key: string) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(key);
+  } catch (error) {
+    console.warn(`清除本地数据失败: ${key}`, error);
+  }
+};
+
 export const getStoredJson = <T>(
   key: string,
   fallback: T,
   normalize: (value: unknown) => T | null,
 ): T => {
   if (typeof window === 'undefined') return fallback;
-  const rawValue = localStorage.getItem(key);
+  let rawValue: string | null = null;
+  try {
+    rawValue = localStorage.getItem(key);
+  } catch (error) {
+    console.warn(`读取本地数据失败: ${key}`, error);
+    return fallback;
+  }
   if (!rawValue) return fallback;
   try {
     const normalized = normalize(JSON.parse(rawValue));
@@ -148,13 +172,16 @@ export const mergePlaylists = (base: Playlist[], incoming: Playlist[]) => {
   return Array.from(byId.values());
 };
 
-export interface LibraryContextValue {
+/** 随收藏 / 歌单变化而变化的数据切片。 */
+export interface LibraryData {
   favorites: Song[];
   playlists: Playlist[];
-  corsProxy: string;
-  setCorsProxy: (url: string) => void;
-  toggleFavorite: (song: Song) => void;
   isFavorite: (songId: number | string, source?: string) => boolean;
+}
+
+/** 身份恒定的操作切片：整个 Provider 生命周期内引用不变。 */
+export interface LibraryActions {
+  toggleFavorite: (song: Song) => void;
   createPlaylist: (name: string, initialSongs?: Song[]) => void;
   renamePlaylist: (id: string, name: string) => void;
   deletePlaylist: (id: string) => void;
@@ -166,6 +193,15 @@ export interface LibraryContextValue {
   restoreData: (backup: LibraryBackup) => void;
   importData: (jsonData: string) => boolean;
 }
+
+/** 与曲库数据无关的代理设置，单独一路 context。 */
+export interface LibraryProxy {
+  corsProxy: string;
+  setCorsProxy: (url: string) => void;
+}
+
+/** 过渡期聚合类型：供 useLibrary() 兼容 hook 使用。 */
+export type LibraryContextValue = LibraryData & LibraryActions & LibraryProxy;
 
 export const parseLibraryImport = (jsonData: string): LibraryImportResult => {
   try {

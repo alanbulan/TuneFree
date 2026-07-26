@@ -216,7 +216,7 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
             />
           </div>
 
-          <div className="segment-row" style={{ marginTop: 14 }}>
+          <div className="segment-row search-source-row">
             {searchMode === 'aggregate' ? (
               <button
                 type="button"
@@ -244,7 +244,7 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
           </div>
 
           <p className="search-hint">{hint}</p>
-          {searchError && <p className="search-hint" style={{ color: '#ff8a9a' }}>{searchError}</p>}
+          {searchError && <p className="search-hint is-error">{searchError}</p>}
 
           <div className="section-header">
             <h2 className="section-title">搜索结果</h2>
@@ -274,7 +274,7 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
           )}
 
           {!isSearching && results.length > 0 && hasMore && (
-            <button type="button" className="soft-button" style={{ marginTop: 14, width: '100%' }} onClick={requestNextPage}>
+            <button type="button" className="soft-button search-load-more" onClick={requestNextPage}>
               加载更多结果
             </button>
           )}

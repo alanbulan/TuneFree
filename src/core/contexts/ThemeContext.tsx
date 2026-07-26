@@ -1,11 +1,13 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { emitEventTo, invokeCommand, isTauri } from '../ipc';
 import {
   applyThemeClasses,
   applyThemeVariables,
   clampLyricSize,
   DEFAULT_THEME_PREFERENCES,
+  normalizeLyricFont,
   normalizeThemeColor,
   normalizeThemeMode,
   readThemePreferences,
@@ -14,9 +16,23 @@ import {
   THEME_STORAGE_KEYS,
   type ThemeColor,
   type ThemeMode,
+  type ThemeTokens,
 } from '../utils/theme';
 
 export type { ThemeColor, ThemeMode } from '../utils/theme';
+
+const DESKTOP_LYRIC_WINDOW = 'desktop-lyric';
+
+/** 主题变化后同步给歌词窗口；窗口未开启时静默失败即可。 */
+const notifyDesktopLyricTheme = (isDark: boolean, tokens: ThemeTokens, lyricFont: string) => {
+  if (!isTauri()) return;
+  emitEventTo(DESKTOP_LYRIC_WINDOW, 'theme-changed', {
+    isDark,
+    accent: tokens.accent,
+    accentRgb: tokens.accentRgb,
+    lyricFontFamily: normalizeLyricFont(lyricFont),
+  }).catch(() => {});
+};
 
 interface ThemeContextType {
   themeMode: ThemeMode;
@@ -48,6 +64,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const desktopLyricCommandQueue = useRef<Promise<void>>(Promise.resolve());
   const lockDesktopLyricRef = useRef(lockDesktopLyric);
   lockDesktopLyricRef.current = lockDesktopLyric;
+  const hasAppliedThemeRef = useRef(false);
 
   const setThemeMode = useCallback((mode: ThemeMode) => {
     const safeMode = normalizeThemeMode(mode);
@@ -68,7 +85,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setLyricFont = useCallback((font: string) => {
-    const safeFont = font || DEFAULT_THEME_PREFERENCES.lyricFont;
+    // 只接受字体下拉白名单内的值，防止任意字符串注入 CSS 变量
+    const safeFont = normalizeLyricFont(font);
     setLyricFontState(safeFont);
     localStorage.setItem(THEME_STORAGE_KEYS.lyricFont, safeFont);
   }, []);
@@ -83,7 +101,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(THEME_STORAGE_KEYS.lockDesktopLyric, lock ? 'true' : 'false');
   }, []);
 
-  // 应用主题模式、主题色与歌词配置到全局 CSS 变量；system 模式跟随 OS 实时变化
+  // 应用主题模式、主题色与歌词配置到全局 CSS 变量（唯一下发机制，
+  // 与歌词窗口的 applyStoredThemeToDocument 走同一函数）；system 模式跟随 OS 实时变化
   // 使用 View Transitions API 实现浅色/深色切换时的平滑过渡，避免闪烁
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -98,20 +117,21 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         applyThemeVariables(htmlEl, tokens, { lyricSize, lyricFont });
       };
 
-      // View Transitions API: cross-fade old → new snapshot, eliminates the flicker
+      // 首次应用不走 View Transition：首帧主题已由 index.html 的引导脚本写好，
+      // 此处只是幂等地重写同样的 class 与变量，动画会造成无意义的闪烁
+      const isFirstApply = !hasAppliedThemeRef.current;
+      hasAppliedThemeRef.current = true;
+
       const vt = (document as Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void> } });
-      if (typeof vt.startViewTransition === 'function') {
-        // Skip transition if class is already correct (e.g. first mount)
-        const alreadyDark = htmlEl.classList.contains('dark-theme') === isDark;
-        if (alreadyDark) {
-          runSwitch();
-        } else {
-          const transition = vt.startViewTransition(runSwitch);
-          transition.finished.catch(() => {});
-        }
-      } else {
+      const classAlreadyCorrect = htmlEl.classList.contains('dark-theme') === isDark;
+      if (isFirstApply || classAlreadyCorrect || typeof vt.startViewTransition !== 'function') {
         runSwitch();
+      } else {
+        const transition = vt.startViewTransition(runSwitch);
+        transition.finished.catch(() => {});
       }
+
+      notifyDesktopLyricTheme(isDark, tokens, lyricFont);
     };
 
     applyTheme();
@@ -125,16 +145,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   // 串行同步歌词窗口显隐，避免快速关闭/重开时旧命令覆盖最新状态。
   useEffect(() => {
-    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
-    if (!isTauri) return;
+    if (!isTauri()) return;
 
     desktopLyricCommandQueue.current = desktopLyricCommandQueue.current.catch(() => {}).then(async () => {
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
         if (showDesktopLyric) {
-          await invoke('show_desktop_lyric_window', { lock: lockDesktopLyricRef.current });
+          await invokeCommand('show_desktop_lyric_window', { lock: lockDesktopLyricRef.current });
         } else {
-          await invoke('hide_desktop_lyric_window');
+          await invokeCommand('hide_desktop_lyric_window');
         }
       } catch (err) {
         console.error('Tauri window management failed:', err);
@@ -144,13 +162,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   // 锁定变化只更新焦点和鼠标穿透，不触发布局恢复或窗口显隐。
   useEffect(() => {
-    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
-    if (!isTauri) return;
+    if (!isTauri()) return;
 
     desktopLyricCommandQueue.current = desktopLyricCommandQueue.current.catch(() => {}).then(async () => {
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('set_desktop_lyric_lock', { lock: lockDesktopLyric });
+        await invokeCommand('set_desktop_lyric_lock', { lock: lockDesktopLyric });
       } catch (err) {
         console.error('Tauri lyric lock management failed:', err);
       }
@@ -185,28 +201,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setLockDesktopLyric,
   ]);
 
-  const styleContent = useMemo(() => {
-    const isDark = resolveThemeIsDark(themeMode);
-    const tokens = resolveThemeTokens(themeMode, themeColor, isDark);
-    const size = clampLyricSize(lyricSize);
-    const font = lyricFont || DEFAULT_THEME_PREFERENCES.lyricFont;
-    return `
-      html, :root {
-        --accent: ${tokens.accent} !important;
-        --play: ${tokens.play} !important;
-        --danger: ${tokens.danger} !important;
-        --accent-rgb: ${tokens.accentRgb} !important;
-        --danger-rgb: ${tokens.dangerRgb} !important;
-        --accent-soft: rgba(${tokens.accentRgb},.12) !important;
-        --lyric-font-size: ${size}px !important;
-        --lyric-font-family: ${font} !important;
-      }
-    `;
-  }, [themeMode, themeColor, lyricSize, lyricFont]);
-
   return (
     <ThemeContext.Provider value={value}>
-      <style id="tunefree-dynamic-theme" dangerouslySetInnerHTML={{ __html: styleContent }} />
       {children}
     </ThemeContext.Provider>
   );

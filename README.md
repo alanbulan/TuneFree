@@ -30,11 +30,12 @@ TuneFree Desktop 是 TuneFree 的 Tauri 桌面客户端。本仓库的 `tauri` �
 app/                         桌面歌词窗口页面、组件和样式
 desktop-lyric/               桌面歌词独立 HTML 入口
 src/core/                    播放器、状态、音乐服务、解析与通用工具
+src/core/ipc/                前端唯一的 Tauri 调用门面（命令表、事件表、错误码）
 src/desktop/                 主窗口组件、功能页面与桌面交互
 src-tauri/src/app/           Tauri 命令、窗口、下载和更新编排
 src-tauri/src/api/           网易云、QQ、酷我播放解析与代理边界
 src-tauri/src/recommendation 本地推荐、LLM 编排和 SQLite 持久化
-scripts/                     架构检查和真实 GD Music API 校验脚本
+scripts/                     架构检查、IPC 契约检查和真实 GD Music API 校验脚本
 ```
 
 前端通过 Tauri IPC 调用 Rust 后端。Rust 侧负责原生窗口、下载、更新、系统命令、本地代理和推荐数据库；前端负责界面、播放状态和音乐服务编排。
@@ -53,22 +54,32 @@ npm ci
 npm run tauri dev
 ```
 
-Vite 开发服务监听 `127.0.0.1:3101`，Tauri 本地服务监听 `127.0.0.1:3002`。
+Vite 开发服务监听 `127.0.0.1:3101`。Tauri 本地服务每次启动绑定 `127.0.0.1` 上的随机端口，并生成一次性令牌；
+端口和令牌由 `get_local_server_info` 命令下发，前端不得硬编码端口，也不得把已解析的本地服务 URL 持久化。
 
 ## 验证
+
+下面这组命令与 `.github/workflows/validate.yml` 完全一致，CI 与发布流程都复用同一个工作流：
 
 ```powershell
 npm run version:check
 npm run lint
 npm run typecheck
 npm run architecture:check
-npm test -- --run
-npm run build
+npm run test:coverage
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings -D clippy::too_many_lines
+cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml --locked
 npx tauri build --no-bundle
 ```
+
+说明：
+
+- Clippy 的严格规则（`too_many_lines`、`dbg_macro`、`todo`、`unsafe_code`）固化在 `src-tauri/Cargo.toml`
+  的 `[lints]` 段，本地直接跑 `cargo clippy` 就能得到与 CI 相同的结论，命令行只保留 `-D warnings`。
+- `npx tauri build --no-bundle` 会通过 `beforeBuildCommand` 自动执行 `npm run build`（`tsc --noEmit` + `vite build`），
+  无需在它之前再单独跑一次 `npm run build`。
+- `npm run architecture:check` 依次执行文件规模／分层／预算守卫和 Rust ↔ TypeScript 的 IPC 命令表双向 diff。
 
 需要验证 GD Music 真实响应结构时运行：
 
@@ -87,7 +98,13 @@ npm run api:verify:gd -- --source joox --details
 npm run tauri build
 ```
 
-正式版本由 `v*` 标签触发 GitHub Actions 的 `Release signed desktop app` 工作流，生成 Windows NSIS 安装包、更新签名和 `latest.json`。源码仓库不保存安装包；正式产物从 [GitHub Releases](https://github.com/alanbulan/TuneFree_Mobile/releases) 获取。
+正式版本由 `v*` 标签触发 GitHub Actions 的 `Release signed desktop app` 工作流。该工作流先复用
+`Validate` 可复用工作流跑完整套质量门禁，通过后才构建、签名并生成 Windows NSIS 安装包、更新签名和 `latest.json`。
+
+产物发布为**草稿 Release**（`releaseDraft: true`）。因为 updater endpoint 指向
+`releases/latest/download/latest.json`，一旦 Release 转为正式版，所有已安装客户端会立即自动升级，
+所以必须人工核对资产后再手动 Publish。源码仓库不保存安装包；正式产物从
+[GitHub Releases](https://github.com/alanbulan/TuneFree_Mobile/releases) 获取。
 
 安装说明见 [INSTALL_GUIDE.md](./INSTALL_GUIDE.md)，版本升级和签名发布步骤见 [RELEASE.md](./RELEASE.md)。
 

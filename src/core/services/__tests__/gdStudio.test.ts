@@ -53,7 +53,7 @@ describe('GD Studio service', () => {
     }, 'flac')).rejects.toThrow(/autosource response is missing url/);
     expect(mockedFetchData).toHaveBeenCalledWith(expect.objectContaining({
       types: 'autosource', source: 'embeat', br: '740',
-    }));
+    }), undefined);
   });
 
   it('returns the upstream autosource id as the resolved audio and lyric identity', async () => {

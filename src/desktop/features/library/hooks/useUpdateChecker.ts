@@ -1,14 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { getVersion, invokeCommand, isTauri, listenEvent } from '../../../../core/ipc';
 import { useToast } from '../../../components/ToastHost';
+import { describeIpcFailure } from '../ipcErrorFeedback';
 
 const RELEASES_PAGE_URL = 'https://github.com/alanbulan/TuneFree_Mobile/releases';
-
-interface AvailableUpdate {
-  version: string;
-  notes?: string | null;
-}
 
 interface UseUpdateCheckerResult {
   appVersion: string;
@@ -18,9 +13,6 @@ interface UseUpdateCheckerResult {
   handleCheckUpdate: () => Promise<void>;
 }
 
-const isTauriEnvironment = (): boolean =>
-  typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-
 export function useUpdateChecker(): UseUpdateCheckerResult {
   const { showToast } = useToast();
   const [appVersion, setAppVersion] = useState('');
@@ -29,23 +21,22 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
   const [updateDownloadProgress, setUpdateDownloadProgress] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!isTauriEnvironment()) return;
-    import('@tauri-apps/api/app')
-      .then(({ getVersion }) => getVersion())
+    if (!isTauri()) return;
+    getVersion()
       .then((version) => setAppVersion(version))
       .catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (!isTauriEnvironment()) return;
+    if (!isTauri()) return;
 
     let cancelled = false;
     let unlisten: (() => void) | undefined;
 
-    listen<{ progress: number }>('update-progress', (event) => {
+    void listenEvent('update-progress', (payload) => {
       if (cancelled) return;
-      setUpdateDownloadProgress(event.payload.progress);
-      if (event.payload.progress === 100) {
+      setUpdateDownloadProgress(payload.progress);
+      if (payload.progress === 100) {
         setDownloadingUpdate(false);
         setUpdateDownloadProgress(null);
       }
@@ -65,14 +56,14 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
 
   const openReleasePage = useCallback(async () => {
     try {
-      await invoke('open_external_url', { url: RELEASES_PAGE_URL });
+      await invokeCommand('open_external_url', { url: RELEASES_PAGE_URL });
     } catch {
       window.open(RELEASES_PAGE_URL, '_blank', 'noopener,noreferrer');
     }
   }, []);
 
   const installUpdate = useCallback(async () => {
-    if (!isTauriEnvironment()) {
+    if (!isTauri()) {
       await openReleasePage();
       return;
     }
@@ -80,19 +71,22 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
     setDownloadingUpdate(true);
     setUpdateDownloadProgress(0);
     try {
-      await invoke('download_and_install_update');
-    } catch {
+      await invokeCommand('download_and_install_update');
+    } catch (error) {
       setDownloadingUpdate(false);
       setUpdateDownloadProgress(null);
-      showToast('签名更新安装失败，已为您打开官方发布页', 'error');
+      const { message, tone } = describeIpcFailure(error, '签名更新安装失败');
+      // CANCELLED 是用户自己中止的下载，不提示也不跳转发布页。
+      if (!message) return;
+      showToast(`${message}，已为您打开官方发布页`, tone);
       await openReleasePage();
     }
   }, [openReleasePage, showToast]);
 
   const checkUpdateSilently = useCallback(async () => {
-    if (!isTauriEnvironment()) return;
+    if (!isTauri()) return;
     try {
-      const update = await invoke<AvailableUpdate | null>('check_for_update');
+      const update = await invokeCommand('check_for_update');
       if (!update) return;
       showToast(`发现新版本 v${update.version}，正在下载签名更新...`, 'info');
       await installUpdate();
@@ -102,7 +96,7 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
   }, [installUpdate, showToast]);
 
   useEffect(() => {
-    if (!isTauriEnvironment()) return;
+    if (!isTauri()) return;
     const timer = window.setTimeout(() => {
       void checkUpdateSilently();
     }, 2000);
@@ -111,14 +105,14 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
 
   const handleCheckUpdate = useCallback(async () => {
     if (checkingUpdate || downloadingUpdate) return;
-    if (!isTauriEnvironment()) {
+    if (!isTauri()) {
       await openReleasePage();
       return;
     }
 
     setCheckingUpdate(true);
     try {
-      const update = await invoke<AvailableUpdate | null>('check_for_update');
+      const update = await invokeCommand('check_for_update');
       if (!update) {
         showToast(appVersion ? `当前已是最新版本 (v${appVersion})` : '当前已是最新版本', 'info');
         return;
@@ -126,8 +120,9 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
 
       showToast(`发现新版本 v${update.version}，正在下载签名更新...`, 'info');
       await installUpdate();
-    } catch {
-      showToast('检查更新失败，请稍后再试', 'error');
+    } catch (error) {
+      const { message, tone } = describeIpcFailure(error, '检查更新失败，请稍后再试');
+      if (message) showToast(message, tone);
     } finally {
       setCheckingUpdate(false);
     }

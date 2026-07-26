@@ -8,8 +8,18 @@ on:
 permissions:
   contents: write
 
+# 发布流程不允许被后续标签取消，只做串行化。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  # 与 CI 完全相同的质量门禁：未通过 lint/typecheck/test/clippy 的提交无法发布。
+  validate:
+    uses: ./.github/workflows/validate.yml
+
   release-windows-x64:
+    needs: validate
     runs-on: windows-latest
     timeout-minutes: 45
 
@@ -28,6 +38,12 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release-x86_64-pc-windows-msvc
+
       - name: Install frontend dependencies
         run: |
           npm install --global npm@11.6.2
@@ -41,6 +57,9 @@ jobs:
             throw "Tag ${{ github.ref_name }} does not match app version v$version"
           }
 
+      # releaseDraft: true —— updater endpoint 指向 releases/latest/download/latest.json，
+      # 一旦发布为正式 Release，全部已安装客户端会立即自动升级。
+      # 因此这里只产出草稿，由人工核对资产后再手动 Publish（见 RELEASE.md）。
       - name: Build, sign and publish the NSIS updater
         uses: tauri-apps/tauri-action@v0
         env:
@@ -52,7 +71,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: TuneFree ${{ github.ref_name }}
           generateReleaseNotes: true
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
           updaterJsonPreferNsis: true

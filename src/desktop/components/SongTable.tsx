@@ -1,7 +1,7 @@
-import { HeartFillIcon, HeartIcon, MoreIcon, MusicIcon, PlayIcon, TrashIcon } from '../../core/components/Icons';
-import { getImgReferrerPolicy } from '../../core/services/api';
+import { useEffect, useMemo, useRef } from 'react';
+import { MusicIcon } from '../../core/components/Icons';
 import { Song, isSameSong } from '../../core/types';
-import { getMusicSourceLabel } from '../../core/utils/musicSource';
+import SongTableRow, { type SongRowHandlers, type SongRowSlots } from './SongTableRow';
 import VirtualList from './VirtualList';
 
 interface SongTableProps {
@@ -39,6 +39,33 @@ export default function SongTable({
   deleteLabel = '删除歌曲',
   onEndReached,
 }: SongTableProps) {
+  // 调用方几乎都是就地箭头函数，直接下发会让行组件的 memo 永远失效；
+  // 这里把最新实现存进 ref，对外只暴露一组永不变的转发函数。
+  const latestRef = useRef({ onPlay, onFavorite, onMore, onDismiss, onDelete });
+  useEffect(() => {
+    latestRef.current = { onPlay, onFavorite, onMore, onDismiss, onDelete };
+  });
+
+  const handlers = useMemo<SongRowHandlers>(() => ({
+    play: (song) => latestRef.current.onPlay(song),
+    favorite: (song) => latestRef.current.onFavorite?.(song),
+    more: (song) => latestRef.current.onMore?.(song),
+    dismiss: (song) => latestRef.current.onDismiss?.(song),
+    remove: (song) => latestRef.current.onDelete?.(song),
+  }), []);
+
+  const hasFavorite = !!onFavorite;
+  const hasMore = !!onMore;
+  const hasDismiss = !!onDismiss;
+  const hasDelete = !!onDelete;
+  const slots = useMemo<SongRowSlots>(() => ({
+    favorite: hasFavorite,
+    more: hasMore,
+    dismiss: hasDismiss,
+    remove: hasDelete,
+    removeLabel: deleteLabel,
+  }), [deleteLabel, hasDelete, hasDismiss, hasFavorite, hasMore]);
+
   if (isLoading && songs.length === 0) {
     return (
       <div className="song-table skeleton-table" aria-busy="true" aria-label="歌曲加载中">
@@ -98,92 +125,18 @@ export default function SongTable({
         className="song-virtual-list"
         onEndReached={onEndReached}
         getKey={(song, index) => `${song.source}-${song.id}-${index}`}
-        renderItem={(song, index, style) => {
-          const current = isSameSong(currentSong, song);
-          const title = typeof song.name === 'string' ? song.name : '未知歌曲';
-          const artist = typeof song.artist === 'string' ? song.artist : '未知歌手';
-          const album = typeof song.album === 'string' && song.album ? song.album : '未知专辑';
-          const favoriteActive = Boolean(isFavorite?.(song));
-          const recommendationReason = song.recommendationReasons?.[0];
-          return (
-            <div
-              role="button"
-              tabIndex={0}
-              aria-label={`播放 ${title} - ${artist}`}
-              className={`song-row ${current ? 'current' : ''}`}
-              key={`${song.source}-${song.id}-${index}`}
-              style={style}
-              onClick={() => onPlay(song)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  onPlay(song);
-                }
-              }}
-            >
-              <span className="song-index">{current && isPlaying ? '▶' : String(index + 1).padStart(2, '0')}</span>
-              <span className="song-main">
-                <span className="song-cover">
-                  {song.pic ? (
-                    <img src={song.pic} alt={title} referrerPolicy={getImgReferrerPolicy(song.pic)} loading="lazy" />
-                  ) : (
-                    <MusicIcon size={18} className="muted-text" />
-                  )}
-                </span>
-                <span className="song-info">
-                  <span className="song-title">{title}</span>
-                  <span className="song-artist">
-                    {recommendationReason ? `${artist} · ${recommendationReason}` : artist}
-                  </span>
-                </span>
-              </span>
-              <span className="song-album">{album}</span>
-              <span className="source-badge">{getMusicSourceLabel(song.source)}</span>
-              <span
-                className="table-actions"
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => event.stopPropagation()}
-              >
-                {onFavorite && (
-                  <button
-                    type="button"
-                    className={`table-action ${favoriteActive ? 'active' : ''}`}
-                    aria-label={favoriteActive ? '取消收藏' : '收藏歌曲'}
-                    title={favoriteActive ? '取消收藏' : '收藏歌曲'}
-                    aria-pressed={favoriteActive}
-                    onClick={() => onFavorite(song)}
-                  >
-                    {favoriteActive ? <HeartFillIcon size={16} /> : <HeartIcon size={16} />}
-                  </button>
-                )}
-                <button type="button" className="table-action" aria-label="立即播放" onClick={() => onPlay(song)}>
-                  <PlayIcon size={16} />
-                </button>
-                {onMore && (
-                  <button type="button" className="table-action" aria-label="更多操作" onClick={() => onMore(song)}>
-                    <MoreIcon size={16} />
-                  </button>
-                )}
-                {onDismiss && (
-                  <button
-                    type="button"
-                    className="table-action table-action-danger"
-                    aria-label="不感兴趣"
-                    title="不感兴趣"
-                    onClick={() => onDismiss(song)}
-                  >
-                    <TrashIcon size={16} />
-                  </button>
-                )}
-                {onDelete && (
-                  <button type="button" className="table-action table-action-danger" aria-label={deleteLabel} title={deleteLabel} onClick={() => onDelete(song)}>
-                    <TrashIcon size={16} />
-                  </button>
-                )}
-              </span>
-            </div>
-          );
-        }}
+        renderItem={(song, index, style) => (
+          <SongTableRow
+            song={song}
+            index={index}
+            style={style}
+            current={isSameSong(currentSong, song)}
+            isPlaying={!!isPlaying}
+            favoriteActive={Boolean(isFavorite?.(song))}
+            handlers={handlers}
+            slots={slots}
+          />
+        )}
       />
     </div>
   );

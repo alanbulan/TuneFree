@@ -10,17 +10,6 @@ export interface DesktopLyricSong {
   lrc?: string;
 }
 
-export interface LyricUpdateEvent {
-  song: DesktopLyricSong | null;
-  currentTime: number;
-  duration: number;
-  isPlaying: boolean;
-  playbackRate?: number;
-  lyricOffsetSeconds?: number;
-  lyricDisplayMode?: LyricDisplayMode;
-  sentAt?: number;
-}
-
 export interface DesktopLyricStyleState {
   size: number;
   font: string;

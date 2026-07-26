@@ -1,8 +1,30 @@
-import type { Song } from "../types";
+import { getSongKey, type Song } from "../types";
 import { hasTranslatedLyrics, parseLyrics, supportsTranslatedLyricFallback } from "../utils/lyrics";
+import type { ParsedSongCacheEntry } from "./types";
 
 export const PARSED_SONG_CACHE_TTL_MS = 10 * 60 * 1000;
 export const MEDIA_ERR_SRC_NOT_SUPPORTED_CODE = 4;
+/** 进度超过该比例即视为"接近结束"，让只关心阈值的订阅方避开 10Hz 的进度刷新。 */
+export const NEAR_END_PROGRESS_RATIO = 0.92;
+
+// DOMException 在部分运行时里不是 Error 的实例，这里只按 name 判定。
+export const isAbortError = (error: unknown): boolean =>
+  typeof error === "object" && error !== null &&
+  (error as { name?: unknown }).name === "AbortError";
+
+/**
+ * Drop every quality variant cached for one song. Clearing the whole map would also throw away the
+ * already preloaded next track.
+ */
+export const evictParsedCacheForSong = (
+  cache: Map<string, ParsedSongCacheEntry>,
+  song: Pick<Song, "id" | "source">,
+): void => {
+  const prefix = `${getSongKey(song)}:`;
+  for (const key of Array.from(cache.keys())) {
+    if (key.startsWith(prefix)) cache.delete(key);
+  }
+};
 
 export const createPlaybackSessionId = (): string => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
