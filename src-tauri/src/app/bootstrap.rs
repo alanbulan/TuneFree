@@ -32,12 +32,19 @@ struct BootstrapContext {
     download_client: reqwest::Client,
     proxy_client: reqwest::Client,
     lifecycle: AppLifecycleState,
+    /// The bound listener, or the bind failure to report from `setup`.
+    server_listener: std::io::Result<std::net::TcpListener>,
+    local_server_port: u16,
+    local_server_token: String,
 }
 
 struct SetupContext {
     api_client: reqwest::Client,
     proxy_client: reqwest::Client,
     shutdown_rx: tokio::sync::watch::Receiver<bool>,
+    server_listener: std::io::Result<std::net::TcpListener>,
+    local_server_port: u16,
+    local_server_token: String,
 }
 
 fn build_api_client() -> reqwest::Client {
@@ -80,8 +87,21 @@ fn build_proxy_client() -> reqwest::Client {
         .expect("Failed to build streaming proxy HTTP client")
 }
 
+/// Builds the bootstrap context, binding the loopback listener up front.
+///
+/// The bind happens before `tauri::Builder` so that `LocalServerState` can be
+/// managed in the builder chain: windows start loading the frontend as soon as
+/// they are created, and `get_local_server_info` is one of the first commands
+/// the renderer issues. Registering that state from `setup` instead loses the
+/// race and fails the command with "state not managed".
 fn create_bootstrap_context() -> BootstrapContext {
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let server_listener = server::bind_local_listener();
+    let local_server_port = server_listener
+        .as_ref()
+        .ok()
+        .and_then(|listener| listener.local_addr().ok())
+        .map_or(0, |address| address.port());
     BootstrapContext {
         shutdown_rx,
         api_client: build_api_client(),
@@ -91,6 +111,9 @@ fn create_bootstrap_context() -> BootstrapContext {
             is_quitting: Arc::new(AtomicBool::new(false)),
             shutdown_tx,
         },
+        server_listener,
+        local_server_port,
+        local_server_token: generate_local_server_token(),
     }
 }
 
@@ -151,26 +174,19 @@ fn configure_tray(app: &mut tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Binds the loopback listener, or informs the user and exits.
+/// Reports a loopback bind failure to the user and exits.
 ///
 /// A bind failure used to panic, which release builds swallowed silently
 /// because of `windows_subsystem = "windows"`; a native dialog is the only
 /// reliable channel to the user at this point.
-fn bind_local_server_or_exit(app: &tauri::App) -> (std::net::TcpListener, u16) {
-    let bound = server::bind_local_listener()
-        .and_then(|listener| listener.local_addr().map(|addr| (listener, addr.port())));
-    match bound {
-        Ok(result) => result,
-        Err(error) => {
-            log::error!("绑定本地回环端口失败: {}", error);
-            app.dialog()
-                .message("无法启动本地服务（回环端口绑定失败）。\n请检查防火墙或安全软件设置后重新启动 TuneFree。")
-                .title("TuneFree 启动失败")
-                .kind(MessageDialogKind::Error)
-                .blocking_show();
-            std::process::exit(1);
-        }
-    }
+fn report_bind_failure_and_exit(app: &tauri::App, error: &std::io::Error) -> ! {
+    log::error!("绑定本地回环端口失败: {}", error);
+    app.dialog()
+        .message("无法启动本地服务（回环端口绑定失败）。\n请检查防火墙或安全软件设置后重新启动 TuneFree。")
+        .title("TuneFree 启动失败")
+        .kind(MessageDialogKind::Error)
+        .blocking_show();
+    std::process::exit(1);
 }
 
 fn setup_application(
@@ -188,18 +204,18 @@ fn setup_application(
     app.manage(recommendation_service);
     configure_tray(app)?;
 
-    let (server_listener, local_server_port) = bind_local_server_or_exit(app);
-    let local_server_token = generate_local_server_token();
-    app.manage(LocalServerState {
-        port: local_server_port,
-        token: local_server_token.clone(),
-    });
+    // LocalServerState is already managed by the builder; only the listener
+    // itself is handed over here.
+    let server_listener = match context.server_listener {
+        Ok(listener) => listener,
+        Err(error) => report_bind_failure_and_exit(app, &error),
+    };
     tauri::async_runtime::spawn(server::start_server(
         server::ServerState {
             api_client: context.api_client,
             proxy_client: context.proxy_client,
-            token: local_server_token,
-            port: local_server_port,
+            token: context.local_server_token,
+            port: context.local_server_port,
         },
         server_listener,
         context.shutdown_rx,
@@ -235,6 +251,9 @@ fn build_application(context: BootstrapContext) -> tauri::App {
         api_client: context.api_client.clone(),
         proxy_client: context.proxy_client,
         shutdown_rx: context.shutdown_rx,
+        server_listener: context.server_listener,
+        local_server_port: context.local_server_port,
+        local_server_token: context.local_server_token.clone(),
     };
     let builder = tauri::Builder::default();
     // The single-instance plugin must be registered first so a second launch
@@ -252,6 +271,13 @@ fn build_application(context: BootstrapContext) -> tauri::App {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(context.lifecycle)
+        // Must be registered here rather than in `setup`: windows begin loading
+        // the frontend before `setup` runs, and `get_local_server_info` is among
+        // the first commands the renderer issues.
+        .manage(LocalServerState {
+            port: context.local_server_port,
+            token: context.local_server_token,
+        })
         .manage(context.api_client)
         .manage(DownloadClient(context.download_client))
         .manage(DownloadTaskRegistry::default())
