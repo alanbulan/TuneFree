@@ -57,11 +57,39 @@ jobs:
             throw "Tag ${{ github.ref_name }} does not match app version v$version"
           }
 
-      # releaseDraft: false —— 直接发布正式 Release，已安装客户端下次检查更新即可拉到。
-      # 质量闸门由上面的 validate job 承担：它未通过则本 job 根本不会执行，
-      # 未经验证的提交无法产出发布资产。
-      - name: Build, sign and publish the NSIS updater
-        uses: tauri-apps/tauri-action@v0
+      # tauri 与默认 flutter 分支的工作流不同。GitHub 要求创建这种提交的 Release
+      # 时令牌同时拥有 Contents 和 Workflows 写权限，内置 GITHUB_TOKEN 无法满足。
+      # 高权限 RELEASE_TOKEN 只交给 GitHub CLI，不暴露给第三方 Action 或构建脚本。
+      - name: Create or reuse the draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          $release = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" |
+            ConvertFrom-Json |
+            Where-Object { $_.tag_name -eq $env:GITHUB_REF_NAME } |
+            Select-Object -First 1
+
+          if ($null -eq $release) {
+            gh api "repos/$env:GITHUB_REPOSITORY/releases" `
+              --method POST `
+              -f tag_name="$env:GITHUB_REF_NAME" `
+              -f target_commitish="$env:GITHUB_SHA" `
+              -f name="TuneFree $env:GITHUB_REF_NAME" `
+              -F draft=true `
+              -F prerelease=false `
+              -F generate_release_notes=true | Out-Null
+            Write-Host "Created draft release for $env:GITHUB_REF_NAME."
+          } elseif ($release.draft) {
+            Write-Host "Reusing existing draft release for $env:GITHUB_REF_NAME."
+          } else {
+            throw "Release $env:GITHUB_REF_NAME is already published; refusing to overwrite it."
+          }
+
+      # 质量闸门由上面的 validate job 承担。构建资产先上传到不可见的草稿，
+      # 只有安装包、签名和 latest.json 全部成功后，下一步才会公开 Release。
+      - name: Build, sign and upload the NSIS updater
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -71,8 +99,28 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: TuneFree ${{ github.ref_name }}
           generateReleaseNotes: true
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
           args: --bundles nsis --target x86_64-pc-windows-msvc
+
+      - name: Publish the completed release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          $release = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" |
+            ConvertFrom-Json |
+            Where-Object { $_.tag_name -eq $env:GITHUB_REF_NAME -and $_.draft } |
+            Select-Object -First 1
+
+          if ($null -eq $release) {
+            throw "Draft release $env:GITHUB_REF_NAME was not found after uploading assets."
+          }
+
+          gh api "repos/$env:GITHUB_REPOSITORY/releases/$($release.id)" `
+            --method PATCH `
+            -F draft=false `
+            -F prerelease=false `
+            -f make_latest=true | Out-Null

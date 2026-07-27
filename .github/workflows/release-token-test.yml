@@ -1,0 +1,56 @@
+name: Release token preflight
+
+on:
+  push:
+    tags:
+      - 'release-token-test-*'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-release-token:
+    name: Create and delete a draft release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify draft release permissions
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          release_id=""
+          cleanup_draft_release() {
+            if [[ -n "${release_id}" ]]; then
+              gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+                --method DELETE
+              echo "Deleted temporary draft release ${GITHUB_REF_NAME}."
+            fi
+          }
+          trap cleanup_draft_release EXIT
+
+          release_id="$(
+            gh api "repos/${GITHUB_REPOSITORY}/releases" \
+              --method POST \
+              -f tag_name="${GITHUB_REF_NAME}" \
+              -f target_commitish="${GITHUB_SHA}" \
+              -f name="Release token test ${GITHUB_REF_NAME}" \
+              -f body="Temporary draft used to verify release automation permissions." \
+              -F draft=true \
+              -F prerelease=true \
+              --jq '.id'
+          )"
+
+          is_draft="$(
+            gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+              --jq '.draft'
+          )"
+          if [[ "${is_draft}" != "true" ]]; then
+            echo "The temporary release was unexpectedly published." >&2
+            exit 1
+          fi
+
+          echo "RELEASE_TOKEN successfully created a draft release."
