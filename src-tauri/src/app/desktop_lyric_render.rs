@@ -3,6 +3,10 @@ use std::time::Duration;
 
 use super::error::{CommandError, CommandResult, ErrorCode};
 
+#[cfg(all(test, windows))]
+#[path = "__tests__/lyric_readiness.rs"]
+mod tests;
+
 #[derive(Default)]
 pub(crate) struct DesktopLyricRenderState {
     ready: AtomicBool,

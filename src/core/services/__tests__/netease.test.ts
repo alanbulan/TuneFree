@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../proxy", () => ({
-  proxyFetchJson: vi.fn(),
+vi.mock("../proxy", async (original) => ({
+  ...await original<typeof import('../proxy')>(), proxyFetchJson: vi.fn(),
 }));
 
 import { proxyFetchJson } from "../proxy";
-import { fetchNeteaseLyrics, getNeteaseTopListDetail, getNeteaseTopLists } from "../netease";
+import { fetchNeteaseLyrics, getNeteaseTopListDetail, getNeteaseTopLists, searchNetease } from "../netease";
 import { parseLyrics } from "../../utils/lyrics";
 
 describe("netease top lists", () => {
@@ -79,6 +79,30 @@ describe("netease top lists", () => {
         source: "netease",
       },
     ]);
+  });
+});
+
+describe('网易搜索和歌词降级边界', () => {
+  beforeEach(() => vi.resetAllMocks());
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+  it('分页搜索标准化字段，有效空列表和错误响应分开处理', async () => {
+    vi.mocked(proxyFetchJson).mockResolvedValueOnce({ result: { songs: [{ id: 1, name: '歌', ar: [{ name: '歌手' }], al: { name: '专辑', picUrl: '//example.test/a.jpg' } }, { id: 2 }] } });
+    const songs = await searchNetease('雨 夜', 2, 10); expect(songs[0]).toMatchObject({ id: '1', artist: '歌手', album: '专辑' }); expect(songs[1].artist).toBe('');
+    expect(proxyFetchJson).toHaveBeenCalledWith(expect.stringContaining('offset=10&limit=10'), 8000, undefined);
+    vi.mocked(proxyFetchJson).mockResolvedValueOnce({ code: 200, result: { songCount: 0 } }); expect(await searchNetease('无', 1, 10)).toEqual([]);
+    vi.mocked(proxyFetchJson).mockResolvedValueOnce({ code: 500 }); await expect(searchNetease('错误', 1, 10)).rejects.toThrow('搜索响应不可用');
+  });
+  it('代理空响应可走直连，正文失败和旧接口无歌词返回空', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response('{"lrc":{"lyric":"[00:01]直连歌词\\n{bad"}}')).mockRejectedValueOnce(new Error('旧接口失败'));
+    vi.stubGlobal('fetch', fetch); vi.mocked(proxyFetchJson).mockResolvedValue(null);
+    expect(await fetchNeteaseLyrics('direct')).toContain('直连歌词');
+    fetch.mockRejectedValue(new Error('offline')); expect(await fetchNeteaseLyrics('empty')).toBe('');
+    vi.mocked(proxyFetchJson).mockRejectedValueOnce(new Error('proxy')); expect(await fetchNeteaseLyrics('failed')).toBe('');
+    vi.mocked(proxyFetchJson).mockResolvedValueOnce({}).mockResolvedValueOnce({ lrc: '[00:01]旧接口' }); expect(await fetchNeteaseLyrics('legacy')).toContain('旧接口');
+  });
+  it('重试耗尽后榜单返回空列表', async () => {
+    vi.useFakeTimers(); vi.mocked(proxyFetchJson).mockResolvedValue(null);
+    const pending = getNeteaseTopLists(); await vi.advanceTimersByTimeAsync(1260); expect(await pending).toEqual([]); expect(proxyFetchJson).toHaveBeenCalledTimes(4);
   });
 });
 

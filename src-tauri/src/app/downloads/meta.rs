@@ -1,5 +1,7 @@
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+use std::time::SystemTime;
 
 use tauri::Manager;
 
@@ -29,6 +31,7 @@ pub(crate) struct DownloadMetaEntry {
 #[derive(Clone, Default)]
 pub(crate) struct DownloadMetaStore {
     lock: Arc<parking_lot::Mutex<()>>,
+    index: Arc<parking_lot::Mutex<Option<DownloadIndex>>>,
 }
 
 impl DownloadMetaStore {
@@ -49,16 +52,146 @@ impl DownloadMetaStore {
     }
 }
 
-/// Reads the downloads.json sidecar file from the download directory.
-pub(crate) fn read_downloads_json(dir: &Path) -> Vec<DownloadMetaEntry> {
-    let path = dir.join("downloads.json");
-    if !path.exists() {
-        return Vec::new();
+#[derive(PartialEq, Eq)]
+struct SidecarStamp {
+    modified: Option<SystemTime>,
+    len: u64,
+}
+
+struct DownloadIndex {
+    dir: PathBuf,
+    stamp: Option<SidecarStamp>,
+    songs: HashMap<(String, String), Vec<DownloadMetaEntry>>,
+}
+
+fn sidecar_stamp(dir: &Path) -> CommandResult<Option<SidecarStamp>> {
+    match std::fs::metadata(dir.join("downloads.json")) {
+        Ok(meta) => Ok(Some(SidecarStamp {
+            modified: meta.modified().ok(),
+            len: meta.len(),
+        })),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(CommandError::io(format!("读取下载记录属性失败: {}", error))),
     }
-    std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+}
+
+impl DownloadMetaStore {
+    pub(crate) fn invalidate(&self) {
+        *self.index.lock() = None;
+    }
+
+    pub(crate) fn matching_entries(
+        &self,
+        dir: &Path,
+        song_id: &str,
+        source: &str,
+    ) -> CommandResult<Vec<DownloadMetaEntry>> {
+        self.with_lock(|| {
+            let stamp = sidecar_stamp(dir)?;
+            let mut cached = self.index.lock();
+            if cached
+                .as_ref()
+                .is_none_or(|index| index.dir != dir || index.stamp != stamp)
+            {
+                let mut songs: HashMap<(String, String), Vec<DownloadMetaEntry>> = HashMap::new();
+                for entry in read_downloads_json(dir)? {
+                    let Some(source) = entry.song.get("source").and_then(|value| value.as_str())
+                    else {
+                        continue;
+                    };
+                    let Some(id) = entry.song.get("id") else {
+                        continue;
+                    };
+                    let id = match id {
+                        serde_json::Value::String(id) => id.clone(),
+                        serde_json::Value::Number(id) => id.to_string(),
+                        _ => continue,
+                    };
+                    songs
+                        .entry((source.to_string(), id))
+                        .or_default()
+                        .push(entry);
+                }
+                *cached = Some(DownloadIndex {
+                    dir: dir.to_path_buf(),
+                    stamp,
+                    songs,
+                });
+            }
+            Ok(cached
+                .as_ref()
+                .and_then(|index| index.songs.get(&(source.to_string(), song_id.to_string())))
+                .cloned()
+                .unwrap_or_default())
+        })
+    }
+}
+
+/// 缺失记录表示空曲库；读取或解析失败必须上报，不能覆盖为一个空列表。
+pub(crate) fn read_downloads_json(dir: &Path) -> CommandResult<Vec<DownloadMetaEntry>> {
+    let text = match std::fs::read_to_string(dir.join("downloads.json")) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(CommandError::io(format!("读取下载记录失败: {}", error))),
+    };
+    serde_json::from_str(&text)
+        .map_err(|error| CommandError::io(format!("下载记录格式损坏，原文件已保留: {}", error)))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DownloadMetadataInput {
+    pub(crate) song: serde_json::Value,
+    pub(crate) quality: String,
+}
+
+impl DownloadMetadataInput {
+    pub(crate) fn validate(&self) -> CommandResult<()> {
+        let valid_id = self
+            .song
+            .get("id")
+            .is_some_and(|id| id.is_string() || id.is_number());
+        let valid_source = self
+            .song
+            .get("source")
+            .and_then(|value| value.as_str())
+            .is_some_and(|s| !s.is_empty());
+        if !valid_id
+            || !valid_source
+            || !matches!(
+                self.quality.as_str(),
+                "128k" | "320k" | "flac" | "flac24bit"
+            )
+        {
+            return Err(CommandError::invalid_argument("下载歌曲身份或音质无效"));
+        }
+        Ok(())
+    }
+}
+
+pub(super) fn save_download_metadata(
+    dir: &Path,
+    store: &DownloadMetaStore,
+    filename: String,
+    metadata: DownloadMetadataInput,
+) -> CommandResult<()> {
+    use super::path::{verified_existing_download_path, AUDIO_FILE_EXTENSIONS};
+    let path = verified_existing_download_path(dir, &filename, AUDIO_FILE_EXTENSIONS)?;
+    let size = std::fs::metadata(path)?.len();
+    store.with_lock(|| {
+        let mut entries = read_downloads_json(dir)?;
+        entries.retain(|entry| entry.filename != filename);
+        entries.push(DownloadMetaEntry {
+            filename,
+            song: metadata.song,
+            quality: metadata.quality,
+            create_time: now_millis() as f64,
+            size,
+        });
+        write_downloads_json(dir, &entries)?;
+        store.invalidate();
+        Ok(())
+    })
 }
 
 /// Writes the downloads.json sidecar file via a temp file + rename.
@@ -82,3 +215,7 @@ pub(crate) fn write_downloads_json(dir: &Path, entries: &[DownloadMetaEntry]) ->
 #[cfg(test)]
 #[path = "meta_tests.rs"]
 mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "__tests__/meta_boundaries.rs"]
+mod boundary_tests;

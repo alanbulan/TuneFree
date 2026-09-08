@@ -81,3 +81,6 @@ pub fn get_provider(platform: &str) -> Option<Box<dyn MusicProvider>> {
         _ => None,
     }
 }
+#[cfg(all(test, windows))]
+#[path = "__tests__/platform_http.rs"]
+mod platform_http_tests;

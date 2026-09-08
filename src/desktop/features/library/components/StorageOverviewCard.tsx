@@ -15,6 +15,7 @@ export interface StorageOverviewStat {
 }
 
 interface StorageOverviewCardProps {
+  error?: string;
   totalLabel: string;
   totalValue: string;
   segments: StorageOverviewSegment[];
@@ -34,15 +35,18 @@ function StorageDonutChart({ totalLabel, totalValue, segments }: StorageDonutCha
   const visibleSegments = segments.filter((segment) => segment.value > 0);
   const totalBytes = visibleSegments.reduce((sum, segment) => sum + segment.value, 0);
   let offset = 0;
+  const arcs = [];
+  for (const segment of visibleSegments) {
+    const dash = totalBytes > 0 ? (segment.value / totalBytes) * donutCircumference : 0;
+    arcs.push({ segment, dash, strokeDashoffset: -offset });
+    offset += dash;
+  }
 
   return (
     <div className="storage-donut-wrap" aria-label={`${totalLabel} ${totalValue}`}>
       <svg className="storage-donut" viewBox="0 0 104 104" role="img">
         <circle className="storage-donut-track" cx="52" cy="52" r={donutRadius} />
-        {visibleSegments.map((segment) => {
-          const dash = totalBytes > 0 ? (segment.value / totalBytes) * donutCircumference : 0;
-          const strokeDashoffset = -offset;
-          offset += dash;
+        {arcs.map(({ segment, dash, strokeDashoffset }) => {
           return (
             <circle
               key={segment.id}
@@ -66,6 +70,7 @@ function StorageDonutChart({ totalLabel, totalValue, segments }: StorageDonutCha
 }
 
 export default function StorageOverviewCard({
+  error,
   totalLabel,
   totalValue,
   segments,
@@ -81,6 +86,8 @@ export default function StorageOverviewCard({
           <p>本地歌曲、推荐数据和 JSON 备份占用汇总</p>
         </div>
       </div>
+
+      {error && <p className="settings-error-text" role="status">{error}</p>}
 
       <div className="storage-overview-body">
         <StorageDonutChart totalLabel={totalLabel} totalValue={totalValue} segments={segments} />

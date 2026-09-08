@@ -10,6 +10,10 @@ export const usePlayerSettingsActions = (
 ) => {
   const { refs, setAudioQuality: setAudioQualityState,
     setLyricOffsetSeconds: setLyricOffsetSecondsState } = runtime;
+  const {
+    pendingQualityChange: pendingQualityChangeRef, activeQuality: activeQualityRef, audioQuality: audioQualityRef,
+    currentSong: currentSongRef, audio: audioRef, playSong: playSongRef,
+  } = refs;
   const { logPlaybackEvent } = recommendation;
   const setLyricOffsetSeconds = useCallback((offset: number) => {
     const nextOffset = Number.isFinite(offset) ? Math.max(-10, Math.min(10, offset)) : 0;
@@ -24,17 +28,17 @@ export const usePlayerSettingsActions = (
   }, [setLyricOffsetSecondsState]);
 
   const setAudioQuality = useCallback((quality: AudioQuality) => {
-    refs.pendingQualityChange.current = refs.activeQuality.current !== quality;
-    refs.audioQuality.current = quality;
+    pendingQualityChangeRef.current = activeQualityRef.current !== quality;
+    audioQualityRef.current = quality;
     setAudioQualityState(quality);
     logPlaybackEvent(
-      "quality_change", refs.currentSong.current, refs.audio.current?.currentTime,
-      refs.audio.current ? getFiniteAudioDuration(refs.audio.current) : undefined, quality,
+      "quality_change", currentSongRef.current, audioRef.current?.currentTime,
+      audioRef.current ? getFiniteAudioDuration(audioRef.current) : undefined, quality,
     );
-    if (refs.currentSong.current && refs.audio.current && !refs.audio.current.paused) {
-      void refs.playSong.current(refs.currentSong.current, quality);
+    if (currentSongRef.current && audioRef.current && !audioRef.current.paused) {
+      void playSongRef.current(currentSongRef.current, quality);
     }
-  }, [logPlaybackEvent, refs, setAudioQualityState]);
+  }, [logPlaybackEvent, setAudioQualityState, pendingQualityChangeRef, activeQualityRef, audioQualityRef, currentSongRef, audioRef, playSongRef]);
 
   return useMemo(() => ({ setLyricOffsetSeconds, adjustLyricOffsetSeconds, setAudioQuality }),
     [adjustLyricOffsetSeconds, setAudioQuality, setLyricOffsetSeconds]);

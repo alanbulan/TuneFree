@@ -3,10 +3,14 @@ use std::{cell::RefCell, collections::HashMap};
 use super::*;
 use crate::recommendation::migration;
 
+#[path = "__tests__/credential_rollback.rs"]
+mod rollback;
+
 #[cfg(windows)]
-#[test]
+#[tokio::test]
 #[ignore = "writes an isolated credential to Windows Credential Manager"]
-fn windows_credential_manager_round_trip() {
+async fn windows_credential_manager_round_trip() {
+    let _credentials = test_fixture::Credentials::new().await;
     let unique = format!(
         "com.alanbulan.tunefree.integration-test-{}-{}",
         std::process::id(),

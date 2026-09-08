@@ -127,7 +127,9 @@ const configureAudioSource = (
   activeAudio.src = url;
   activeAudio.load();
   if (resumeTime > 0) activeAudio.currentTime = resumeTime;
-  if (refs.audioContext.current?.state === "suspended") void refs.audioContext.current.resume();
+  if (refs.audioContext.current?.state === "suspended") {
+    void refs.audioContext.current.resume().catch((error: unknown) => console.warn('恢复音频上下文失败', error));
+  }
   return activeAudio;
 };
 
@@ -218,7 +220,12 @@ export const executeSongPlayback = async (
   const request = beginPlaybackRequest(dependencies, song, forceQuality);
   try {
     const resolution = await dependencies.resolver.resolveParsedSong(
-      song, request.targetQuality, { signal: request.signal },
+      song, request.targetQuality, {
+        signal: request.signal,
+        ...(forceQuality && dependencies.runtime.refs.refreshedCacheKeys.current.has(
+          `${getSongKey(song)}:${request.targetQuality}`,
+        ) ? { forceRefresh: true } : {}),
+      },
     );
     if (request.requestId !== dependencies.runtime.refs.playRequestId.current ||
         !isSameSong(dependencies.runtime.refs.currentSong.current, song)) return;

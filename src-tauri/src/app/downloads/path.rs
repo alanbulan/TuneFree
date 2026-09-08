@@ -10,6 +10,7 @@ pub(crate) const DOWNLOAD_DIR_CONFIG_FILE: &str = "download-dir.txt";
 pub(crate) const DOWNLOAD_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const MAX_AUDIO_DOWNLOAD_BYTES: u64 = 1024 * 1024 * 1024;
 pub(crate) const MAX_DOWNLOAD_TASK_ID_LEN: usize = 128;
+const MAX_FILENAME_STEM_CHARS: usize = 160;
 /// Marker file next to the executable that opts into portable mode.
 pub(crate) const PORTABLE_MARKER_FILE: &str = "portable.txt";
 /// Subdirectory of the OS download folder used by installed (non-portable) builds.
@@ -60,6 +61,9 @@ pub(crate) fn choose_default_download_dir(
 pub(crate) fn resolve_default_download_dir(
     app_handle: &tauri::AppHandle,
 ) -> CommandResult<PathBuf> {
+    if let Some(dir) = crate::app::smoke_data_dir() {
+        return Ok(dir.join("downloads"));
+    }
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(Path::to_path_buf));
@@ -104,10 +108,13 @@ pub(crate) fn checked_downloaded_size(
 }
 
 pub(crate) fn download_dir_config_path(app_handle: &tauri::AppHandle) -> CommandResult<PathBuf> {
-    let app_dir = app_handle
-        .path()
-        .app_config_dir()
-        .map_err(|e| CommandError::io(format!("无法解析应用配置目录: {}", e)))?;
+    let app_dir = match crate::app::smoke_data_dir() {
+        Some(dir) => dir.join("config"),
+        None => app_handle
+            .path()
+            .app_config_dir()
+            .map_err(|e| CommandError::io(format!("无法解析应用配置目录: {}", e)))?,
+    };
     std::fs::create_dir_all(&app_dir)
         .map_err(|e| CommandError::io(format!("无法创建应用配置目录: {}", e)))?;
     Ok(app_dir.join(DOWNLOAD_DIR_CONFIG_FILE))
@@ -266,8 +273,8 @@ pub(crate) fn sanitize_filename(
         stem = format!("_{}", stem);
     }
 
-    if stem.chars().count() > 160 {
-        stem = stem.chars().take(160).collect();
+    if stem.chars().count() > MAX_FILENAME_STEM_CHARS {
+        stem = stem.chars().take(MAX_FILENAME_STEM_CHARS).collect();
     }
 
     Ok(format!("{}.{}", stem, ext))
@@ -309,7 +316,13 @@ pub(crate) fn unique_download_path(
 
     let (stem, ext) = split_filename(&safe_filename);
     for counter in 1..10_000 {
-        let candidate_filename = format!("{} ({}).{}", stem, counter, ext);
+        let suffix = format!(" ({counter})");
+        // 先给编号留出长度，否则后续文件名清理会把编号再次截掉。
+        let numbered_stem: String = stem
+            .chars()
+            .take(MAX_FILENAME_STEM_CHARS - suffix.chars().count())
+            .collect();
+        let candidate_filename = format!("{numbered_stem}{suffix}.{ext}");
         let (candidate, candidate_filename) =
             safe_join_download_dir(dir, &candidate_filename, fallback_ext, allowed_exts)?;
         if !candidate.exists() {
@@ -326,13 +339,17 @@ pub(crate) fn verified_existing_download_path(
     allowed_exts: &[&str],
 ) -> CommandResult<PathBuf> {
     let (path, _) = safe_join_download_dir(dir, filename, None, allowed_exts)?;
-    if !path.exists() {
+    if !path
+        .try_exists()
+        .map_err(|error| CommandError::io(format!("无法读取本地文件: {}", error)))?
+    {
         return Err(CommandError::not_found("文件不存在"));
     }
     let canonical_dir = canonicalize_dir(dir.to_path_buf())?;
-    let canonical_file = path
-        .canonicalize()
-        .map_err(|e| CommandError::not_found(format!("无法解析本地文件: {}", e)))?;
+    let canonical_file = path.canonicalize().map_err(|error| match error.kind() {
+        std::io::ErrorKind::NotFound => CommandError::not_found("文件不存在"),
+        _ => CommandError::io(format!("无法解析本地文件: {}", error)),
+    })?;
     if !canonical_file.starts_with(&canonical_dir) {
         return Err(CommandError::invalid_argument("文件路径越界"));
     }
@@ -397,3 +414,7 @@ pub(crate) fn cleanup_stale_partials_at(
 #[cfg(test)]
 #[path = "path_tests.rs"]
 mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "__tests__/path_boundaries.rs"]
+mod boundary_tests;

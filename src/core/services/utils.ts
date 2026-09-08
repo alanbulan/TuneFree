@@ -1,68 +1,7 @@
 import type { HTMLAttributeReferrerPolicy } from "react";
 import { Song } from "../types";
-import { SELF_HOSTED_PROXY } from "./config";
-
-// ==============================
-// URL 修复与图片工具
-// ==============================
-
-/**
- * 修复/标准化音乐资源 URL：
- * - 补全协议前缀（// → https:）
- * - 已知支持 HTTPS 的图床强制升级
- * - 酷我 HTTP 图片通过自建代理解决 Mixed Content
- * - QQ 封面尺寸升级（300x300 → 500x500）
- */
-export const normalizeMusicUrl = (url: string | undefined): string => {
-  if (!url || typeof url !== "string") return "";
-  let fixed = url.trim();
-
-  // 某些公开接口会把查询参数中的 & 返回为 HTML 实体。
-  if (fixed.includes("&amp;")) {
-    fixed = fixed.replace(/&amp;/g, "&");
-  }
-
-  // 补全协议（仅针对明显缺失协议的 // 开头 URL）
-  if (fixed.startsWith("//")) {
-    fixed = `https:${fixed}`;
-  }
-
-  const shouldProxyDirectly = (url: string): boolean => {
-    try {
-      const parsed = new URL(url);
-      return parsed.hostname === "hdslb.com" || parsed.hostname.endsWith(".hdslb.com");
-    } catch {
-      return url.includes("hdslb.com");
-    }
-  };
-
-  if (shouldProxyDirectly(fixed)) {
-    return `${SELF_HOSTED_PROXY}${encodeURIComponent(fixed)}`;
-  }
-
-  // 强制 HTTPS（仅针对已知支持 HTTPS 的图床）
-  if (fixed.startsWith("http://")) {
-    if (
-      fixed.includes("music.126.net") ||
-      fixed.includes("y.gtimg.cn") ||
-      fixed.includes("qpic.cn")
-    ) {
-      fixed = fixed.replace("http://", "https://");
-    }
-    // 酷我所有子域名均不支持 HTTPS（kwcdn / img1 / img4 等），
-    // 通过自建代理绕过 Mixed Content 拦截
-    if (fixed.includes("kuwo.cn")) {
-      fixed = `${SELF_HOSTED_PROXY}${encodeURIComponent(fixed)}`;
-    }
-  }
-
-  // QQ 封面尺寸升级：300x300 → 500x500
-  if (fixed.includes("300x300")) {
-    fixed = fixed.replace("300x300", "500x500");
-  }
-
-  return fixed;
-};
+export { normalizeMusicUrl } from './musicUrl';
+import { normalizeMusicUrl } from './musicUrl';
 
 /**
  * 根据图片 URL 来源返回合适的 referrerPolicy：
@@ -275,20 +214,12 @@ export const extractList = (data: Record<string, unknown> | null): Record<string
 
   // data.xxx 包裹
   const dataField = data.data;
-  if (dataField !== undefined) {
-    if (Array.isArray(dataField)) {
-      const arr = dataField as unknown[];
-      if (arr.length > 0 && isGroupItem(arr[0])) {
-        return flattenGroup(arr as Record<string, unknown>[]);
-      }
-      return arr as Record<string, unknown>[];
-    }
-    if (typeof dataField === "object" && dataField !== null) {
-      const dataRecord = dataField as Record<string, unknown>;
-      for (const key of priorityKeys) {
-        const value = dataRecord[key];
-        if (Array.isArray(value)) return value as Record<string, unknown>[];
-      }
+  // 顶层 data 数组已在上面的 priorityKeys 中处理，这里只解包对象。
+  if (typeof dataField === "object" && dataField !== null) {
+    const dataRecord = dataField as Record<string, unknown>;
+    for (const key of priorityKeys) {
+      const value = dataRecord[key];
+      if (Array.isArray(value)) return value as Record<string, unknown>[];
     }
   }
 

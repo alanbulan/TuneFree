@@ -134,6 +134,7 @@ export function SynchronizedTranslationText({
           key={`${index}-${character.text}`}
           className={`karaoke-word karaoke-translation-character ${character.state}`}
           style={{ '--word-progress': formatWordProgress(character.progress ?? 0) } as CSSProperties}
+          data-text={character.text}
           aria-hidden="true"
           data-tauri-drag-region={dragRegion ? true : undefined}
         >

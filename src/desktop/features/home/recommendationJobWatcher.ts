@@ -18,8 +18,9 @@ import type { Song } from '../../../core/types';
 
 /** 事件丢失时的低频兜底轮询间隔（契约 §4.3）。 */
 export const fallbackPollIntervalMs = 10_000;
-/** 兜底轮询次数上限，与旧实现同样约 60 秒后判定超时。 */
-export const maxFallbackPolls = 6;
+/** 老版本任务缺少截止时间时，覆盖后端允许的最大任务预算。 */
+const legacyJobTimeoutMs = 265_000;
+const completionGraceMs = 10_000;
 /** 推荐服务初始化期返回 BUSY 时的退避间隔与次数上限（契约 §7.7）。 */
 export const busyRetryDelayMs = 500;
 export const maxBusyRetries = 8;
@@ -32,7 +33,8 @@ export interface RecommendationJobDependencies {
   listenJobUpdate: (
     handler: (payload: RecommendationJobUpdatePayload) => void,
   ) => Promise<UnlistenFn>;
-  wait: (ms: number) => Promise<void>;
+  wait: (ms: number, signal?: AbortSignal) => Promise<void>;
+  now?: () => number;
 }
 
 export interface RecommendationJobCallbacks {
@@ -44,10 +46,22 @@ export interface RecommendationJobCallbacks {
 
 const noopUnlisten: UnlistenFn = () => {};
 
-export const waitMs = (ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
+export const waitMs = (ms: number, signal?: AbortSignal): Promise<void> => {
+  if (signal?.aborted) return Promise.resolve();
+  let complete: () => void = () => {};
+  const promise = new Promise<void>((resolve) => { complete = resolve; });
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', finish);
+    complete();
+  };
+  const timer = setTimeout(finish, ms);
+  signal?.addEventListener('abort', finish, { once: true });
+  return promise;
+};
 
 export const defaultJobDependencies: RecommendationJobDependencies = {
   getJob: getRecommendationJob,
@@ -100,10 +114,14 @@ export function watchRecommendationJob(
   dependencies: RecommendationJobDependencies = defaultJobDependencies,
 ): () => void {
   let stopped = false;
+  const cancellation = new AbortController();
+  const now = dependencies.now ?? Date.now;
+  const deadline = (initialJob.deadlineAt ?? now() + legacyJobTimeoutMs) + completionGraceMs;
   let unlisten: UnlistenFn | null = null;
 
   const stop = (): void => {
     stopped = true;
+    cancellation.abort();
     unlisten?.();
     unlisten = null;
   };
@@ -137,7 +155,10 @@ export function watchRecommendationJob(
     }
     let job: RecommendationJob | null;
     try {
-      job = await withBusyRetry(() => dependencies.getJob(initialJob.jobId), dependencies.wait, () =>
+      job = await withBusyRetry(() => {
+        if (stopped) return Promise.reject(new DOMException('监听已停止', 'AbortError'));
+        return dependencies.getJob(initialJob.jobId);
+      }, (ms) => dependencies.wait(ms, cancellation.signal), () =>
         publishCloudProgress('running', '推荐服务正在初始化，请稍候'),
       );
     } catch (error) {
@@ -163,8 +184,8 @@ export function watchRecommendationJob(
   };
 
   const runFallbackPolling = async (): Promise<void> => {
-    for (let attempt = 0; attempt < maxFallbackPolls; attempt += 1) {
-      await dependencies.wait(fallbackPollIntervalMs);
+    while (now() < deadline) {
+      await dependencies.wait(Math.min(fallbackPollIntervalMs, deadline - now()), cancellation.signal);
       if (stopped) return;
       await refresh();
       if (stopped) return;

@@ -17,6 +17,18 @@ import type {
 } from '../ipc/types';
 import type { Song } from '../types';
 import { normalizeMusicUrl } from './utils';
+import { stripRuntimeSongFields } from './songStorage';
+
+export const RECOMMENDATION_CHANGED_EVENT = 'tunefree:recommendation-changed';
+let configCacheVersion = 0;
+const notifyRecommendationChanged = () => {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(RECOMMENDATION_CHANGED_EVENT));
+};
+
+const cacheRecommendationEnabled = (enabled: boolean) => {
+  try { localStorage.setItem('tunefree_local_recommendation_enabled', String(enabled)); }
+  catch (error) { console.warn('缓存推荐设置失败', error); }
+};
 
 export type {
   LibraryDelta,
@@ -48,7 +60,7 @@ const toRecommendedSong = (item: RecommendationItem): Song => {
   const pic = normalizeMusicUrl(item.song.pic);
   return {
     ...item.song,
-    ...(pic ? { pic } : {}),
+    ...(item.song.pic ? { pic } : {}),
     recommendationReasons: item.reasons,
     recommendationSource: item.recommendationSource,
     recommendationRequestId: item.requestId,
@@ -61,12 +73,21 @@ export const attachRecommendationMeta = (items: RecommendationItem[]): Song[] =>
 
 export async function logRecommendationEvent(event: RecommendationEvent): Promise<void> {
   if (!isTauri() || !isLocalRecommendationEnabled()) return;
-  await invokeCommand('log_recommendation_event', { event });
+  await invokeCommand('log_recommendation_event', { event: { ...event,
+    ...(event.song ? { song: stripRuntimeSongFields(event.song) } : {}),
+  } });
 }
 
-export async function syncRecommendationLibrary(snapshot: LibrarySnapshot): Promise<void> {
-  if (!isTauri() || !isLocalRecommendationEnabled()) return;
-  await invokeCommand('sync_recommendation_library', { snapshot });
+export async function syncRecommendationLibrary(snapshot: LibrarySnapshot): Promise<boolean> {
+  if (!isTauri()) return false;
+  const stableSnapshot = {
+    ...snapshot, favorites: snapshot.favorites.map(stripRuntimeSongFields),
+    playlists: snapshot.playlists.map((playlist) => ({ ...playlist, songs: playlist.songs.map(stripRuntimeSongFields) })),
+    queue: snapshot.queue.map(stripRuntimeSongFields),
+    currentSong: snapshot.currentSong ? stripRuntimeSongFields(snapshot.currentSong) : null,
+    ...(snapshot.delta ? { delta: { ...snapshot.delta, upsertSongs: snapshot.delta.upsertSongs.map(stripRuntimeSongFields) } } : {}),
+  };
+  return invokeCommand('sync_recommendation_library', { snapshot: stableSnapshot });
 }
 
 export async function getRecommendationJob(jobId: string): Promise<RecommendationJob | null> {
@@ -85,21 +106,21 @@ export async function getSimilarSongs(
 ): Promise<RecommendationItem[]> {
   if (!isTauri() || !isLocalRecommendationEnabled()) return [];
   return invokeCommand('get_similar_songs', {
-    song,
+    song: stripRuntimeSongFields(song),
     limit: options.limit,
   });
 }
 
 export async function dismissRecommendation(song: Song, reason?: string): Promise<void> {
   if (!isTauri() || !isLocalRecommendationEnabled()) return;
-  await invokeCommand('dismiss_recommendation', { song, reason });
+  await invokeCommand('dismiss_recommendation', { song: stripRuntimeSongFields(song), reason });
 }
 
 export async function saveRecommendationFeedback(
   feedback: RecommendationFeedback,
 ): Promise<void> {
   if (!isTauri() || !isLocalRecommendationEnabled()) return;
-  await invokeCommand('save_recommendation_feedback', { feedback });
+  await invokeCommand('save_recommendation_feedback', { feedback: { ...feedback, song: stripRuntimeSongFields(feedback.song) } });
 }
 
 export async function rebuildRecommendationIndex(): Promise<void> {
@@ -125,12 +146,18 @@ export async function getLlmConfig(): Promise<LlmConfigView> {
       lastError: null,
     };
   }
-  return invokeCommand('get_llm_config');
+  const request = ++configCacheVersion;
+  const config = await invokeCommand('get_llm_config');
+  if (request === configCacheVersion) cacheRecommendationEnabled(config.localRecommendationEnabled);
+  return config;
 }
 
 export async function saveLlmConfig(config: LlmConfigInput): Promise<void> {
   if (!isTauri()) return;
   await invokeCommand('save_llm_config', { config });
+  configCacheVersion += 1;
+  if (config.localRecommendationEnabled !== undefined) cacheRecommendationEnabled(config.localRecommendationEnabled);
+  notifyRecommendationChanged();
 }
 
 export async function testLlmProvider(config?: LlmConfigInput): Promise<LlmProviderTestResult> {
@@ -147,7 +174,9 @@ export async function testLlmProvider(config?: LlmConfigInput): Promise<LlmProvi
 
 export async function clearRecommendationData(): Promise<RecommendationMaintenanceStats> {
   if (!isTauri()) return { databaseSizeBytes: 0, llmCacheEntries: 0 };
-  return invokeCommand('clear_recommendation_data');
+  const result = await invokeCommand('clear_recommendation_data');
+  notifyRecommendationChanged();
+  return result;
 }
 
 export function recommendationFeedbackFromSong(

@@ -18,15 +18,16 @@ function MiniLyric({ onExpand }: { onExpand: () => void }) {
   const activeIndex = findActiveLyricIndex(rows, currentTime, lyricOffsetSeconds, displayMode);
   const activeLyric = activeIndex >= 0 ? rows[activeIndex] : null;
   const secondary = getSecondary(activeLyric);
+  if (!currentSong) return null;
   return (
     <button type="button" className="transport-mini-lyric" onClick={onExpand} aria-label="打开全屏歌词">
       <AnimatePresence mode="popLayout">
-        <motion.div key={activeLyric?.text || currentSong?.name || 'empty'}
+        <motion.div key={activeLyric?.text || currentSong.name}
           className="transport-mini-lyric-body"
           initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -8, opacity: 0 }}
           transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}>
           <span className="transport-mini-lyric-text">
-            {activeLyric?.text || currentSong?.name || 'TuneFree Desktop'}
+            {activeLyric?.text || currentSong.name}
           </span>
           {secondary && <em className="transport-mini-lyric-sub">{secondary}</em>}
         </motion.div>

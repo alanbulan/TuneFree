@@ -146,7 +146,10 @@ export const searchNetease = async (
   const data = await proxyFetchJson(url, 8000, signal);
   const songs = data?.result?.songs;
 
-  if (!songs || !Array.isArray(songs)) return [];
+  if (!Array.isArray(songs)) {
+    if (data?.code === 200 && data?.result?.songCount === 0) return [];
+    throw new Error('网易云搜索响应不可用');
+  }
 
   return songs.map((s: Record<string, unknown>) => {
     const ar = s.ar;

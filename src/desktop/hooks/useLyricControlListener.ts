@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { usePlayerActions } from '../../core/contexts/PlayerContext';
 import { useTheme } from '../../core/contexts/ThemeContext';
 import { isTauri, listenEvent, type EventMap, type UnlistenFn } from '../../core/ipc';
@@ -96,15 +96,12 @@ export function useLyricControlListener({
     setShowDesktopLyric,
     showToast,
   });
-  actionsRef.current = {
-    togglePlay,
-    playNext,
-    playPrev,
-    setLockDesktopLyric,
-    setLyricSize,
-    setShowDesktopLyric,
-    showToast,
-  };
+  useLayoutEffect(() => {
+    actionsRef.current = {
+      togglePlay, playNext, playPrev, setLockDesktopLyric,
+      setLyricSize, setShowDesktopLyric, showToast,
+    };
+  }, [togglePlay, playNext, playPrev, setLockDesktopLyric, setLyricSize, setShowDesktopLyric, showToast]);
 
   // Keep refs in sync with latest values.
   useEffect(() => {

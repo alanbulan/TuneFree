@@ -11,6 +11,7 @@ import type { Song } from "../types";
 import type {
   AvailableUpdate,
   DownloadedFileResult,
+  DownloadMetadataInput,
   LibrarySnapshot,
   LlmConfigInput,
   LlmConfigView,
@@ -27,15 +28,11 @@ import type {
 
 export interface CommandMap {
   download_song_to_local: {
-    args: { url: string; filename: string; taskId: string };
+    args: { url: string; filename: string; taskId: string; metadata: DownloadMetadataInput };
     result: DownloadedFileResult;
   };
   cancel_download: { args: { taskId: string }; result: boolean };
   scan_download_dir: { args: void; result: OfflineDownloadMeta[] };
-  save_download_meta: {
-    args: { filename: string; song: Song; quality: string; createTime: number };
-    result: void;
-  };
   delete_download_file: { args: { filename: string }; result: void };
   resolve_local_playback: {
     args: { songId: string; source: string; quality?: string };
@@ -54,13 +51,14 @@ export interface CommandMap {
   check_for_update: { args: void; result: AvailableUpdate | null };
   download_and_install_update: { args: void; result: void };
   get_local_server_info: { args: void; result: LocalServerInfo };
+  mark_frontend_ready: { args: void; result: void };
   log_recommendation_event: {
     args: { event: RecommendationEvent };
     result: void;
   };
   sync_recommendation_library: {
     args: { snapshot: LibrarySnapshot };
-    result: void;
+    result: boolean;
   };
   get_similar_songs: {
     args: { song: Song; limit?: number };

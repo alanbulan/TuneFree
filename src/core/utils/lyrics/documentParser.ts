@@ -108,7 +108,7 @@ export const pushUnique = (values: string[], value: string): void => {
 };
 const getTrackTypeFromMarker = (line: string): LyricTrackType | null => {
   const marker = line.match(trackMarkerPattern)?.[1]?.toLowerCase();
-  return marker ? TRACK_MARKERS[marker] || null : null;
+  return marker && Object.prototype.hasOwnProperty.call(TRACK_MARKERS, marker) ? TRACK_MARKERS[marker] : null;
 };
 const createBlock = (type: LyricTrackType | 'auto'): LyricBlock => ({ type, lines: [] });
 

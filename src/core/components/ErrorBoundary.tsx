@@ -1,4 +1,5 @@
 import React from 'react';
+import { PLAYER_STORAGE_KEYS } from '../contexts/playerPersistence';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -20,8 +21,7 @@ const summarizeError = (error: Error): string => {
 
 /**
  * Top-level render error boundary. Shows a Chinese fallback screen with a
- * retry button and a "clear local data and restart" escape hatch, so a broken
- * persisted state can never brick the whole window.
+ * retry button and a targeted playback reset that preserves the user library.
  */
 export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { error: null };
@@ -41,10 +41,9 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   handleClearAndRestart = () => {
     try {
-      localStorage.clear();
-      sessionStorage.clear();
+      for (const key of Object.values(PLAYER_STORAGE_KEYS)) localStorage.removeItem(key);
     } catch (storageError) {
-      console.warn('[ErrorBoundary] 清除本地数据失败:', storageError);
+      console.warn('[ErrorBoundary] 重置播放状态失败:', storageError);
     }
     window.location.reload();
   };
@@ -58,6 +57,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
         <div className="error-boundary-card">
           <h1 className="error-boundary-title">应用出现异常</h1>
           <p className="error-boundary-message">{summarizeError(error)}</p>
+          <p>重置会清除当前播放队列与播放设置，收藏和歌单会保留。</p>
           <div className="error-boundary-actions">
             <button
               type="button"
@@ -71,7 +71,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
               className="error-boundary-button error-boundary-button-danger"
               onClick={this.handleClearAndRestart}
             >
-              清除本地数据并重启
+              重置播放状态并重启
             </button>
           </div>
         </div>

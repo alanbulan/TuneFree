@@ -1,8 +1,5 @@
 import {
-  createContext,
-  createElement,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -19,11 +16,15 @@ import {
   type UnlistenFn,
 } from '../../core/ipc';
 import { getSongUrl, triggerDownload } from '../../core/services/api';
-import { saveDownloadMeta } from '../../core/services/offlineDownloads';
+import { notifyOfflineChanged } from '../../core/services/offlineDownloads';
+import { stripRuntimeSongFields } from '../../core/services/songStorage';
 import { logRecommendationEvent } from '../../core/services/recommendation';
 import type { AudioQuality, Song } from '../../core/types';
 import { useToast } from '../components/ToastHost';
 import { writeCachedDownloadDir } from '../utils/downloadDirCache';
+import { DownloadContext, type UseSongDownloadResult } from './downloadContextValue';
+
+export { useSongDownload } from './downloadContextValue';
 
 const downloadMeta: Record<string, { label: string; ext: string }> = {
   '128k': { label: '128K', ext: 'mp3' },
@@ -37,23 +38,6 @@ export const qualityOptions: AudioQuality[] = ['128k', '320k', 'flac', 'flac24bi
 export function getDownloadMeta(quality: AudioQuality) {
   return downloadMeta[quality] || { label: quality.toUpperCase(), ext: 'mp3' };
 }
-
-interface UseSongDownloadResult {
-  /** The quality currently being downloaded, or null when idle. */
-  downloadQuality: AudioQuality | null;
-  /** Live progress percentage (0–100) or null when not downloading. */
-  downloadProgress: number | null;
-  /** Whether a download is in progress (convenience flag). */
-  isDownloading: boolean;
-  /** Whether cancellation has been requested for the active download. */
-  isCancelling: boolean;
-  /** Start downloading `song` at the given `quality`. */
-  handleDownload: (song: Song, quality: AudioQuality) => Promise<void>;
-  /** Cancel the active download or prevent a pending URL resolution from starting one. */
-  cancelDownload: () => Promise<void>;
-}
-
-const DownloadContext = createContext<UseSongDownloadResult | null>(null);
 
 const createDownloadTaskId = (): string => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -139,7 +123,7 @@ export function DownloadProvider({ children }: PropsWithChildren) {
     }).then((unlistenFn) => {
       if (cancelled) unlistenFn();
       else unlisten = unlistenFn;
-    });
+    }).catch((error: unknown) => console.warn('订阅下载进度失败', error));
 
     return () => {
       cancelled = true;
@@ -189,23 +173,6 @@ export function DownloadProvider({ children }: PropsWithChildren) {
     }
   }, []);
 
-  const rememberDownloadedSong = useCallback(
-    async (filename: string, song: Song, quality: AudioQuality) => {
-      try {
-        await saveDownloadMeta(filename, song, String(quality));
-        void logRecommendationEvent({
-          eventType: 'download',
-          song,
-          quality: String(quality),
-          context: 'download',
-        }).catch(() => {});
-      } catch (e) {
-        console.error('保存下载元数据失败', e);
-      }
-    },
-    [],
-  );
-
   const handleDownload = useCallback(
     async (song: Song, quality: AudioQuality) => {
       if (activeTaskIdRef.current) return;
@@ -238,12 +205,14 @@ export function DownloadProvider({ children }: PropsWithChildren) {
         }
 
         // 下载目录由后端唯一持有，前端不再传路径。
-        const savedFile = await invokeCommand('download_song_to_local', {
+        await invokeCommand('download_song_to_local', {
           url,
           filename,
           taskId,
+          metadata: { song: { ...stripRuntimeSongFields(song), lrc: song.lrc, lyricBundle: song.lyricBundle }, quality },
         });
-        await rememberDownloadedSong(savedFile.filename, song, quality);
+        notifyOfflineChanged();
+        void logRecommendationEvent({ eventType: 'download', song, quality, context: 'download' }).catch(() => {});
         showToast('下载成功，已保存至本地下载目录', 'success');
       } catch (err: unknown) {
         reportDownloadFailure(err);
@@ -257,7 +226,7 @@ export function DownloadProvider({ children }: PropsWithChildren) {
         }
       }
     },
-    [rememberDownloadedSong, reportDownloadFailure, showToast],
+    [reportDownloadFailure, showToast],
   );
 
   const value = useMemo<UseSongDownloadResult>(() => ({
@@ -269,11 +238,5 @@ export function DownloadProvider({ children }: PropsWithChildren) {
     cancelDownload,
   }), [cancelDownload, downloadProgress, downloadQuality, handleDownload, isCancelling]);
 
-  return createElement(DownloadContext.Provider, { value }, children);
-}
-
-export function useSongDownload(): UseSongDownloadResult {
-  const context = useContext(DownloadContext);
-  if (!context) throw new Error('useSongDownload 必须在 DownloadProvider 内使用');
-  return context;
+  return <DownloadContext.Provider value={value}>{children}</DownloadContext.Provider>;
 }

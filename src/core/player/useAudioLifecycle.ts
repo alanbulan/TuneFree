@@ -19,7 +19,7 @@ const disposeAudio = (refs: PlayerRefs): void => {
     window.cancelAnimationFrame(refs.progressFrame.current);
     refs.progressFrame.current = null;
   }
-  if (refs.audioContext.current) void refs.audioContext.current.close();
+  if (refs.audioContext.current) void refs.audioContext.current.close().catch(() => {});
 };
 
 const cancelProgressFrame = (refs: PlayerRefs): void => {
@@ -77,11 +77,12 @@ export const useAudioLifecycle = (
 
   const initAudioContext = useCallback(() => {
     if (refs.isIOS.current || refs.audioContext.current || !refs.audio.current) return;
+    let context: AudioContext | undefined;
     try {
       const AudioContextClass = window.AudioContext ||
         (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioContextClass) return;
-      const context = new AudioContextClass();
+      context = new AudioContextClass();
       const analyser = context.createAnalyser();
       analyser.fftSize = 512;
       analyser.smoothingTimeConstant = 0.7;
@@ -94,6 +95,8 @@ export const useAudioLifecycle = (
       refs.analyser.current = analyser;
       setAnalyser(analyser);
     } catch (error) {
+      // 节点创建或连接失败时，释放已创建的上下文，再使用模拟频谱。
+      void context?.close().catch(() => {});
       console.error("AudioContext 初始化失败，使用模拟可视化", error);
     }
   }, [refs, setAnalyser]);
@@ -102,7 +105,7 @@ export const useAudioLifecycle = (
     const handleVisibility = () => {
       const context = refs.audioContext.current;
       if (document.visibilityState === "visible" && context?.state === "suspended") {
-        void context.resume();
+        void context.resume().catch((error: unknown) => console.warn('恢复音频上下文失败', error));
       }
     };
     document.addEventListener("visibilitychange", handleVisibility);

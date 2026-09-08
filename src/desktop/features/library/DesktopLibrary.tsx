@@ -6,12 +6,12 @@ import DownloadsView from './DownloadsView';
 import SettingsView from './SettingsView';
 import AboutView from './AboutView';
 
-const viewMeta: Record<LibraryView, { eyebrow: string; title: string }> = {
-  favorites: { eyebrow: 'Your Collection', title: '收藏' },
-  playlists: { eyebrow: 'Playlists', title: '歌单' },
-  downloads: { eyebrow: 'Offline Library', title: '下载' },
-  settings: { eyebrow: 'Control Panel', title: '管理' },
-  about: { eyebrow: 'About TuneFree', title: '关于' },
+const viewMeta: Record<LibraryView, { description: string; title: string }> = {
+  favorites: { description: '把喜欢的旋律留在身边。', title: '我的收藏' },
+  playlists: { description: '为不同的心情，收藏不同的声音。', title: '我的歌单' },
+  downloads: { description: '保存到本地，随时都能听。', title: '下载' },
+  settings: { description: '让 TuneFree 更合你的习惯。', title: '设置' },
+  about: { description: '版本信息、技术栈与开源致谢。', title: '关于' },
 };
 
 interface DesktopLibraryProps {
@@ -30,8 +30,8 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
     <div>
       <div className="page-header library-page-header">
         <div>
-          <p className="eyebrow">{meta.eyebrow}</p>
           <h1 className="page-title">{meta.title}</h1>
+          <p className="page-description">{meta.description}</p>
         </div>
       </div>
 

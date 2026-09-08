@@ -41,17 +41,26 @@ fn scan_download_dir_blocking(
 ) -> CommandResult<Vec<DownloadMetaEntry>> {
     let dir = resolve_safe_download_dir(app_handle)?;
     store.with_lock(|| {
-        let mut entries = read_downloads_json(&dir);
+        let mut entries = read_downloads_json(&dir)?;
         let before = entries.len();
         let mut kept = Vec::with_capacity(before);
         for mut entry in entries.drain(..) {
             // One resolution per entry: it both validates that the file still
             // lives inside the download directory and yields its size.
-            let Ok(path) =
-                verified_existing_download_path(&dir, &entry.filename, AUDIO_FILE_EXTENSIONS)
-            else {
-                continue;
-            };
+            let path =
+                match verified_existing_download_path(&dir, &entry.filename, AUDIO_FILE_EXTENSIONS)
+                {
+                    Ok(path) => path,
+                    Err(error)
+                        if matches!(
+                            error.code,
+                            ErrorCode::NotFound | ErrorCode::InvalidArgument
+                        ) =>
+                    {
+                        continue
+                    }
+                    Err(error) => return Err(error),
+                };
             if let Ok(meta) = std::fs::metadata(path) {
                 entry.size = meta.len();
             }
@@ -61,6 +70,7 @@ fn scan_download_dir_blocking(
         // Entries removed means files were deleted externally; persist the pruned list.
         if kept.len() != before {
             write_downloads_json(&dir, &kept)?;
+            store.invalidate();
         }
 
         kept.sort_by(|a, b| {
@@ -84,52 +94,6 @@ pub(crate) async fn scan_download_dir(
     run_downloads_blocking(move || scan_download_dir_blocking(&app_handle, &store)).await
 }
 
-fn save_download_meta_blocking(
-    app_handle: &tauri::AppHandle,
-    store: &DownloadMetaStore,
-    filename: &str,
-    song: serde_json::Value,
-    quality: String,
-    create_time: f64,
-) -> CommandResult<()> {
-    let dir = resolve_safe_download_dir(app_handle)?;
-    let safe_filename = sanitize_filename(filename, None, AUDIO_FILE_EXTENSIONS)?;
-    let size = verified_existing_download_path(&dir, &safe_filename, AUDIO_FILE_EXTENSIONS)
-        .ok()
-        .and_then(|path| std::fs::metadata(path).ok())
-        .map(|meta| meta.len())
-        .unwrap_or(0);
-
-    store.with_lock(|| {
-        let mut entries = read_downloads_json(&dir);
-        entries.retain(|e| e.filename != safe_filename);
-        entries.push(DownloadMetaEntry {
-            filename: safe_filename,
-            song,
-            quality,
-            create_time,
-            size,
-        });
-        write_downloads_json(&dir, &entries)
-    })
-}
-
-/// Saves download metadata to downloads.json after a successful download.
-#[tauri::command]
-pub(crate) async fn save_download_meta(
-    app_handle: tauri::AppHandle,
-    filename: String,
-    song: serde_json::Value,
-    quality: String,
-    create_time: f64,
-) -> CommandResult<()> {
-    let store = DownloadMetaStore::resolve(&app_handle);
-    run_downloads_blocking(move || {
-        save_download_meta_blocking(&app_handle, &store, &filename, song, quality, create_time)
-    })
-    .await
-}
-
 fn delete_download_file_blocking(
     app_handle: &tauri::AppHandle,
     store: &DownloadMetaStore,
@@ -139,22 +103,27 @@ fn delete_download_file_blocking(
     let safe_filename = sanitize_filename(filename, None, AUDIO_FILE_EXTENSIONS)?;
 
     store.with_lock(|| {
-        if let Ok(file_path) =
-            verified_existing_download_path(&dir, &safe_filename, AUDIO_FILE_EXTENSIONS)
-        {
-            std::fs::remove_file(&file_path)
-                .map_err(|e| CommandError::io(format!("删除文件失败: {}", e)))?;
+        let mut entries = read_downloads_json(&dir)?;
+        match verified_existing_download_path(&dir, &safe_filename, AUDIO_FILE_EXTENSIONS) {
+            Ok(file_path) => std::fs::remove_file(&file_path)
+                .map_err(|e| CommandError::io(format!("删除文件失败: {}", e)))?,
+            Err(error) if error.code == ErrorCode::NotFound => {}
+            Err(error) => return Err(error),
         }
 
-        let mut entries = read_downloads_json(&dir);
         let before = entries.len();
         entries.retain(|e| e.filename != safe_filename);
         if entries.len() != before {
             write_downloads_json(&dir, &entries)?;
+            store.invalidate();
         }
         Ok(())
     })
 }
+
+#[cfg(all(test, windows))]
+#[path = "__tests__/commands.rs"]
+mod tests;
 
 /// Deletes a downloaded file and removes its metadata entry.
 #[tauri::command]
@@ -175,26 +144,7 @@ fn resolve_local_playback_blocking(
     quality: Option<String>,
 ) -> CommandResult<Option<ResolvedPlayback>> {
     let dir = resolve_safe_download_dir(app_handle)?;
-    let entries = store.with_lock(|| read_downloads_json(&dir));
-
-    let mut matches: Vec<&DownloadMetaEntry> = entries
-        .iter()
-        .filter(|e| {
-            if let Some(id) = e.song.get("id").and_then(|v| v.as_str()) {
-                id == song_id
-            } else if let Some(id) = e.song.get("id").and_then(|v| v.as_i64()) {
-                id.to_string() == song_id
-            } else {
-                false
-            }
-        })
-        .filter(|e| {
-            e.song
-                .get("source")
-                .and_then(|v| v.as_str())
-                .is_some_and(|s| s == source)
-        })
-        .collect();
+    let mut matches = store.matching_entries(&dir, song_id, source)?;
 
     if matches.is_empty() {
         return Ok(None);

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { invokeCommand, isTauri } from '../../../core/ipc';
 import { usePlayerActions } from '../../../core/contexts/PlayerContext';
 import { useToast } from '../../components/ToastHost';
+import MotionPanel from '../../components/MotionPanel';
 import {
   listOfflineDownloads,
   deleteOfflineDownload,
@@ -27,7 +28,7 @@ export default function DownloadsView() {
   const { playSong } = usePlayerActions();
   const { showToast } = useToast();
   const [offlineDownloads, setOfflineDownloads] = useState<OfflineDownloadMeta[]>([]);
-  const [downloadPath, setDownloadPath] = useState('');
+  const [downloadPath, setDownloadPath] = useState(() => isTauri() ? readCachedDownloadDir() : '');
   const [downloadsPage, setDownloadsPage] = useState(1);
 
   const totalPages = Math.ceil(offlineDownloads.length / itemsPerPage);
@@ -37,26 +38,21 @@ export default function DownloadsView() {
   }, [offlineDownloads, downloadsPage]);
 
   useEffect(() => {
-    if (downloadsPage > totalPages && totalPages > 0) {
-      setDownloadsPage(totalPages);
-    } else if (totalPages === 0 && downloadsPage > 1) {
-      setDownloadsPage(1);
-    }
-  }, [totalPages, downloadsPage]);
-
-  useEffect(() => {
     let cancelled = false;
     const refresh = () => {
       void listOfflineDownloads().then((items) => {
-        if (!cancelled) setOfflineDownloads(items);
+        if (cancelled) return;
+        setOfflineDownloads(items);
+        setDownloadsPage((page) => Math.min(page, Math.max(1, Math.ceil(items.length / itemsPerPage))));
+      }).catch((error: unknown) => {
+        const { message } = describeIpcFailure(error, '读取下载记录失败');
+        if (!cancelled && message) showToast(message, 'error');
       });
     };
     refresh();
 
     if (isTauri()) {
       // localStorage 仅作展示缓存，避免首帧闪烁；生效目录以后端为准。
-      const cachedDir = readCachedDownloadDir();
-      if (cachedDir) setDownloadPath(cachedDir);
       void invokeCommand('get_download_dir')
         .then((path) => {
           if (!cancelled) setDownloadPath(path);
@@ -69,7 +65,7 @@ export default function DownloadsView() {
       cancelled = true;
       unsubscribe();
     };
-  }, []);
+  }, [showToast]);
 
   // 目录重选自身失败时不再挂「重新选择」动作，避免用户被弹窗循环困住。
   const reselectDownloadDir = async () => {
@@ -145,7 +141,7 @@ export default function DownloadsView() {
         </div>
       ) : (
         <>
-          <div className="content-card glass-panel downloads-table-card">
+          <MotionPanel transitionKey={String(downloadsPage)} className="content-card glass-panel downloads-table-card">
             <div className="song-table-container" role="region" aria-label="离线下载列表" tabIndex={0}>
               <table className="song-table offline-download-table">
                 <thead>
@@ -186,7 +182,7 @@ export default function DownloadsView() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </MotionPanel>
 
           {totalPages > 1 && (
             <div className="downloads-pagination">

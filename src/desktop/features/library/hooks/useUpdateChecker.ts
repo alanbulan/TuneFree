@@ -46,6 +46,8 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
       } else {
         unlisten = unlistenFn;
       }
+    }).catch((error: unknown) => {
+      console.warn('订阅更新进度失败', error);
     });
 
     return () => {
@@ -63,11 +65,6 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
   }, []);
 
   const installUpdate = useCallback(async () => {
-    if (!isTauri()) {
-      await openReleasePage();
-      return;
-    }
-
     setDownloadingUpdate(true);
     setUpdateDownloadProgress(0);
     try {

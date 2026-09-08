@@ -11,11 +11,37 @@ use super::{
 
 const CHAT_COMPLETION_MAX_TOKENS: u64 = 2_000;
 
+#[cfg(test)]
+#[path = "provider_tests.rs"]
+mod request_tests;
+
 enum ChatRequestOutcome {
     Success(String),
-    Unauthorized(String),
+    UnsupportedEndpoint(String),
+    UnsupportedJsonObject(String),
     UnsupportedSystemRole(String),
     Failed(String),
+}
+
+#[derive(Debug)]
+pub struct ProviderError {
+    pub message: String,
+    pub json_object_unsupported: bool,
+}
+
+impl From<String> for ProviderError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            json_object_unsupported: false,
+        }
+    }
+}
+
+impl std::fmt::Display for ProviderError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
 }
 
 #[derive(Clone)]
@@ -127,28 +153,28 @@ impl OpenAiCompatibleProvider {
             }
         };
         let status = response.status();
-        let value: serde_json::Value = match response.json().await {
-            Ok(value) => value,
+        let text = match response.text().await {
+            Ok(text) => text,
             Err(error) => {
-                return ChatRequestOutcome::Failed(format!("模型服务响应不是 JSON: {}", error));
+                return ChatRequestOutcome::Failed(format!("读取模型响应失败: {}", error))
             }
         };
-
+        let parsed = serde_json::from_str::<serde_json::Value>(&text);
         if !status.is_success() {
-            let message = value
-                .get("error")
-                .and_then(|error| error.get("message"))
+            let message = parsed
+                .as_ref()
+                .ok()
+                .and_then(|value| value.pointer("/error/message"))
                 .and_then(|message| message.as_str())
                 .unwrap_or("模型服务返回错误");
-            let error = format!("{}: {}", status.as_u16(), message);
-            if status.as_u16() == 401 || status.as_u16() == 403 {
-                return ChatRequestOutcome::Unauthorized(error);
-            }
-            if Self::system_role_is_unsupported(status.as_u16(), message) {
-                return ChatRequestOutcome::UnsupportedSystemRole(error);
-            }
-            return ChatRequestOutcome::Failed(error);
+            return Self::classify_failure(status.as_u16(), message);
         }
+        let value = match parsed {
+            Ok(value) => value,
+            Err(error) => {
+                return ChatRequestOutcome::Failed(format!("模型服务响应不是 JSON: {}", error))
+            }
+        };
 
         match value
             .get("choices")
@@ -164,49 +190,88 @@ impl OpenAiCompatibleProvider {
         }
     }
 
+    fn classify_failure(status: u16, message: &str) -> ChatRequestOutcome {
+        let error = format!("{}: {}", status, message);
+        let lower = message.to_ascii_lowercase();
+        if matches!(status, 404 | 405) && !lower.contains("model") {
+            return ChatRequestOutcome::UnsupportedEndpoint(error);
+        }
+        if Self::system_role_is_unsupported(status, message) {
+            return ChatRequestOutcome::UnsupportedSystemRole(error);
+        }
+        if matches!(status, 400 | 422)
+            && (lower.contains("response_format") || lower.contains("json_object"))
+            && [
+                "not supported",
+                "unsupported",
+                "unknown parameter",
+                "unrecognized",
+                "not allowed",
+            ]
+            .iter()
+            .any(|marker| lower.contains(marker))
+        {
+            return ChatRequestOutcome::UnsupportedJsonObject(error);
+        }
+        ChatRequestOutcome::Failed(error)
+    }
+
     pub async fn chat_json(
         &self,
         config: &LlmConfig,
         api_key: &str,
         messages: Vec<serde_json::Value>,
         use_json_object: bool,
-    ) -> Result<String, String> {
-        let compatible_messages = Self::messages_without_system_role(&messages);
+    ) -> Result<String, ProviderError> {
+        // endpoint / system-role 兼容路径共享一次调用的总时限。
+        tokio::time::timeout(
+            std::time::Duration::from_millis(config.timeout_ms),
+            self.chat_json_attempts(config, api_key, messages, use_json_object),
+        )
+        .await
+        .unwrap_or_else(|_| Err("模型服务请求超时".to_string().into()))
+    }
 
-        let mut last_error = None;
+    async fn chat_json_attempts(
+        &self,
+        config: &LlmConfig,
+        api_key: &str,
+        messages: Vec<serde_json::Value>,
+        use_json_object: bool,
+    ) -> Result<String, ProviderError> {
+        let compatible_messages = Self::messages_without_system_role(&messages);
+        let mut last_error = "请填写 API 根地址".to_string();
         for url in Self::chat_completion_urls(&config.base_url) {
             let body = Self::chat_request_body(&config.model, &messages, use_json_object);
-            match self
+            let mut outcome = self
                 .request_chat_completion(&url, config, api_key, &body)
-                .await
-            {
-                ChatRequestOutcome::Success(content) => return Ok(content),
-                ChatRequestOutcome::Unauthorized(error) => return Err(error),
-                ChatRequestOutcome::UnsupportedSystemRole(error) => {
-                    let Some(compatible_messages) = compatible_messages.as_ref() else {
-                        last_error = Some(error);
-                        continue;
-                    };
-                    let compatible_body = Self::chat_request_body(
+                .await;
+            if let ChatRequestOutcome::UnsupportedSystemRole(_) = &outcome {
+                if let Some(compatible_messages) = compatible_messages.as_ref() {
+                    let body = Self::chat_request_body(
                         &config.model,
                         compatible_messages,
                         use_json_object,
                     );
-                    match self
-                        .request_chat_completion(&url, config, api_key, &compatible_body)
-                        .await
-                    {
-                        ChatRequestOutcome::Success(content) => return Ok(content),
-                        ChatRequestOutcome::Unauthorized(error) => return Err(error),
-                        ChatRequestOutcome::UnsupportedSystemRole(error)
-                        | ChatRequestOutcome::Failed(error) => last_error = Some(error),
-                    }
+                    outcome = self
+                        .request_chat_completion(&url, config, api_key, &body)
+                        .await;
                 }
-                ChatRequestOutcome::Failed(error) => last_error = Some(error),
+            }
+            match outcome {
+                ChatRequestOutcome::Success(content) => return Ok(content),
+                ChatRequestOutcome::UnsupportedEndpoint(error) => last_error = error,
+                ChatRequestOutcome::UnsupportedJsonObject(message) => {
+                    return Err(ProviderError {
+                        message,
+                        json_object_unsupported: true,
+                    })
+                }
+                ChatRequestOutcome::UnsupportedSystemRole(error)
+                | ChatRequestOutcome::Failed(error) => return Err(error.into()),
             }
         }
-
-        Err(last_error.unwrap_or_else(|| "请填写 API 根地址".to_string()))
+        Err(last_error.into())
     }
 
     pub async fn test(&self, config: &LlmConfig, api_key: &str) -> LlmProviderTestResult {
@@ -232,57 +297,43 @@ impl OpenAiCompatibleProvider {
             json!({ "role": "user", "content": "输出 {\"ok\": true}" }),
         ];
 
-        match self
+        let first = self
             .chat_json(config, api_key, messages.clone(), true)
-            .await
-        {
+            .await;
+        let supports_json_object = first.is_ok();
+        let result = match first {
+            Err(error) if error.json_object_unsupported => {
+                self.chat_json(config, api_key, messages, false).await
+            }
+            result => result,
+        };
+        match result {
             Ok(content) => {
                 let ok = extract_json::<serde_json::Value>(&content)
-                    .map(|value| value.get("ok").and_then(|ok| ok.as_bool()).unwrap_or(false))
-                    .unwrap_or(false);
+                    .and_then(|value| value.get("ok").and_then(|value| value.as_bool()))
+                    == Some(true);
                 LlmProviderTestResult {
                     ok,
-                    status: if ok { "ok" } else { "invalid_json" }.to_string(),
-                    latency_ms: Some(started.elapsed().as_millis() as u64),
-                    supports_json_object: true,
-                    error: if ok {
-                        None
+                    status: if !ok {
+                        "invalid_json"
+                    } else if supports_json_object {
+                        "ok"
                     } else {
-                        Some("模型响应 JSON 不符合预期".to_string())
-                    },
-                }
-            }
-            Err(first_error) => {
-                let started = Instant::now();
-                match self.chat_json(config, api_key, messages, false).await {
-                    Ok(content) => {
-                        let ok = extract_json::<serde_json::Value>(&content).is_some();
-                        LlmProviderTestResult {
-                            ok,
-                            status: if ok {
-                                "ok_without_json_object"
-                            } else {
-                                "invalid_json"
-                            }
-                            .to_string(),
-                            latency_ms: Some(started.elapsed().as_millis() as u64),
-                            supports_json_object: false,
-                            error: if ok {
-                                None
-                            } else {
-                                Some("模型响应不是合法 JSON".to_string())
-                            },
-                        }
+                        "ok_without_json_object"
                     }
-                    Err(second_error) => LlmProviderTestResult {
-                        ok: false,
-                        status: "request_failed".to_string(),
-                        latency_ms: Some(started.elapsed().as_millis() as u64),
-                        supports_json_object: false,
-                        error: Some(format!("{}；兼容重试失败: {}", first_error, second_error)),
-                    },
+                    .to_string(),
+                    latency_ms: Some(started.elapsed().as_millis() as u64),
+                    supports_json_object,
+                    error: (!ok).then(|| "模型响应 JSON 不符合预期".to_string()),
                 }
             }
+            Err(error) => LlmProviderTestResult {
+                ok: false,
+                status: "request_failed".to_string(),
+                latency_ms: Some(started.elapsed().as_millis() as u64),
+                supports_json_object: false,
+                error: Some(error.message),
+            },
         }
     }
 }

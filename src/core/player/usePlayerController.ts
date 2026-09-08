@@ -39,7 +39,6 @@ export const usePlayerController = (): PlayerController => {
   const resolver = useSongResolver(runtime);
   const playback = usePlaybackControls(runtime, audio, resolver, recommendation, recovery);
   const playSong = useSongPlayback(runtime, audio, playback, recovery, recommendation, resolver);
-  runtime.refs.playSong.current = playSong;
   const queue = useQueueControls(runtime, audio, playback, recommendation, resolver);
   const settings = usePlayerSettingsActions(runtime, recommendation);
 

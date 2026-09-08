@@ -47,10 +47,6 @@ updates:
           - "*"
         update-types:
           - patch
-    ignore:
-      # keyring 被钉在 =3.6.3（Windows 凭据后端行为依赖该版本），升级需人工评估。
-      - dependency-name: keyring
-
   - package-ecosystem: github-actions
     directory: "/"
     target-branch: tauri

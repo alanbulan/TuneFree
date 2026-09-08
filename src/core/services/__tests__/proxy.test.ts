@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setLocalServerInfo } from '../config';
-import { getProxies, isLocalServerProxy, proxyFetch, proxyFetchJson } from '../proxy';
+import { getProxies, isLocalServerProxy, proxyFetch, proxyFetchJson, proxyFetchJsonWithValidator } from '../proxy';
 
 describe('proxy configuration', () => {
   afterEach(() => {
@@ -93,5 +93,34 @@ describe('proxy configuration', () => {
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('403'),
     );
+  });
+});
+
+describe('代理备用路径和响应验证', () => {
+  afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  it('自定义代理只作后备且不携带本地令牌，禁用过时代理', async () => {
+    expect(isLocalServerProxy('bad')).toBe(false); localStorage.setItem('tunefree_cors_proxy', 'https://corsproxy.io/?'); expect(getProxies()).toHaveLength(1);
+    localStorage.setItem('tunefree_cors_proxy', 'https://backup.test/?url='); expect(getProxies()).toHaveLength(2);
+    const fetch = vi.fn().mockRejectedValueOnce(new Error('first')).mockResolvedValueOnce(new Response('{"valid":true}')); vi.stubGlobal('fetch', fetch);
+    await expect(proxyFetchJsonWithValidator('https://music.test', { method: 'POST' }, (data) => data.valid === true)).resolves.toEqual({ valid: true });
+    const options = fetch.mock.calls[1][1]; expect(options.mode).toBe('cors'); expect(new Headers(options.headers).has('x-tunefree-token')).toBe(false);
+  });
+  it('保留最后一个失败响应的状态和正文，全部网络失败返回空', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetch = vi.fn().mockResolvedValueOnce(new Response('rate limit', { status: 429 })).mockResolvedValueOnce(new Response(null, { status: 503 })).mockRejectedValueOnce(new Error('offline')); vi.stubGlobal('fetch', fetch);
+    const response = await proxyFetch('not a url'); expect(response?.status).toBe(429); expect(await response?.text()).toBe('rate limit');
+    const empty = await proxyFetch('https://music.test'); expect(empty?.status).toBe(503); expect(await empty?.text()).toBe('');
+    expect(await proxyFetch('https://music.test')).toBeNull(); expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('not a url'));
+  });
+  it('JSONP、JSON 结构验证和取消透传，不把坏正文当有效数据', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    fetch.mockResolvedValueOnce(new Response('callback({"value":1});')); expect(await proxyFetchJson('https://music.test')).toEqual({ value: 1 });
+    fetch.mockResolvedValueOnce(new Response('callback(bad)')); expect(await proxyFetchJson('https://music.test')).toBeNull();
+    fetch.mockResolvedValueOnce(new Response('{"valid":false}', { status: 403 })); expect(await proxyFetchJsonWithValidator('https://music.test', {}, (data) => data.valid)).toBeNull();
+    fetch.mockResolvedValueOnce(new Response('bad')); expect(await proxyFetchJsonWithValidator('https://music.test')).toBeNull();
+    fetch.mockResolvedValueOnce(new Response('{"valid":true}')); expect(await proxyFetchJsonWithValidator('https://music.test')).toEqual({ valid: true });
+    const controller = new AbortController(); controller.abort(new Error('取消')); fetch.mockRejectedValueOnce(controller.signal.reason);
+    await expect(proxyFetchJsonWithValidator('https://music.test', { signal: controller.signal })).rejects.toThrow('取消');
   });
 });

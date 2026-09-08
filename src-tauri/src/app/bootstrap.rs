@@ -26,6 +26,10 @@ use super::{
 };
 use crate::{recommendation::RecommendationService, server};
 
+#[cfg(all(test, windows))]
+#[path = "__tests__/proxy_redirects.rs"]
+mod proxy_redirect_tests;
+
 struct BootstrapContext {
     shutdown_rx: tokio::sync::watch::Receiver<bool>,
     api_client: reqwest::Client,
@@ -68,23 +72,27 @@ fn build_proxy_client() -> reqwest::Client {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .read_timeout(Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            let url = attempt.url();
-            let allowed = matches!(url.scheme(), "http" | "https")
-                && url
-                    .host_str()
-                    .is_some_and(crate::api::proxy::is_allowed_host);
-            if !allowed {
-                return attempt.error("proxy redirect target is not allowed");
-            }
-            if attempt.previous().len() >= 10 {
-                return attempt.error("too many proxy redirects");
-            }
-            attempt.follow()
-        }))
+        .redirect(proxy_redirect_policy())
         .pool_max_idle_per_host(20)
         .build()
         .expect("Failed to build streaming proxy HTTP client")
+}
+
+fn proxy_redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        let url = attempt.url();
+        let allowed = matches!(url.scheme(), "http" | "https")
+            && url
+                .host_str()
+                .is_some_and(crate::api::proxy::is_allowed_host);
+        if !allowed {
+            return attempt.error("proxy redirect target is not allowed");
+        }
+        if attempt.previous().len() >= 10 {
+            return attempt.error("too many proxy redirects");
+        }
+        attempt.follow()
+    })
 }
 
 /// Builds the bootstrap context, binding the loopback listener up front.
@@ -94,7 +102,7 @@ fn build_proxy_client() -> reqwest::Client {
 /// they are created, and `get_local_server_info` is one of the first commands
 /// the renderer issues. Registering that state from `setup` instead loses the
 /// race and fails the command with "state not managed".
-fn create_bootstrap_context() -> BootstrapContext {
+fn create_bootstrap_context() -> super::error::CommandResult<BootstrapContext> {
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let server_listener = server::bind_local_listener();
     let local_server_port = server_listener
@@ -102,7 +110,7 @@ fn create_bootstrap_context() -> BootstrapContext {
         .ok()
         .and_then(|listener| listener.local_addr().ok())
         .map_or(0, |address| address.port());
-    BootstrapContext {
+    Ok(BootstrapContext {
         shutdown_rx,
         api_client: build_api_client(),
         download_client: build_download_client(),
@@ -113,8 +121,8 @@ fn create_bootstrap_context() -> BootstrapContext {
         },
         server_listener,
         local_server_port,
-        local_server_token: generate_local_server_token(),
-    }
+        local_server_token: generate_local_server_token()?,
+    })
 }
 
 /// Builds the log plugin for both debug and release builds.
@@ -127,6 +135,17 @@ fn build_log_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     let builder = tauri_plugin_log::Builder::new()
         .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
         .max_file_size(MAX_LOG_FILE_SIZE);
+    if let Some(dir) = super::smoke::data_dir() {
+        return builder
+            .level(log::LevelFilter::Info)
+            .targets([tauri_plugin_log::Target::new(
+                tauri_plugin_log::TargetKind::Folder {
+                    path: dir.join("logs"),
+                    file_name: None,
+                },
+            )])
+            .build();
+    }
     if cfg!(debug_assertions) {
         builder.level(log::LevelFilter::Info).build()
     } else {
@@ -256,6 +275,8 @@ fn handle_desktop_lyric_event(window: &tauri::Window, event: &WindowEvent) {
 }
 
 fn build_application(context: BootstrapContext) -> tauri::App {
+    let mut app_context = tauri::generate_context!();
+    super::smoke::configure(&mut app_context).expect("冒烟测试隔离环境无效");
     let setup_context = SetupContext {
         api_client: context.api_client.clone(),
         proxy_client: context.proxy_client,
@@ -269,11 +290,15 @@ fn build_application(context: BootstrapContext) -> tauri::App {
     // exits before touching any shared resources; its callback runs in the
     // first instance and raises the (possibly tray-hidden) main window.
     #[cfg(desktop)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(
-        |app_handle, _args, _cwd| {
-            show_main_window(app_handle);
-        },
-    ));
+    let builder = if super::smoke::is_enabled() {
+        builder
+    } else {
+        builder.plugin(tauri_plugin_single_instance::init(
+            |app_handle, _args, _cwd| {
+                show_main_window(app_handle);
+            },
+        ))
+    };
     builder
         .plugin(build_log_plugin())
         .plugin(tauri_plugin_dialog::init())
@@ -290,13 +315,13 @@ fn build_application(context: BootstrapContext) -> tauri::App {
         .manage(context.api_client)
         .manage(DownloadClient(context.download_client))
         .manage(DownloadTaskRegistry::default())
+        .manage(downloads::DownloadMetaStore::default())
         .manage(DesktopLyricBoundsSaveState::default())
         .manage(DesktopLyricRenderState::default())
         .invoke_handler(tauri::generate_handler![
             downloads::transfer::download_song_to_local,
             downloads::transfer::cancel_download,
             downloads::commands::scan_download_dir,
-            downloads::commands::save_download_meta,
             downloads::commands::delete_download_file,
             downloads::commands::resolve_local_playback,
             system_commands::relay_player_control,
@@ -309,6 +334,7 @@ fn build_application(context: BootstrapContext) -> tauri::App {
             updater::check_for_update,
             updater::download_and_install_update,
             system_commands::get_local_server_info,
+            system_commands::mark_frontend_ready,
             recommendation_commands::log_recommendation_event,
             recommendation_commands::sync_recommendation_library,
             recommendation_commands::get_similar_songs,
@@ -329,13 +355,18 @@ fn build_application(context: BootstrapContext) -> tauri::App {
         ])
         .on_window_event(handle_desktop_lyric_event)
         .setup(move |app| setup_application(app, setup_context))
-        .build(tauri::generate_context!())
+        .build(app_context)
         .expect("error while building tauri application")
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    build_application(create_bootstrap_context()).run(|app_handle, event| match event {
+    let context = create_bootstrap_context().unwrap_or_else(|error| {
+        eprintln!("启动失败: {}", error);
+        std::process::exit(1);
+    });
+    // 正常退出时回到 Rust 入口，完成运行时清理并落盘覆盖率数据。
+    let exit_code = build_application(context).run_return(|app_handle, event| match event {
         tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
             persist_visible_desktop_lyric_bounds(app_handle);
             if let Some(state) = app_handle.try_state::<AppLifecycleState>() {
@@ -344,4 +375,7 @@ pub fn run() {
         }
         _ => {}
     });
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
 }

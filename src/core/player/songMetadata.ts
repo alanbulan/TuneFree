@@ -1,4 +1,3 @@
-import { getLyrics } from "../services/api";
 import { getSongKey, isSameSong } from "../types";
 import type { Song } from "../types";
 import {
@@ -7,7 +6,6 @@ import {
 } from "../utils/lyrics/timeline";
 import {
   getFiniteAudioDuration,
-  shouldFetchBetterLyrics,
   shouldUseLyricCandidate,
 } from "./playerUtils";
 import type { ParsedSongData, ResolvedLyricBinding } from "./types";
@@ -80,6 +78,7 @@ export const getLyricRequest = (
     songMeta: {
       ...song,
       lyricId: binding.lyricId === undefined ? undefined : String(binding.lyricId),
+      picId: binding.picId ?? (binding.source === song.source ? song.picId : undefined),
     },
   };
 };
@@ -95,6 +94,7 @@ export const applyParsedMetadata = (
     source: parsed.resolvedSource,
     id: parsed.resolvedId,
     lyricId: parsed.resolvedLyricId,
+    ...(parsed.resolvedPicId ? { picId: parsed.resolvedPicId } : {}),
   };
   runtime.refs.lyricBindings.current.set(getSongKey(song), lyricBinding);
   const patch: Partial<Song> = {};
@@ -115,10 +115,16 @@ export const applyParsedMetadata = (
       return changed ? nextQueue : previous;
     });
   }
-  const lyricRequest = getLyricRequest(song, lyricBinding);
-  if (lyricRequest && shouldFetchBetterLyrics({ source: lyricRequest.source }, fullSong.lrc)) {
-    void getLyrics(lyricRequest.id, lyricRequest.source, lyricRequest.songMeta)
-      .then((lrc) => updateLyrics(runtime, song, lyricBinding, lrc));
-  }
   return fullSong;
+};
+
+export const updateCover = (
+  runtime: PlayerRuntime, song: Song, binding: ResolvedLyricBinding | undefined, pic: string,
+): void => {
+  const current = runtime.refs.currentSong.current;
+  if (!pic || !current || !isSameSong(current, song) || current.pic ||
+    !isSameLyricBinding(runtime.refs.lyricBindings.current.get(getSongKey(song)), binding)) return;
+  runtime.commitCurrentSong({ ...current, pic });
+  runtime.commitQueue((previous) => previous.map((item) =>
+    isSameSong(item, song) && !item.pic ? { ...item, pic } : item));
 };

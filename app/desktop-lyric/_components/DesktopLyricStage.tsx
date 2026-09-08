@@ -26,6 +26,12 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
   const { song, rows, activeIndex, currentLine } = player;
   const displayIndex = activeIndex >= 0 ? activeIndex : currentLine ? 0 : -1;
   const { size } = styleState;
+  const [focusBounds, setFocusBounds] = useState({ currentLine, size, stageHeight, stageWidth });
+  if (focusBounds.currentLine !== currentLine || focusBounds.size !== size ||
+      focusBounds.stageHeight !== stageHeight || focusBounds.stageWidth !== stageWidth) {
+    setFocusBounds({ currentLine, size, stageHeight, stageWidth });
+    setFocusSize(size);
+  }
   const lyricClock = player.currentTime + player.lyricOffsetSeconds;
   const enableKaraoke = player.lyricDisplayMode === 'karaoke';
   const isDarkTheme = typeof document !== 'undefined' && document.documentElement.classList.contains('dark-theme');
@@ -53,10 +59,6 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
   }, []);
 
   useLayoutEffect(() => {
-    setFocusSize(size);
-  }, [currentLine, size, stageHeight, stageWidth]);
-
-  useLayoutEffect(() => {
     const stage = stageRef.current;
     const focusMeasure = focusMeasureRef.current;
     if (!stage || !focusMeasure || !currentLine) {
@@ -64,7 +66,7 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
       return;
     }
 
-    const availableHeight = Math.max(1, stage.clientHeight);
+    const availableHeight = Math.max(1, stageHeight || stage.clientHeight);
     const measuredHeight = focusMeasure.scrollHeight;
     setFocusContentHeight((current) => current === measuredHeight ? current : measuredHeight);
 
@@ -80,6 +82,7 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
     if (nextSize !== focusSize) {
       setFocusSize(nextSize);
     }
+  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- 窗口宽度改变会使 DOM 文本换行，需要重新测量 scrollHeight。
   }, [currentLine, focusSize, stageHeight, stageWidth]);
 
   const contextDepth = useMemo(() => {

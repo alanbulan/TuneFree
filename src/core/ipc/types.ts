@@ -26,6 +26,12 @@ export interface AllowedHostsResponse {
 // 下载
 // ==============================
 
+/** Mirror of `DownloadMetadataInput` (downloads/meta.rs). */
+export interface DownloadMetadataInput {
+  song: Song;
+  quality: string;
+}
+
 /** Mirror of `DownloadedFile` (downloads/transfer.rs). */
 export interface DownloadedFileResult {
   filepath: string;
@@ -199,6 +205,7 @@ export interface RecommendationJob {
   items: RecommendationItem[];
   error?: string | null;
   updatedAt: number;
+  deadlineAt?: number | null;
 }
 
 /** 推荐任务进度事件，event `recommendation-job-update`（items 不随事件下发）。 */

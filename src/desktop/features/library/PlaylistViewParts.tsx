@@ -77,7 +77,9 @@ export function PlaylistActionCards(props: ActionCardsProps) {
       <div className="panel-field playlist-panel-field">
         <input className="panel-input" value={props.importInput}
           onChange={(event) => props.onImportInputChange(event.target.value)} placeholder="歌单链接或 ID"
-          onKeyDown={(event) => event.key === 'Enter' && props.onImport()} />
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) props.onImport();
+          }} />
       </div>
       <button type="button" className="primary-button playlist-card-button"
         disabled={props.isImporting || !props.importInput.trim()} onClick={props.onImport}>

@@ -54,7 +54,7 @@ fn write_and_read_downloads_json_round_trip() {
         now_millis()
     ));
     write_downloads_json(&dir, &[sample_entry()]).unwrap();
-    let entries = read_downloads_json(&dir);
+    let entries = read_downloads_json(&dir).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].filename, "Artist - Song.mp3");
     assert_eq!(entries[0].create_time, 1_700_000_000_000.0);
@@ -67,7 +67,7 @@ fn write_and_read_downloads_json_round_trip() {
         "create_time": 1.0
     }]"#;
     std::fs::write(dir.join("downloads.json"), legacy).unwrap();
-    let entries = read_downloads_json(&dir);
+    let entries = read_downloads_json(&dir).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].create_time, 1.0);
     let _ = std::fs::remove_dir_all(dir);
@@ -92,7 +92,7 @@ fn entry_named(filename: &str) -> DownloadMetaEntry {
 }
 
 #[test]
-fn read_downloads_json_tolerates_corrupt_sidecars() {
+fn read_downloads_json_reports_corrupt_sidecars() {
     let dir = temp_meta_dir("corrupt");
     for corrupt in [
         "not json at all",
@@ -102,8 +102,8 @@ fn read_downloads_json_tolerates_corrupt_sidecars() {
     ] {
         std::fs::write(dir.join("downloads.json"), corrupt).unwrap();
         assert!(
-            read_downloads_json(&dir).is_empty(),
-            "损坏的 downloads.json 应降级为空列表: {corrupt}"
+            read_downloads_json(&dir).is_err(),
+            "损坏的 downloads.json 必须报告失败: {corrupt}"
         );
     }
     let _ = std::fs::remove_dir_all(dir);
@@ -152,7 +152,7 @@ fn concurrent_saves_under_the_store_lock_keep_every_entry() {
                 store.with_lock(|| {
                     let concurrent = inside.fetch_add(1, Ordering::SeqCst) + 1;
                     max_inside.fetch_max(concurrent, Ordering::SeqCst);
-                    let mut entries = read_downloads_json(&dir);
+                    let mut entries = read_downloads_json(&dir).unwrap();
                     entries.push(entry_named(&format!("song-{index}.mp3")));
                     write_downloads_json(&dir, &entries).unwrap();
                     inside.fetch_sub(1, Ordering::SeqCst);
@@ -164,6 +164,7 @@ fn concurrent_saves_under_the_store_lock_keep_every_entry() {
     assert_eq!(max_inside.load(Ordering::SeqCst), 1, "读改写必须互斥");
 
     let mut names: Vec<String> = read_downloads_json(&dir)
+        .unwrap()
         .into_iter()
         .map(|entry| entry.filename)
         .collect();
@@ -191,7 +192,7 @@ fn concurrent_saves_and_deletes_do_not_lose_writes() {
             scope.spawn(move || {
                 deleter_store.with_lock(|| {
                     let target = format!("old-{index}.mp3");
-                    let mut entries = read_downloads_json(&deleter_dir);
+                    let mut entries = read_downloads_json(&deleter_dir).unwrap();
                     entries.retain(|entry| entry.filename != target);
                     write_downloads_json(&deleter_dir, &entries).unwrap();
                 });
@@ -200,7 +201,7 @@ fn concurrent_saves_and_deletes_do_not_lose_writes() {
             let writer_dir = dir.clone();
             scope.spawn(move || {
                 writer_store.with_lock(|| {
-                    let mut entries = read_downloads_json(&writer_dir);
+                    let mut entries = read_downloads_json(&writer_dir).unwrap();
                     entries.push(entry_named(&format!("new-{index}.mp3")));
                     write_downloads_json(&writer_dir, &entries).unwrap();
                 });
@@ -209,6 +210,7 @@ fn concurrent_saves_and_deletes_do_not_lose_writes() {
     });
 
     let mut names: Vec<String> = read_downloads_json(&dir)
+        .unwrap()
         .into_iter()
         .map(|entry| entry.filename)
         .collect();
@@ -229,4 +231,105 @@ fn meta_store_lock_serializes_operations() {
     let clone = store.clone();
     let _guard = store.lock.lock();
     assert!(clone.lock.try_lock().is_none());
+}
+
+fn metadata() -> DownloadMetadataInput {
+    DownloadMetadataInput {
+        song: sample_entry().song,
+        quality: "320k".to_string(),
+    }
+}
+
+#[test]
+fn saves_metadata_in_the_downloads_original_directory_and_invalidates_index() {
+    let original = temp_meta_dir("original-directory");
+    let changed = temp_meta_dir("changed-directory");
+    let store = DownloadMetaStore::default();
+    assert!(store
+        .matching_entries(&original, "1", "netease")
+        .unwrap()
+        .is_empty());
+    std::fs::write(original.join("song.mp3"), b"audio").unwrap();
+    save_download_metadata(&original, &store, "song.mp3".to_string(), metadata()).unwrap();
+    let entries = store.matching_entries(&original, "1", "netease").unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].size, 5);
+    assert!(!changed.join("downloads.json").exists());
+    assert!(store
+        .matching_entries(&changed, "1", "netease")
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        store
+            .matching_entries(&original, "1", "netease")
+            .unwrap()
+            .len(),
+        1
+    );
+    let _ = std::fs::remove_dir_all(original);
+    let _ = std::fs::remove_dir_all(changed);
+}
+
+#[test]
+fn damaged_metadata_is_preserved_and_audio_is_not_deleted() {
+    let dir = temp_meta_dir("preserve-corrupt");
+    std::fs::write(dir.join("song.mp3"), b"audio").unwrap();
+    std::fs::write(dir.join("downloads.json"), b"{broken").unwrap();
+    let result = save_download_metadata(
+        &dir,
+        &DownloadMetaStore::default(),
+        "song.mp3".to_string(),
+        metadata(),
+    );
+    assert!(result.is_err());
+    assert_eq!(
+        std::fs::read(dir.join("downloads.json")).unwrap(),
+        b"{broken"
+    );
+    assert_eq!(std::fs::read(dir.join("song.mp3")).unwrap(), b"audio");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn index_observes_external_changes_deletion_and_numeric_song_ids() {
+    let dir = temp_meta_dir("index-external");
+    let store = DownloadMetaStore::default();
+    write_downloads_json(&dir, &[sample_entry()]).unwrap();
+    assert_eq!(
+        store.matching_entries(&dir, "1", "netease").unwrap().len(),
+        1
+    );
+    let mut replacement = entry_named("changed-long-filename.mp3");
+    replacement.song = serde_json::json!({"id": 2, "source": "qq"});
+    write_downloads_json(&dir, &[replacement]).unwrap();
+    assert!(store
+        .matching_entries(&dir, "1", "netease")
+        .unwrap()
+        .is_empty());
+    assert_eq!(store.matching_entries(&dir, "2", "qq").unwrap().len(), 1);
+    std::fs::remove_file(dir.join("downloads.json")).unwrap();
+    assert!(store.matching_entries(&dir, "2", "qq").unwrap().is_empty());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn download_metadata_rejects_invalid_ipc_inputs() {
+    for value in [
+        serde_json::json!({"song": {}, "quality": "320k"}),
+        serde_json::json!({"song": {"id": true, "source": "qq"}, "quality": "320k"}),
+        serde_json::json!({"song": {"id": "1", "source": ""}, "quality": "320k"}),
+        serde_json::json!({"song": {"id": "1", "source": "qq"}, "quality": "unknown"}),
+    ] {
+        let input: DownloadMetadataInput = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            input.validate().unwrap_err().code,
+            crate::app::error::ErrorCode::InvalidArgument
+        );
+    }
+    let input: DownloadMetadataInput = serde_json::from_value(serde_json::json!({
+        "song": {"id": "1", "source": "qq", "lrc": "离线歌词"}, "quality": "flac"
+    }))
+    .unwrap();
+    assert!(input.validate().is_ok());
+    assert_eq!(input.song["lrc"], "离线歌词");
 }

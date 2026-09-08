@@ -5,9 +5,10 @@
  * (`CommandMap` in src/core/ipc/commands.ts). Either side drifting fails.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkCommandShapes } from './ipc-contract-shapes.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
@@ -109,4 +110,16 @@ if (missingInTs.length > 0 || missingInRust.length > 0 || duplicates.length > 0)
   process.exit(1);
 }
 
-console.log(`IPC 契约检查通过（双向一致，共 ${rustCommands.length} 条命令）`);
+const readRustTree = (directory) => readdirSync(join(root, directory), { withFileTypes: true })
+  .flatMap((entry) => entry.isDirectory() ? readRustTree(join(directory, entry.name))
+    : entry.name.endsWith('.rs') ? [read(join(directory, entry.name))] : []);
+
+try {
+  const shapes = checkCommandShapes(
+    stripComments(readRustTree('src-tauri/src/app').concat(read('src-tauri/src/recommendation/model.rs')).join('\n')),
+    stripComments(read(TS_SOURCE)), stripComments(read('src/core/ipc/types.ts')), rustCommands,
+  );
+  console.log(`IPC 契约检查通过（${rustCommands.length} 条命令名称、参数和返回类型，${shapes} 个数据结构）`);
+} catch (error) {
+  fail(error.message);
+}

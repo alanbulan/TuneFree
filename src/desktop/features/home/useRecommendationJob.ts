@@ -1,3 +1,4 @@
+import { isTauri, listenEvent } from '../../../core/ipc';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   attachRecommendationMeta,
@@ -23,10 +24,15 @@ export function useRecommendationJob(
   const [error, setError] = useState('');
   const requestIdRef = useRef(0);
   const disposeRef = useRef<(() => void) | null>(null);
+  const loadAbortRef = useRef<AbortController | null>(null);
+  const activeJobIdRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const requestId = ++requestIdRef.current;
     const isCurrent = () => requestId === requestIdRef.current;
+    loadAbortRef.current?.abort();
+    const cancellation = new AbortController();
+    loadAbortRef.current = cancellation;
     disposeRef.current?.();
     disposeRef.current = null;
     const startedAt = Date.now();
@@ -34,12 +40,15 @@ export function useRecommendationJob(
     setInitializing(false);
     setLoading(true);
     updateRecommendationTaskProgress({
-      local: { label: '本地 worker', status: 'running', detail: '正在读取启动预热候选', updatedAt: startedAt },
-      cloud: { label: '云端 worker', status: 'idle', detail: '等待启动预热任务状态', updatedAt: startedAt },
+      local: { label: '本地推荐', status: 'running', detail: '正在读取推荐歌单', updatedAt: startedAt },
+      cloud: { label: 'AI 精选', status: 'idle', detail: '等待 AI 推荐状态', updatedAt: startedAt },
     });
 
     try {
-      const job = await withBusyRetry(getLatestRecommendationJob, waitMs, () => {
+      const job = await withBusyRetry(() => {
+        cancellation.signal.throwIfAborted();
+        return getLatestRecommendationJob();
+      }, (ms) => waitMs(ms, cancellation.signal), () => {
         if (!isCurrent()) return;
         setInitializing(true);
         updateRecommendationTaskProgress({
@@ -47,14 +56,15 @@ export function useRecommendationJob(
         });
       });
       if (!isCurrent()) return;
+      activeJobIdRef.current = job?.jobId ?? null;
       setInitializing(false);
       if (!job) {
         setSongs([]);
-        setError('智能推荐任务尚未启动，请在设置中启用推荐后重启应用。');
+        setError('推荐任务正在准备；启用推荐后会自动更新。');
         setLoading(false);
         updateRecommendationTaskProgress({
-          local: { status: 'idle', detail: '未发现启动预热任务', updatedAt: Date.now() },
-          cloud: { status: 'idle', detail: '未发现启动预热任务', updatedAt: Date.now() },
+          local: { status: 'idle', detail: '还没有推荐记录', updatedAt: Date.now() },
+          cloud: { status: 'idle', detail: '还没有推荐记录', updatedAt: Date.now() },
         });
         return;
       }
@@ -110,9 +120,33 @@ export function useRecommendationJob(
   }, [showToast]);
 
   useEffect(() => {
-    if (active) void load();
+    if (!active) return;
+    let disposed = false;
+    const unlisteners: Array<() => void> = [];
+    const reload = () => { if (!disposed) void load(); };
+    if (isTauri()) {
+      void Promise.allSettled([
+        listenEvent('recommendation-ready', reload),
+        listenEvent('recommendation-job-update', (payload) => {
+          if (payload.status === 'running' && payload.jobId !== activeJobIdRef.current) {
+            activeJobIdRef.current = payload.jobId;
+            reload();
+          }
+        }),
+      ]).then((results) => {
+        for (const result of results) {
+          if (result.status === 'rejected') console.warn('订阅推荐状态失败', result.reason);
+          else if (disposed) result.value();
+          else unlisteners.push(result.value);
+        }
+        reload();
+      });
+    } else reload();
     return () => {
+      disposed = true;
       requestIdRef.current += 1;
+      loadAbortRef.current?.abort();
+      unlisteners.forEach((unlisten) => unlisten());
       disposeRef.current?.();
       disposeRef.current = null;
     };

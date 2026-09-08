@@ -25,10 +25,11 @@ vi.mock('../gdStudio', () => ({
   searchGDStudio: vi.fn(),
 }));
 
-import { fetchFallbackLyrics, fetchNativeUrl, getSongUrl, parseSongFull } from '../resolver';
+import { fetchFallbackLyrics, fetchNativeUrl, getSongUrl, parseSongFull, getLyrics } from '../resolver';
 import { fetchNeteaseLyrics, searchNetease } from '../netease';
-import { searchQQ } from '../qq';
-import { resolveAutosource } from '../gdStudio';
+import { searchQQ, fetchQQLyrics } from '../qq';
+import { searchKuwo, fetchKuwoLyrics } from '../kuwo';
+import { resolveAutosource, getGDStudioLyrics, getGDStudioSongUrl, isGDStudioOnlySource, isGDStudioSource, parseGDStudioSongFull, searchGDStudio } from '../gdStudio';
 
 describe('Embeat playback resolution', () => {
   beforeEach(() => {
@@ -84,6 +85,47 @@ describe('Embeat playback resolution', () => {
       resolvedId: 'direct-id',
       resolvedLyricId: 'direct-lyric-id',
     });
+  });
+});
+
+describe('音源分流与失败回退', () => {
+  beforeEach(() => {
+    vi.resetAllMocks(); vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(isGDStudioSource).mockImplementation(((source: string) => ['qq', 'kuwo', 'joox', 'embeat', 'bilibili'].includes(source)) as typeof isGDStudioSource);
+    vi.mocked(isGDStudioOnlySource).mockImplementation(((source: string) => ['joox', 'embeat', 'bilibili'].includes(source)) as typeof isGDStudioOnlySource);
+    vi.mocked(searchNetease).mockResolvedValue([]); vi.mocked(searchQQ).mockResolvedValue([]); vi.mocked(searchKuwo).mockResolvedValue([]); vi.mocked(searchGDStudio).mockResolvedValue([]);
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response('{}', { status: 404 })));
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  const meta = { name: '歌曲', artist: '歌手', album: '', pic: '' };
+  it('原生歌词与 GD 专属歌词按来源解析，成功结果优先', async () => {
+    vi.mocked(fetchQQLyrics).mockResolvedValueOnce('QQ歌词'); expect(await fetchFallbackLyrics('qq-branch', 'qq')).toBe('QQ歌词');
+    vi.mocked(fetchKuwoLyrics).mockResolvedValueOnce('酷我歌词'); expect(await fetchFallbackLyrics('kuwo-branch', 'kuwo')).toBe('酷我歌词');
+    vi.mocked(getGDStudioLyrics).mockResolvedValueOnce('GD歌词'); expect(await getLyrics('joox-branch', 'joox')).toBe('GD歌词');
+    vi.mocked(isGDStudioOnlySource).mockReturnValue(false); vi.mocked(getGDStudioLyrics).mockResolvedValueOnce('通用歌词');
+    expect(await getLyrics('generic', 'bilibili')).toBe('通用歌词');
+    vi.mocked(getGDStudioLyrics).mockResolvedValueOnce('').mockResolvedValueOnce('后备歌词'); expect(await getLyrics('fallback', 'bilibili')).toBe('后备歌词');
+    expect(await fetchFallbackLyrics('unknown', 'unknown')).toBe('');
+  });
+  it('GD 地址可直接使用，专属源不访问无关原生接口，无地址但有歌词保留元数据', async () => {
+    vi.mocked(getGDStudioSongUrl).mockResolvedValueOnce('https://audio.test/gd.mp3'); expect(await getSongUrl('gd', 'qq')).toBe('https://audio.test/gd.mp3');
+    vi.mocked(getGDStudioSongUrl).mockResolvedValueOnce(null); expect(await getSongUrl('empty', 'joox')).toBeNull();
+    vi.mocked(parseGDStudioSongFull).mockResolvedValueOnce({ url: 'https://audio.test/j.mp3', lrc: '歌词', pic: '' });
+    expect(await parseSongFull('j', 'joox')).toMatchObject({ resolvedSource: 'joox', resolvedId: 'j', url: 'https://audio.test/j.mp3' });
+    vi.mocked(parseGDStudioSongFull).mockResolvedValueOnce(null); expect(await parseSongFull('empty', 'joox')).toBeNull();
+    vi.mocked(fetchQQLyrics).mockResolvedValueOnce('仅歌词'); expect(await parseSongFull('metadata', 'qq')).toMatchObject({ url: null, lrc: '仅歌词' });
+  });
+  it('autosource 失败尝试候选，无法匹配返回空，主动取消保留原始原因', async () => {
+    vi.mocked(resolveAutosource).mockRejectedValue(new Error('autosource failed'));
+    vi.mocked(searchNetease).mockRejectedValueOnce(new Error('search failed'));
+    expect(await getSongUrl('ai', 'embeat', '320k', meta)).toBeNull(); expect(console.warn).toHaveBeenCalled();
+    expect(await parseSongFull('ai', 'embeat', '320k', meta)).toBeNull();
+    vi.mocked(searchNetease).mockResolvedValueOnce([{ id: 'matched', source: 'netease', ...meta }]);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"url":"https://audio.test/matched.mp3"}')));
+    expect(await parseSongFull('ai', 'embeat', '320k', meta)).toMatchObject({ resolvedId: 'matched' });
+    const controller = new AbortController(); controller.abort(new Error('取消请求'));
+    await expect(getSongUrl('ai', 'embeat', '320k', meta, { signal: controller.signal })).rejects.toThrow('取消请求');
+    await expect(parseSongFull('ai', 'embeat', '320k', meta, { signal: controller.signal })).rejects.toThrow('取消请求');
   });
 });
 

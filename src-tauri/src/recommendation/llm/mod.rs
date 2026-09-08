@@ -4,12 +4,21 @@ mod json;
 mod rerank;
 mod response;
 
+#[cfg(all(test, windows))]
+#[path = "__tests__/pipeline.rs"]
+mod pipeline_tests;
+
 pub use discovery_plan::build_discovery_plan;
 pub use json::{extract_json, response_sample};
 pub use rerank::enhance_recommendations;
 
+use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use serde_json::Value;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 use super::{
     catalog, events, llm_config,
@@ -49,7 +58,10 @@ impl LlmEnhancementResult {
 }
 
 pub(super) fn can_call_llm(config: &super::model::LlmConfig) -> bool {
-    config.enabled && !config.base_url.trim().is_empty() && !config.model.trim().is_empty()
+    !crate::app::is_smoke_test()
+        && config.enabled
+        && !config.base_url.trim().is_empty()
+        && !config.model.trim().is_empty()
 }
 
 pub(super) struct LlmRequestContext {
@@ -99,7 +111,11 @@ pub(super) async fn request_json_with_fallback(
         .await
     {
         Ok(content) => Ok(content),
-        Err(_) => provider.chat_json(config, api_key, messages, false).await,
+        Err(error) if error.json_object_unsupported => provider
+            .chat_json(config, api_key, messages, false)
+            .await
+            .map_err(|error| error.message),
+        Err(error) => Err(error.message),
     }
 }
 
@@ -128,5 +144,70 @@ pub(super) fn log_llm_call(conn: &Connection, call: LlmCallLog<'_>) {
     );
     if let Err(error) = result {
         log::warn!("写入模型调用日志失败: {}", error);
+    }
+}
+
+struct CancelBlockingOnDrop(Arc<AtomicBool>);
+
+impl Drop for CancelBlockingOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+
+/// 等待数据库锁的后台操作在调用方取消后不再执行；已持锁的写入先于 clear 完成。
+pub(super) async fn run_llm_blocking<T, F>(
+    conn: Arc<Mutex<Connection>>,
+    operation: F,
+) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce(&Connection) -> T + Send + 'static,
+{
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let _lifetime = CancelBlockingOnDrop(Arc::clone(&cancelled));
+    crate::app::run_recommendation_blocking(move || {
+        let conn = conn.lock();
+        if cancelled.load(Ordering::Acquire) {
+            return Err(crate::app::error::CommandError::cancelled(
+                "模型后台任务已取消",
+            ));
+        }
+        Ok(operation(&conn))
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod blocking_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn cancellation_while_waiting_for_database_lock_prevents_late_writes() {
+        let conn = Arc::new(Mutex::new(Connection::open_in_memory().unwrap()));
+        let (sent, received) = tokio::sync::oneshot::channel();
+        {
+            let _guard = conn.lock();
+            let pending = run_llm_blocking(Arc::clone(&conn), move |db| {
+                db.execute_batch("CREATE TABLE stale_result (value TEXT)")
+                    .unwrap();
+                let _ = sent.send(());
+            });
+            let mut pending = std::pin::pin!(pending);
+            // 先轮询后台 future，使操作入队，再模拟外层取消并丢弃 future。
+            let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+            assert!(std::future::Future::poll(pending.as_mut(), &mut context).is_pending());
+        }
+        assert!(received.await.is_err(), "取消后不应运行写入闭包");
+        let count: i64 = conn
+            .lock()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'stale_result'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
     }
 }

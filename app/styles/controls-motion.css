@@ -1,0 +1,39 @@
+/* 置于控件皮肤之后，避免旧 active 背景遮住共享的 Motion 选中层。 */
+.motion-choice { position: relative; isolation: isolate; transition: color .16s ease, background .16s ease, box-shadow .16s ease; }
+.motion-choice.active,
+.source-switch .motion-choice.active,
+.quality-selector .motion-choice.active,
+.sidebar-collapsed .motion-choice.active { color: var(--accent); background: transparent; box-shadow: none; }
+.motion-choice > .selection-indicator {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: block;
+  border-radius: inherit;
+  background: rgba(var(--accent-rgb), .09);
+  pointer-events: none;
+}
+.source-switch .selection-indicator,
+.quality-selector .selection-indicator {
+  background: var(--card-solid);
+  box-shadow: 0 1px 5px var(--shadow-sm);
+}
+.theme-mode-icon { display: grid; place-items: center; }
+.full-more-reveal, .disclosure-content { overflow: hidden; }
+.custom-select-options, .desktop-dialog-backdrop, .desktop-dialog-card { animation: none; }
+.settings-disclosure-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 4px 0;
+  border: 0;
+  color: var(--text-soft);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.disclosure-content::before { content: ''; display: block; height: 14px; }

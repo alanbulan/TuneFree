@@ -1,22 +1,22 @@
 import { useCallback, useEffect, useRef, useState,
   type KeyboardEvent, type PointerEvent } from 'react';
-import type { MiraActionName } from './miraPetAtlas';
+export type CompanionGesture = 'wink' | 'burst';
 
 export interface MiraPosition { x: number; y: number }
 interface MiraDragState {
   pointerId: number; offsetX: number; offsetY: number;
-  width: number; height: number; lastClientX: number;
-  directionAction: MiraActionName | null;
+  width: number; height: number;
+  startX: number; startY: number; moved: boolean;
 }
 
 const STORAGE_KEY = 'tunefree_desktop_mira_position_v3';
-const DEFAULT_LEFT = 68;
-const DEFAULT_BOTTOM = 72;
+const DEFAULT_LEFT = 52;
+const DEFAULT_BOTTOM = 120;
 const VIEWPORT_MARGIN = 8;
-const DEFAULT_WIDTH = 92;
-const DEFAULT_HEIGHT = 104;
-const DIRECTION_THRESHOLD = 3;
-const DIRECTION_HOLD_MS = 700;
+const DEFAULT_WIDTH = 112;
+const DEFAULT_HEIGHT = 112;
+const DRAG_THRESHOLD = 3;
+const GESTURE_HOLD_MS = 1800;
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), Math.max(min, max));
 const clampPosition = (position: MiraPosition, width: number, height: number): MiraPosition => ({
@@ -31,7 +31,8 @@ const readStoredPosition = (): MiraPosition | null => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (!saved) return null;
     const parsed = JSON.parse(saved) as Partial<MiraPosition>;
-    return typeof parsed.x === 'number' && typeof parsed.y === 'number'
+    return typeof parsed.x === 'number' && Number.isFinite(parsed.x)
+      && typeof parsed.y === 'number' && Number.isFinite(parsed.y)
       ? { x: parsed.x, y: parsed.y } : null;
   } catch { return null; }
 };
@@ -40,7 +41,7 @@ const savePosition = (position: MiraPosition): void => {
 };
 
 export const useReducedMotion = (): boolean => {
-  const [reducedMotion, setReducedMotion] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)');
     const update = () => setReducedMotion(media.matches);
@@ -57,7 +58,7 @@ export const useMiraPetPosition = () => {
   const movementResetRef = useRef<number | null>(null);
   const [position, setPosition] = useState<MiraPosition | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [movementAction, setMovementAction] = useState<MiraActionName | null>(null);
+  const [movementAction, setMovementAction] = useState<CompanionGesture | null>(null);
 
   const getPetSize = useCallback(() => {
     const rect = petRef.current?.getBoundingClientRect();
@@ -71,14 +72,14 @@ export const useMiraPetPosition = () => {
     window.clearTimeout(movementResetRef.current);
     movementResetRef.current = null;
   }, []);
-  const applyMovementAction = useCallback((nextAction: MiraActionName | null, hold = false) => {
+  const applyMovementAction = useCallback((nextAction: CompanionGesture | null, hold = false) => {
     clearMovementReset();
     setMovementAction(nextAction);
     if (hold && nextAction) {
       movementResetRef.current = window.setTimeout(() => {
         setMovementAction(null);
         movementResetRef.current = null;
-      }, DIRECTION_HOLD_MS);
+      }, GESTURE_HOLD_MS);
     }
   }, [clearMovementReset]);
   const resetPosition = useCallback(() => {
@@ -86,8 +87,8 @@ export const useMiraPetPosition = () => {
     const next = defaultPosition(width, height);
     setPosition(next); savePosition(next);
   }, [getPetSize]);
-  const interact = useCallback((actionName: MiraActionName) => {
-    applyMovementAction(actionName === 'waving' ? 'jumping' : 'waving', true);
+  const interact = useCallback((actionName: CompanionGesture | null) => {
+    applyMovementAction(actionName === 'wink' ? 'burst' : 'wink', true);
   }, [applyMovementAction]);
   const nudgePosition = useCallback((dx: number, dy: number) => {
     const { width, height } = getPetSize();
@@ -122,51 +123,52 @@ export const useMiraPetPosition = () => {
     const width = rect.width || DEFAULT_WIDTH;
     const height = rect.height || DEFAULT_HEIGHT;
     dragRef.current = { pointerId: event.pointerId, offsetX: event.clientX - rect.left,
-      offsetY: event.clientY - rect.top, width, height, lastClientX: event.clientX,
-      directionAction: null };
+      offsetY: event.clientY - rect.top, width, height,
+      startX: event.clientX, startY: event.clientY, moved: false };
     clearMovementReset();
     setPosition(clampPosition({ x: rect.left, y: rect.top }, width, height));
-    setDragging(true);
+    event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
   }, [clearMovementReset]);
   const handlePointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const deltaX = event.clientX - drag.lastClientX;
-    if (Math.abs(deltaX) >= DIRECTION_THRESHOLD) {
-      const nextAction: MiraActionName = deltaX > 0 ? 'running_right' : 'running_left';
-      drag.directionAction = nextAction; applyMovementAction(nextAction);
-    }
-    drag.lastClientX = event.clientX;
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < DRAG_THRESHOLD) return;
+    drag.moved = true;
+    setDragging(true);
     setPosition(clampPosition({ x: event.clientX - drag.offsetX,
       y: event.clientY - drag.offsetY }, drag.width, drag.height));
     event.preventDefault();
-  }, [applyMovementAction]);
+  }, []);
   const finishDrag = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const next = clampPosition({ x: event.clientX - drag.offsetX,
-      y: event.clientY - drag.offsetY }, drag.width, drag.height);
-    setPosition(next); savePosition(next); setDragging(false);
-    applyMovementAction(drag.directionAction, !!drag.directionAction);
+    if (drag.moved && event.type !== 'pointercancel') {
+      const next = clampPosition({ x: event.clientX - drag.offsetX,
+        y: event.clientY - drag.offsetY }, drag.width, drag.height);
+      setPosition(next); savePosition(next);
+    }
+    setDragging(false);
+    if (!drag.moved && event.type !== 'pointercancel') interact(movementAction);
+    else applyMovementAction(null);
     dragRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-  }, [applyMovementAction]);
-  const handleKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>, actionName: MiraActionName) => {
+  }, [applyMovementAction, interact, movementAction]);
+  const handleKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 32 : 12;
-    if (event.key === 'ArrowLeft') { applyMovementAction('running_left', true); nudgePosition(-step, 0); }
-    else if (event.key === 'ArrowRight') { applyMovementAction('running_right', true); nudgePosition(step, 0); }
+    if (event.key === 'ArrowLeft') nudgePosition(-step, 0);
+    else if (event.key === 'ArrowRight') nudgePosition(step, 0);
     else if (event.key === 'ArrowUp') nudgePosition(0, -step);
     else if (event.key === 'ArrowDown') nudgePosition(0, step);
     else if (event.key === 'Home') resetPosition();
-    else if (event.key === 'Enter' || event.key === ' ') interact(actionName);
+    else if (event.key === 'Enter' || event.key === ' ') interact(movementAction);
     else return;
     event.preventDefault();
-  }, [applyMovementAction, interact, nudgePosition, resetPosition]);
+  }, [interact, movementAction, nudgePosition, resetPosition]);
 
-  return { petRef, position, dragging, movementAction, applyMovementAction,
+  return { petRef, position, dragging, movementAction,
     handlePointerDown, handlePointerMove, finishDrag, handleKeyDown };
 };

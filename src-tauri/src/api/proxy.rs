@@ -207,7 +207,7 @@ pub async fn handle_cors_proxy(
 
     match req_builder.send().await {
         Ok(resp) => {
-            let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::OK);
+            let status = resp.status();
 
             // Preserve media/cache headers while excluding hop-by-hop, cookie,
             // and upstream CORS headers. The local CorsLayer owns CORS policy.
@@ -221,15 +221,8 @@ pub async fn handle_cors_proxy(
 
             // Stream the response body to avoid buffering in memory
             let stream = resp.bytes_stream();
-            let mut response = Response::builder()
-                .status(status)
-                .body(axum::body::Body::from_stream(stream))
-                .unwrap_or_else(|_| {
-                    Response::builder()
-                        .status(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(axum::body::Body::from("Failed to stream response"))
-                        .unwrap()
-                });
+            let mut response = Response::new(axum::body::Body::from_stream(stream));
+            *response.status_mut() = status;
 
             // Apply collected headers to the response
             *response.headers_mut() = response_headers;
@@ -243,6 +236,10 @@ pub async fn handle_cors_proxy(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "__tests__/proxy_http.rs"]
+mod http_tests;
 
 #[cfg(test)]
 mod tests {

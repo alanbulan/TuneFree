@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 export type CloseBehavior = 'ask' | 'tray' | 'exit';
 
@@ -20,12 +20,9 @@ interface DesktopPreferencesContextType {
 const DesktopPreferencesContext = createContext<DesktopPreferencesContextType | undefined>(undefined);
 
 export const DesktopPreferencesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [closeBehavior, setCloseBehaviorState] = useState<CloseBehavior>(DEFAULT_CLOSE_BEHAVIOR);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    setCloseBehaviorState(normalizeCloseBehavior(localStorage.getItem(CLOSE_BEHAVIOR_STORAGE_KEY)));
-  }, []);
+  const [closeBehavior, setCloseBehaviorState] = useState<CloseBehavior>(() =>
+    typeof window === 'undefined' ? DEFAULT_CLOSE_BEHAVIOR
+      : normalizeCloseBehavior(localStorage.getItem(CLOSE_BEHAVIOR_STORAGE_KEY)));
 
   const setCloseBehavior = useCallback((behavior: CloseBehavior) => {
     const normalized = normalizeCloseBehavior(behavior);

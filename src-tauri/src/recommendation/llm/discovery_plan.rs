@@ -32,7 +32,18 @@ pub async fn build_discovery_plan(
     request_id: &str,
     limit: usize,
 ) -> DiscoveryPlanResult {
-    let context = match discovery_context(&conn, request_id, local_items.len()) {
+    let worker_id = request_id.to_string();
+    let item_count = local_items.len();
+    let context = match run_llm_blocking(Arc::clone(&conn), move |connection| {
+        discovery_context(connection, &worker_id, item_count)
+    })
+    .await
+    .unwrap_or_else(|error| {
+        Err(DiscoveryPlanResult {
+            queries: Vec::new(),
+            error: Some(error),
+        })
+    }) {
         Ok(context) => context,
         Err(result) => return result,
     };
@@ -52,37 +63,65 @@ pub async fn build_discovery_plan(
             .then_some(context.recent_events.as_slice()),
     );
     let started = Instant::now();
-    let content =
-        match request_json_with_fallback(provider, &context.config, &context.api_key, messages)
-            .await
-        {
-            Ok(content) => content,
-            Err(error) => {
-                return discovery_failure(
-                    &conn,
-                    DiscoveryFailure {
-                        request_id,
-                        model: &context.config.model,
-                        status: "discovery_request_failed",
-                        candidate_count: local_candidates.len(),
-                        started,
-                        error_code: error.clone(),
-                        error,
-                    },
-                );
-            }
-        };
+    let response =
+        request_json_with_fallback(provider, &context.config, &context.api_key, messages).await;
+    let request_id = request_id.to_string();
+    let candidate_count = local_candidates.len();
+    run_llm_blocking(conn, move |connection| {
+        complete_discovery(
+            connection,
+            &request_id,
+            &context.config.model,
+            candidate_count,
+            started,
+            response,
+            limit,
+        )
+    })
+    .await
+    .unwrap_or_else(|error| DiscoveryPlanResult {
+        queries: Vec::new(),
+        error: Some(error),
+    })
+}
+
+fn complete_discovery(
+    conn: &Connection,
+    request_id: &str,
+    model: &str,
+    candidate_count: usize,
+    started: Instant,
+    response: Result<String, String>,
+    limit: usize,
+) -> DiscoveryPlanResult {
+    let content = match response {
+        Ok(content) => content,
+        Err(error) => {
+            return discovery_failure(
+                conn,
+                DiscoveryFailure {
+                    request_id,
+                    model,
+                    status: "discovery_request_failed",
+                    candidate_count,
+                    started,
+                    error_code: error.clone(),
+                    error,
+                },
+            )
+        }
+    };
     let Some(queries) = parse_discovery_response(&content, limit).filter(|items| !items.is_empty())
     else {
         let sample = response_sample(&content);
         log::warn!("模型发现计划无法解析出有效搜索关键词，响应样本: {}", sample);
         return discovery_failure(
-            &conn,
+            conn,
             DiscoveryFailure {
                 request_id,
-                model: &context.config.model,
+                model,
                 status: "discovery_invalid_json",
-                candidate_count: local_candidates.len(),
+                candidate_count,
                 started,
                 error_code: sample,
                 error: "模型发现计划格式不正确".to_string(),
@@ -90,10 +129,10 @@ pub async fn build_discovery_plan(
         );
     };
     log_discovery_success(
-        &conn,
+        conn,
         request_id,
-        &context.config.model,
-        local_candidates.len(),
+        model,
+        candidate_count,
         queries.len(),
         started,
     );
@@ -104,14 +143,13 @@ pub async fn build_discovery_plan(
 }
 
 fn discovery_context(
-    conn: &Arc<Mutex<Connection>>,
+    conn: &Connection,
     request_id: &str,
     candidate_count: usize,
 ) -> Result<LlmRequestContext, DiscoveryPlanResult> {
-    let guard = conn.lock();
-    load_request_context(&guard).map_err(|error| {
+    load_request_context(conn).map_err(|error| {
         log_llm_call(
-            &guard,
+            conn,
             LlmCallLog {
                 request_id,
                 model: "",
@@ -141,12 +179,9 @@ struct DiscoveryFailure<'a> {
     error: String,
 }
 
-fn discovery_failure(
-    conn: &Arc<Mutex<Connection>>,
-    failure: DiscoveryFailure<'_>,
-) -> DiscoveryPlanResult {
+fn discovery_failure(conn: &Connection, failure: DiscoveryFailure<'_>) -> DiscoveryPlanResult {
     log_llm_call(
-        &conn.lock(),
+        conn,
         LlmCallLog {
             request_id: failure.request_id,
             model: failure.model,
@@ -164,7 +199,7 @@ fn discovery_failure(
 }
 
 fn log_discovery_success(
-    conn: &Arc<Mutex<Connection>>,
+    conn: &Connection,
     request_id: &str,
     model: &str,
     candidate_count: usize,
@@ -172,7 +207,7 @@ fn log_discovery_success(
     started: Instant,
 ) {
     log_llm_call(
-        &conn.lock(),
+        conn,
         LlmCallLog {
             request_id,
             model,

@@ -22,6 +22,7 @@ export interface EventMap {
   "theme-changed": ThemeChangedPayload;
   "download-progress": DownloadProgressPayload;
   "update-progress": UpdateProgressPayload;
+  "recommendation-ready": void;
   "recommendation-job-update": RecommendationJobUpdatePayload;
   "desktop-lyric-closed": void;
   /** 歌词窗口首帧渲染就绪（供主窗口补发 lyric-song / lyric-tick）。 */

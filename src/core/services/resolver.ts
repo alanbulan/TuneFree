@@ -1,3 +1,5 @@
+import { BoundedCache } from '../utils/boundedCache';
+import { rememberTrackMeta } from './gdStudioModel';
 import { API_PREFIX, buildLocalServerHeaders } from "./config";
 import { normalizeMusicUrl } from "./utils";
 import { fetchNeteaseLyrics, searchNetease } from "./netease";
@@ -30,6 +32,8 @@ import type { Song } from "../types";
 export interface ResolveOptions {
   signal?: AbortSignal;
   forceRefresh?: boolean;
+  /** 播放先取 URL，歌词和封面由补充请求获取。 */
+  deferMetadata?: boolean;
 }
 
 export type ParsedSongFull = {
@@ -39,9 +43,10 @@ export type ParsedSongFull = {
   resolvedSource: string;
   resolvedId?: string | number;
   resolvedLyricId?: string | number;
+  resolvedPicId?: string;
 };
 
-const _lyricsCache = new Map<string, string>();
+const _lyricsCache = new BoundedCache<string, string>(200, 30 * 60_000);
 const _lyricsPending = new Map<string, Promise<string>>();
 
 // 跨音源 fallback（与 Flutter / 移动 PWA 对齐）：
@@ -52,6 +57,7 @@ const FALLBACK_SOURCE_CONCURRENCY = 3;
 const FALLBACK_TOTAL_TIMEOUT_MS = 15_000;
 const NATIVE_URL_TIMEOUT_MS = 8_000;
 const FALLBACK_SOURCES = ["netease", "qq", "kuwo", "joox", "bilibili"] as const;
+type FallbackSource = typeof FALLBACK_SOURCES[number];
 const KUWO_FALLBACK_SOURCES = ["qq", "netease", "joox", "bilibili"] as const;
 const NATIVE_LYRIC_SOURCES = new Set(["netease", "qq", "kuwo"]);
 
@@ -80,6 +86,7 @@ export const fetchNativeUrl = async (
       { signal: controller.signal, headers: buildLocalServerHeaders() },
     );
     const data = await readJsonBody(resp);
+    if (signal?.aborted) throw abortReasonError(signal);
     // 后端 /api/url 失败时会返回结构化 error 字段，必须落日志，
     // 否则代理白名单 403 与"平台不可用"完全不可区分。
     const detail = typeof data?.error === "string" ? `：${data.error}` : "";
@@ -197,16 +204,13 @@ const getDirectSongUrl = async (
 
 const searchFallbackSource = async (
   keyword: string,
-  source: string,
+  source: FallbackSource,
   signal?: AbortSignal,
 ): Promise<Song[]> => {
   if (source === "netease") return searchNetease(keyword, 1, FALLBACK_SEARCH_LIMIT, signal);
   if (source === "qq") return searchQQ(keyword, 1, FALLBACK_SEARCH_LIMIT, signal);
   if (source === "kuwo") return searchKuwo(keyword, 1, FALLBACK_SEARCH_LIMIT, signal);
-  if (isGDStudioOnlySource(source)) {
-    return searchGDStudio(keyword, source, 1, FALLBACK_SEARCH_LIMIT, signal);
-  }
-  return [];
+  return searchGDStudio(keyword, source, 1, FALLBACK_SEARCH_LIMIT, signal);
 };
 
 const resolveDirectSongFull = async (
@@ -227,12 +231,14 @@ const resolveDirectSongFull = async (
       resolvedSource: platform,
       resolvedId: id,
       resolvedLyricId: songMeta?.lyricId || id,
+      resolvedPicId: songMeta?.picId,
     } : null;
   }
 
+  rememberTrackMeta(id, platform, songMeta || {});
   const [url, lrc] = await Promise.all([
     getDirectSongUrl(id, platform, quality, options),
-    getLyrics(id, platform, songMeta, options),
+    options?.deferMetadata ? Promise.resolve('') : getLyrics(id, platform, songMeta, options),
   ]);
   const pic = songMeta?.pic ? normalizeMusicUrl(songMeta.pic) : "";
 
@@ -245,10 +251,11 @@ const resolveDirectSongFull = async (
     resolvedSource: platform,
     resolvedId: id,
     resolvedLyricId: songMeta?.lyricId || id,
+    resolvedPicId: songMeta?.picId,
   };
 };
 
-const getFallbackSources = (originalSource: string): readonly string[] => {
+const getFallbackSources = (originalSource: string): readonly FallbackSource[] => {
   if (originalSource === "kuwo") return KUWO_FALLBACK_SOURCES;
   return FALLBACK_SOURCES.filter((source) => source !== originalSource);
 };
@@ -301,6 +308,7 @@ const resolveFallbackSongFull = async (
               resolvedSource: parsed.resolvedSource,
               resolvedId: parsed.resolvedId,
               resolvedLyricId: parsed.resolvedLyricId,
+              resolvedPicId: parsed.resolvedPicId,
             };
           }
         }
@@ -322,6 +330,8 @@ export const getSongUrl = async (
   songMeta?: SongMeta,
   options?: ResolveOptions,
 ): Promise<string | null> => {
+  rememberTrackMeta(id, source, songMeta || {});
+  options = { ...options, deferMetadata: true };
   // embeat 源：走 autosource 跨源匹配
   if (source === "embeat" && songMeta) {
     try {

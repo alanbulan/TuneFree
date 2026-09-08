@@ -4,13 +4,21 @@ use super::*;
 pub(super) mod cloud;
 mod updates;
 
+#[cfg(all(test, windows))]
+#[path = "__tests__/job_lifecycle.rs"]
+mod lifecycle_tests;
+
+#[cfg(all(test, windows))]
+#[path = "__tests__/dynamic_refresh.rs"]
+mod dynamic_refresh_tests;
+
 use cloud::{cloud_job_timeout_ms, run_cloud_job, CloudJobTask};
 use updates::{
-    emit_job_payload, emit_job_update, job_update_payload, mark_job_stage,
-    update_recommendation_job, JobTransition,
+    emit_job_payload, job_update_payload, mark_job_stage, update_recommendation_job, JobTransition,
 };
 
 struct PreparedJob {
+    generation: u64,
     job: RecommendationJob,
     task: Option<CloudJobTask>,
 }
@@ -36,21 +44,15 @@ impl RecommendationService {
             return Ok(job);
         }
         let prepared = self.prepare_recommendation_job(query)?;
-        let job = prepared.job;
-        self.recommendation_jobs
-            .lock()
-            .insert(job.job_id.clone(), job.clone());
-        emit_job_update(self.app_handle(), &job);
-        if let Some(task) = prepared.task {
-            self.last_dynamic_refresh_at
-                .store(catalog::now_ms(), Ordering::SeqCst);
-            let cancel_rx = self.next_cloud_cancel_receiver();
-            tauri::async_runtime::spawn(run_cloud_job(task, cancel_rx));
-        }
-        Ok(job)
+        self.publish_recommendation_job(prepared)
     }
 
     fn prepare_recommendation_job(&self, query: RecommendationQuery) -> CommandResult<PreparedJob> {
+        let generation = {
+            // 正在清理数据时，等清理完成后再读取候选与 generation。
+            let _publication_guard = self.cloud_cancel.lock();
+            self.recommendation_generation.load(Ordering::SeqCst)
+        };
         let conn = self.conn_handle()?;
         let context = recommendation_context(&query);
         let persisted_items = self.latest_cloud_recommendation_items(&context);
@@ -63,8 +65,11 @@ impl RecommendationService {
         } else {
             local.clone()
         };
-        let job = build_initial_job(can_use_cloud, &local, visible_items.clone());
+        let mut job = build_initial_job(can_use_cloud, &local, visible_items.clone());
         let config = self.cloud_job_config();
+        let total_timeout_ms = cloud_job_timeout_ms(config.per_request_timeout_ms);
+        job.deadline_at =
+            can_use_cloud.then(|| catalog::now_ms().saturating_add(total_timeout_ms as i64));
         let task = can_use_cloud.then(|| CloudJobTask {
             conn,
             app: self.app.clone(),
@@ -73,17 +78,21 @@ impl RecommendationService {
             jobs: Arc::clone(&self.recommendation_jobs),
             last_llm_error: Arc::clone(&self.last_llm_error),
             generation_state: Arc::clone(&self.recommendation_generation),
-            generation: self.recommendation_generation.load(Ordering::SeqCst),
+            generation,
             job_id: job.job_id.clone(),
             query,
             local,
             request_id,
             context,
             candidate_window: config.candidate_window,
-            total_timeout_ms: cloud_job_timeout_ms(config.per_request_timeout_ms),
+            total_timeout_ms,
             fallback_items: visible_items,
         });
-        Ok(PreparedJob { job, task })
+        Ok(PreparedJob {
+            generation,
+            job,
+            task,
+        })
     }
 
     fn local_items_with_request(
@@ -200,22 +209,23 @@ impl RecommendationService {
     }
 
     pub(super) fn invalidate_and_schedule_refresh(&self, reason: &'static str) {
-        self.cancel_inflight_cloud_job();
-        let transitions = invalidate_recommendation_state(
-            &self.recommendation_generation,
-            &self.recommendation_jobs,
-            &self.dynamic_refresh_pending,
-        );
-        for payload in transitions {
-            emit_job_payload(self.app_handle(), payload);
+        {
+            // 与发布共用取消通道锁，防止失效通知漏掉刚注册的新任务。
+            let cancel = self.cloud_cancel.lock();
+            let transitions = invalidate_recommendation_state(
+                &self.recommendation_generation,
+                &self.recommendation_jobs,
+                &self.dynamic_refresh_pending,
+            );
+            let _ = cancel.send(true);
+            for payload in transitions {
+                emit_job_payload(self.app_handle(), payload);
+            }
         }
         self.schedule_dynamic_recommendation_refresh(reason);
     }
 
     pub(super) fn schedule_dynamic_recommendation_refresh(&self, reason: &'static str) {
-        if !self.is_recommendation_enabled() {
-            return;
-        }
         if self.dynamic_refresh_pending.swap(true, Ordering::SeqCst) {
             return;
         }
@@ -231,7 +241,11 @@ impl RecommendationService {
                 if service.recommendation_generation.load(Ordering::SeqCst) != generation {
                     break;
                 }
-                if !service.is_recommendation_enabled() {
+                let worker = service.clone();
+                let enabled =
+                    run_recommendation_blocking(move || Ok(worker.is_recommendation_enabled()))
+                        .await;
+                if !matches!(enabled, Ok(true)) {
                     break;
                 }
                 if service.has_running_recommendation_job() {
@@ -247,11 +261,18 @@ impl RecommendationService {
                     continue;
                 }
 
-                let refresh = service.start_recommendation_job(RecommendationQuery {
-                    limit: Some(30),
-                    seed: None,
-                    context: Some("home".to_string()),
-                });
+                let worker = service.clone();
+                let refresh = run_recommendation_blocking(move || {
+                    if worker.recommendation_generation.load(Ordering::SeqCst) != generation {
+                        return Err(CommandError::cancelled("推荐请求已过期"));
+                    }
+                    worker.start_recommendation_job(RecommendationQuery {
+                        limit: Some(30),
+                        seed: None,
+                        context: Some("home".to_string()),
+                    })
+                })
+                .await;
                 if let Err(e) = refresh {
                     log::error!("动态刷新智能推荐失败({}): {}", reason, e);
                 } else {
@@ -323,6 +344,7 @@ fn disabled_job() -> RecommendationJob {
         items: Vec::new(),
         error: None,
         updated_at: catalog::now_ms(),
+        deadline_at: None,
     }
 }
 
@@ -340,6 +362,7 @@ fn build_initial_job(
         items: visible_items,
         error: None,
         updated_at: catalog::now_ms(),
+        deadline_at: None,
     }
 }
 
@@ -404,6 +427,7 @@ pub(super) fn invalidate_recommendation_state(
     for job in jobs.values_mut() {
         if matches!(&job.status, RecommendationJobStatus::Running) {
             job.status = RecommendationJobStatus::Done;
+            job.deadline_at = None;
             job.stage = RecommendationJobStage::Done;
             job.detail = "推荐数据已更新，当前任务已失效并等待重新生成".to_string();
             job.error = None;

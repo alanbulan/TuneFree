@@ -3,6 +3,10 @@ use tauri_plugin_updater::UpdaterExt;
 
 use super::error::{CommandError, CommandResult, ErrorCode};
 
+#[cfg(all(test, windows))]
+#[path = "__tests__/updater_http.rs"]
+mod integration_tests;
+
 /// Progress payload emitted during update downloads.
 ///
 /// Emitted via the `update-progress` event.
@@ -28,6 +32,9 @@ fn update_error(message: &str, error: impl std::fmt::Display) -> CommandError {
 pub(crate) async fn check_for_update(
     app_handle: tauri::AppHandle,
 ) -> CommandResult<Option<AvailableUpdate>> {
+    if super::smoke::is_enabled() {
+        return Ok(None);
+    }
     let update = app_handle
         .updater()
         .map_err(|error| update_error("初始化更新器失败", error))?
@@ -52,6 +59,9 @@ fn calculate_update_progress(downloaded: u64, total: Option<u64>) -> u8 {
 /// Tauri updater for the current platform and CPU architecture.
 #[tauri::command]
 pub(crate) async fn download_and_install_update(app_handle: tauri::AppHandle) -> CommandResult<()> {
+    if super::smoke::is_enabled() {
+        return Err(CommandError::cancelled("冒烟测试不执行自动更新"));
+    }
     let update = app_handle
         .updater()
         .map_err(|error| update_error("初始化更新器失败", error))?
@@ -64,8 +74,8 @@ pub(crate) async fn download_and_install_update(app_handle: tauri::AppHandle) ->
     let mut downloaded = 0_u64;
     let _ = app_handle.emit("update-progress", UpdateProgress { progress: 0 });
 
-    update
-        .download_and_install(
+    let bytes = update
+        .download(
             move |chunk_length, content_length| {
                 downloaded = downloaded.saturating_add(chunk_length as u64);
                 let progress = calculate_update_progress(downloaded, content_length);
@@ -76,8 +86,21 @@ pub(crate) async fn download_and_install_update(app_handle: tauri::AppHandle) ->
         .await
         .map_err(|error| update_error("下载或安装更新失败", error))?;
 
+    // download 返回时官方更新器已完成签名校验。
     let _ = app_handle.emit("update-progress", UpdateProgress { progress: 100 });
-    app_handle.restart()
+    let installed = update
+        .install(bytes)
+        .map_err(|error| update_error("下载或安装更新失败", error));
+    // Windows 安装器由官方插件启动，并负责退出、安装后重启。
+    #[cfg(windows)]
+    {
+        installed
+    }
+    #[cfg(not(windows))]
+    {
+        installed?;
+        app_handle.restart()
+    }
 }
 
 #[cfg(test)]

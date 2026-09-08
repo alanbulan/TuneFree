@@ -5,7 +5,15 @@ mod library;
 mod storage;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "__tests__/background.rs"]
+mod background_tests;
+
+#[cfg(all(test, windows))]
+#[path = "__tests__/event_transactions.rs"]
+mod event_transaction_tests;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -18,6 +26,7 @@ use std::{
 
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
+use tauri::Emitter;
 use tokio::sync::watch;
 
 use super::{
@@ -33,6 +42,7 @@ use super::{
     rank, recall, rerank,
 };
 use crate::app::error::{CommandError, CommandResult};
+use crate::app::run_recommendation_blocking;
 
 const RECOMMENDATION_JOB_TTL_MS: i64 = 2 * 60 * 60 * 1000;
 const DISCOVERY_QUERY_LIMIT: usize = 6;
@@ -143,6 +153,7 @@ impl RecommendationService {
                 Err(error) => log::error!("推荐预热任务异常: {}", error),
                 Ok(Ok(_)) => {}
             }
+            let _ = service.app.emit("recommendation-ready", ());
         });
     }
 
@@ -236,18 +247,9 @@ impl RecommendationService {
         }
     }
 
-    /// Cancels the in-flight cloud job (if any) by flipping its watch signal;
-    /// the receiving `tokio::select!` drops the pending reqwest future.
+    #[cfg(test)]
     pub(super) fn cancel_inflight_cloud_job(&self) {
         let _ = self.cloud_cancel.lock().send(true);
-    }
-
-    /// Creates a fresh cancellation channel for the next cloud job and makes
-    /// it the one `cancel_inflight_cloud_job` will signal.
-    pub(super) fn next_cloud_cancel_receiver(&self) -> watch::Receiver<bool> {
-        let (sender, receiver) = watch::channel(false);
-        *self.cloud_cancel.lock() = sender;
-        receiver
     }
 }
 

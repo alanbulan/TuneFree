@@ -25,6 +25,13 @@ const parsed = (id: string, patch: Partial<ParsedSongData> = {}): ParsedSongData
   ...patch,
 });
 
+it('预加载空结果释放占位键，允许下次重试', async () => {
+  offline.resolveOfflinePlayback.mockResolvedValue(null); api.parseSongFull.mockResolvedValue(null);
+  const first = song('empty-first'), next = song('empty-next'); const double = createRuntimeDouble({ currentSong: first, queue: [first, next] });
+  const resolver = mountResolver(double); resolver.current.preloadNextSong(first); await flush(12);
+  expect(double.refs.preloadedResolutionKey.current).toBeNull(); expect(double.refs.queue.current[1].url).toBeUndefined();
+});
+
 const mountResolver = (double: RuntimeDouble) =>
   renderHook(() => useSongResolver(double.runtime)).result;
 

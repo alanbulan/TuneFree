@@ -6,6 +6,10 @@ const DERIVED_DATA_MIGRATION_VERSION: i64 = 2;
 const EVENT_WEIGHT_MIGRATION_VERSION: i64 = 3;
 const RECOMMENDATION_CLICK_MIGRATION_VERSION: i64 = 4;
 
+#[cfg(test)]
+#[path = "__tests__/migrations.rs"]
+mod boundary_tests;
+
 /// Deferred rebuild of `user_profile` from the full event history.
 pub const PENDING_REBUILD_PROFILE: &str = "profile";
 /// Deferred rebuild of the session co-occurrence index.

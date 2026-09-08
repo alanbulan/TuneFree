@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fixUrl, normalizeSongs, findId, findImage } from '../utils';
+import { fixUrl, normalizeSongs, findId, findImage, extractList, extractRawTracks } from '../utils';
 
 describe('fixUrl', () => {
   it('should return empty string for undefined or null', () => {
@@ -54,6 +54,40 @@ describe('fixUrl', () => {
   it('should leave already-HTTPS non-special URLs unchanged', () => {
     const result = fixUrl('https://example.com/image.jpg');
     expect(result).toBe('https://example.com/image.jpg');
+  });
+});
+
+describe('多平台响应结构', () => {
+  const track = { id: 1, name: '歌曲' };
+  it.each([
+    { result: { tracks: [track] } }, { playlist: { tracks: [track] } }, { result: { songs: [track] } },
+    { toplist: { data: { songInfoList: [track] } } }, { req: { data: { body: { song: { list: [track] } } } } },
+    { data: { songlist: [track] } }, { data: { song: { list: [track] } } }, { musiclist: [track] }, { abslist: [track] },
+  ])('提取平台原始歌曲数组 %#', (input) => { expect(extractRawTracks(input)).toEqual([track]); });
+  it('缺失或错误结构返回空数组', () => {
+    for (const input of [null, {}, { data: false }]) { expect(extractRawTracks(input)).toEqual([]); expect(extractList(input)).toEqual([]); }
+  });
+  it.each([
+    { data: { groupList: [{ toplist: [track] }] } }, { data: { group: [{ topList: [track] }] } },
+    { groupList: [{ list: [track] }, { groupName: '空' }] }, { group: [{ toplist: [track] }] },
+    { toplist: { data: { songInfoList: [track] } } }, { req: { data: { body: { song: { list: [track] } } } } },
+    { tracks: [track] }, { data: [{ list: [track] }] }, { data: { hotSongs: [track] } }, track,
+  ])('列表提取兼容分组、嵌套及单曲 %#', (input) => { expect(extractList(input)).toEqual([track]); });
+  it('支持直接数组和按字段提供的分组列表', () => {
+    for (const input of [[track], [{ toplist: [track] }], { results: [{ list: [track] }] }]) {
+      expect(extractList(input as unknown as Record<string, unknown>)).toEqual([track]);
+    }
+  });
+  it('平台标识及封面按字段优先级选择', () => {
+    expect(findId({ topId: 42 }, 'qq')).toBe('42'); expect(findId({ id: 3 }, 'qq')).toBe('3'); expect(findId({}, 'qq')).toBeUndefined();
+    expect(findId({ ID: 5 }, 'kuwo')).toBe('5'); expect(findImage({ mac_detail: { pic_v12: 'cover' } })).toBe('cover');
+    expect(findImage({ mac_detail: { pic_v12: 12 } })).toBe('');
+    const songs = normalizeSongs([
+      { id: 1, singerList: [{ name: '歌手' }, null], album: { name: '专辑', picUrl: '//example.test/a.jpg' } },
+      { id: 2, artist_name: '另一歌手', albumname: '专辑二' }, { id: 3, albumName: '专辑三' },
+    ], 'qq');
+    expect(songs[0]).toMatchObject({ artist: '歌手', album: '专辑', pic: 'https://example.test/a.jpg' });
+    expect(songs[1]).toMatchObject({ artist: '另一歌手', album: '专辑二' }); expect(songs[2].album).toBe('专辑三');
   });
 });
 

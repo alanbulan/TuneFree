@@ -3,11 +3,16 @@ use crate::recommendation::service::{
     candidates::merge_discovery_candidates, storage::save_cloud_recommendation_result,
 };
 
+#[cfg(all(test, windows))]
+#[path = "../__tests__/cloud_lifecycle.rs"]
+mod lifecycle_tests;
+
 /// 总时限保底值，维持既有 55 秒行为。
 const CLOUD_JOB_MIN_TIMEOUT_MS: u64 = 55_000;
 /// 管道内串行的 LLM 阶段数：discovery plan 与 cloud rerank。
 const LLM_STAGES: u64 = 2;
-/// 每个阶段最多请求两次：json_object 失败后回退普通模式重试一次
+/// 每个阶段最多调用两次：明确不支持 json_object 时回退一次；
+/// 每次调用内的 endpoint/system-role 兼容请求共享单次总时限
 /// （见 `llm::request_json_with_fallback`）。
 const LLM_ATTEMPTS_PER_STAGE: u64 = 2;
 /// 平台搜索与本地计算的额外预算。
@@ -46,6 +51,7 @@ fn cancelled_error() -> CommandError {
     CommandError::cancelled("推荐任务已被新的播放行为取代")
 }
 
+#[derive(Clone)]
 pub(super) struct CloudJobTask {
     pub(super) conn: Arc<Mutex<Connection>>,
     pub(super) app: tauri::AppHandle,
@@ -91,10 +97,20 @@ impl CloudJobTask {
 }
 
 pub(super) async fn run_cloud_job(task: CloudJobTask, mut cancel_rx: watch::Receiver<bool>) {
+    if !task.is_current() {
+        return;
+    }
     let deadline = std::time::Duration::from_millis(task.total_timeout_ms);
     match tokio::time::timeout(deadline, execute_cloud_job(&task, &mut cancel_rx)).await {
         Ok(Ok(())) => {}
-        Ok(Err(cancelled)) => log::info!("云端推荐任务已中止: {}", cancelled),
+        Ok(Err(error)) if error.code == crate::app::error::ErrorCode::Cancelled => {
+            log::info!("云端推荐任务已中止: {}", error)
+        }
+        Ok(Err(error)) => task.fail(
+            "推荐后台处理失败",
+            error.to_string(),
+            task.fallback_items.clone(),
+        ),
         Err(_) => task.fail(
             "云端推荐处理超时，保留最近一次可用结果",
             "云端推荐任务超过总时限".to_string(),
@@ -110,7 +126,10 @@ async fn execute_cloud_job(
     let Some((discovered, plan_error)) = plan_and_discover(task, cancel_rx).await? else {
         return Ok(());
     };
-    let merged = filter_merged_candidates(task, discovered);
+    let worker = task.clone();
+    let merged =
+        run_recommendation_blocking(move || Ok(filter_merged_candidates(&worker, discovered)))
+            .await?;
     if merged.is_empty() {
         let error = plan_error.unwrap_or_else(|| "平台搜索未找到可验证的新歌候选".to_string());
         task.fail(
@@ -149,7 +168,12 @@ async fn execute_cloud_job(
         task.fail("云端重排失败，保留最近一次可用结果", error, items);
         return Ok(());
     }
-    persist_success(task, result.items);
+    let worker = task.clone();
+    run_recommendation_blocking(move || {
+        persist_success(&worker, result.items);
+        Ok(())
+    })
+    .await?;
     Ok(())
 }
 
@@ -231,6 +255,9 @@ fn persist_success(task: &CloudJobTask, items: Vec<RecommendationItem>) {
     // 避免 jobs → conn 嵌套持锁把 conn 锁等待传染给所有 jobs 锁使用方。
     {
         let guard = task.conn.lock();
+        if !task.is_current() {
+            return;
+        }
         if let Err(error) = save_cloud_recommendation_result(
             &guard,
             &task.context,
@@ -254,6 +281,7 @@ fn persist_success(task: &CloudJobTask, items: Vec<RecommendationItem>) {
             return;
         }
         job.status = RecommendationJobStatus::Done;
+        job.deadline_at = None;
         job.stage = RecommendationJobStage::Done;
         job.detail = "已完成本地召回、新歌发现和云端重排".to_string();
         job.items = items;

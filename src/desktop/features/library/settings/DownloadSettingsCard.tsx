@@ -1,6 +1,8 @@
 import { SettingsIcon } from '../../../../core/components/Icons';
 import type { CloseBehavior } from '../../../../core/contexts/DesktopPreferencesContext';
 import type { SettingsViewModel } from './useSettingsViewModel';
+import { useId } from 'react';
+import MotionChoice from '../../../components/MotionChoice';
 
 const closeBehaviorOptions: Array<{ label: string; value: CloseBehavior; hint: string }> = [
   { label: '每次询问', value: 'ask', hint: '关闭时弹出选择，可临时决定后台运行或退出。' },
@@ -9,6 +11,7 @@ const closeBehaviorOptions: Array<{ label: string; value: CloseBehavior; hint: s
 ];
 
 export default function DownloadSettingsCard({ model }: { model: SettingsViewModel['core'] }) {
+  const indicatorId = useId();
   const activeCloseBehavior = closeBehaviorOptions.find((option) => option.value === model.closeBehavior);
 
   return (
@@ -42,17 +45,17 @@ export default function DownloadSettingsCard({ model }: { model: SettingsViewMod
         <label>关闭主窗口时</label>
         <div className="settings-option-row is-wrap">
           {closeBehaviorOptions.map((option) => (
-            <button
+            <MotionChoice
               key={option.value}
               type="button"
-              className={`soft-button settings-toggle-button ${model.closeBehavior === option.value ? 'active' : ''}`}
+              className="soft-button settings-toggle-button" selected={model.closeBehavior === option.value} indicatorId={indicatorId}
               onClick={() => {
                 model.setCloseBehavior(option.value);
                 model.showToast(`关闭行为已设置为：${option.label}`, 'success');
               }}
             >
               {option.label}
-            </button>
+            </MotionChoice>
           ))}
         </div>
         <p className="settings-note">
@@ -60,7 +63,7 @@ export default function DownloadSettingsCard({ model }: { model: SettingsViewMod
         </p>
       </div>
       <div className="panel-field settings-field-block">
-        <label>安和昴 (486) 桌宠</label>
+        <label>Bloub 音乐伙伴</label>
         <div className="settings-checkbox-row settings-field-inset">
           <input
             type="checkbox"
@@ -70,9 +73,10 @@ export default function DownloadSettingsCard({ model }: { model: SettingsViewMod
             onChange={(event) => model.setTempShowPet(event.target.checked)}
           />
           <label htmlFor="pet-toggle" className="settings-checkbox-label">
-            启用桌面宠物
+            显示音乐伙伴
           </label>
         </div>
+        <p className="settings-note">随音乐与 AI 推荐切换状态。点击打招呼，拖动调整位置，右键或打开动作面板体验全部动作与表情。</p>
       </div>
       <div className="settings-save-row">
         <button type="button" className="primary-button" onClick={model.saveCoreSettings}>保存配置</button>

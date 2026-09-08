@@ -14,6 +14,15 @@ use crate::recommendation::{
     provider::OpenAiCompatibleProvider,
 };
 
+struct PreparedEnhancement {
+    context: LlmRequestContext,
+    messages: Vec<Value>,
+    cache_key: String,
+    max_results: usize,
+    candidate_count: usize,
+    cached: Option<LlmEnhancementResult>,
+}
+
 pub async fn enhance_recommendations(
     conn: Arc<Mutex<Connection>>,
     provider: &OpenAiCompatibleProvider,
@@ -21,10 +30,72 @@ pub async fn enhance_recommendations(
     local_items: Vec<RecommendationItem>,
     request_id: &str,
 ) -> LlmEnhancementResult {
-    let context = match rerank_context(&conn, request_id, local_items.len()) {
-        Ok(context) => context,
+    let worker_query = query.clone();
+    let worker_items = local_items.clone();
+    let worker_id = request_id.to_string();
+    let prepared = run_llm_blocking(Arc::clone(&conn), move |connection| {
+        prepare_enhancement(connection, &worker_query, &worker_items, &worker_id)
+    })
+    .await
+    .and_then(|result| result);
+    let prepared = match prepared {
+        Ok(prepared) => prepared,
         Err(error) => return LlmEnhancementResult::failed(local_items, error),
     };
+    if let Some(cached) = prepared.cached {
+        return cached;
+    }
+    let started = Instant::now();
+    let response = request_json_with_fallback(
+        provider,
+        &prepared.context.config,
+        &prepared.context.api_key,
+        prepared.messages,
+    )
+    .await;
+    let request_id = request_id.to_string();
+    let fallback = local_items.clone();
+    run_llm_blocking(conn, move |connection| {
+        let config = prepared.context.config;
+        match response {
+            Ok(content) => finish_enhancement(
+                EnhancementCompletion {
+                    conn: connection,
+                    cache_key: &prepared.cache_key,
+                    config: &config,
+                    request_id: &request_id,
+                    candidate_count: prepared.candidate_count,
+                    latency_ms: started.elapsed().as_millis() as i64,
+                },
+                &content,
+                local_items,
+                prepared.max_results,
+            ),
+            Err(error) => {
+                log_rerank_failure(
+                    connection,
+                    &request_id,
+                    &config.model,
+                    "request_failed",
+                    prepared.candidate_count,
+                    started.elapsed().as_millis() as i64,
+                    &error,
+                );
+                LlmEnhancementResult::failed(local_items, error)
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|error| LlmEnhancementResult::failed(fallback, error))
+}
+
+fn prepare_enhancement(
+    conn: &Connection,
+    query: &RecommendationQuery,
+    local_items: &[RecommendationItem],
+    request_id: &str,
+) -> Result<PreparedEnhancement, String> {
+    let context = rerank_context(conn, request_id, local_items.len())?;
     let max_candidates = context.config.max_candidates.min(local_items.len()).max(1);
     let max_results = context
         .config
@@ -48,56 +119,33 @@ pub async fn enhance_recommendations(
             .then_some(context.recent_events.as_slice()),
     );
     let cache_key = cache_key(&context.config, &messages, max_results);
-    if let Some(result) = cached_enhancement(
-        &conn,
+    let cached = cached_enhancement(
+        conn,
         &cache_key,
         &context.config.model,
-        &local_items,
+        local_items,
         max_results,
         request_id,
         candidates.len(),
-    ) {
-        return result;
-    }
-    let started = Instant::now();
-    let content =
-        match request_json_with_fallback(provider, &context.config, &context.api_key, messages)
-            .await
-        {
-            Ok(content) => content,
-            Err(error) => {
-                log_rerank_failure(
-                    &conn,
-                    request_id,
-                    &context.config.model,
-                    "request_failed",
-                    candidates.len(),
-                    started.elapsed().as_millis() as i64,
-                    &error,
-                );
-                return LlmEnhancementResult::failed(local_items, error);
-            }
-        };
-    let completion = EnhancementCompletion {
-        conn: &conn,
-        cache_key: &cache_key,
-        config: &context.config,
-        request_id,
+    );
+    Ok(PreparedEnhancement {
+        context,
+        messages,
+        cache_key,
+        max_results,
         candidate_count: candidates.len(),
-        latency_ms: started.elapsed().as_millis() as i64,
-    };
-    finish_enhancement(completion, &content, local_items, max_results)
+        cached,
+    })
 }
 
 fn rerank_context(
-    conn: &Arc<Mutex<Connection>>,
+    conn: &Connection,
     request_id: &str,
     candidate_count: usize,
 ) -> Result<LlmRequestContext, String> {
-    let guard = conn.lock();
-    load_request_context(&guard).inspect_err(|error| {
+    load_request_context(conn).inspect_err(|error| {
         log_llm_call(
-            &guard,
+            conn,
             LlmCallLog {
                 request_id,
                 model: "",
@@ -112,7 +160,7 @@ fn rerank_context(
 }
 
 fn cached_enhancement(
-    conn: &Arc<Mutex<Connection>>,
+    conn: &Connection,
     cache_key: &str,
     model: &str,
     local_items: &[RecommendationItem],
@@ -120,7 +168,7 @@ fn cached_enhancement(
     request_id: &str,
     candidate_count: usize,
 ) -> Option<LlmEnhancementResult> {
-    let content = match load_cache(&conn.lock(), cache_key) {
+    let content = match load_cache(conn, cache_key) {
         Ok(content) => content?,
         Err(error) => {
             log::warn!("读取模型推荐缓存失败，继续请求模型: {}", error);
@@ -133,7 +181,7 @@ fn cached_enhancement(
         return None;
     };
     log_llm_call(
-        &conn.lock(),
+        conn,
         LlmCallLog {
             request_id,
             model,
@@ -148,7 +196,7 @@ fn cached_enhancement(
 }
 
 struct EnhancementCompletion<'a> {
-    conn: &'a Arc<Mutex<Connection>>,
+    conn: &'a Connection,
     cache_key: &'a str,
     config: &'a crate::recommendation::model::LlmConfig,
     request_id: &'a str,
@@ -169,13 +217,13 @@ fn finish_enhancement(
         completion.request_id,
     ) {
         Some(items) => {
-            let guard = completion.conn.lock();
-            if let Err(error) = save_cache(&guard, completion.cache_key, completion.config, content)
+            let guard = completion.conn;
+            if let Err(error) = save_cache(guard, completion.cache_key, completion.config, content)
             {
                 log::warn!("保存模型推荐缓存失败，本次结果仍正常返回: {}", error);
             }
             log_llm_call(
-                &guard,
+                guard,
                 LlmCallLog {
                     request_id: completion.request_id,
                     model: &completion.config.model,
@@ -206,7 +254,7 @@ fn finish_enhancement(
 }
 
 fn log_rerank_failure(
-    conn: &Arc<Mutex<Connection>>,
+    conn: &Connection,
     request_id: &str,
     model: &str,
     status: &str,
@@ -215,7 +263,7 @@ fn log_rerank_failure(
     error: &str,
 ) {
     log_llm_call(
-        &conn.lock(),
+        conn,
         LlmCallLog {
             request_id,
             model,

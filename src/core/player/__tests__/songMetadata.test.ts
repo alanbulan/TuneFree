@@ -10,6 +10,8 @@ import {
   applyParsedMetadata,
   getLyricRequest,
   notifyLyricTimelineMismatch,
+  updateLyrics,
+  updateCover,
 } from "../songMetadata";
 import type { ParsedSongData } from "../types";
 import type { PlayerRuntime } from "../usePlayerRuntime";
@@ -47,6 +49,22 @@ const createRuntime = (song: Song): PlayerRuntime => {
 };
 
 describe("resolved lyric binding", () => {
+  it('重复歌词保留已有节点，队列中更完整的歌词不退化，过期封面不覆盖', () => {
+    const lyrics = '[00:01]一句';
+    const runtime = createRuntime({ ...originalSong, lrc: lyrics });
+    expect(updateLyrics(runtime, originalSong, undefined, lyrics)).toBe(false);
+    expect(runtime.commitCurrentSong).not.toHaveBeenCalled();
+    runtime.refs.currentSong.current = { ...originalSong, lrc: '' };
+    runtime.refs.queue.current = [{ ...originalSong, lrc: lyrics }, { ...originalSong, id: 'other' }];
+    const previous = runtime.refs.queue.current;
+    expect(updateLyrics(runtime, originalSong, undefined, lyrics)).toBe(true);
+    expect(runtime.refs.queue.current).toBe(previous);
+    runtime.refs.lyricBindings.current.set('kuwo:original-id', { source: 'qq', id: 'new' });
+    updateCover(runtime, originalSong, { source: 'qq', id: 'old' }, 'https://image.test/old.jpg');
+    expect(runtime.refs.currentSong.current?.pic).toBe('');
+    expect(runtime.commitCurrentSong).toHaveBeenCalledOnce();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -73,15 +91,10 @@ describe("resolved lyric binding", () => {
       id: "original-id",
       source: "kuwo",
     });
-    expect(getLyrics).toHaveBeenCalledWith(
-      "fallback-id",
-      "qq",
-      expect.objectContaining({
-        id: "original-id",
-        source: "kuwo",
-        lyricId: "fallback-lyric-id",
-      }),
-    );
+    expect(getLyricRequest(result, runtime.refs.lyricBindings.current.get('kuwo:original-id'))).toMatchObject({
+      id: 'fallback-id', source: 'qq', songMeta: { lyricId: 'fallback-lyric-id' },
+    });
+    expect(getLyrics).not.toHaveBeenCalled();
   });
 
   it("does not refresh autosource lyrics when the service did not return a resolved id", () => {
@@ -110,10 +123,6 @@ describe("resolved lyric binding", () => {
   });
 
   it("ignores a late lyric response from an obsolete fallback binding", async () => {
-    let resolveOldLyrics: (lrc: string) => void = () => {};
-    vi.mocked(getLyrics)
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveOldLyrics = resolve; }))
-      .mockResolvedValueOnce("");
     const runtime = createRuntime(originalSong);
 
     applyParsedMetadata(runtime, originalSong, originalSong, {
@@ -131,9 +140,8 @@ describe("resolved lyric binding", () => {
       resolvedId: "current-id",
     });
 
-    resolveOldLyrics("[tunefree:main]\n[00:01.00]old fallback\n\n[tunefree:translation]\n[00:01.00]过期翻译");
-    await Promise.resolve();
-    await Promise.resolve();
+    expect(updateLyrics(runtime, originalSong, { source: 'qq', id: 'old-id' },
+      '[00:01.00]过期歌词')).toBe(false);
 
     expect(runtime.refs.currentSong.current).toMatchObject({
       url: "https://example.com/current.mp3",

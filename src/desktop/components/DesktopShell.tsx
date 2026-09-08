@@ -9,11 +9,12 @@ import type { DesktopView, LibraryView } from '../types';
 import DesktopFullPlayer from './DesktopFullPlayer';
 import DesktopTransport from './DesktopTransport';
 import LyricSyncBridge from './LyricSyncBridge';
-import MiraPet from './MiraPet';
+import BloubCompanion from './MiraPet';
 import { useToast } from './ToastHost';
 import { useLyricControlListener } from '../hooks/useLyricControlListener';
 import ClosePrompt from './ClosePrompt';
 import { DesktopSidebar, WindowBar } from './DesktopShellChrome';
+import MotionPanel from './MotionPanel';
 
 // P3-16: Lazy-load non-first-screen views for code splitting
 const LoadingSpinner = () => (
@@ -30,15 +31,6 @@ interface DesktopShellProps {
 }
 
 const libraryViews: LibraryView[] = ['favorites', 'playlists', 'downloads', 'settings', 'about'];
-
-/**
- * Animation key for the view transition layer.
- *
- * All library sub-views collapse to one key so switching between them only
- * swaps `activeView` instead of remounting the whole `DesktopLibrary` tree.
- */
-const getSectionKey = (view: DesktopView): string =>
-  libraryViews.includes(view as LibraryView) ? 'library' : view;
 
 /**
  * Remembers each view's scroll offset on the shared scroll container.
@@ -74,6 +66,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   const [searchRequest, setSearchRequest] = useState({ query: '', nonce: 0 });
   const [fullPlayerOpen, setFullPlayerOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
   const [closePromptOpen, setClosePromptOpen] = useState(false);
   const [rememberCloseChoice, setRememberCloseChoice] = useState(false);
   const { containerRef, handleScroll } = useViewScrollMemory(view);
@@ -115,10 +108,12 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
     if (!isTauri()) return;
 
     let unlisten: (() => void) | null = null;
+    let disposed = false;
 
     const setupCloseListener = async () => {
       try {
         unlisten = await getCurrentWindow().onCloseRequested((event) => {
+          if (disposed) return;
           event.preventDefault();
           const behavior = closeBehaviorRef.current;
 
@@ -137,6 +132,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
             setClosePromptOpen(true);
           }
         });
+        if (disposed) { unlisten(); unlisten = null; }
       } catch (e) {
         console.error('Failed to listen to close requested:', e);
       }
@@ -145,6 +141,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
     void setupCloseListener();
 
     return () => {
+      disposed = true;
       if (unlisten) unlisten();
     };
   }, [hideMainToTray, quitApplication, closeBehaviorRef, closePromptOpenRef]);
@@ -200,17 +197,17 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
 
       <main className="workspace">
         <div className="view-scroll" ref={containerRef} onScroll={handleScroll}>
-          <div className="view-transition-panel" key={getSectionKey(view)}>
-            {view === 'home' && <DesktopHome onViewChange={onViewChange} />}
+          <MotionPanel className="view-transition-panel" transitionKey={view}>
+            {view === 'home' && <DesktopHome onViewChange={onViewChange} onAiBusyChange={setAiBusy} />}
             <Suspense fallback={<LoadingSpinner />}>
               {view === 'search' && <DesktopSearch commandQuery={searchRequest.query} commandNonce={searchRequest.nonce} />}
               {libraryViews.includes(view as LibraryView) && <DesktopLibrary activeView={view as LibraryView} />}
             </Suspense>
-          </div>
+          </MotionPanel>
         </div>
       </main>
 
-      <MiraPet />
+      {!fullPlayerOpen && <BloubCompanion aiBusy={aiBusy} />}
       <LyricSyncBridge />
       <DesktopTransport onExpand={openFullPlayer} suspended={fullPlayerOpen} />
       <AnimatePresence>

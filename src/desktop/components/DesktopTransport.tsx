@@ -55,7 +55,7 @@ export default function DesktopTransport({ onExpand, suspended = false }: Deskto
   const handleStartSimilarFlow = async () => {
     if (!currentSong || loadingSimilar) return;
     setLoadingSimilar(true);
-    showToast(`正在计算《${currentSong.name}》的相似歌曲...`, 'info');
+    showToast(`正在寻找《${currentSong.name}》的相似歌曲…`, 'info');
     try {
       const items = await getSimilarSongs(currentSong, { limit: 20 });
       const songs = attachRecommendationMeta(items);
@@ -88,7 +88,7 @@ export default function DesktopTransport({ onExpand, suspended = false }: Deskto
   const handleToggleFavorite = () => {
     if (!currentSong) return;
     const wasFavorite = isFavorite(currentSong.id, currentSong.source);
-    toggleFavorite(currentSong);
+    if (!toggleFavorite(currentSong)) return;
     showToast(wasFavorite ? '已取消收藏' : '已收藏歌曲', 'success', {
       label: '撤销',
       onClick: () => currentSong && toggleFavorite(currentSong),
@@ -115,7 +115,7 @@ export default function DesktopTransport({ onExpand, suspended = false }: Deskto
         />
         <span className="transport-info">
           <span className="transport-title">{currentSong?.name || '选择一首音乐开始'}</span>
-          <span className="transport-artist">{currentSong?.artist || 'TuneFree Desktop'}</span>
+          <span className="transport-artist">{currentSong?.artist || '从发现或收藏中选一首'}</span>
         </span>
       </button>
 
@@ -146,7 +146,8 @@ export default function DesktopTransport({ onExpand, suspended = false }: Deskto
           <button
             type="button"
             className="ai-radar-btn-mini"
-            title="根据当前播放歌曲开启相似音乐流 (Embeat)"
+            title="根据当前歌曲播放相似音乐"
+            aria-label="播放相似音乐"
             onClick={handleStartSimilarFlow}
             disabled={loadingSimilar}
           >
