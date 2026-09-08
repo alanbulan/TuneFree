@@ -218,7 +218,6 @@ jobs:
       - name: Verify all desktop release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REF_NAME: ${{ env.RELEASE_TAG }}
         run: node scripts/publish-release.mjs --allow-published
 
   publish:

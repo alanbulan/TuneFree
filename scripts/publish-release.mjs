@@ -42,7 +42,8 @@ export function verifyReleaseAssets(tag, assets, manifest) {
 }
 
 export function completeRelease({ publish = false, allowPublished = false } = {}) {
-  const { GITHUB_REPOSITORY: repository, GITHUB_REF_NAME: tag } = process.env;
+  const { GITHUB_REPOSITORY: repository } = process.env;
+  const tag = process.env.RELEASE_TAG || process.env.GITHUB_REF_NAME;
   if (!repository || !tag) throw new Error('缺少 GitHub 仓库或标签');
   const api = (args, input) => execFileSync('gh', ['api', ...args], { encoding: 'utf8', input });
   const releases = JSON.parse(api(['--paginate', '--slurp', `repos/${repository}/releases?per_page=100`])).flat();
