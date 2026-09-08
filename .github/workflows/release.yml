@@ -8,7 +8,7 @@ on:
 permissions:
   contents: write
 
-# 不同标签共用发布互斥组；构建完成后保留草稿，公开发布由维护者操作。
+# 不同标签共用发布互斥组；资产齐全后自动公开，按版本顺序更新 latest。
 concurrency:
   group: release
   cancel-in-progress: false
@@ -96,7 +96,7 @@ jobs:
           }
 
       # 质量闸门由上面的 validate job 承担。构建资产先上传到不可见的草稿，
-      # 下一步确认安装包、签名和 latest.json 齐全后仍保留草稿，等待手动发布。
+      # 下一步确认安装包、签名和 latest.json 齐全后自动公开 Release。
       - name: Build, sign and upload the NSIS updater
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
@@ -115,8 +115,8 @@ jobs:
           updaterJsonPreferNsis: true
           args: --bundles nsis --target x86_64-pc-windows-msvc
 
-      - name: Verify assets and keep the release as a draft
+      - name: Publish the completed release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: node scripts/publish-release.mjs
+        run: node scripts/publish-release.mjs --publish
