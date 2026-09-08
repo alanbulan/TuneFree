@@ -108,8 +108,8 @@ npm run tauri build
 正式版本由 `v*` 标签触发 GitHub Actions 的 `Release signed desktop app` 工作流。该工作流先复用
 `Validate` 可复用工作流跑完整套质量门禁，通过后才构建、签名并生成 Windows NSIS 安装包、更新签名和 `latest.json`。
 
-构建阶段上传到草稿 Release，资产齐全后仍保留草稿，由维护者检查并点击 **Publish release**。
-公开前比较已有正式版本，仅更高版本设为 `latest`，避免更新通道回退。
+构建阶段上传到草稿 Release，资产齐全后由工作流自动公开发布，无需手动 Publish。
+公开前自动比较已有正式版本，仅更高版本设为 `latest`，避免更新通道回退。
 updater endpoint 指向 `releases/latest/download/latest.json`。源码仓库不保存安装包；正式产物从
 [GitHub Releases](https://github.com/alanbulan/TuneFree_Mobile/releases) 获取。
 
