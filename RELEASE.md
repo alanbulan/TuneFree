@@ -51,14 +51,14 @@ Clippy 的严格规则固化在 `src-tauri/Cargo.toml` 的 `[lints]` 段（`too_
 
 ## 提交与标签
 
-版本号与标签必须一致。例如当前版本升级为 `1.1.30` 时：
+版本号与标签必须一致。例如当前版本升级为 `1.1.31` 时：
 
 ```powershell
 git add -A
-git commit -m "release: prepare v1.1.30"
-git tag -a v1.1.30 -m "TuneFree v1.1.30"
+git commit -m "release: prepare v1.1.31"
+git tag -a v1.1.31 -m "TuneFree v1.1.31"
 git push origin tauri
-git push origin v1.1.30
+git push origin v1.1.31
 ```
 
 推送 `v*` 标签后，GitHub Actions 的 `Release signed desktop app` 工作流按顺序执行：

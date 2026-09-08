@@ -77,7 +77,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "app"
-version = "1.1.30"
+version = "1.1.31"
 dependencies = [
  "aes",
  "async-trait",

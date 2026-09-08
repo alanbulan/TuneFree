@@ -53,7 +53,7 @@ async fn scanning_offline_resolution_and_deletion_share_the_authorized_directory
     assert!(read_downloads_json(&fixture.dir.0).unwrap().is_empty());
     assert_eq!(
         get_download_dir(handle.clone()).await.unwrap(),
-        display_path(&fixture.dir.0)
+        display_path(&fixture.dir.0.canonicalize().unwrap())
     );
     let default = get_default_download_dir(handle.clone()).unwrap();
     assert_eq!(reset_download_dir(handle).await.unwrap(), default);
