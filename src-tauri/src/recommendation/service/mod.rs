@@ -247,7 +247,7 @@ impl RecommendationService {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, windows))]
     pub(super) fn cancel_inflight_cloud_job(&self) {
         let _ = self.cloud_cancel.lock().send(true);
     }
