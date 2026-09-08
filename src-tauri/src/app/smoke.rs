@@ -52,7 +52,13 @@ pub(crate) fn configure<R: tauri::Runtime>(context: &mut tauri::Context<R>) -> C
     }
     for window in &mut context.config_mut().app.windows {
         window.data_directory = Some(webview_dir.clone());
-        window.visible = false;
+        // WKWebView 隐藏时会暂停 requestAnimationFrame；就绪确认依赖首帧，
+        // 因此 macOS 验收必须显示主窗口，并用非持久化 WebView 隔离用户数据。
+        window.visible = cfg!(target_os = "macos") && window.label == "main";
+        #[cfg(target_os = "macos")]
+        {
+            window.incognito = true;
+        }
     }
     CONFIG
         .set(SmokeConfig {
