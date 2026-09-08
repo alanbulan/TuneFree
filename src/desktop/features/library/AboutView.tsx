@@ -126,7 +126,7 @@ export default function AboutView() {
             </div>
           ))}
         </dl>
-        <p className="about-tech-note">音频频谱由 Web Audio API 与 Canvas 驱动；模型 API Key 保存在 Windows 凭据管理器中。</p>
+        <p className="about-tech-note">音频频谱由 Web Audio API 与 Canvas 驱动；模型 API Key 保存在系统凭据存储中（Windows 凭据管理器 / macOS 钥匙串）。</p>
       </section>
 
       <div className="about-details-grid">

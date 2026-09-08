@@ -6,10 +6,10 @@ use crate::recommendation::migration;
 #[path = "__tests__/credential_rollback.rs"]
 mod rollback;
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 #[tokio::test]
-#[ignore = "writes an isolated credential to Windows Credential Manager"]
-async fn windows_credential_manager_round_trip() {
+#[ignore = "writes an isolated credential to the native credential store"]
+async fn native_credential_store_round_trip() {
     let _credentials = test_fixture::Credentials::new().await;
     let unique = format!(
         "com.alanbulan.tunefree.integration-test-{}-{}",
@@ -21,7 +21,10 @@ async fn windows_credential_manager_round_trip() {
     let second = "sk-replaced-2";
     let result = (|| {
         entry.set_password(first)?;
-        assert_eq!(entry.get_password()?, first);
+        assert_eq!(
+            keyring::Entry::new(&unique, "credential-round-trip")?.get_password()?,
+            first
+        );
         entry.set_password(second)?;
         assert_eq!(entry.get_password()?, second);
         entry.delete_credential()?;

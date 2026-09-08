@@ -183,6 +183,6 @@ pub fn get_api_key(conn: &Connection) -> Result<String, String> {
     credential_store::get_api_key(conn)
 }
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, any(windows, target_os = "macos")))]
 #[path = "__tests__/llm_config.rs"]
 mod tests;

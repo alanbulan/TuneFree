@@ -9,7 +9,7 @@ struct SmokeConfig {
 }
 static CONFIG: OnceLock<SmokeConfig> = OnceLock::new();
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, any(windows, target_os = "macos")))]
 #[path = "__tests__/smoke_credentials.rs"]
 mod credential_tests;
 
