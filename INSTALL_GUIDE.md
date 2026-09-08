@@ -26,9 +26,9 @@ Mac 当前未配置系统凭据后端，因此不能保存自定义 AI 模型 AP
 
 需要安装：
 
-- Node.js 20.19+、22.12+ 或 24
-- npm
-- Rust stable 工具链
+- Node.js 24.15+
+- npm 12.0.2
+- Rust 1.98.1（由 `rust-toolchain.toml` 固定）
 - Git
 - Windows：Visual Studio C++ Build Tools、WebView2 Runtime
 - macOS：Xcode Command Line Tools（`xcode-select --install`）

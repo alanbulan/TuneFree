@@ -193,7 +193,7 @@ jobs:
       - name: Build and launch the universal executable
         run: |
           npx tauri build --no-bundle --target universal-apple-darwin
-          lipo -verify_arch arm64 x86_64 src-tauri/target/universal-apple-darwin/release/app
+          lipo src-tauri/target/universal-apple-darwin/release/app -verify_arch arm64 x86_64
           SMOKE_BINARY=src-tauri/target/universal-apple-darwin/release/app npm run smoke
 
       - name: Validate macOS Rust code
