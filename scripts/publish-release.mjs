@@ -18,20 +18,46 @@ export function shouldMakeLatest(tag, releases) {
   });
 }
 
-export function completeRelease({ publish = false } = {}) {
+export function verifyReleaseAssets(tag, assets, manifest) {
+  const version = tag.slice(1);
+  const installer = `TuneFree_${version}_x64-setup.exe`;
+  const macUpdater = `TuneFree_${version}_universal.app.tar.gz`;
+  for (const name of [installer, `${installer}.sig`, `TuneFree_${version}_universal.dmg`,
+    macUpdater, `${macUpdater}.sig`, 'latest.json']) {
+    if (!assets.some((asset) => asset.name === name && asset.size > 0)) {
+      throw new Error(`发布资产缺失或为空：${name}`);
+    }
+  }
+  if (manifest.version !== version) throw new Error('更新清单版本与标签不一致');
+  for (const [platform, name] of Object.entries({
+    'windows-x86_64': installer, 'darwin-aarch64': macUpdater, 'darwin-x86_64': macUpdater,
+  })) {
+    const entry = manifest.platforms?.[platform];
+    const asset = assets.find((item) => item.name === name);
+    if (!entry?.signature?.trim() || !entry.url ||
+        ![asset.url, asset.browser_download_url].includes(entry.url)) {
+      throw new Error(`更新平台缺失或指向错误资产：${platform}`);
+    }
+  }
+}
+
+export function completeRelease({ publish = false, allowPublished = false } = {}) {
   const { GITHUB_REPOSITORY: repository, GITHUB_REF_NAME: tag } = process.env;
   if (!repository || !tag) throw new Error('缺少 GitHub 仓库或标签');
   const api = (args, input) => execFileSync('gh', ['api', ...args], { encoding: 'utf8', input });
   const releases = JSON.parse(api(['--paginate', '--slurp', `repos/${repository}/releases?per_page=100`])).flat();
-  const release = releases.find((item) => item.tag_name === tag && item.draft);
+  const release = releases.find((item) => item.tag_name === tag && (item.draft || allowPublished));
   if (!release) throw new Error(`未找到待发布草稿：${tag}`);
-  const installer = `TuneFree_${tag.slice(1)}_x64-setup.exe`;
-  for (const name of [installer, `${installer}.sig`, 'latest.json']) {
-    if (!release.assets.some((asset) => asset.name === name && asset.size > 0)) {
-      throw new Error(`发布资产缺失或为空：${name}`);
-    }
-  }
+  const manifestAsset = release.assets.find((asset) => asset.name === 'latest.json' && asset.size > 0);
+  if (!manifestAsset) throw new Error('发布资产缺失或为空：latest.json');
+  const manifest = JSON.parse(api([`repos/${repository}/releases/assets/${manifestAsset.id}`,
+    '-H', 'Accept: application/octet-stream']));
+  verifyReleaseAssets(tag, release.assets, manifest);
   const makeLatest = shouldMakeLatest(tag, releases);
+  if (!release.draft) {
+    console.log(`已校验 ${tag} 的 Windows / macOS 资产和更新清单；保留当前公开状态。`);
+    return;
+  }
   if (!publish) {
     console.log(`已校验 ${tag} 的安装包、签名和更新清单；Release 保持草稿，等待手动发布。`);
     return;
@@ -42,5 +68,6 @@ export function completeRelease({ publish = false } = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  completeRelease({ publish: process.argv.includes('--publish') });
+  completeRelease({ publish: process.argv.includes('--publish'),
+    allowPublished: process.argv.includes('--allow-published') });
 }
