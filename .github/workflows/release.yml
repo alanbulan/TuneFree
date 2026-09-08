@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to supplement with macOS assets (must match this ref version)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -19,6 +25,7 @@ jobs:
     uses: ./.github/workflows/validate.yml
 
   release-windows-x64:
+    if: github.event_name == 'push'
     needs: validate
     runs-on: windows-latest
     timeout-minutes: 45
@@ -115,6 +122,113 @@ jobs:
           updaterJsonPreferNsis: true
           args: --bundles nsis --target x86_64-pc-windows-msvc
 
+  # 串行上传，避免 Windows 与 Mac 同时改写 latest.json 丢失平台条目。
+  release-macos-universal:
+    needs: [validate, release-windows-x64]
+    if: >-
+      ${{ !cancelled() && needs.validate.result == 'success' &&
+          (needs.release-windows-x64.result == 'success' ||
+           (github.event_name == 'workflow_dispatch' && needs.release-windows-x64.result == 'skipped')) }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Verify version and resolve existing release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          const version = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8')).version;
+          const tag = process.env.RELEASE_TAG;
+          if (tag !== `v${version}`) throw new Error('Release tag does not match the app version');
+          const release = JSON.parse(execFileSync('gh', ['api',
+            `repos/${process.env.GITHUB_REPOSITORY}/releases/tags/${tag}`], { encoding: 'utf8' }));
+          if (release.prerelease) throw new Error('Expected a stable release');
+          if (release.assets.some(asset => /\.(dmg|app\.tar\.gz)(\.sig)?$/.test(asset.name))) {
+            throw new Error('macOS assets already exist; refusing to overwrite them');
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `id=${release.id}\n`);
+          NODE
+
+      - name: Read Rust toolchain
+        id: rust
+        run: |
+          version=$(sed -n 's/^channel = "\([^"]*\)"$/\1/p' rust-toolchain.toml)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: ${{ steps.rust.outputs.version }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          components: clippy
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+          key: release-universal-apple-darwin
+
+      - name: Install frontend dependencies
+        run: |
+          npm install --global npm@12.0.2
+          npm ci
+
+      # Tauri CLI 先依据 macOS 配置同步透明窗口 feature，再运行原生 Cargo 检查。
+      - name: Build and launch the universal executable
+        run: |
+          npx tauri build --no-bundle --target universal-apple-darwin
+          lipo -verify_arch arm64 x86_64 src-tauri/target/universal-apple-darwin/release/app
+          SMOKE_BINARY=src-tauri/target/universal-apple-darwin/release/app npm run smoke
+
+      - name: Validate macOS Rust code
+        run: |
+          cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
+          cargo test --manifest-path src-tauri/Cargo.toml --locked --test app_tests
+
+      - name: Build, sign and upload macOS bundles
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tauriScript: npx tauri
+          releaseId: ${{ steps.release.outputs.id }}
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          args: --bundles app,dmg --target universal-apple-darwin
+
+      - name: Verify all desktop release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REF_NAME: ${{ env.RELEASE_TAG }}
+        run: node scripts/publish-release.mjs --allow-published
+
+  publish:
+    if: github.event_name == 'push'
+    needs: [release-windows-x64, release-macos-universal]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
       - name: Publish the completed release
         shell: pwsh
         env:

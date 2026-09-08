@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { completeRelease, shouldMakeLatest } from '../publish-release.mjs';
+import { completeRelease, shouldMakeLatest, verifyReleaseAssets } from '../publish-release.mjs';
 
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }));
 
@@ -24,14 +24,20 @@ describe('发布资产验证与手动公开', () => {
   const draft = () => released(tag, {
     id: 123,
     draft: true,
-    assets: ['TuneFree_1.1.30_x64-setup.exe', 'TuneFree_1.1.30_x64-setup.exe.sig', 'latest.json']
-      .map((name) => ({ name, size: 100 })),
+    assets: ['TuneFree_1.1.30_x64-setup.exe', 'TuneFree_1.1.30_x64-setup.exe.sig',
+      'TuneFree_1.1.30_universal.dmg', 'TuneFree_1.1.30_universal.app.tar.gz',
+      'TuneFree_1.1.30_universal.app.tar.gz.sig', 'latest.json']
+      .map((name, id) => ({ name, id, size: 100, url: `https://api.github.com/assets/${id}` })),
   });
+  const manifest = () => ({ version: '1.1.30', platforms: Object.fromEntries([
+    ['windows-x86_64', 0], ['darwin-aarch64', 3], ['darwin-x86_64', 3],
+  ].map(([platform, id]) => [platform, { signature: 'signed', url: `https://api.github.com/assets/${id}` }])) });
 
   beforeEach(() => {
     vi.stubEnv('GITHUB_REPOSITORY', 'alanbulan/TuneFree_Mobile');
     vi.stubEnv('GITHUB_REF_NAME', tag);
-    vi.mocked(execFileSync).mockReset().mockReturnValue(JSON.stringify([[draft()]]));
+    vi.mocked(execFileSync).mockReset().mockReturnValue(JSON.stringify(manifest()))
+      .mockReturnValueOnce(JSON.stringify([[draft()]]));
     vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
@@ -42,9 +48,10 @@ describe('发布资产验证与手动公开', () => {
 
   it('默认仅读取并校验草稿，不发送公开请求', () => {
     completeRelease();
-    expect(execFileSync).toHaveBeenCalledExactlyOnceWith('gh', [
+    expect(execFileSync).toHaveBeenNthCalledWith(1, 'gh', [
       'api', '--paginate', '--slurp', 'repos/alanbulan/TuneFree_Mobile/releases?per_page=100',
     ], { encoding: 'utf8', input: undefined });
+    expect(execFileSync).toHaveBeenCalledTimes(2);
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Release 保持草稿'));
   });
 
@@ -56,7 +63,8 @@ describe('发布资产验证与手动公开', () => {
   });
 
   it('发布较旧版本时保留较新的 latest', () => {
-    vi.mocked(execFileSync).mockReturnValue(JSON.stringify([[draft()], [released('v1.1.31')]]));
+    vi.mocked(execFileSync).mockReset().mockReturnValue(JSON.stringify(manifest()))
+      .mockReturnValueOnce(JSON.stringify([[draft()], [released('v1.1.31')]]));
     completeRelease({ publish: true });
     const options = vi.mocked(execFileSync).mock.calls.at(-1)[2];
     expect(JSON.parse(options.input).make_latest).toBe('false');
@@ -69,7 +77,7 @@ describe('发布资产验证与手动公开', () => {
   });
 
   it('目标已经公开时拒绝覆盖', () => {
-    vi.mocked(execFileSync).mockReturnValue(JSON.stringify([[released(tag)]]));
+    vi.mocked(execFileSync).mockReset().mockReturnValue(JSON.stringify([[released(tag)]]));
     expect(() => completeRelease({ publish: true })).toThrow('未找到待发布草稿');
     expect(execFileSync).toHaveBeenCalledTimes(1);
   });
@@ -78,8 +86,36 @@ describe('发布资产验证与手动公开', () => {
     const release = draft();
     if (failure === 'missing') release.assets.pop();
     else release.assets.at(-1).size = 0;
-    vi.mocked(execFileSync).mockReturnValue(JSON.stringify([[release]]));
+    vi.mocked(execFileSync).mockReset().mockReturnValue(JSON.stringify([[release]]));
     expect(() => completeRelease({ publish: true })).toThrow('发布资产缺失或为空：latest.json');
     expect(execFileSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('补包验收允许读取公开版本，但不会修改其公开状态', () => {
+    vi.mocked(execFileSync).mockReset().mockReturnValue(JSON.stringify(manifest()))
+      .mockReturnValueOnce(JSON.stringify([[{ ...draft(), draft: false }]]));
+    completeRelease({ allowPublished: true, publish: true });
+    expect(execFileSync).toHaveBeenCalledTimes(2);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('保留当前公开状态'));
+  });
+
+  it.each(['TuneFree_1.1.30_universal.dmg', 'TuneFree_1.1.30_universal.app.tar.gz.sig'])(
+    '缺少 Mac 资产 %s 时拒绝公开', (name) => {
+      expect(() => verifyReleaseAssets(tag, draft().assets.filter(asset => asset.name !== name), manifest()))
+        .toThrow(`发布资产缺失或为空：${name}`);
+    });
+
+  it.each(['windows-x86_64', 'darwin-aarch64', 'darwin-x86_64'])(
+    '更新清单不得遗漏平台 %s 或关联其他版本资产', (platform) => {
+      const content = manifest();
+      delete content.platforms[platform];
+      expect(() => verifyReleaseAssets(tag, draft().assets, content)).toThrow(platform);
+      content.platforms[platform] = { signature: 'signed', url: 'https://example.com/wrong' };
+      expect(() => verifyReleaseAssets(tag, draft().assets, content)).toThrow(platform);
+    });
+
+  it('更新清单必须匹配发布版本', () => {
+    expect(() => verifyReleaseAssets(tag, draft().assets, { ...manifest(), version: '1.1.29' }))
+      .toThrow('更新清单版本与标签不一致');
   });
 });
