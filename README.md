@@ -29,7 +29,7 @@ TuneFree Desktop 是 TuneFree 的 Tauri v2 桌面客户端，主开发分支为 
 
 从 [GitHub Releases](https://github.com/alanbulan/TuneFree/releases/latest) 下载。`.sig`、`.app.tar.gz` 和 `latest.json` 用于自动更新，普通安装只需下载对应安装包。
 
-Mac 包采用 ad-hoc 本地签名，尚未进行 Apple Developer ID 签名与公证，首次打开方式见[安装说明](./INSTALL_GUIDE.md)。Mac 当前未实现系统凭据后端，因此不能保存 AI 模型 API Key；本地推荐与外部 Embeat 链路的能力边界见下文。Linux 暂无官方安装包。
+Mac 包采用 ad-hoc 本地签名，尚未进行 Apple Developer ID 签名与公证，首次打开方式见[安装说明](./INSTALL_GUIDE.md)。Windows 与 Mac 均支持保存自定义 AI 模型 API Key；本地推荐与外部 Embeat 链路的能力边界见下文。Linux 暂无官方安装包。
 
 ## 桌面体验
 
@@ -105,7 +105,7 @@ flowchart TB
 - **IPC 单一入口**：前端通过 `src/core/ipc` 调用 Tauri。CI 对 TypeScript 命令表与 Rust 注册表做双向比对，阻止契约漂移。
 - **本地服务按启动隔离**：仅绑定 `127.0.0.1` 随机端口，每次启动生成访问令牌；前端通过 `get_local_server_info` 获取连接信息。受保护路由检查令牌，代理受来源与主机规则约束。
 - **运行时地址不持久化**：前端不硬编码端口，也不保存已解析的本地服务 URL，避免下次启动使用失效地址。
-- **持久化与凭据分离**：推荐数据进入 SQLite，Windows 模型密钥使用系统凭据管理器；其他平台尚未实现凭据保存。
+- **持久化与凭据分离**：推荐数据进入 SQLite，Windows 模型密钥使用凭据管理器，macOS 使用系统钥匙串；两端共享保存、读取、删除与迁移逻辑，密钥不通过配置视图回传。
 - **更新先验签**：Tauri updater 验证更新签名后安装；发布流程核对各平台资产与清单，再公开新版本。
 
 <details>

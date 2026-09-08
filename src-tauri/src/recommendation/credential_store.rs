@@ -2,13 +2,13 @@ use rusqlite::{params, Connection};
 
 use super::catalog;
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 const SERVICE: &str = "com.alanbulan.tunefree";
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 const ACCOUNT: &str = "llm-api-key-v1";
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 const LEGACY_SERVICE: &str = "TuneFree";
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 const LEGACY_ACCOUNT: &str = "openai-compatible-api-key";
 
 /// Error surfaced by write operations on the credential store.
@@ -49,14 +49,14 @@ trait CredentialStore {
 
 struct SystemCredentialStore;
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 impl SystemCredentialStore {
     fn entry(id: CredentialId) -> Result<keyring::Entry, String> {
         let (service, account) = match id {
             CredentialId::Current => (SERVICE, ACCOUNT),
             CredentialId::Legacy => (LEGACY_SERVICE, LEGACY_ACCOUNT),
         };
-        // 测试仍使用 Windows 凭据后端，但不能访问用户的实际模型密钥。
+        // 测试仍使用系统凭据后端，但不能访问用户的实际模型密钥。
         #[cfg(test)]
         let test_service = format!("{service}.tests-{}", std::process::id());
         #[cfg(test)]
@@ -65,7 +65,7 @@ impl SystemCredentialStore {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 impl CredentialStore for SystemCredentialStore {
     fn is_available(&self) -> bool {
         // 原生验收使用隔离数据库；凭据也必须隔离，不能读取、迁移或删除正式密钥。
@@ -94,7 +94,7 @@ impl CredentialStore for SystemCredentialStore {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 impl CredentialStore for SystemCredentialStore {
     fn is_available(&self) -> bool {
         false
@@ -130,7 +130,7 @@ fn get_api_key_with_store(
     store: &impl CredentialStore,
 ) -> Result<String, String> {
     // 无凭据后端的平台不迁移、不报错：读取直接降级到数据库明文，
-    // 让配置视图在 macOS/Linux 构建下依然可用。
+    // 让配置视图在无凭据后端的平台上依然可用。
     if !store.is_available() {
         if is_explicitly_deleted(conn)? {
             return Ok(String::new());
@@ -292,6 +292,6 @@ fn clear_legacy_secret(conn: &Connection, deleted: bool) -> Result<(), String> {
 #[path = "credential_store_tests.rs"]
 mod tests;
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, any(windows, target_os = "macos")))]
 #[path = "__tests__/credential_fixture.rs"]
 pub(crate) mod test_fixture;

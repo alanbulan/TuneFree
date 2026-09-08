@@ -31,6 +31,18 @@ async fn configuration_clamps_values_and_round_trips_isolated_system_credentials
     assert_eq!(view.model, "test-model");
     assert!(view.base_url.starts_with("https://example.test"));
     assert_eq!(get_api_key(&conn).unwrap(), "test-only-key");
+    let mut replace = config_input("https://example.test/v1");
+    replace.api_key = Some("  replacement-key  ".into());
+    save_config(&conn, replace.clone()).unwrap();
+    replace.api_key = Some("  ".into());
+    save_config(&conn, replace).unwrap();
+    assert_eq!(get_api_key(&conn).unwrap(), "replacement-key");
+    let plaintext: String = conn
+        .query_row("SELECT api_key FROM llm_config WHERE id = 1", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert!(plaintext.is_empty());
     let mut clear = config_input("");
     clear.clear_api_key = Some(true);
     clear.enabled = false;

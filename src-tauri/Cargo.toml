@@ -61,8 +61,8 @@ parking_lot = "0.12.5"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2.4.4"
 
-[target.'cfg(windows)'.dependencies]
-# v4 的 v1 接口继续使用 Windows Credential Manager 与原 user.service 标识。
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+# v1 接口统一使用 Windows Credential Manager / macOS Keychain，保留原凭据标识。
 keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
 
 [dev-dependencies]

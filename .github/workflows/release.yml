@@ -10,6 +10,10 @@ on:
         description: 'Existing release tag to supplement with macOS assets (must match this ref version)'
         required: true
         type: string
+      replace_macos:
+        description: 'Replace existing macOS assets after all build and credential checks pass'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -148,6 +152,7 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPLACE_MACOS: ${{ inputs.replace_macos || false }}
         run: |
           node --input-type=module <<'NODE'
           import { readFileSync, appendFileSync } from 'node:fs';
@@ -158,7 +163,8 @@ jobs:
           const release = JSON.parse(execFileSync('gh', ['api',
             `repos/${process.env.GITHUB_REPOSITORY}/releases/tags/${tag}`], { encoding: 'utf8' }));
           if (release.prerelease) throw new Error('Expected a stable release');
-          if (release.assets.some(asset => /\.(dmg|app\.tar\.gz)(\.sig)?$/.test(asset.name))) {
+          if (process.env.REPLACE_MACOS !== 'true' &&
+              release.assets.some(asset => /\.(dmg|app\.tar\.gz)(\.sig)?$/.test(asset.name))) {
             throw new Error('macOS assets already exist; refusing to overwrite them');
           }
           appendFileSync(process.env.GITHUB_OUTPUT, `id=${release.id}\n`);
@@ -200,7 +206,7 @@ jobs:
       - name: Validate macOS Rust code
         run: |
           cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
-          cargo test --manifest-path src-tauri/Cargo.toml --locked --test app_tests
+          cargo test --manifest-path src-tauri/Cargo.toml --locked --test app_tests -- --include-ignored
 
       - name: Build, sign and upload macOS bundles
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0

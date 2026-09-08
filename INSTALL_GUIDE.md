@@ -18,7 +18,7 @@
 
 当前 Mac 包使用 ad-hoc 本地签名，尚未经过 Apple Developer ID 签名与公证。若系统阻止打开，请先确认安装包来自上述官方仓库，再到「系统设置 → 隐私与安全性」中找到本次拦截，选择「仍要打开」。不同 macOS 版本的界面文字可能不同。
 
-Mac 当前未配置系统凭据后端，因此不能保存自定义 AI 模型 API Key。通用包包含两种 CPU 架构，但 CI 启动验收运行在 Apple Silicon runner 上，不等同于 Intel 实机或所有 macOS 版本的完整验收。
+Mac 支持保存自定义 AI 模型 API Key，密钥存入系统钥匙串（Keychain），可在应用设置中替换或清除。首次访问时如出现系统授权提示，请确认是 TuneFree 后允许访问。通用包包含两种 CPU 架构，但 CI 启动验收运行在 Apple Silicon runner 上，不等同于 Intel 实机或所有 macOS 版本的完整验收。
 
 Mac 冒烟测试会显示主窗口以验证首帧，使用非持久化 WebView 和隔离数据目录。
 
