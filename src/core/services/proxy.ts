@@ -1,3 +1,4 @@
+import { bindResponseLifetime } from './responseLifetime';
 import {
   buildLocalServerHeaders,
   DEFAULT_PROXIES,
@@ -53,7 +54,7 @@ export const createLinkedAbort = (
   const abortFromCaller = () => controller.abort(signal?.reason);
   if (signal?.aborted) abortFromCaller();
   signal?.addEventListener('abort', abortFromCaller, { once: true });
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(new DOMException('请求超时', 'TimeoutError')), timeoutMs);
   return {
     signal: controller.signal,
     cleanup: () => {
@@ -182,6 +183,7 @@ export const proxyFetch = async (
 
   for (const proxy of proxies) {
     const linked = createLinkedAbort(options.signal ?? undefined, timeoutMs);
+    let transferred = false;
     try {
       const finalUrl = `${proxy}${encodeURIComponent(url)}`;
       const isSelfProxy = proxy === SELF_HOSTED_PROXY;
@@ -192,16 +194,20 @@ export const proxyFetch = async (
       );
 
       if (resp.ok) {
-        return resp;
+        transferred = true;
+        return bindResponseLifetime(resp, linked);
       }
 
       warnDegradedResponse(url, resp.status);
-      lastResp = resp;
+      const body = await resp.arrayBuffer();
+      lastResp = new Response(body.byteLength ? body : null, {
+        status: resp.status, statusText: resp.statusText, headers: resp.headers,
+      });
     } catch {
       throwIfAborted(options.signal ?? undefined);
       /* 继续下一个代理 */
     } finally {
-      linked.cleanup();
+      if (!transferred) linked.cleanup();
     }
   }
 
@@ -236,7 +242,7 @@ export const proxyFetchJsonWithValidator = async <T = any>(
       try {
         data = await resp.json();
       } catch {
-        /* skip unparsable response */
+        throwIfAborted(options.signal ?? undefined);
       }
 
       if (data && validator(data)) return data as T;

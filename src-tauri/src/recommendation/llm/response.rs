@@ -197,4 +197,24 @@ mod tests {
         let content = "```json\n{\"items\":[{\"track_key\":\"netease:a\"";
         assert!(apply_llm_response(content, vec![item("a", 0.9)], 1, "request").is_none());
     }
+
+    #[test]
+    fn invalid_model_selections_preserve_local_fallback_and_duplicate_keys_are_not_repeated() {
+        for content in [r#"{"items":[]}"#, r#"{"items":[{"track_key":"unknown"}]}"#] {
+            assert!(apply_llm_response(content, vec![item("a", 1.0)], 1, "request").is_none());
+        }
+        let selected = apply_llm_response(
+            r#"{"items":[{"track_key":"netease:a"},{"track_key":"netease:a"}]}"#,
+            vec![item("a", f64::NAN), item("b", 0.4), item("c", 0.8)],
+            3,
+            "request",
+        )
+        .unwrap();
+        assert_eq!(selected.len(), 3);
+        assert_eq!(
+            selected.iter().filter(|entry| entry.song.id == "a").count(),
+            1
+        );
+        assert!(selected.iter().all(|entry| entry.score.is_finite()));
+    }
 }

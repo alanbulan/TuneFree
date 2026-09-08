@@ -34,13 +34,12 @@ const getMainTexts = (row: ParsedLyric): string[] =>
   row.mainTexts?.length ? row.mainTexts : row.text.split('\n').filter(Boolean);
 const filterExtensionValues = (row: ParsedLyric, values: string[]): string[] => {
   const mainTexts = getMainTexts(row);
-  return values.filter((text) => text && !mainTexts.includes(text));
+  return values.filter((text) => text.trim() && text.trim() !== '//' && !mainTexts.includes(text));
 };
 const setRowTrack = (
   row: ParsedLyric,
   type: Exclude<LyricTrackType, 'main'>,
   values: string[],
-  sourceTime?: number,
   words?: ParsedLyricWord[],
 ): void => {
   if (type === 'karaoke') {
@@ -64,18 +63,9 @@ const setRowTrack = (
     filtered.forEach((text) => pushUnique(existing, text));
     row.romanization = joinTrackValues(existing); return;
   }
-  if (type === 'pronunciation') {
-    const existing = row.pronunciation ? row.pronunciation.split('\n') : [];
-    filtered.forEach((text) => pushUnique(existing, text));
-    row.pronunciation = joinTrackValues(existing); return;
-  }
-  const extra = [...(row.extra || [])];
-  for (const text of filtered) {
-    if (!extra.some((item) => item.type === type && item.text === text)) {
-      extra.push({ type, text, time: sourceTime });
-    }
-  }
-  row.extra = extra;
+  const existing = row.pronunciation ? row.pronunciation.split('\n') : [];
+  filtered.forEach((text) => pushUnique(existing, text));
+  row.pronunciation = joinTrackValues(existing);
 };
 
 const attachExactKaraokeText = (
@@ -97,7 +87,7 @@ const attachExactKaraokeText = (
       const words = karaokeWords.slice(spans[firstSpanIndex].wordIndex, spans[lastSpanIndex].wordIndex + 1);
       if (Number.isFinite(words[0]?.start) &&
           Math.abs(words[0].start - row.time) <= KARAOKE_TEXT_MATCH_TOLERANCE_SECONDS) {
-        setRowTrack(row, 'karaoke', [], words[0].start, words);
+        setRowTrack(row, 'karaoke', [], words);
         return matchEnd;
       }
     }
@@ -166,7 +156,7 @@ const attachKaraokeTrack = (rows: ParsedLyric[], karaokeLines: RawLyricLine[]): 
     if (!best) continue;
     const words = karaokeWords.slice(spans[best.firstSpanIndex].wordIndex,
       spans[best.lastSpanIndex].wordIndex + 1);
-    setRowTrack(row, 'karaoke', [], words[0]?.start, words);
+    setRowTrack(row, 'karaoke', [], words);
     textCursor = spans[best.lastSpanIndex].textEnd;
   }
 };
@@ -182,7 +172,7 @@ const attachExtensionTrack = (
   rows.forEach((row, index) => {
     const exactGroup = groupByKey.get(primaryGroups[index].key);
     if (!exactGroup) return;
-    setRowTrack(row, track.type, exactGroup.values, exactGroup.time, exactGroup.words);
+    setRowTrack(row, track.type, exactGroup.values, exactGroup.words);
     usedKeys.add(exactGroup.key);
   });
   rows.forEach((row, rowIndex) => {
@@ -197,7 +187,7 @@ const attachExtensionTrack = (
       if (score < bestScore) { bestScore = score; bestGroup = group; }
     }
     if (bestGroup) {
-      setRowTrack(row, track.type, bestGroup.values, bestGroup.time, bestGroup.words);
+      setRowTrack(row, track.type, bestGroup.values, bestGroup.words);
       usedKeys.add(bestGroup.key);
     }
   });

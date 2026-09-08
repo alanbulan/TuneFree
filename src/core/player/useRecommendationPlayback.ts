@@ -8,6 +8,10 @@ import type { PlayerRuntime } from "./usePlayerRuntime";
 
 export const useRecommendationPlayback = (runtime: PlayerRuntime) => {
   const { refs, setPlayerNotice } = runtime;
+  const {
+    playbackSessionId: playbackSessionIdRef, currentSong: currentSongRef, audioQuality: audioQualityRef,
+    audio: audioRef, play30LoggedKey: play30LoggedKeyRef, completeLoggedKey: completeLoggedKeyRef,
+  } = refs;
   const showPlayerNotice = useCallback(
     (message: string, tone: PlayerNotice["tone"] = "info") => {
       setPlayerNotice({ id: Date.now(), tone, message });
@@ -16,15 +20,15 @@ export const useRecommendationPlayback = (runtime: PlayerRuntime) => {
   );
 
   const startPlaybackSession = useCallback(() => {
-    if (!refs.playbackSessionId.current) {
-      refs.playbackSessionId.current = createPlaybackSessionId();
+    if (!playbackSessionIdRef.current) {
+      playbackSessionIdRef.current = createPlaybackSessionId();
     }
-    return refs.playbackSessionId.current;
-  }, [refs]);
+    return playbackSessionIdRef.current;
+  }, [playbackSessionIdRef]);
 
   const logPlaybackEvent = useCallback((
     eventType: string,
-    song: Song | null | undefined = refs.currentSong.current,
+    song: Song | null | undefined = currentSongRef.current,
     positionSeconds?: number,
     durationSeconds?: number,
     quality?: AudioQuality,
@@ -32,29 +36,29 @@ export const useRecommendationPlayback = (runtime: PlayerRuntime) => {
     if (!song) return;
     void logRecommendationEvent({
       eventType,
-      sessionId: refs.playbackSessionId.current || startPlaybackSession(),
+      sessionId: playbackSessionIdRef.current || startPlaybackSession(),
       song, positionSeconds, durationSeconds,
-      quality: quality || refs.audioQuality.current,
+      quality: quality || audioQualityRef.current,
       context: "playback",
     }).catch(() => {});
-  }, [refs, startPlaybackSession]);
+  }, [startPlaybackSession, playbackSessionIdRef, currentSongRef, audioQualityRef]);
 
   const logEarlySkipIfNeeded = useCallback(() => {
-    const song = refs.currentSong.current;
-    const audio = refs.audio.current;
+    const song = currentSongRef.current;
+    const audio = audioRef.current;
     if (!song || !audio || audio.ended) return;
     const position = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
     if (position > 0 && position < 30) {
       logPlaybackEvent("skip_early", song, position, getFiniteAudioDuration(audio));
     }
-  }, [logPlaybackEvent, refs]);
+  }, [logPlaybackEvent, currentSongRef, audioRef]);
 
   const resetPlaybackState = useCallback((song: Song) => {
     const key = getSongKey(song);
-    refs.play30LoggedKey.current = null;
-    refs.completeLoggedKey.current = null;
+    play30LoggedKeyRef.current = null;
+    completeLoggedKeyRef.current = null;
     return key;
-  }, [refs]);
+  }, [play30LoggedKeyRef, completeLoggedKeyRef]);
 
   return useMemo(() => ({
     showPlayerNotice, startPlaybackSession, logPlaybackEvent,

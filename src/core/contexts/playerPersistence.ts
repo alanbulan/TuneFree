@@ -20,16 +20,8 @@ const AUDIO_QUALITIES: readonly AudioQuality[] = ["128k", "320k", "flac", "flac2
 const DEFAULT_PLAY_MODE: PlayMode = "sequence";
 const DEFAULT_AUDIO_QUALITY: AudioQuality = "320k";
 
-// 只在当前进程内有意义的字段：本地媒体服务器每次启动都绑定随机端口，
-// 落盘的代理 URL 必然失效；歌词文本体积极大，会把队列推到配额上限。
-const RUNTIME_SONG_FIELDS = ["url", "urlId", "lrc", "lyricBundle", "tlyric"] as const;
-
-/** Drop fields that must be re-resolved after a restart before writing a song to storage. */
-export const stripRuntimeSongFields = (song: Song): Song => {
-  const next: Record<string, unknown> = { ...song };
-  for (const field of RUNTIME_SONG_FIELDS) delete next[field];
-  return next as unknown as Song;
-};
+import { stripRuntimeSongFields } from '../services/songStorage';
+export { stripRuntimeSongFields } from '../services/songStorage';
 
 const normalizePlayMode = (value: unknown): PlayMode | null =>
   PLAY_MODES.includes(value as PlayMode) ? (value as PlayMode) : null;

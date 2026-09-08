@@ -130,7 +130,8 @@ export const getGDStudioSongUrl = async (
   options?: { signal?: AbortSignal; forceRefresh?: boolean },
 ): Promise<string | null> => {
   const cacheKey = getUrlCacheKey(id, source, quality);
-  const cached = options?.forceRefresh ? undefined : urlCache.get(cacheKey);
+  if (options?.forceRefresh) urlCache.delete(cacheKey);
+  const cached = urlCache.get(cacheKey);
 
   if (cached && cached.expiresAt > Date.now()) {
     return cached.url;
@@ -336,13 +337,14 @@ export const parseGDStudioSongFull = async (
   id: string | number,
   source: GdStudioSource,
   quality: string = "320k",
-  songMeta?: Pick<Song, "pic" | "picId">,
-  options?: { signal?: AbortSignal; forceRefresh?: boolean },
+  songMeta?: Pick<Song, "pic" | "picId" | "urlId" | "lyricId">,
+  options?: { signal?: AbortSignal; forceRefresh?: boolean; deferMetadata?: boolean },
 ): Promise<{ url: string | null; lrc: string; pic: string } | null> => {
+  rememberTrackMeta(id, source, songMeta || {});
   const [url, lrc, pic] = await Promise.all([
     getGDStudioSongUrl(id, source, quality, options),
-    getGDStudioLyrics(id, source, options),
-    resolveGDStudioPic(id, source, songMeta, options?.signal),
+    options?.deferMetadata ? Promise.resolve('') : getGDStudioLyrics(id, source, options),
+    options?.deferMetadata ? Promise.resolve(fixUrl(songMeta?.pic || '')) : resolveGDStudioPic(id, source, songMeta, options?.signal),
   ]);
 
   if (!url && !lrc && !pic) return null;

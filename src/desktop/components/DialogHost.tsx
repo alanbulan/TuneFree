@@ -11,6 +11,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 
 type DialogTone = 'default' | 'danger';
 
@@ -124,9 +125,12 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   return (
     <DialogContext.Provider value={value}>
       {children}
+      <AnimatePresence>
       {dialog && (
-        <div className="desktop-dialog-backdrop" role="presentation" onMouseDown={() => closeDialog(null)}>
-          <form
+        <motion.div key={dialog.id} className="desktop-dialog-backdrop" role="presentation" onMouseDown={() => closeDialog(null)}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+          <motion.form initial={{ scale: 0.96, y: 10 }} animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.96, y: 10 }} transition={{ duration: 0.18 }}
             className={`desktop-dialog-card ${dialog.tone === 'danger' ? 'danger' : ''}`}
             role="dialog"
             aria-modal="true"
@@ -165,9 +169,10 @@ export function DialogProvider({ children }: { children: ReactNode }) {
                 {dialog.confirmLabel}
               </button>
             </div>
-          </form>
-        </div>
+          </motion.form>
+        </motion.div>
       )}
+      </AnimatePresence>
     </DialogContext.Provider>
   );
 }

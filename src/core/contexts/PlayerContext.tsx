@@ -1,24 +1,25 @@
-import React, { createContext, useContext } from "react";
-import type {
-  PlayerActions,
-  PlayerAnalyser,
-  PlayerNoticeState,
-  PlayerNowPlaying,
-  PlayerProgress,
-  PlayerQueueState,
-  PlayerSettings,
-} from "../player/types";
+import React from "react";
+import {
+  PlayerActionsContext,
+  PlayerAnalyserContext,
+  PlayerNoticeContext,
+  PlayerNowPlayingContext,
+  PlayerProgressContext,
+  PlayerQueueStateContext,
+  PlayerSettingsContext,
+} from './playerContextValue';
 import { usePlayerController } from "../player/usePlayerController";
 
 export type { PlayerNotice } from "../player/types";
-
-const PlayerActionsContext = createContext<PlayerActions | undefined>(undefined);
-const PlayerNowPlayingContext = createContext<PlayerNowPlaying | undefined>(undefined);
-const PlayerQueueStateContext = createContext<PlayerQueueState | undefined>(undefined);
-const PlayerSettingsContext = createContext<PlayerSettings | undefined>(undefined);
-const PlayerAnalyserContext = createContext<PlayerAnalyser | undefined>(undefined);
-const PlayerProgressContext = createContext<PlayerProgress | undefined>(undefined);
-const PlayerNoticeContext = createContext<PlayerNoticeState | undefined>(undefined);
+export {
+  usePlayerActions,
+  usePlayerNowPlaying,
+  usePlayerQueueState,
+  usePlayerSettings,
+  usePlayerAnalyser,
+  usePlayerProgress,
+  usePlayerNotice,
+} from './playerContextValue';
 
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const controller = usePlayerController();
@@ -40,50 +41,3 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     </PlayerActionsContext.Provider>
   );
 };
-
-const DEFAULT_ACTIONS: PlayerActions = {
-  playSong: async () => {}, playQueue: async () => {}, togglePlay: () => {},
-  pausePlayback: () => {}, resumePlayback: async () => {}, seek: () => {},
-  setLyricOffsetSeconds: () => {}, adjustLyricOffsetSeconds: () => {},
-  playNext: () => {}, playPrev: () => {}, addToQueue: () => {},
-  removeFromQueue: () => {}, togglePlayMode: () => {}, clearQueue: () => {},
-  setAudioQuality: () => {}, initAudioContext: () => {},
-};
-const DEFAULT_NOW_PLAYING: PlayerNowPlaying = {
-  currentSong: null, isPlaying: false, isLoading: false, isNearEnd: false,
-};
-const DEFAULT_QUEUE_STATE: PlayerQueueState = { queue: [], playMode: "sequence" };
-const DEFAULT_SETTINGS: PlayerSettings = { audioQuality: "320k" };
-const DEFAULT_ANALYSER: PlayerAnalyser = { analyser: null };
-const DEFAULT_PROGRESS: PlayerProgress = {
-  currentTime: 0, duration: 0, lyricOffsetSeconds: 0,
-};
-const DEFAULT_NOTICE: PlayerNoticeState = { playerNotice: null };
-
-const useContextValue = <T,>(
-  context: React.Context<T | undefined>,
-  fallback: T,
-  hookName: string,
-): T => {
-  const value = useContext(context);
-  if (!value) {
-    console.warn(`[${hookName}] Provider 未就绪，返回默认值（HMR 热更新中）`);
-    return fallback;
-  }
-  return value;
-};
-
-export const usePlayerActions = (): PlayerActions =>
-  useContextValue(PlayerActionsContext, DEFAULT_ACTIONS, "usePlayerActions");
-export const usePlayerNowPlaying = (): PlayerNowPlaying =>
-  useContextValue(PlayerNowPlayingContext, DEFAULT_NOW_PLAYING, "usePlayerNowPlaying");
-export const usePlayerQueueState = (): PlayerQueueState =>
-  useContextValue(PlayerQueueStateContext, DEFAULT_QUEUE_STATE, "usePlayerQueueState");
-export const usePlayerSettings = (): PlayerSettings =>
-  useContextValue(PlayerSettingsContext, DEFAULT_SETTINGS, "usePlayerSettings");
-export const usePlayerAnalyser = (): PlayerAnalyser =>
-  useContextValue(PlayerAnalyserContext, DEFAULT_ANALYSER, "usePlayerAnalyser");
-export const usePlayerProgress = (): PlayerProgress =>
-  useContextValue(PlayerProgressContext, DEFAULT_PROGRESS, "usePlayerProgress");
-export const usePlayerNotice = (): PlayerNoticeState =>
-  useContextValue(PlayerNoticeContext, DEFAULT_NOTICE, "usePlayerNotice");

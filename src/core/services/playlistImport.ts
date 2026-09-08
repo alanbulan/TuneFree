@@ -9,6 +9,7 @@ import {
   TUNEHUB_API_BASE,
   parsePlaylistImportInput,
   type ImportedPlaylistPayload,
+  type PlaylistImportSource,
 } from './playlistImportInput';
 
 export {
@@ -367,13 +368,12 @@ const importViaTuneHub = async (
 // ==============================
 
 const importDirect = (
-  source: string,
+  source: PlaylistImportSource,
   id: string,
 ): Promise<ImportedPlaylistPayload | null> => {
   if (source === "netease") return importNeteasePlaylist(id);
   if (source === "qq") return importQQPlaylist(id);
-  if (source === "kuwo") return importKuwoPlaylist(id);
-  throw new PlaylistImportError("unsupportedSource");
+  return importKuwoPlaylist(id);
 };
 
 export const importPlaylist = async (

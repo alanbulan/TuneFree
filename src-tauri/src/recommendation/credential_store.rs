@@ -56,12 +56,22 @@ impl SystemCredentialStore {
             CredentialId::Current => (SERVICE, ACCOUNT),
             CredentialId::Legacy => (LEGACY_SERVICE, LEGACY_ACCOUNT),
         };
+        // 测试仍使用 Windows 凭据后端，但不能访问用户的实际模型密钥。
+        #[cfg(test)]
+        let test_service = format!("{service}.tests-{}", std::process::id());
+        #[cfg(test)]
+        let service = test_service.as_str();
         keyring::Entry::new(service, account).map_err(|error| format!("打开系统凭据失败: {error}"))
     }
 }
 
 #[cfg(windows)]
 impl CredentialStore for SystemCredentialStore {
+    fn is_available(&self) -> bool {
+        // 原生验收使用隔离数据库；凭据也必须隔离，不能读取、迁移或删除正式密钥。
+        !crate::app::is_smoke_test()
+    }
+
     fn get(&self, id: CredentialId) -> Result<Option<String>, String> {
         match Self::entry(id)?.get_password() {
             Ok(secret) => Ok(Some(secret)),
@@ -281,3 +291,7 @@ fn clear_legacy_secret(conn: &Connection, deleted: bool) -> Result<(), String> {
 #[cfg(test)]
 #[path = "credential_store_tests.rs"]
 mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "__tests__/credential_fixture.rs"]
+pub(crate) mod test_fixture;

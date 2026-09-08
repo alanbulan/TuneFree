@@ -19,6 +19,7 @@ fn stale_dynamic_refresh_task_does_not_clear_new_generation() {
                 items: Vec::new(),
                 error: None,
                 updated_at: 1,
+                deadline_at: None,
             },
         ),
         (
@@ -31,6 +32,7 @@ fn stale_dynamic_refresh_task_does_not_clear_new_generation() {
                 items: Vec::new(),
                 error: None,
                 updated_at: 1,
+                deadline_at: None,
             },
         ),
     ]));

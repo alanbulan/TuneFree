@@ -1,6 +1,44 @@
 use super::*;
 use tauri::Emitter;
 
+impl RecommendationService {
+    pub(super) fn publish_recommendation_job(
+        &self,
+        prepared: PreparedJob,
+    ) -> CommandResult<RecommendationJob> {
+        // 候选计算不持有这两把锁；发布、失效与清理按相同顺序同步。
+        let mut cancel = self.cloud_cancel.lock();
+        let job = prepared.job;
+        let cancel_rx = {
+            let mut jobs = self.recommendation_jobs.lock();
+            if self.recommendation_generation.load(Ordering::SeqCst) != prepared.generation {
+                return Err(CommandError::cancelled("推荐请求已过期"));
+            }
+            if let Some(running) = jobs
+                .values()
+                .find(|job| matches!(job.status, RecommendationJobStatus::Running))
+            {
+                return Ok(running.clone());
+            }
+            let receiver = prepared.task.as_ref().map(|_| {
+                let (sender, receiver) = watch::channel(false);
+                *cancel = sender;
+                receiver
+            });
+            jobs.insert(job.job_id.clone(), job.clone());
+            receiver
+        };
+        // 在释放发布锁前发出初始状态，避免覆盖随后发出的失效通知。
+        emit_job_update(self.app_handle(), &job);
+        if let (Some(task), Some(cancel_rx)) = (prepared.task, cancel_rx) {
+            self.last_dynamic_refresh_at
+                .store(catalog::now_ms(), Ordering::SeqCst);
+            tauri::async_runtime::spawn(run_cloud_job(task, cancel_rx));
+        }
+        Ok(job)
+    }
+}
+
 pub(super) fn job_update_payload(job: &RecommendationJob) -> RecommendationJobUpdatePayload {
     RecommendationJobUpdatePayload {
         job_id: job.job_id.clone(),
@@ -67,6 +105,9 @@ pub(super) fn update_recommendation_job(
             return;
         }
         job.status = transition.status;
+        if !matches!(job.status, RecommendationJobStatus::Running) {
+            job.deadline_at = None;
+        }
         job.stage = transition.stage;
         job.detail = transition.detail;
         if let Some(items) = transition.items {

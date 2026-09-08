@@ -1,22 +1,22 @@
 /* ── 设计令牌：主题变量、色彩体系、字体栈 ───────────────────── */
 :root {
   color-scheme: light;
-  --ios-bg: #f2f2f7;
+  --ios-bg: #f6f6f8;
   --ios-card: #ffffff;
-  --ios-text: #000000;
-  --ios-subtext: #8e8e93;
-  --ios-separator: #c6c6c8;
+  --ios-text: #202027;
+  --ios-subtext: #72727d;
+  --ios-separator: #e2e2e8;
   --ios-blue: #007aff;
   --ios-red: #fa233b;
   --surface: #f7f7fa;
   --surface-2: #eeeeef;
   --surface-hover: #f1f1f4;
-  --line: rgba(198, 198, 200, 0.58);
-  --line-strong: rgba(198, 198, 200, 0.92);
+  --line: rgba(32, 32, 39, 0.085);
+  --line-strong: rgba(32, 32, 39, 0.16);
   --text: var(--ios-text);
   --text-soft: #2f2f35;
   --muted: var(--ios-subtext);
-  --faint: #b2b2b8;
+  --faint: #858590;
   /* 与 theme.ts 的 DEFAULT_ACCENT_COLOR 保持一致，避免首帧默认色与 JS 默认色不符 */
   --accent: #fa233b;
   --accent-rgb: 250, 35, 59;
@@ -32,9 +32,9 @@
   --success-rgb: 16, 185, 129;
   --info: #2563eb;
   --info-rgb: 37, 99, 235;
-  --bg-rgb: 242, 242, 247;
+  --bg-rgb: 246, 246, 248;
   --card-rgb: 255, 255, 255;
-  --radius-card: 18px;
+  --radius-card: 16px;
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   /* Semantic glass/blur backgrounds */
   --glass-bg: rgba(255,255,255,.86);
@@ -54,9 +54,9 @@
   --border-soft: rgba(0,0,0,.08);
   --border-glass: rgba(255,255,255,.72);
   /* Shadows */
-  --shadow-sm: rgba(0,0,0,.045);
-  --shadow-md: rgba(0,0,0,.06);
-  --shadow-lg: rgba(0,0,0,.07);
+  --shadow-sm: rgba(24,24,36,.035);
+  --shadow-md: rgba(24,24,36,.045);
+  --shadow-lg: rgba(24,24,36,.06);
   --shadow-xl: rgba(0,0,0,.18);
   /* Text colors */
   --text-tertiary: #7f7f86;

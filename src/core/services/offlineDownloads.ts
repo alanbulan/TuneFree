@@ -4,6 +4,7 @@ import { convertFileSrc } from '../ipc/windows';
 import type { OfflineDownloadMeta } from '../ipc/types';
 import type { AudioQuality, Song } from '../types';
 import { getSongKey } from '../types';
+import { normalizeMusicUrl } from './musicUrl';
 
 // ==============================
 // 本地文件下载管理（基于磁盘文件 + downloads.json 元数据）
@@ -35,7 +36,7 @@ export const subscribeOfflineDownloads = (
   return () => listeners.delete(listener);
 };
 
-const notifyOfflineChanged = () => {
+export const notifyOfflineChanged = () => {
   listeners.forEach((listener) => {
     try {
       listener();
@@ -51,11 +52,7 @@ const notifyOfflineChanged = () => {
 
 export const listOfflineDownloads = async (): Promise<OfflineDownloadMeta[]> => {
   if (!isTauri()) return [];
-  try {
-    return await invokeCommand('scan_download_dir');
-  } catch {
-    return [];
-  }
+  return invokeCommand('scan_download_dir');
 };
 
 // ==============================
@@ -84,36 +81,12 @@ export const resolveOfflinePlayback = async (
     return {
       url,
       lrc: song.lrc || songMeta?.lrc || '',
-      pic: song.pic || songMeta?.pic || '',
+      pic: normalizeMusicUrl(song.pic || songMeta?.pic),
       quality: result.quality,
     };
   } catch {
     return null;
   }
-};
-
-// ==============================
-// 保存元数据（下载完成后调用）
-// ==============================
-
-export const saveDownloadMeta = async (
-  filename: string,
-  song: Song,
-  quality: string,
-): Promise<void> => {
-  if (!isTauri()) return;
-
-  // Strip the temporary play URL before saving metadata
-  const { url: _ignoredUrl, ...songMeta } = song;
-
-  await invokeCommand('save_download_meta', {
-    filename,
-    song: songMeta,
-    quality,
-    createTime: Date.now(),
-  });
-
-  notifyOfflineChanged();
 };
 
 // ==============================

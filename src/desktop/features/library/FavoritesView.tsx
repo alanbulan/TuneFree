@@ -12,7 +12,7 @@ export default function FavoritesView() {
 
   const handleFavorite = (song: Song) => {
     const wasFavorite = isFavorite(song.id, song.source);
-    toggleFavorite(song);
+    if (!toggleFavorite(song)) return;
     showToast(wasFavorite ? '已取消收藏' : '已收藏歌曲', 'success', {
       label: '撤销',
       onClick: () => toggleFavorite(song),

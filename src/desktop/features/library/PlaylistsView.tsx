@@ -7,6 +7,7 @@ import type { Playlist, Song } from '../../../core/types';
 import { useDesktopDialog } from '../../components/DialogHost';
 import { useToast } from '../../components/ToastHost';
 import { PlaylistActionCards, PlaylistCard, PlaylistDetail } from './PlaylistViewParts';
+import MotionPanel from '../../components/MotionPanel';
 
 export default function PlaylistsView() {
   const { playlists, createPlaylist, deletePlaylist, renamePlaylist, removeFromPlaylist,
@@ -27,7 +28,7 @@ export default function PlaylistsView() {
 
   const handleFavorite = (song: Song) => {
     const wasFavorite = isFavorite(song.id, song.source);
-    toggleFavorite(song);
+    if (!toggleFavorite(song)) return;
     showToast(wasFavorite ? '已取消收藏' : '已收藏歌曲', 'success', {
       label: '撤销', onClick: () => toggleFavorite(song),
     });
@@ -35,7 +36,8 @@ export default function PlaylistsView() {
   const handleCreatePlaylist = () => {
     const name = newPlaylistName.trim();
     if (!name) return;
-    createPlaylist(name); setNewPlaylistName('');
+    if (!createPlaylist(name)) return;
+    setNewPlaylistName('');
     showToast(`已创建「${name}」`, 'success');
   };
   const handleImportPlaylist = async () => {
@@ -43,7 +45,8 @@ export default function PlaylistsView() {
     setIsImportingPlaylist(true);
     try {
       const payload = await importPlaylist(importSource, importInput);
-      createPlaylist(payload.name, payload.songs); setImportInput('');
+      if (!createPlaylist(payload.name, payload.songs)) return;
+      setImportInput('');
       showToast(`已导入「${payload.name}」共 ${payload.songs.length} 首`, 'success');
     } catch (error) {
       showToast(getPlaylistImportErrorMessage(error), 'error');
@@ -55,25 +58,26 @@ export default function PlaylistsView() {
       placeholder: '歌单名称', confirmLabel: '保存' });
     const name = nextName?.trim();
     if (!name || name === playlist.name) return;
-    renamePlaylist(playlist.id, name); showToast(`已重命名为「${name}」`, 'success');
+    if (!renamePlaylist(playlist.id, name)) return;
+    showToast(`已重命名为「${name}」`, 'success');
   };
   const handleDeletePlaylist = async (playlist: Playlist) => {
     const confirmed = await confirmDialog({ title: '删除歌单',
       message: `确定删除「${playlist.name || '未命名歌单'}」？歌单内歌曲不会从收藏或本地下载中删除。`,
       confirmLabel: '删除', tone: 'danger' });
     if (!confirmed) return;
-    deletePlaylist(playlist.id); setSelectedPlaylistId(null); showToast('歌单已删除', 'success');
+    if (!deletePlaylist(playlist.id)) return;
+    setSelectedPlaylistId(null); showToast('歌单已删除', 'success');
   };
 
-  if (selectedPlaylist) {
-    return <PlaylistDetail playlist={selectedPlaylist} currentSong={currentSong} isPlaying={isPlaying}
+  return (
+    <MotionPanel transitionKey={selectedPlaylist?.id ?? 'grid'}>
+    {selectedPlaylist ? <PlaylistDetail playlist={selectedPlaylist} currentSong={currentSong} isPlaying={isPlaying}
       onBack={() => setSelectedPlaylistId(null)} onRename={(playlist) => void handleRenamePlaylist(playlist)}
       onDelete={(playlist) => void handleDeletePlaylist(playlist)}
       onPlay={(song) => void playQueue(selectedPlaylist.songs, song)} onFavorite={handleFavorite}
       isFavorite={(song) => isFavorite(song.id, song.source)}
-      onRemove={(song) => removeFromPlaylist(selectedPlaylist.id, song.id, song.source)} />;
-  }
-  return (
+      onRemove={(song) => removeFromPlaylist(selectedPlaylist.id, song.id, song.source)} /> : (
     <section className="playlist-grid">
       <PlaylistActionCards newName={newPlaylistName} onNewNameChange={setNewPlaylistName}
         onCreate={handleCreatePlaylist} importSource={importSource} onImportSourceChange={setImportSource}
@@ -83,5 +87,7 @@ export default function PlaylistsView() {
         <PlaylistCard key={playlist.id} playlist={playlist} onOpen={() => setSelectedPlaylistId(playlist.id)} />
       ))}
     </section>
+    )}
+    </MotionPanel>
   );
 }

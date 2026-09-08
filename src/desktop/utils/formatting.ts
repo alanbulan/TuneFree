@@ -45,7 +45,7 @@ export const getLyricExtensionLines = (row: ParsedLyric): string[] => [
   row.pronunciation,
   row.translation,
   ...(row.extra || []).map((item) => item.text),
-].filter((line): line is string => !!line);
+].filter((line): line is string => !!line?.trim() && line.trim() !== '//');
 
 export type NoteStyle = CSSProperties & {
   '--note-delay'?: string;

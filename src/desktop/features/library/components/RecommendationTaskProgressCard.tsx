@@ -31,16 +31,15 @@ export default function RecommendationTaskProgressCard() {
   return (
     <div className="settings-card task-progress-card glass-panel">
       <div className="task-progress-header">
-        <h3>任务进度</h3>
-        <p>推荐结果只显示一份，后台 worker 完成后刷新同一份列表。</p>
+        <div><h3>推荐状态</h3><p>看看为你挑选音乐的进展。</p></div>
       </div>
       <div className="task-progress-list">
-        {[progress.local, progress.cloud].map((worker) => (
+        {[progress.local, progress.cloud].map((worker, index) => (
           <div className={`task-progress-row ${worker.status}`} key={worker.label}>
             <span className="task-progress-dot" />
             <div>
-              <strong>{worker.label}</strong>
-              <p>{worker.detail}</p>
+              <strong>{index === 0 ? '本地推荐' : 'AI 精选'}</strong>
+              <p title={worker.detail}>{worker.detail}</p>
             </div>
             <em>{statusText[worker.status]}</em>
             <small>{formatUpdatedAt(worker.updatedAt)}</small>

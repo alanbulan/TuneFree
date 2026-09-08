@@ -1,12 +1,12 @@
 [package]
 name = "app"
-version = "1.1.29"
+version = "1.1.30"
 description = "TuneFree Desktop - Modern desktop music player"
 authors = ["AlanBulan"]
 license = "MIT"
 repository = ""
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.89"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -24,34 +24,46 @@ todo = "deny"
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+# 同一套源码测试在显式目标中运行，便于单独链接 Windows 原生宿主清单。
+test = false
+
+[[test]]
+name = "app_tests"
+path = "src/test_host.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
-serde_json = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-log = "0.4"
+serde_json = "1.0.151"
+serde = { version = "1.0.229", features = ["derive"] }
+log = "0.4.34"
 tauri = { version = "2.11.5", features = ["protocol-asset", "tray-icon", "image-png"] }
-tauri-plugin-log = "2.8.0"
-tauri-plugin-dialog = "2.7.1"
-tauri-plugin-updater = "2.10.1"
-tauri-plugin-opener = "2"
-tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "net", "sync", "time", "fs", "io-util"] }
+tauri-plugin-log = "2.9.1"
+tauri-plugin-dialog = "2.7.3"
+tauri-plugin-updater = "2.11.0"
+tauri-plugin-opener = "2.5.5"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "fs", "io-util"] }
 axum = "0.8.9"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "query", "rustls", "stream"] }
-tower-http = { version = "0.7.0", features = ["cors"] }
-aes = "0.9.1"
+tower-http = { version = "0.7.1", features = ["cors"] }
+aes = "0.9.3"
 md5 = "0.8.1"
-base64 = "0.22"
-url = "2"
-thiserror = "2"
-async-trait = "0.1"
-rusqlite = { version = "0.40.1", features = ["bundled"] }
-parking_lot = "0.12"
+# Reuse the system RNG already present in Cargo.lock.
+getrandom = "=0.4.3"
+base64 = "0.23.1"
+url = "2.5.8"
+thiserror = "2.0.20"
+async-trait = "0.1.92"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+parking_lot = "0.12.5"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = "2.4.4"
 
 [target.'cfg(windows)'.dependencies]
-keyring = { version = "=3.6.3", default-features = false, features = ["windows-native"] }
+# v4 的 v1 接口继续使用 Windows Credential Manager 与原 user.service 标识。
+keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
+
+[dev-dependencies]
+tauri = { version = "2.11.5", features = ["test"] }

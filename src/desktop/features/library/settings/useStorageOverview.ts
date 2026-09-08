@@ -24,12 +24,17 @@ const getJsonByteLength = (value: unknown): number => {
 
 const useOfflineDownloads = () => {
   const [downloads, setDownloads] = useState<OfflineDownloadMeta[]>([]);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
-      const items = await listOfflineDownloads();
-      if (!cancelled) setDownloads(items);
+      try {
+        const items = await listOfflineDownloads();
+        if (!cancelled) { setDownloads(items); setError(''); }
+      } catch {
+        if (!cancelled) setError('离线歌曲占用暂时无法读取，下次下载记录更新时会重新统计。');
+      }
     };
     void refresh();
     const unsubscribe = subscribeOfflineDownloads(() => void refresh());
@@ -39,10 +44,11 @@ const useOfflineDownloads = () => {
     };
   }, []);
 
-  return downloads;
+  return { downloads, error };
 };
 
 export interface StorageOverview {
+  error: string;
   totalLabel: string;
   totalValue: string;
   segments: StorageOverviewSegment[];
@@ -54,7 +60,7 @@ export function useStorageOverview(
   playlists: Playlist[],
   llmConfig: Pick<LlmConfigView, 'databaseSizeBytes' | 'llmCacheEntries'>,
 ): StorageOverview {
-  const offlineDownloads = useOfflineDownloads();
+  const { downloads: offlineDownloads, error } = useOfflineDownloads();
 
   return useMemo(() => {
     const userPlaylists = playlists.filter((playlist) => playlist.id !== 'favorites');
@@ -81,6 +87,6 @@ export function useStorageOverview(
       { label: '歌单', value: `${userPlaylists.length} 个`, detail: `${playlistSongCount} 首歌` },
       { label: '模型缓存', value: `${llmConfig.llmCacheEntries} 条`, detail: `推荐库 ${formatBytes(recommendationDbBytes)}` },
     ];
-    return { totalLabel: '总占用', totalValue: formatBytes(totalBytes), segments, stats };
-  }, [favorites, llmConfig.databaseSizeBytes, llmConfig.llmCacheEntries, offlineDownloads, playlists]);
+    return { error, totalLabel: error ? '已统计占用' : '总占用', totalValue: formatBytes(totalBytes), segments, stats };
+  }, [error, favorites, llmConfig.databaseSizeBytes, llmConfig.llmCacheEntries, offlineDownloads, playlists]);
 }

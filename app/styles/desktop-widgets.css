@@ -1,98 +1,93 @@
-/* ── 桌面壳组件层：桌宠精灵帧、底栏小部件、关闭确认、全屏播放器与虚拟列表布局 ──
-   由 components.css 顶部保序 @import 引入，因此层叠位置在 library.css 之后、
-   components.css 本体之前；这里的规则可以覆盖 shell/player/lyrics 三层的同名声明。 */
-
-/* ── 桌宠精灵帧动画 ─────────────────────────────────────────────
-   精灵帧只是 background-position 的偏移，交给 CSS 的 step-end 关键帧自驱动，
-   不再逐帧 setState。每个动作一组关键帧，百分比即 miraPetAtlas.ts 里
-   frameDurations 的累计占比，animation-duration 等于该动作各帧时长之和；
-   改动 miraPetAtlas.ts 的帧数或帧时长时，这里必须同步。
-   行偏移（background-position-y）仍由组件写入 --mira-y，几何数据只存在于 TS。 */
-.mira-pet-sprite {
-  animation-timing-function: step-end;
-  animation-iteration-count: infinite;
+/* ── Bloub 音乐伙伴：官方动画核心 + React SVG 适配 ─────────── */
+.bloub-companion {
+  position: absolute;
+  left: 52px;
+  bottom: 120px;
+  z-index: 10;
+  width: 112px;
+  height: 112px;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+  border-radius: 28px;
+  outline-offset: -4px;
 }
-.mira-pet[data-action="idle"] .mira-pet-sprite { animation-name: miraSpriteIdle; animation-duration: 1100ms; }
-.mira-pet[data-action="running-right"] .mira-pet-sprite { animation-name: miraSpriteRun8; animation-duration: 1060ms; }
-.mira-pet[data-action="running-left"] .mira-pet-sprite { animation-name: miraSpriteRun8; animation-duration: 1060ms; }
-.mira-pet[data-action="waving"] .mira-pet-sprite { animation-name: miraSpriteWaving; animation-duration: 700ms; }
-.mira-pet[data-action="jumping"] .mira-pet-sprite { animation-name: miraSpriteJumping; animation-duration: 840ms; }
-.mira-pet[data-action="failed"] .mira-pet-sprite { animation-name: miraSpriteFailed; animation-duration: 1220ms; }
-.mira-pet[data-action="waiting"] .mira-pet-sprite { animation-name: miraSpriteWaiting; animation-duration: 1010ms; }
-.mira-pet[data-action="running"] .mira-pet-sprite { animation-name: miraSpriteRunning; animation-duration: 820ms; }
-.mira-pet[data-action="review"] .mira-pet-sprite { animation-name: miraSpriteReview; animation-duration: 1030ms; }
-
-@keyframes miraSpriteIdle {
-  0% { background-position-x: 0; }
-  25.455% { background-position-x: -192px; }
-  35.455% { background-position-x: -384px; }
-  45.455% { background-position-x: -576px; }
-  58.182% { background-position-x: -768px; }
-  70.909% { background-position-x: -960px; }
+.bloub-companion.is-dragging { cursor: grabbing; }
+.companion-handle { width: 100%; height: 100%; border-radius: inherit; outline-offset: -6px; }
+.bloub-avatar { display: block; width: 112px; height: 112px; pointer-events: none; filter: drop-shadow(0 5px 8px var(--shadow-md)); }
+.companion-bubble {
+  position: absolute;
+  left: 86px;
+  bottom: 80px;
+  width: max-content;
+  max-width: 218px;
+  padding: 10px 13px;
+  border: 1px solid var(--line);
+  border-radius: 14px 14px 14px 4px;
+  color: var(--text-soft);
+  background: var(--glass-bg-strong);
+  box-shadow: 0 4px 20px var(--shadow-md);
+  backdrop-filter: blur(16px);
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity .18s ease, transform .18s ease;
+  pointer-events: none;
 }
-@keyframes miraSpriteRun8 {
-  0% { background-position-x: 0; }
-  11.321% { background-position-x: -192px; }
-  22.642% { background-position-x: -384px; }
-  33.962% { background-position-x: -576px; }
-  45.283% { background-position-x: -768px; }
-  56.604% { background-position-x: -960px; }
-  67.925% { background-position-x: -1152px; }
-  79.245% { background-position-x: -1344px; }
+.companion-bubble.is-left { left: auto; right: 86px; border-radius: 14px 14px 4px 14px; }
+.companion-bubble.is-below { bottom: auto; top: 80px; }
+.bloub-companion:hover .companion-bubble,
+.bloub-companion:focus-within .companion-bubble,
+.bloub-companion.is-dragging .companion-bubble { opacity: 1; transform: translateY(0); }
+.companion-loading {
+  display: block;
+  width: 42px;
+  height: 42px;
+  margin: 35px;
+  border-radius: 50%;
+  background: var(--surface-2);
 }
-@keyframes miraSpriteWaving {
-  0% { background-position-x: 0; }
-  20% { background-position-x: -192px; }
-  40% { background-position-x: -384px; }
-  60% { background-position-x: -576px; }
+.companion-menu-trigger {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--card-solid);
+  opacity: 0;
+  transition: opacity .18s ease, transform .18s ease;
+  cursor: pointer;
 }
-@keyframes miraSpriteJumping {
-  0% { background-position-x: 0; }
-  16.667% { background-position-x: -192px; }
-  33.333% { background-position-x: -384px; }
-  50% { background-position-x: -576px; }
-  66.667% { background-position-x: -768px; }
+.bloub-companion:hover .companion-menu-trigger,
+.bloub-companion:focus-within .companion-menu-trigger { opacity: 1; }
+.companion-menu-trigger:hover { color: var(--accent); transform: scale(1.08); }
+.companion-menu {
+  position: fixed;
+  width: 296px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  color: var(--text);
+  background: var(--card-solid);
+  box-shadow: 0 14px 50px var(--shadow-lg);
+  cursor: default;
 }
-@keyframes miraSpriteFailed {
-  0% { background-position-x: 0; }
-  11.475% { background-position-x: -192px; }
-  22.951% { background-position-x: -384px; }
-  34.426% { background-position-x: -576px; }
-  45.902% { background-position-x: -768px; }
-  57.377% { background-position-x: -960px; }
-  68.852% { background-position-x: -1152px; }
-  80.328% { background-position-x: -1344px; }
-}
-@keyframes miraSpriteWaiting {
-  0% { background-position-x: 0; }
-  14.851% { background-position-x: -192px; }
-  29.703% { background-position-x: -384px; }
-  44.554% { background-position-x: -576px; }
-  59.406% { background-position-x: -768px; }
-  74.257% { background-position-x: -960px; }
-}
-@keyframes miraSpriteRunning {
-  0% { background-position-x: 0; }
-  14.634% { background-position-x: -192px; }
-  29.268% { background-position-x: -384px; }
-  43.902% { background-position-x: -576px; }
-  58.537% { background-position-x: -768px; }
-  73.171% { background-position-x: -960px; }
-}
-@keyframes miraSpriteReview {
-  0% { background-position-x: 0; }
-  14.563% { background-position-x: -192px; }
-  29.126% { background-position-x: -384px; }
-  43.689% { background-position-x: -576px; }
-  58.252% { background-position-x: -768px; }
-  72.816% { background-position-x: -960px; }
-}
-
-/* motion.css 的统一豁免块早于本文件且未覆盖 .mira-pet-sprite，这里补齐：
-   停掉帧动画后精灵停在动作首帧（--mira-x），组件同时改用 5s 轮换动作。 */
-@media (prefers-reduced-motion: reduce) {
-  .mira-pet-sprite { animation-name: none; }
-}
+.companion-menu-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.companion-menu-heading strong { font-size: 14px; }
+.companion-menu-heading p { margin: 5px 0 14px; color: var(--muted); font-size: 12px; }
+.companion-menu-tabs { display: flex; gap: 3px; margin-bottom: 14px; padding: 3px; background: var(--surface-2); border-radius: 11px; }
+.companion-menu-tabs .source-chip { flex: 1; min-width: 0; padding-inline: 7px; }
+.companion-menu-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.companion-pose-button { min-height: 32px; border: 0; border-radius: 9px; color: var(--text-soft); background: var(--surface-2); font-size: 12px; cursor: pointer; }
+.companion-pose-button:hover, .companion-pose-button.active { color: var(--accent); }
+.companion-auto-button { width: 100%; margin-top: 14px; }
 
 /* ── 虚拟列表/横向轨道的行容器 ─────────────────────────────────
    只有 top / left / 尺寸是运行时算出来的，留在内联样式里。 */

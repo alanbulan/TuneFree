@@ -39,7 +39,7 @@ pub(crate) async fn log_recommendation_event(
 pub(crate) async fn sync_recommendation_library(
     state: State<'_, Arc<RecommendationService>>,
     snapshot: LibrarySnapshot,
-) -> CommandResult<()> {
+) -> CommandResult<bool> {
     let service = Arc::clone(state.inner());
     run_recommendation_blocking(move || service.sync_library(snapshot)).await
 }
@@ -142,3 +142,7 @@ mod tests {
         assert_eq!(value, 42);
     }
 }
+
+#[cfg(all(test, windows))]
+#[path = "__tests__/recommendation_commands.rs"]
+mod command_tests;

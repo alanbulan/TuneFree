@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act, render } from '@testing-library/react';
+import { useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_THEME_PREFERENCES,
@@ -11,12 +12,13 @@ import {
 import { ThemeProvider, useTheme } from '../ThemeContext';
 
 const ipc = vi.hoisted(() => ({
+  native: false,
   emitEventTo: vi.fn(() => Promise.resolve()),
   invokeCommand: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../../ipc', () => ({
-  isTauri: () => false,
+  isTauri: () => ipc.native,
   emitEventTo: ipc.emitEventTo,
   invokeCommand: ipc.invokeCommand,
 }));
@@ -57,7 +59,8 @@ const flipSystemTheme = (matches: boolean) => {
 let api: ReturnType<typeof useTheme> | null = null;
 
 const Probe = () => {
-  api = useTheme();
+  const value = useTheme();
+  useLayoutEffect(() => { api = value; }, [value]);
   return null;
 };
 
@@ -67,6 +70,8 @@ const mount = () => render(<ThemeProvider><Probe /></ThemeProvider>);
 
 describe('ThemeContext 主题下发', () => {
   beforeEach(() => {
+    ipc.native = false;
+    ipc.invokeCommand.mockReset().mockResolvedValue(undefined);
     localStorage.clear();
     darkMedia.matches = false;
     darkMedia.listeners.clear();
@@ -77,8 +82,22 @@ describe('ThemeContext 主题下发', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     Reflect.deleteProperty(document, 'startViewTransition');
+  });
+
+  it('原生窗口命令失败后后续显隐和锁定仍能同步', async () => {
+    ipc.native = true;
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    ipc.invokeCommand.mockRejectedValueOnce(new Error('显隐失败')).mockRejectedValueOnce(new Error('锁定失败'));
+    mount(); await act(async () => {});
+    expect(error).toHaveBeenCalledWith('Tauri window management failed:', expect.any(Error));
+    expect(error).toHaveBeenCalledWith('Tauri lyric lock management failed:', expect.any(Error));
+    act(() => { api?.setShowDesktopLyric(true); api?.setLockDesktopLyric(true); });
+    await act(async () => {});
+    expect(ipc.invokeCommand).toHaveBeenCalledWith('show_desktop_lyric_window', { lock: true });
+    expect(ipc.invokeCommand).toHaveBeenCalledWith('set_desktop_lyric_lock', { lock: true });
   });
 
   it('system 模式下 OS 主题切换会实时改写 CSS 变量', () => {

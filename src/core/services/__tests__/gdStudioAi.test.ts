@@ -12,6 +12,7 @@ vi.mock('../gdStudioClient', async (importOriginal) => {
 import {
   loadAIRecommendationTracks,
   mapAIRecommendationTracks,
+  validateAIRecommendationTracks,
 } from '../gdStudioAi';
 import {
   fetchGDStudioData,
@@ -33,6 +34,33 @@ const track = (overrides: Partial<GdStudioTrack> = {}): GdStudioTrack => ({
   lyric_id: 'lyric-1',
   source: 'embeat',
   ...overrides,
+});
+
+describe('推荐外部响应验证', () => {
+  beforeEach(() => { mockedFetchData.mockReset(); mockedFetchWithTimeout.mockReset(); });
+  it('结构、必填字段与身份校验拒绝无效条目', () => {
+    for (const value of [null, [{}], [null], [track({ artist: 1 as unknown as string })], [track({ url_id: '' })]]) {
+      expect(() => validateAIRecommendationTracks(value, '测试')).toThrow(GDStudioApiError);
+    }
+  });
+  it.each(['bad', 'null', '{"content":"bad"}', '[]', '[null]', '[{"name":"","artist":"歌手"}]'])('后备模型输出 %s 返回可识别错误', async (body) => {
+    mockedFetchData.mockResolvedValueOnce([]); mockedFetchWithTimeout.mockResolvedValueOnce(new Response(body));
+    await expect(loadAIRecommendationTracks('雨夜', 'netease', 4)).rejects.toMatchObject({ code: 'BAD_RESPONSE' });
+  });
+  it('全量搜索失败保留限流和服务不可用分类，身份不符不接受', async () => {
+    for (const reason of [new GDStudioApiError('RATE_LIMIT', 429, 'busy'), new GDStudioApiError('UNAVAILABLE', 503, 'down'), null]) {
+      mockedFetchData.mockResolvedValueOnce([]);
+      if (reason) mockedFetchData.mockRejectedValueOnce(reason); else mockedFetchData.mockResolvedValueOnce([track({ source: 'qq' })]);
+      mockedFetchWithTimeout.mockResolvedValueOnce(new Response('[{"name":"修炼爱情","artist":"林俊杰"}]'));
+      await expect(loadAIRecommendationTracks('雨夜', 'netease', 4)).rejects.toMatchObject({ code: reason?.code ?? 'BAD_RESPONSE' });
+    }
+  });
+  it('后备网络异常和 HTTP 失败进入错误结果', async () => {
+    mockedFetchData.mockResolvedValue([]); mockedFetchWithTimeout.mockRejectedValueOnce(new Error('network'));
+    await expect(loadAIRecommendationTracks('雨夜', 'netease', 4)).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    mockedFetchWithTimeout.mockResolvedValueOnce(new Response('服务不可用', { status: 503 }));
+    await expect(loadAIRecommendationTracks('雨夜', 'netease', 4)).rejects.toMatchObject({ code: 'UNAVAILABLE', status: 503 });
+  });
 });
 
 describe('GD Studio AI recommendation', () => {

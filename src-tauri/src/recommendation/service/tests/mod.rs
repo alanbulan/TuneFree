@@ -2,12 +2,29 @@ mod candidates;
 mod feedback;
 mod jobs;
 mod library;
+#[cfg(windows)]
+mod lifecycle;
 mod storage;
 
 use serde_json::Value;
 
 use super::*;
 use crate::recommendation::model::{PlaylistSnapshot, RecommendationEvent};
+
+#[cfg(windows)]
+pub(crate) fn initialized_service(app: &tauri::App) -> RecommendationService {
+    let service = RecommendationService::new_deferred(app.handle().clone(), reqwest::Client::new());
+    let conn = Connection::open_in_memory().unwrap();
+    migration::run_migrations(&conn).unwrap();
+    assert!(service
+        .db
+        .set(DbHandle {
+            conn: Arc::new(Mutex::new(conn)),
+            path: PathBuf::new()
+        })
+        .is_ok());
+    service
+}
 
 fn song(source: &str, id: &str, name: &str, artist: &str) -> RecSong {
     RecSong {

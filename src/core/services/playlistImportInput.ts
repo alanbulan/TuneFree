@@ -36,6 +36,7 @@ export const PLAYLIST_IMPORT_SOURCES = [
   { value: 'qq', label: 'QQ音乐', placeholder: '歌单链接或 ID，如 y.qq.com/.../playlist/...' },
   { value: 'kuwo', label: '酷我音乐', placeholder: '歌单链接或 ID，如 kuwo.cn/playlist_detail/...' },
 ] as const;
+export type PlaylistImportSource = (typeof PLAYLIST_IMPORT_SOURCES)[number]['value'];
 
 export interface ImportedPlaylistPayload {
   name: string;
@@ -72,9 +73,11 @@ export const parsePlaylistImportInput = (source: string, input: string) => {
   if (!trimmedInput) throw new PlaylistImportError('invalidInput');
   const detected = detectSource(trimmedInput);
   if (detected && detected !== normalizedSource) throw new PlaylistImportError('sourceMismatch');
+  if (!Object.prototype.hasOwnProperty.call(extractors, normalizedSource)) {
+    throw new PlaylistImportError('unsupportedSource');
+  }
   const extractor = extractors[normalizedSource];
-  if (!extractor) throw new PlaylistImportError('unsupportedSource');
   const id = extractor(trimmedInput);
   if (!id) throw new PlaylistImportError('invalidInput');
-  return { source: normalizedSource, id };
+  return { source: normalizedSource as PlaylistImportSource, id };
 };

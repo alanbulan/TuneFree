@@ -1,108 +1,135 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Smile } from 'lucide-react';
 import { usePlayerNowPlaying } from '../../core/contexts/PlayerContext';
-import {
-  MIRA_ACTION_POOLS, MIRA_ACTIONS, MIRA_FRAME_HEIGHT, MIRA_FRAME_WIDTH,
-  MIRA_SHEET_COLUMNS, MIRA_SHEET_ROWS, MIRA_SPRITESHEET_URL, type MiraMood,
-} from './miraPetAtlas';
+import type { StateId } from '../../../vendor/bloub/src/bot/states';
+import { useCompanionThinking } from '../hooks/useCompanionThinking';
 import { useMiraPetPosition, useReducedMotion } from './useMiraPetPosition';
+import BloubMenu from './BloubMenu';
+import { getBloubSelectionLabel, type BloubSelection } from './bloubCatalog';
 
-type MiraSpriteStyle = CSSProperties & { '--mira-x': string; '--mira-y': string };
-const STATUS_LABELS: Record<MiraMood, string> = {
-  empty: '待命中，拖我换位置', loading: '加载中，我在找歌',
-  playing: '播放中，跟着节奏动起来', paused: '暂停中，陪你休息一下',
+const BloubAvatar = lazy(() => import('./BloubAvatar'));
+type CompanionMood = 'empty' | 'loading' | 'playing' | 'paused' | 'celebrate' | 'thinking';
+const STATUS_LABELS: Record<CompanionMood, string> = {
+  empty: '音乐还没开始，我先陪你一会儿',
+  loading: '正在准备音乐',
+  playing: '好音乐，一起听',
+  paused: '暂停一下，也很好',
   celebrate: '快到结尾啦，准备下一首',
+  thinking: '正在为你挑选音乐',
+};
+const BOT_STATES: Record<CompanionMood, StateId> = {
+  empty: 'idle', loading: 'thinking', playing: 'orbit', paused: 'idle',
+  celebrate: 'burst', thinking: 'thinking',
 };
 
-const getMood = (
-  hasSong: boolean,
-  isPlaying: boolean,
-  isLoading: boolean,
-  isNearEnd: boolean,
-): MiraMood => {
-  if (isLoading) return 'loading';
-  if (isPlaying && isNearEnd) return 'celebrate';
-  if (isPlaying) return 'playing';
-  return hasSong ? 'paused' : 'empty';
-};
-
-const getMovementStatus = (action: string | null): string | null => {
-  if (action === 'running_left') return '向左移动中';
-  if (action === 'running_right') return '向右移动中';
-  if (action === 'waving') return '向你打招呼';
-  if (action === 'jumping') return '开心跳一下';
-  return null;
-};
-
-export default function MiraPet() {
-  const [visible, setVisible] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const [actionIndex, setActionIndex] = useState(0);
-  // 只订阅低频的 isNearEnd 派生值，不为一个阈值判断承担 10Hz 进度重渲染。
+export default function BloubCompanion({ aiBusy = false }: { aiBusy?: boolean }) {
+  const [visible, setVisible] = useState(() => localStorage.getItem('tunefree_desktop_show_pet') !== 'false');
+  const [pageVisible, setPageVisible] = useState(!document.hidden);
+  const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 860px)').matches);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [selection, setSelection] = useState<BloubSelection | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const { currentSong, isPlaying, isLoading, isNearEnd } = usePlayerNowPlaying();
+  const thinking = useCompanionThinking(aiBusy);
   const reducedMotion = useReducedMotion();
-  const mood = getMood(!!currentSong, isPlaying, isLoading, isNearEnd);
-  const actionPool = useMemo(() => MIRA_ACTION_POOLS[mood], [mood]);
-  const baseActionName = actionPool[actionIndex % actionPool.length];
-  const positionState = useMiraPetPosition();
-  const { petRef, position, dragging, movementAction, applyMovementAction,
-    handlePointerDown, handlePointerMove, finishDrag, handleKeyDown } = positionState;
-  const actionName = movementAction ?? baseActionName;
-  const action = MIRA_ACTIONS[actionName];
-  // 帧序列由 desktop-widgets.css 的 step-end 关键帧驱动，这里只需要动作首帧作为静止兜底。
-  const restFrame = action.frames[0];
-  // CSS 动画每跑完一整轮触发一次 animationiteration，据此轮换到动作池的下一个动作。
-  const advanceAction = useCallback(
-    () => setActionIndex((current) => (current + 1) % actionPool.length),
-    [actionPool.length],
-  );
+  const { petRef, position, dragging, movementAction, handlePointerDown,
+    handlePointerMove, finishDrag, handleKeyDown } = useMiraPetPosition();
+  const mood: CompanionMood = thinking ? 'thinking'
+    : isLoading ? 'loading' : isPlaying ? (isNearEnd ? 'celebrate' : 'playing')
+      : currentSong ? 'paused' : 'empty';
 
   useEffect(() => {
-    setMounted(true);
     const updateVisibility = () =>
       setVisible(localStorage.getItem('tunefree_desktop_show_pet') !== 'false');
-    updateVisibility();
+    const updatePageVisibility = () => setPageVisible(!document.hidden);
+    const media = window.matchMedia('(max-width: 860px)');
+    const updateLayout = () => setCompact(media.matches);
     window.addEventListener('tunefree_pet_toggle', updateVisibility);
-    return () => window.removeEventListener('tunefree_pet_toggle', updateVisibility);
+    document.addEventListener('visibilitychange', updatePageVisibility);
+    media.addEventListener('change', updateLayout);
+    return () => {
+      window.removeEventListener('tunefree_pet_toggle', updateVisibility);
+      document.removeEventListener('visibilitychange', updatePageVisibility);
+      media.removeEventListener('change', updateLayout);
+    };
   }, []);
-  useEffect(() => {
-    setActionIndex(0);
-    applyMovementAction(null);
-  }, [applyMovementAction, mood]);
-  // 减少动态时精灵帧动画被 CSS 关掉，收不到 animationiteration，用低频定时器轮换动作。
-  useEffect(() => {
-    if (!reducedMotion) return;
-    const timer = window.setInterval(advanceAction, 5000);
-    return () => window.clearInterval(timer);
-  }, [advanceAction, reducedMotion]);
 
-  if (!mounted || !visible) return null;
-  const movementStatus = getMovementStatus(movementAction);
-  const statusText = dragging
-    ? movementStatus ?? '拖动中，松手保存位置'
-    : movementStatus ?? STATUS_LABELS[mood];
-  const spriteStyle: MiraSpriteStyle = {
-    width: MIRA_FRAME_WIDTH, height: MIRA_FRAME_HEIGHT,
-    backgroundImage: `url(${MIRA_SPRITESHEET_URL})`,
-    backgroundSize: `${MIRA_FRAME_WIDTH * MIRA_SHEET_COLUMNS}px ${MIRA_FRAME_HEIGHT * MIRA_SHEET_ROWS}px`,
-    '--mira-x': `${-restFrame.col * MIRA_FRAME_WIDTH}px`,
-    '--mira-y': `${-restFrame.row * MIRA_FRAME_HEIGHT}px`,
-  };
+  useEffect(() => {
+    if (!menuOpen) return;
+    const outside = (event: PointerEvent) => {
+      if (!petRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setMenuOpen(false);
+      menuButtonRef.current?.focus();
+      event.stopPropagation();
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [menuOpen, petRef]);
+
+  useEffect(() => {
+    // 一次性动作完整播放后回到音乐状态，避免绽放/彗星收尾后一直只剩一个小点。
+    if (selection?.kind !== 'state') return;
+    const timer = window.setTimeout(() => setSelection(null), 4200);
+    return () => window.clearTimeout(timer);
+  }, [selection]);
+
+  if (!visible || compact) return null;
+  const gesturing = movementAction !== null;
+  const previewState = selection?.kind === 'state' ? selection.id : selection ? 'idle' : null;
+  const state: StateId = dragging ? 'wide' : movementAction ?? previewState ?? BOT_STATES[mood];
+  const expression = selection?.kind === 'expression' ? selection.id : mood === 'paused' ? 'somnolent' : 'neutre';
+  const statusText = dragging ? '松手后记住这个位置'
+    : gesturing ? (movementAction === 'wink' ? '收到，你好呀' : '把好心情送给你')
+      : selection ? getBloubSelectionLabel(selection) : STATUS_LABELS[mood];
   const petStyle: CSSProperties | undefined = position
     ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : undefined;
-  const className = `mira-pet is-${mood}${dragging ? ' is-dragging' : ''}${movementAction ? ' is-moving' : ''}`;
+  const bubbleLeft = !!position && position.x > window.innerWidth - 340;
+  const bubbleBelow = !!position && position.y < 110;
+  const menuStyle: CSSProperties = {
+    left: Math.max(8, Math.min(window.innerWidth - 304, (position?.x ?? 52) + (bubbleLeft ? -292 : 96))),
+    top: Math.max(8, Math.min(window.innerHeight - 420, (position?.y ?? window.innerHeight - 232) - 110)),
+  };
+
   return (
-    <div ref={petRef} className={className} style={petStyle} role="button" tabIndex={0}
-      aria-label={`安和昴 (486) 桌宠，${statusText}。Enter 或空格互动，方向键移动，Home 键回到默认位置。`}
-      title={`${statusText} · 拖动可调整位置`} data-action={action.name}
-      onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
-      onPointerUp={finishDrag} onPointerCancel={finishDrag}
-      onKeyDown={(event) => handleKeyDown(event, actionName)}>
-      <div className="mira-pet-bubble" aria-hidden="true">{statusText}</div>
-      <div className="mira-pet-shadow" />
-      <div className="mira-pet-frame">
-        <div className="mira-pet-sprite" style={spriteStyle}
-          onAnimationIteration={() => { if (!movementAction) advanceAction(); }} />
+    <motion.div ref={petRef} className={`bloub-companion is-${mood}${dragging ? ' is-dragging' : ''}`}
+      style={petStyle} data-state={state} data-expression={expression}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
+      <div className="companion-handle" role="button" tabIndex={0}
+        aria-label={`Bloub 音乐伙伴，${statusText}。点击、Enter 或空格打招呼，方向键移动，Home 键复位，右键打开动作面板。`}
+        title={`${statusText} · 点击打招呼，拖动调整位置`} onContextMenu={(event) => {
+          event.preventDefault(); setMenuOpen(true);
+        }}
+        onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
+        onPointerUp={finishDrag} onPointerCancel={finishDrag} onKeyDown={(event) => {
+          if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+            event.preventDefault(); setMenuOpen(true);
+          } else handleKeyDown(event);
+        }}>
+        {pageVisible && (
+          <Suspense fallback={<span className="companion-loading" aria-hidden="true" />}>
+            <BloubAvatar state={state} frozen={reducedMotion}
+              expression={expression}
+              shape={selection?.kind === 'shape' ? selection.id : undefined}
+              followPointer={selection?.kind !== 'expression'} />
+          </Suspense>
+        )}
       </div>
-    </div>
+      <div className={`companion-bubble${bubbleLeft ? ' is-left' : ''}${bubbleBelow ? ' is-below' : ''}`}
+        aria-hidden="true">{statusText}</div>
+      <button ref={menuButtonRef} type="button" className="companion-menu-trigger" aria-label="Bloub 动作与表情"
+        aria-expanded={menuOpen} aria-haspopup="dialog" onClick={() => setMenuOpen((open) => !open)}><Smile size={15} /></button>
+      <AnimatePresence>
+        {menuOpen && pageVisible && <BloubMenu selection={selection} style={menuStyle}
+          onSelect={setSelection} onClose={() => { setMenuOpen(false); menuButtonRef.current?.focus(); }} />}
+      </AnimatePresence>
+    </motion.div>
   );
 }

@@ -1,3 +1,5 @@
+import { stripRuntimeSongFields } from '../services/songStorage';
+import { normalizeMusicUrl } from '../services/musicUrl';
 import { getSongKey, type Playlist, type Song } from '../types';
 
 export interface LibraryBackup {
@@ -54,6 +56,7 @@ export const normalizeSong = (value: unknown): Song | null => {
     if (value[key] !== undefined && typeof value[key] !== 'string') delete song[key];
   }
   if (value.types !== undefined && !Array.isArray(value.types)) delete song.types;
+  if (song.pic) song.pic = normalizeMusicUrl(song.pic);
   return song;
 };
 
@@ -99,10 +102,10 @@ export const normalizePlaylistArray = (value: unknown): Playlist[] | null => {
 const backupCorruptStorage = (key: string, rawValue: string) => {
   try {
     localStorage.setItem(`${key}_corrupt_${Date.now()}`, rawValue);
+    removeStoredValue(key);
   } catch (error) {
     console.warn('备份损坏的本地数据失败', error);
   }
-  removeStoredValue(key);
 };
 
 export const getStoredValue = (key: string, fallback: string) => {
@@ -176,28 +179,29 @@ export const mergePlaylists = (base: Playlist[], incoming: Playlist[]) => {
 export interface LibraryData {
   favorites: Song[];
   playlists: Playlist[];
+  saveError?: { message: string } | null;
   isFavorite: (songId: number | string, source?: string) => boolean;
 }
 
 /** 身份恒定的操作切片：整个 Provider 生命周期内引用不变。 */
 export interface LibraryActions {
-  toggleFavorite: (song: Song) => void;
-  createPlaylist: (name: string, initialSongs?: Song[]) => void;
-  renamePlaylist: (id: string, name: string) => void;
-  deletePlaylist: (id: string) => void;
-  addToPlaylist: (playlistId: string, song: Song) => void;
-  removeFromPlaylist: (playlistId: string, songId: number | string, source?: string) => void;
+  toggleFavorite: (song: Song) => boolean;
+  createPlaylist: (name: string, initialSongs?: Song[]) => boolean;
+  renamePlaylist: (id: string, name: string) => boolean;
+  deletePlaylist: (id: string) => boolean;
+  addToPlaylist: (playlistId: string, song: Song) => boolean;
+  removeFromPlaylist: (playlistId: string, songId: number | string, source?: string) => boolean;
   exportData: () => LibraryExportResult;
   parseImportData: (jsonData: string) => LibraryImportResult;
   applyImportData: (data: LibraryImportPreview, mode?: LibraryImportMode) => LibraryApplyImportResult;
-  restoreData: (backup: LibraryBackup) => void;
+  restoreData: (backup: LibraryBackup) => boolean;
   importData: (jsonData: string) => boolean;
 }
 
 /** 与曲库数据无关的代理设置，单独一路 context。 */
 export interface LibraryProxy {
   corsProxy: string;
-  setCorsProxy: (url: string) => void;
+  setCorsProxy: (url: string) => boolean;
 }
 
 /** 过渡期聚合类型：供 useLibrary() 兼容 hook 使用。 */
@@ -234,7 +238,12 @@ export const exportLibraryData = (favorites: Song[], playlists: Playlist[]): Lib
   const filename = `tunefree_backup_${new Date().toISOString().slice(0, 10)}.json`;
   let url = '';
   try {
-    const payload = { version: 4, favorites, playlists, exportDate: new Date().toISOString() };
+    const payload = {
+      version: 4, favorites: favorites.map(stripRuntimeSongFields),
+      playlists: playlists.map((playlist) => ({
+        ...playlist, songs: playlist.songs.map(stripRuntimeSongFields),
+      })), exportDate: new Date().toISOString(),
+    };
     url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;

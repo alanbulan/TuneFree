@@ -38,6 +38,7 @@ export const batchFetchKuwoCovers = async (
         signal: linked.signal,
       });
 
+      if (!resp.ok) { await resp.body?.cancel(); return song; }
       const picUrl = (await resp.text()).trim();
       if (picUrl && picUrl.startsWith("http")) {
         return { ...song, pic: fixUrl(picUrl) };
@@ -86,13 +87,15 @@ export const searchKuwo = async (
         signal: linked.signal,
       });
 
+      if (!resp.ok) { await resp.body?.cancel(); continue; }
       let text = await resp.text();
       // 旧版 kuwo API 返回单引号 dict，转换为标准 JSON
       text = text.replace(/'/g, '"');
 
       const data = JSON.parse(text);
       const list = data?.abslist;
-      if (!list || !Array.isArray(list) || list.length === 0) continue;
+      if (!Array.isArray(list)) continue;
+      if (list.length === 0) return [];
 
       const songs: Song[] = list.map((s: any) => {
         const rid = String(s.MUSICRID || "").replace("MUSIC_", "");
@@ -117,7 +120,7 @@ export const searchKuwo = async (
     }
   }
 
-  return [];
+  throw new Error('酷我搜索响应不可用');
 };
 
 // ==============================
@@ -322,7 +325,7 @@ const fetchKuwoLrcxKaraoke = async (
         signal: linked.signal,
       });
 
-      if (!resp.ok) continue;
+      if (!resp.ok) { await resp.body?.cancel(); continue; }
 
       const lrcx = decryptKuwoLrcx(await resp.arrayBuffer());
       const karaoke = parseKuwoLrcxAsKaraoke(lrcx);

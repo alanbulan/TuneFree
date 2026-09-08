@@ -22,13 +22,13 @@ const now = () => Date.now();
 
 const createDefaultProgress = (): RecommendationTaskProgress => ({
   local: {
-    label: '本地 worker',
+    label: '本地推荐',
     status: 'idle',
     detail: '等待推荐任务',
     updatedAt: now(),
   },
   cloud: {
-    label: '云端 worker',
+    label: 'AI 精选',
     status: 'idle',
     detail: '等待推荐任务',
     updatedAt: now(),

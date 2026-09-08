@@ -41,11 +41,11 @@ export function useSettingsViewModel() {
   const { confirmDialog } = useDesktopDialog();
   const { showToast } = useToast();
   const [tempProxy, setTempProxy] = useState(library.corsProxy);
-  const [tempShowPet, setTempShowPet] = useState(true);
-  const [lyricDisplayMode, setLyricDisplayMode] = useState<LyricDisplayMode>('line');
+  const [tempShowPet, setTempShowPet] = useState(() => localStorage.getItem('tunefree_desktop_show_pet') !== 'false');
+  const [lyricDisplayMode, setLyricDisplayMode] = useState<LyricDisplayMode>(() => readLyricDisplayMode(localStorage));
   const [downloadPath, setDownloadPath] = useState('');
   const [pendingImport, setPendingImport] = useState<LibraryImportPreview | null>(null);
-  const [localRecommendationEnabled, setLocalRecommendationEnabled] = useState(true);
+  const [localRecommendationEnabled, setLocalRecommendationEnabled] = useState(() => localStorage.getItem('tunefree_local_recommendation_enabled') !== 'false');
   const [llmConfig, setLlmConfig] = useState<LlmConfigView>(defaultLlmConfig);
   const [apiKey, setApiKey] = useState('');
   const [clearApiKey, setClearApiKey] = useState(false);
@@ -72,21 +72,16 @@ export function useSettingsViewModel() {
     [showToast],
   );
 
-  const refreshLlmConfig = useCallback(async () => {
-    try {
-      const config = await runRecommendationCommand(getLlmConfig);
+  const refreshLlmConfig = useCallback(() =>
+    runRecommendationCommand(getLlmConfig).then((config) => {
       setLlmConfig(config);
       setLocalRecommendationEnabled(config.localRecommendationEnabled);
       localStorage.setItem('tunefree_local_recommendation_enabled', config.localRecommendationEnabled ? 'true' : 'false');
-    } catch {
+    }).catch(() => {
       setLlmConfig(defaultLlmConfig);
-    }
-  }, [runRecommendationCommand]);
+    }), [runRecommendationCommand]);
 
   useEffect(() => {
-    setTempShowPet(localStorage.getItem('tunefree_desktop_show_pet') !== 'false');
-    setLyricDisplayMode(readLyricDisplayMode(localStorage));
-    setLocalRecommendationEnabled(localStorage.getItem('tunefree_local_recommendation_enabled') !== 'false');
     void refreshLlmConfig();
   }, [refreshLlmConfig]);
 
@@ -120,7 +115,7 @@ export function useSettingsViewModel() {
   };
 
   const saveCoreSettings = () => {
-    library.setCorsProxy(tempProxy);
+    if (!library.setCorsProxy(tempProxy)) return;
     localStorage.setItem('tunefree_desktop_show_pet', tempShowPet ? 'true' : 'false');
     window.dispatchEvent(new Event('tunefree_pet_toggle'));
     showToast('设置已保存', 'success');
@@ -177,7 +172,7 @@ export function useSettingsViewModel() {
     showToast(isReplace ? '数据已覆盖导入' : '数据已合并导入', 'success', {
       label: '撤销',
       onClick: () => {
-        library.restoreData(result.backup);
+        if (!library.restoreData(result.backup)) return;
         showToast('已撤销导入', 'success');
       },
     });
@@ -200,7 +195,6 @@ export function useSettingsViewModel() {
   const saveRecommendationSettings = async () => {
     setSavingLlm(true);
     try {
-      localStorage.setItem('tunefree_local_recommendation_enabled', localRecommendationEnabled ? 'true' : 'false');
       await runRecommendationCommand(() => saveLlmConfig(getLlmInput()));
       setApiKey('');
       setClearApiKey(false);

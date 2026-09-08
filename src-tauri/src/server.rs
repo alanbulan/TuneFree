@@ -342,3 +342,7 @@ pub async fn start_server(
 #[cfg(test)]
 #[path = "server_tests.rs"]
 mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "__tests__/server_http.rs"]
+mod integration_tests;

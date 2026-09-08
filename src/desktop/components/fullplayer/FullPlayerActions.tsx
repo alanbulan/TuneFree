@@ -1,4 +1,5 @@
 import { memo, useState, type Dispatch, type SetStateAction } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   CloseIcon,
   DownloadIcon,
@@ -55,7 +56,7 @@ function FullPlayerActions({
   const handleToggleFavorite = () => {
     if (!currentSong) return;
     const wasFavorite = isFavorite(currentSong.id, currentSong.source);
-    toggleFavorite(currentSong);
+    if (!toggleFavorite(currentSong)) return;
     showToast(wasFavorite ? '已取消收藏' : '已收藏歌曲', 'success', {
       label: '撤销',
       onClick: () => currentSong && toggleFavorite(currentSong),
@@ -113,7 +114,7 @@ function FullPlayerActions({
 
   const handleCreatePlaylist = () => {
     if (!currentSong || !canCreatePlaylist) return;
-    createPlaylist(newPlaylistName.trim(), [currentSong]);
+    if (!createPlaylist(newPlaylistName.trim(), [currentSong])) return;
     showToast(`已创建「${newPlaylistName.trim()}」`, 'success');
     setNewPlaylistName('');
   };
@@ -134,6 +135,7 @@ function FullPlayerActions({
           type="button"
           className={`full-action-button ${showMorePanel ? 'active' : ''}`}
           disabled={!currentSong}
+          aria-expanded={showMorePanel}
           onClick={() => setShowMorePanel((prev) => !prev)}
         >
           <MoreIcon size={18} />
@@ -183,7 +185,10 @@ function FullPlayerActions({
           })}
         </div>
       </div>
+      <AnimatePresence initial={false}>
       {currentSong && showMorePanel ? (
+        <motion.div className="full-more-reveal" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22 }}>
         <div className="full-more-panel" aria-label="更多播放操作">
           <div className="full-more-row compact">
             <button type="button" className="full-more-button" onClick={handleShare}>
@@ -242,7 +247,9 @@ function FullPlayerActions({
             </div>
           </div>
         </div>
+        </motion.div>
       ) : null}
+      </AnimatePresence>
     </>
   );
 }

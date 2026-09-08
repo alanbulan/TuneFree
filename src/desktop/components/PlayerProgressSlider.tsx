@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { formatTime } from '../utils/formatting';
 
 interface PlayerProgressSliderProps {
@@ -21,12 +21,6 @@ export default function PlayerProgressSlider({ currentTime, duration, onSeek }: 
   const max = Number.isFinite(duration) && duration > 0 ? duration : 0;
   const displayTime = isDragging ? previewTime : currentTime;
   const sliderValue = max ? clampTime(displayTime, max) : 0;
-
-  useEffect(() => {
-    if (!isDragging) {
-      setPreviewTime(clampTime(currentTime, max));
-    }
-  }, [currentTime, isDragging, max]);
 
   const updatePreview = (value: number) => {
     setIsDragging(true);

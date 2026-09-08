@@ -92,7 +92,7 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
   const handleToggleFavorite = () => {
     if (!currentSong) return;
     const wasFavorite = isFavorite(currentSong.id, currentSong.source);
-    toggleFavorite(currentSong);
+    if (!toggleFavorite(currentSong)) return;
     showToast(wasFavorite ? '已取消收藏' : '已收藏歌曲', 'success', {
       label: '撤销',
       onClick: () => currentSong && toggleFavorite(currentSong),

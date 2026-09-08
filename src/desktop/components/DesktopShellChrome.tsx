@@ -1,10 +1,12 @@
-import type { FormEvent } from 'react';
+import { useId, type FormEvent } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { DownloadIcon, HeartIcon, HomeIcon, InfoIcon, LibraryIcon, SearchIcon,
   SettingsIcon, SidebarCollapseIcon, SidebarExpandIcon } from '../../core/components/Icons';
 import { Laptop, Moon, Sun } from 'lucide-react';
 import { useTheme } from '../../core/contexts/ThemeContext';
 import { getCurrentWindow, isTauri } from '../../core/ipc';
 import type { DesktopView } from '../types';
+import MotionChoice from './MotionChoice';
 
 const navItems: { view: DesktopView; label: string; icon: React.ReactNode }[] = [
   { view: 'home', label: '首页', icon: <HomeIcon size={17} /> },
@@ -12,8 +14,14 @@ const navItems: { view: DesktopView; label: string; icon: React.ReactNode }[] = 
   { view: 'favorites', label: '收藏', icon: <HeartIcon size={17} /> },
   { view: 'playlists', label: '歌单', icon: <LibraryIcon size={17} /> },
   { view: 'downloads', label: '下载', icon: <DownloadIcon size={17} /> },
-  { view: 'settings', label: '管理', icon: <SettingsIcon size={17} /> },
+  { view: 'settings', label: '设置', icon: <SettingsIcon size={17} /> },
   { view: 'about', label: '关于', icon: <InfoIcon size={17} /> },
+];
+
+const navGroups = [
+  { label: '发现', items: navItems.slice(0, 2) },
+  { label: '音乐库', items: navItems.slice(2, 5) },
+  { label: '', items: navItems.slice(5) },
 ];
 
 const handleWindowControl = async (action: 'minimize' | 'maximize' | 'close') => {
@@ -51,9 +59,13 @@ export function WindowBar({ view, commandQuery, onCommandQueryChange, onCommandS
           title={`当前主题：${themeLabel}\n点击切换到${nextThemeLabel}`}
           aria-label={`当前主题：${themeLabel}，点击切换到${nextThemeLabel}`}
           onClick={() => setThemeMode(nextThemeMode)}>
-          {themeMode === 'light' && <Sun size={14} />}
-          {themeMode === 'dark' && <Moon size={14} />}
-          {themeMode === 'system' && <Laptop size={14} />}
+          <AnimatePresence initial={false} mode="wait">
+            <motion.span key={themeMode} className="theme-mode-icon"
+              initial={{ opacity: 0, rotate: -35, scale: 0.8 }} animate={{ opacity: 1, rotate: 0, scale: 1 }}
+              exit={{ opacity: 0, rotate: 35, scale: 0.8 }} transition={{ duration: 0.14 }}>
+              {themeMode === 'light' ? <Sun size={14} /> : themeMode === 'dark' ? <Moon size={14} /> : <Laptop size={14} />}
+            </motion.span>
+          </AnimatePresence>
         </button>
       </div>
       <div className="window-bar-search-zone" data-tauri-drag-region>
@@ -61,7 +73,7 @@ export function WindowBar({ view, commandQuery, onCommandQueryChange, onCommandS
           <form className="command-search" onSubmit={onCommandSearch}>
             <SearchIcon size={15} />
             <input aria-label="搜索音乐" value={commandQuery}
-              onChange={(event) => onCommandQueryChange(event.target.value)} placeholder="搜索" />
+              onChange={(event) => onCommandQueryChange(event.target.value)} placeholder="搜索歌曲、歌手或专辑" />
           </form>
         )}
         <div className="window-bar-drag-filler" data-tauri-drag-region />
@@ -85,24 +97,32 @@ interface SidebarProps {
 }
 
 export function DesktopSidebar({ view, collapsed, onToggle, onViewChange }: SidebarProps) {
+  const indicatorId = useId();
   return (
     <aside className="sidebar">
       <div className="sidebar-topline">
+        <span className="sidebar-title">音乐空间</span>
         <button type="button" className="sidebar-toggle"
           aria-label={collapsed ? '展开侧边菜单' : '收起侧边菜单'}
           title={collapsed ? '展开侧边菜单' : '收起侧边菜单'} onClick={onToggle}>
           {collapsed ? <SidebarExpandIcon size={16} /> : <SidebarCollapseIcon size={16} />}
         </button>
       </div>
-      <p className="sidebar-section-title">TuneFree</p>
-      <nav className="nav-group" aria-label="主导航">
-        {navItems.map((item) => (
-          <button key={item.view} type="button"
-            className={`nav-button ${view === item.view ? 'active' : ''}`}
-            aria-current={view === item.view ? 'page' : undefined} title={item.label}
-            onClick={() => onViewChange(item.view)}>
-            {item.icon}<span>{item.label}</span>
-          </button>
+      <nav className="sidebar-navigation" aria-label="主导航">
+        {navGroups.map((group, index) => (
+          <div className="sidebar-nav-section" key={group.label || 'app'}>
+            {group.label && <p className="sidebar-section-title">{group.label}</p>}
+            <div className={`nav-group${index === 2 ? ' nav-group-secondary' : ''}`}>
+              {group.items.map((item) => (
+                <MotionChoice key={item.view} selected={view === item.view} indicatorId={indicatorId}
+                  className="nav-button" aria-pressed={undefined}
+                  aria-current={view === item.view ? 'page' : undefined} title={item.label}
+                  onClick={() => onViewChange(item.view)}>
+                  {item.icon}<span>{item.label}</span>
+                </MotionChoice>
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
     </aside>

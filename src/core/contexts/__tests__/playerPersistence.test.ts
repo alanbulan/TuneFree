@@ -42,7 +42,7 @@ describe('player persistence', () => {
   it('strips runtime-only fields before writing a song', () => {
     const stripped = stripRuntimeSongFields(resolvedSong);
     expect(stripped).not.toHaveProperty('url');
-    expect(stripped).not.toHaveProperty('urlId');
+    expect(stripped.urlId).toBe('url-1');
     expect(stripped).not.toHaveProperty('lrc');
     expect(stripped).not.toHaveProperty('lyricBundle');
     expect(stripped).toMatchObject({ id: '1', source: 'netease', pic: resolvedSong.pic });

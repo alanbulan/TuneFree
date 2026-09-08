@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { findActiveLyricIndex, parseLyrics, type ParsedLyric } from '../../../src/core/utils/lyrics';
 import { normalizeLyricDisplayMode, type LyricDisplayMode } from '../../../src/core/utils/lyricDisplayMode';
+import { readThemePreferences } from '../../../src/core/utils/theme';
 import { invokeCommand, isTauri as detectTauri, listenEvent } from '../../../src/core/ipc';
 import type { DesktopLyricCommand, DesktopLyricPlayerState, DesktopLyricSong, DesktopLyricStyleState } from './types';
 import { readAndApplyDesktopLyricTheme } from './theme';
@@ -45,12 +46,14 @@ export const useDesktopLyricBridge = () => {
     receivedAt: getNowSeconds(),
   }));
   const [projectedTime, setProjectedTime] = useState(0);
-  const [isTauri, setIsTauri] = useState(false);
-  const [styleState, setStyleState] = useState<DesktopLyricStyleState>({ size: 22, font: 'system-ui', lock: false });
+  const isTauri = detectTauri();
+  const [styleState, setStyleState] = useState<DesktopLyricStyleState>(() => {
+    const preferences = readThemePreferences(localStorage);
+    return { size: preferences.lyricSize, font: preferences.lyricFont, lock: preferences.lockDesktopLyric };
+  });
 
   useLayoutEffect(() => {
-    setIsTauri(detectTauri());
-    setStyleState(readAndApplyDesktopLyricTheme());
+    readAndApplyDesktopLyricTheme();
   }, []);
 
   useEffect(() => {
@@ -124,10 +127,7 @@ export const useDesktopLyricBridge = () => {
   }, [isTauri]);
 
   useEffect(() => {
-    if (!timing.isPlaying) {
-      setProjectedTime(timing.currentTime);
-      return;
-    }
+    if (!timing.isPlaying) return;
 
     let frame = 0;
     const tick = () => {

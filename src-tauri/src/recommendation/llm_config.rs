@@ -182,3 +182,7 @@ fn save_recommendation_enabled(conn: &Connection, enabled: bool) -> Result<(), S
 pub fn get_api_key(conn: &Connection) -> Result<String, String> {
     credential_store::get_api_key(conn)
 }
+
+#[cfg(all(test, windows))]
+#[path = "__tests__/llm_config.rs"]
+mod tests;

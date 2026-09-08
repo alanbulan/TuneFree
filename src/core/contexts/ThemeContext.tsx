@@ -63,7 +63,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [lockDesktopLyric, setLockDesktopLyricState] = useState<boolean>(initialPreferences.lockDesktopLyric);
   const desktopLyricCommandQueue = useRef<Promise<void>>(Promise.resolve());
   const lockDesktopLyricRef = useRef(lockDesktopLyric);
-  lockDesktopLyricRef.current = lockDesktopLyric;
   const hasAppliedThemeRef = useRef(false);
 
   const setThemeMode = useCallback((mode: ThemeMode) => {
@@ -97,6 +96,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setLockDesktopLyric = useCallback((lock: boolean) => {
+    lockDesktopLyricRef.current = lock;
     setLockDesktopLyricState(lock);
     localStorage.setItem(THEME_STORAGE_KEYS.lockDesktopLyric, lock ? 'true' : 'false');
   }, []);

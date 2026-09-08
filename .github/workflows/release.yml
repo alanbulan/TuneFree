@@ -8,9 +8,9 @@ on:
 permissions:
   contents: write
 
-# 发布流程不允许被后续标签取消，只做串行化。
+# 不同标签共用发布互斥组；构建完成后保留草稿，公开发布由维护者操作。
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -25,28 +25,37 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
 
+      - name: Read Rust toolchain
+        id: rust
+        shell: pwsh
+        run: |
+          $match = Select-String -LiteralPath rust-toolchain.toml -Pattern '^channel = "([^"]+)"$'
+          if (-not $match) { throw 'Rust toolchain version is missing' }
+          "version=$($match.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
+
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
+          toolchain: ${{ steps.rust.outputs.version }}
           targets: x86_64-pc-windows-msvc
 
       - name: Cache Rust build artifacts
-        uses: swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
           key: release-x86_64-pc-windows-msvc
 
       - name: Install frontend dependencies
         run: |
-          npm install --global npm@11.6.2
+          npm install --global npm@12.0.2
           npm ci
 
       - name: Verify release tag matches the app version
@@ -87,9 +96,9 @@ jobs:
           }
 
       # 质量闸门由上面的 validate job 承担。构建资产先上传到不可见的草稿，
-      # 只有安装包、签名和 latest.json 全部成功后，下一步才会公开 Release。
+      # 下一步确认安装包、签名和 latest.json 齐全后仍保留草稿，等待手动发布。
       - name: Build, sign and upload the NSIS updater
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -101,26 +110,13 @@ jobs:
           generateReleaseNotes: true
           releaseDraft: true
           prerelease: false
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
           updaterJsonPreferNsis: true
           args: --bundles nsis --target x86_64-pc-windows-msvc
 
-      - name: Publish the completed release
+      - name: Verify assets and keep the release as a draft
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: |
-          $release = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" |
-            ConvertFrom-Json |
-            Where-Object { $_.tag_name -eq $env:GITHUB_REF_NAME -and $_.draft } |
-            Select-Object -First 1
-
-          if ($null -eq $release) {
-            throw "Draft release $env:GITHUB_REF_NAME was not found after uploading assets."
-          }
-
-          gh api "repos/$env:GITHUB_REPOSITORY/releases/$($release.id)" `
-            --method PATCH `
-            -F draft=false `
-            -F prerelease=false `
-            -f make_latest=true | Out-Null
+        run: node scripts/publish-release.mjs

@@ -37,6 +37,7 @@ export function KaraokeLyricText({ line, currentTime, dragRegion = false }: Kara
             key={`${index}-${word.start}-${word.text}`}
             className={`karaoke-word ${state}`}
             style={{ '--word-progress': formatWordProgress(progress) } as CSSProperties}
+            data-text={word.text}
             aria-hidden="true"
             data-tauri-drag-region={dragRegion ? true : undefined}
           >

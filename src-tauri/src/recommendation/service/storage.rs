@@ -1,6 +1,10 @@
 use super::library::rebuild_cooccurrence_index;
 use super::*;
 
+#[cfg(all(test, windows))]
+#[path = "__tests__/maintenance_lifecycle.rs"]
+mod lifecycle_tests;
+
 impl RecommendationService {
     pub fn get_llm_config(&self) -> CommandResult<LlmConfigView> {
         let conn = self.conn_handle()?;
@@ -27,8 +31,11 @@ impl RecommendationService {
         &self,
         input: Option<LlmConfigInput>,
     ) -> CommandResult<LlmProviderTestResult> {
+        if crate::app::is_smoke_test() {
+            return Err(CommandError::cancelled("冒烟测试不调用云端模型"));
+        }
         let conn_handle = self.conn_handle()?;
-        let (config, api_key) = {
+        let (config, api_key) = run_recommendation_blocking(move || {
             let input_ref = input.as_ref();
             let config = if let Some(input) = input.clone() {
                 llm_config::config_from_input(&input)
@@ -60,8 +67,9 @@ impl RecommendationService {
                     }
                 }
             };
-            (config, api_key)
-        };
+            Ok((config, api_key))
+        })
+        .await?;
         let result = self.provider.test(&config, &api_key).await;
         *self.last_llm_error.lock() = result.error.clone();
         Ok(result)
@@ -69,7 +77,9 @@ impl RecommendationService {
 
     pub fn clear_data(&self) -> CommandResult<RecommendationMaintenanceStats> {
         let conn_handle = self.conn_handle()?;
-        self.cancel_inflight_cloud_job();
+        // 清理期间禁止发布新任务，取消信号与 generation 变更不会被新通道绕过。
+        let cancel = self.cloud_cancel.lock();
+        let _ = cancel.send(true);
         self.recommendation_generation
             .fetch_add(1, Ordering::SeqCst);
         let clear_result = {
@@ -79,6 +89,7 @@ impl RecommendationService {
         self.recommendation_jobs.lock().clear();
         self.dynamic_refresh_pending.store(false, Ordering::SeqCst);
         *self.last_llm_error.lock() = None;
+        drop(cancel);
         clear_result.map_err(|e| CommandError::database(format!("清空推荐数据失败: {}", e)))?;
         Ok(self.maintenance_stats())
     }
@@ -176,6 +187,7 @@ pub(super) fn load_latest_cloud_recommendation_job(
                 items,
                 error: None,
                 updated_at,
+                deadline_at: None,
             })
         },
     )

@@ -81,6 +81,9 @@ describe('shuffle order table', () => {
     const order = syncShuffleOrder(null, queue);
     const nextIndex = getShuffleStepIndex(order, queue, queue[3], 1);
     expect(getShuffleStepIndex(order, queue, queue[nextIndex], -1)).toBe(3);
+    const routedNext = getNextQueueIndex(queue, queue[3], 'shuffle', order);
+    expect(routedNext).toBe(nextIndex);
+    expect(getPrevQueueIndex(queue, queue[routedNext], 'shuffle', order)).toBe(3);
   });
 
   it('wraps around the drawn order in both directions', () => {

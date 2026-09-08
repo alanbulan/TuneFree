@@ -2,6 +2,8 @@ import { BoxesIcon } from '../../../../core/components/Icons';
 import ColorPalette from '../components/ColorPalette';
 import CustomSelect from '../components/CustomSelect';
 import type { SettingsViewModel } from './useSettingsViewModel';
+import { useId } from 'react';
+import MotionChoice from '../../../components/MotionChoice';
 
 const themeModes = [
   { label: '浅色模式', value: 'light' as const },
@@ -23,6 +25,7 @@ const lyricDisplayModes = [
 ];
 
 export default function AppearanceSettingsCard({ model }: { model: SettingsViewModel['appearance'] }) {
+  const indicatorId = useId();
   return (
     <div className="settings-card settings-theme-card glass-panel">
       <h3><BoxesIcon size={18} /> 个性化与歌词</h3>
@@ -30,14 +33,14 @@ export default function AppearanceSettingsCard({ model }: { model: SettingsViewM
         <label>主题模式</label>
         <div className="settings-option-row">
           {themeModes.map((mode) => (
-            <button
+            <MotionChoice
               key={mode.value}
               type="button"
-              className={`soft-button settings-toggle-button ${model.themeMode === mode.value ? 'active' : ''}`}
+              className="soft-button settings-toggle-button" selected={model.themeMode === mode.value} indicatorId={`${indicatorId}-theme`}
               onClick={() => model.setThemeMode(mode.value)}
             >
               {mode.label}
-            </button>
+            </MotionChoice>
           ))}
         </div>
       </div>
@@ -72,14 +75,14 @@ export default function AppearanceSettingsCard({ model }: { model: SettingsViewM
         <label>歌词显示方式</label>
         <div className="settings-option-row is-wrap">
           {lyricDisplayModes.map((option) => (
-            <button
+            <MotionChoice
               key={option.value}
               type="button"
-              className={`soft-button settings-toggle-button ${model.lyricDisplayMode === option.value ? 'active' : ''}`}
+              className="soft-button settings-toggle-button" selected={model.lyricDisplayMode === option.value} indicatorId={`${indicatorId}-lyrics`}
               onClick={() => model.changeLyricDisplayMode(option.value, option.label)}
             >
               {option.label}
-            </button>
+            </MotionChoice>
           ))}
         </div>
         <p className="settings-note">

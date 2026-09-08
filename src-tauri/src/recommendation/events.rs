@@ -175,16 +175,20 @@ pub fn update_session_cooccurrence_for_event(
         let mut stmt = conn.prepare(
             r#"
             SELECT track_key
-            FROM play_events
-            WHERE session_id = ?1
-              AND event_type = 'play_start'
-              AND track_key IS NOT NULL
-              AND id < ?2
-              AND created_at >= ?3
-              AND track_key != ?4
-            GROUP BY track_key
-            ORDER BY MAX(created_at) DESC, MAX(id) DESC
-            LIMIT 5
+            FROM (
+              SELECT track_key, MAX(created_at) AS last_played_at, MAX(id) AS last_event_id
+              FROM play_events
+              WHERE session_id = ?1
+                AND event_type = 'play_start'
+                AND track_key IS NOT NULL
+                AND id < ?2
+                AND created_at >= ?3
+              GROUP BY track_key
+              ORDER BY last_played_at DESC, last_event_id DESC
+              LIMIT ?5
+            )
+            WHERE track_key != ?4
+            ORDER BY last_played_at DESC, last_event_id DESC
             "#,
         )?;
         let rows = stmt.query_map(
@@ -193,6 +197,7 @@ pub fn update_session_cooccurrence_for_event(
                 inserted.id,
                 created_at - SESSION_GAP_MS,
                 track_key,
+                SESSION_COOCCURRENCE_WINDOW as i64,
             ],
             |row| row.get::<_, String>(0),
         )?;

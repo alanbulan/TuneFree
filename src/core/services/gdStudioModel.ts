@@ -1,3 +1,4 @@
+import { BoundedCache } from '../utils/boundedCache';
 export type GdStudioTrack = {
   id?: string | number;
   name?: string;
@@ -30,10 +31,10 @@ export const GD_STUDIO_SOURCES: readonly GdStudioSource[] = [
 export const GD_STUDIO_ONLY_SOURCES = ['joox', 'bilibili'] as const;
 export const URL_CACHE_TTL = 5 * 60 * 1000;
 
-export const trackMetaCache = new Map<string, CachedTrackMeta>();
-export const lyricCache = new Map<string, string>();
-export const picCache = new Map<string, string>();
-export const urlCache = new Map<string, { url: string; expiresAt: number }>();
+export const trackMetaCache = new BoundedCache<string, CachedTrackMeta>(1000, 30 * 60_000);
+export const lyricCache = new BoundedCache<string, string>(200, 30 * 60_000);
+export const picCache = new BoundedCache<string, string>(500, 30 * 60_000);
+export const urlCache = new BoundedCache<string, { url: string; expiresAt: number }>(200, URL_CACHE_TTL);
 
 export const buildJooxCoverUrl = (picId: string, size: 300 | 500 = 500): string =>
   `https://image.joox.com/JOOXcover/0/${picId}/${size}`;
@@ -78,7 +79,11 @@ export const rememberTrackMeta = (
 ): void => {
   const cacheKey = getTrackKey(id, source);
   const previous = trackMetaCache.get(cacheKey) || {};
-  trackMetaCache.set(cacheKey, { ...previous, ...meta });
+  const next = { ...previous };
+  for (const field of ['pic', 'picId', 'lyricId', 'urlId'] as const) {
+    if (typeof meta[field] === 'string' && meta[field]) next[field] = meta[field];
+  }
+  trackMetaCache.set(cacheKey, next);
 };
 
 export const resolveTrackMeta = (

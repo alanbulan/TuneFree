@@ -33,35 +33,42 @@ pub(crate) struct AppLifecycleState {
     pub(crate) shutdown_tx: tokio::sync::watch::Sender<bool>,
 }
 
-/// First command the renderer issues, so it doubles as the startup readiness
-/// signal consumed by `scripts/smoke-test.mjs`.
+/// Supplies connection info; readiness is acknowledged separately after UI mount.
 #[tauri::command]
 pub(crate) fn get_local_server_info(state: State<'_, LocalServerState>) -> LocalServerInfo {
-    super::smoke::record_frontend_ready(state.port);
     LocalServerInfo {
         port: state.port,
         token: state.token.clone(),
     }
 }
 
-/// Generates the per-launch local server auth token (64 hex chars).
-///
-/// The token only needs to be unpredictable to other local pages, so mixing
-/// time, process/thread identity and stack address entropy through md5 is
-/// sufficient; no extra RNG dependency is introduced and the value is never
-/// persisted to disk.
-pub(crate) fn generate_local_server_token() -> String {
-    let stack_probe = 0u8;
-    let seed = format!(
-        "{:?}|{}|{:?}|{:p}",
-        std::time::SystemTime::now(),
-        std::process::id(),
-        std::thread::current().id(),
-        &stack_probe
-    );
-    let first = md5::compute(seed.as_bytes());
-    let second = md5::compute([&first.0[..], seed.as_bytes()].concat());
-    format!("{:x}{:x}", first, second)
+/// The frontend confirms its UI is mounted; verify the HTTP service before recording readiness.
+#[tauri::command]
+pub(crate) async fn mark_frontend_ready(
+    window: tauri::WebviewWindow,
+    state: State<'_, LocalServerState>,
+    client: State<'_, reqwest::Client>,
+) -> CommandResult<()> {
+    if window.label() != "main" {
+        return Err(CommandError::invalid_argument("仅主窗口可确认启动就绪"));
+    }
+    client
+        .get(format!("http://127.0.0.1:{}/health", state.port))
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+        .map_err(|_| CommandError::network("本地音乐服务尚未就绪"))?
+        .error_for_status()
+        .map_err(|_| CommandError::network("本地音乐服务健康检查失败"))?;
+    super::smoke::record_frontend_ready(state.port)
+}
+
+/// 32 bytes from the OS CSPRNG. Failure aborts startup; no predictable fallback.
+pub(crate) fn generate_local_server_token() -> CommandResult<String> {
+    let mut bytes = [0_u8; 32];
+    getrandom::fill(&mut bytes)
+        .map_err(|error| CommandError::internal(format!("系统安全随机源不可用: {}", error)))?;
+    Ok(bytes.iter().map(|byte| format!("{:02x}", byte)).collect())
 }
 
 /// Shows and focuses the main application window.
@@ -144,19 +151,19 @@ mod tests {
 
     #[test]
     fn local_server_token_is_long_hex() {
-        let token = generate_local_server_token();
+        let token = generate_local_server_token().unwrap();
         assert!(token.len() >= 32);
         assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]
     fn local_server_tokens_differ_between_generators() {
-        // 线程 id 进入种子，因此不同线程必定得到不同令牌——本机其他页面
-        // 无法通过"重放上一次的令牌"来预测。
+        // 独立生成的 256 位系统随机值不应复用。
         let other = std::thread::spawn(generate_local_server_token)
             .join()
+            .unwrap()
             .unwrap();
-        assert_ne!(generate_local_server_token(), other);
+        assert_ne!(generate_local_server_token().unwrap(), other);
     }
 
     #[test]

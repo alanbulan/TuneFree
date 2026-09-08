@@ -20,10 +20,13 @@ pub struct RecommendationDatabase {
 }
 
 pub fn open_database(app_handle: &tauri::AppHandle) -> Result<RecommendationDatabase, String> {
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
+    let app_data_dir = match crate::app::smoke_data_dir() {
+        Some(dir) => dir.join("data"),
+        None => app_handle
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("获取应用数据目录失败: {}", e))?,
+    };
     let db_dir = app_data_dir.join("tunefree");
     fs::create_dir_all(&db_dir).map_err(|e| format!("创建推荐数据库目录失败: {}", e))?;
     open_database_at(db_dir.join("recommendation.sqlite"))

@@ -71,6 +71,7 @@
   min-height: 500px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  overflow-anchor: none;
   padding: 40vh 12px;
   text-align: center;
   mask-image: linear-gradient(to bottom, transparent 0%, #000 25%, #000 75%, transparent 100%);
@@ -91,18 +92,19 @@
   color: var(--muted);
   background: transparent;
   font-family: var(--lyric-font-family, inherit);
-  font-size: clamp(16px, calc(var(--lyric-font-size, 22px) * .9), 26px);
-  font-weight: 850;
-  line-height: 1.42;
+  font-size: clamp(26px, calc(var(--lyric-font-size, 22px) * 1.55), 48px);
+  font-weight: 750;
+  line-height: 1.32;
+  letter-spacing: -.025em;
   text-align: center;
   opacity: .72;
   transform-origin: 50% 50%;
-  transform: translateY(calc(var(--lyric-offset, 0) * 3px));
-  transition: color .14s ease, opacity .14s ease, transform .14s ease;
+  transform: scale(.72);
+  transition: color .22s ease, opacity .22s ease, transform .22s ease;
 }
 .lyric-line:hover { background: var(--glass-bg-faint); color: var(--text-dim); }
-.lyric-line span,
-.lyric-line em {
+.lyric-line > span,
+.lyric-line > em {
   display: block;
   overflow-wrap: anywhere;
   font-family: var(--lyric-font-family, inherit);
@@ -114,52 +116,31 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-/* 提高到 (0,2,0) 以压过 `.lyric-line span` 的 display: block，取代原先的强制优先级写法 */
-.lyric-line .karaoke-line { display: inline-flex; }
 .karaoke-word {
+  position: relative;
   display: inline-block;
-  transform-origin: 50% 72%;
-  transition: color .12s ease, opacity .12s ease, filter .12s ease;
-  will-change: transform, opacity;
-}
-.karaoke-word.pending {
   color: var(--muted);
-  opacity: .46;
+  transform-origin: 50% 72%;
+  transition: transform .14s ease;
 }
-.karaoke-word.done {
+.karaoke-word::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
   color: var(--accent);
-  opacity: .92;
+  clip-path: inset(0 calc(100% - var(--word-progress, 0%)) 0 0);
+  transition: clip-path .1s linear;
+  pointer-events: none;
 }
-.karaoke-word.active {
-  color: var(--accent);
-  opacity: 1;
-  filter: drop-shadow(0 0 10px rgba(var(--accent-rgb), .24));
-  animation: karaokeWordPop .26s cubic-bezier(.2,.9,.2,1) both;
-}
-.desktop-lyric-current-line .karaoke-word.pending { opacity: .38; }
-.desktop-lyric-current-line .karaoke-word.done,
-.desktop-lyric-current-line .karaoke-word.active { opacity: 1; }
-.lyric-line em { margin-top: 6px; color: var(--text-tertiary); font-size: .66em; font-style: normal; font-weight: 760; }
-/* 当前行不再对 font-size 做过渡（逐帧回流），放大登场交给合成器动画 */
-.lyric-line.active { color: var(--accent); font-size: clamp(28px, calc(var(--lyric-font-size, 22px) * 1.65), 52px); line-height: 1.22; letter-spacing: -.045em; opacity: 1; transform: translateY(0) scale(1); animation: lyricLineActivate .18s cubic-bezier(.2,.8,.2,1); }
-.lyric-line.active em { color: var(--text-soft); font-size: .45em; line-height: 1.32; letter-spacing: 0; }
+.karaoke-word.active { transform: translateY(-.035em); }
+.lyric-line:not(.active) .karaoke-word { color: inherit; }
+.lyric-line:not(.active) .karaoke-word::after { visibility: hidden; }
+.lyric-line em { margin-top: 6px; color: var(--text-tertiary); font-size: .45em; font-style: normal; font-weight: 600; letter-spacing: 0; }
+/* 所有行采用相同排版尺寸，高亮仅改变合成层，不会挤动邻行或中断滚动。 */
+.lyric-line.active { color: var(--accent); opacity: 1; transform: scale(1); }
+.lyric-line.active em { color: var(--text-soft); }
 .lyric-line.dim { opacity: .34; }
 .lyric-loading-dot { width: 24px; height: 24px; border: 2px solid rgba(var(--accent-rgb),.20); border-top-color: var(--accent); border-radius: 50%; animation: coverSpin .9s linear infinite; }
-
-/* 逐字渐变填充：消费 KaraokeLyricText 写入的 --word-progress。
-   只在主窗口生效——桌面歌词窗口靠 text-shadow 保证透明背景上的可读性，
-   而 text-shadow 会盖在 background-clip: text 的渐变之上。 */
-.lyric-line .karaoke-word.active {
-  background-image: linear-gradient(
-    90deg,
-    var(--accent) var(--word-progress, 0%),
-    rgba(var(--accent-rgb), .34) var(--word-progress, 0%)
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-}
 
 /* 同步翻译的逐字着色：沿用逐字状态色，但不叠加主歌词的高亮特效 */
 .karaoke-translation-line {

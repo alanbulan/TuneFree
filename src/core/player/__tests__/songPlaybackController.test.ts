@@ -26,6 +26,28 @@ const parsedFor = (id: string, patch: Partial<ParsedSongData> = {}): ParsedSongD
   ...patch,
 });
 
+describe('音频播放失败的收敛', () => {
+  it.each(['AbortError', 'NotAllowedError', 'NotSupportedError', '普通失败'])('%s 走对应恢复路径', async (kind) => {
+    const h = createHarness(); h.double.audio.play.mockRejectedValueOnce(new DOMException('source failed', kind));
+    const playback = startPlayback(h, song('a')); await flushMicrotasks(); h.pending[0].resolve({ parsed: parsedFor('a'), cacheKey: null }); await playback.done;
+    if (kind === 'AbortError') { expect(h.runRecovery).not.toHaveBeenCalled(); expect(h.showPlayerNotice).not.toHaveBeenCalled(); }
+    else if (kind === 'NotAllowedError') { expect(h.showPlayerNotice).toHaveBeenCalledWith(expect.stringContaining('再次点击'), 'warning'); expect(h.runRecovery).not.toHaveBeenCalled(); }
+    else { expect(h.runRecovery).toHaveBeenCalledWith(expect.objectContaining({ trigger: 'playRejected', canRetryWithoutCors: true })); h.runRecovery.mock.calls[0][0].onGiveUp(); expect(h.clearActiveAudioSource).toHaveBeenCalled(); expect(h.showPlayerNotice).toHaveBeenCalledWith('播放失败，请稍后再试', 'error'); }
+  });
+  it('CORS 策略变化重建元素，上下文恢复失败不产生未处理拒绝', async () => {
+    const h = createHarness(); h.double.audio.crossOrigin = 'anonymous'; h.double.refs.isIOS.current = true;
+    h.double.refs.audioContext.current = { state: 'suspended', resume: vi.fn().mockRejectedValue(new Error('resume')) } as unknown as AudioContext;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const playback = startPlayback(h, song('a')); await flushMicrotasks(); h.pending[0].resolve({ parsed: parsedFor('a'), cacheKey: null }); await playback.done;
+    expect(h.dependencies.audio.createAudioElement).toHaveBeenCalledWith(false); expect(warn).toHaveBeenCalled(); warn.mockRestore();
+  });
+  it('没有可用地址且恢复耗尽时清理状态并给出提示', async () => {
+    const h = createHarness(); const playback = startPlayback(h, song('a')); await flushMicrotasks();
+    h.pending[0].resolve({ parsed: null, cacheKey: null }); await playback.done; h.runRecovery.mock.calls[0][0].onGiveUp();
+    expect(h.clearActiveAudioSource).toHaveBeenCalled(); expect(h.double.setIsPlaying).toHaveBeenLastCalledWith(false); expect(h.showPlayerNotice).toHaveBeenCalledWith(expect.stringContaining('换源'), 'error');
+  });
+});
+
 interface Harness {
   double: RuntimeDouble;
   dependencies: SongPlaybackDependencies;

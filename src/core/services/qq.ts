@@ -96,6 +96,7 @@ export const qqMusicuFetch = async (
         signal: linked.signal,
       });
 
+      if (!resp.ok) { await resp.body?.cancel(); continue; }
       const data = await resp.json();
       if (data?.req?.code === 0) return data.req.data;
     } catch {
@@ -134,7 +135,10 @@ export const searchQQ = async (
   }, signal);
 
   const songs = data?.body?.song?.list;
-  if (!songs || !Array.isArray(songs) || songs.length === 0) return [];
+  if (!Array.isArray(songs)) {
+    if (data?.body?.song?.totalnum === 0) return [];
+    throw new Error('QQ 音乐搜索响应不可用');
+  }
 
   return songs.map((s: any) => ({
     id: s.mid || String(s.id),

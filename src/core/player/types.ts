@@ -64,6 +64,7 @@ export interface ResolvedLyricBinding {
   source: string;
   id?: string | number;
   lyricId?: string | number;
+  picId?: string;
 }
 
 export interface AudioHandlers {

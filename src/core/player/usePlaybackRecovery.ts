@@ -30,41 +30,47 @@ export const usePlaybackRecovery = (
   runtime: PlayerRuntime,
   recommendation: RecommendationPlayback,
 ) => {
-  const { refs } = runtime;
+  const { refs, setAudioQuality } = runtime;
+  const {
+    activeParsedCacheKey: activeParsedCacheKeyRef, parsedSongCache: parsedSongCacheRef, refreshedCacheKeys: refreshedCacheKeysRef,
+    playSong: playSongRef, failedRecommendationRequestId: failedRecommendationRequestIdRef, failedRecommendationSongKeys: failedRecommendationSongKeysRef,
+    queue: queueRef, forceNoCorsPlayback: forceNoCorsPlaybackRef, recoveryStage: recoveryStageRef,
+    audioQuality: audioQualityRef,
+  } = refs;
   const evictActiveParsedSong = useCallback(() => {
-    const cacheKey = refs.activeParsedCacheKey.current;
-    if (cacheKey) refs.parsedSongCache.current.delete(cacheKey);
-    refs.activeParsedCacheKey.current = null;
-  }, [refs]);
+    const cacheKey = activeParsedCacheKeyRef.current;
+    if (cacheKey) parsedSongCacheRef.current.delete(cacheKey);
+    activeParsedCacheKeyRef.current = null;
+  }, [activeParsedCacheKeyRef, parsedSongCacheRef]);
 
   const retryCachedSongResolution = useCallback((song: Song, quality: AudioQuality) => {
     const cacheKey = `${getSongKey(song)}:${quality}`;
-    if (refs.activeParsedCacheKey.current !== cacheKey ||
-        refs.refreshedCacheKeys.current.has(cacheKey)) return false;
-    refs.refreshedCacheKeys.current.add(cacheKey);
-    refs.parsedSongCache.current.delete(cacheKey);
-    refs.activeParsedCacheKey.current = null;
-    void refs.playSong.current(song, quality);
+    if (activeParsedCacheKeyRef.current !== cacheKey ||
+        refreshedCacheKeysRef.current.has(cacheKey)) return false;
+    refreshedCacheKeysRef.current.add(cacheKey);
+    parsedSongCacheRef.current.delete(cacheKey);
+    activeParsedCacheKeyRef.current = null;
+    void playSongRef.current(song, quality);
     return true;
-  }, [refs]);
+  }, [activeParsedCacheKeyRef, parsedSongCacheRef, refreshedCacheKeysRef, playSongRef]);
 
   const playNextRecommendationAfterFailure = useCallback((song: Song) => {
     const requestId = song.recommendationRequestId;
     if (!requestId) return false;
-    if (refs.failedRecommendationRequestId.current !== requestId) {
-      refs.failedRecommendationRequestId.current = requestId;
-      refs.failedRecommendationSongKeys.current.clear();
+    if (failedRecommendationRequestIdRef.current !== requestId) {
+      failedRecommendationRequestIdRef.current = requestId;
+      failedRecommendationSongKeysRef.current.clear();
     }
-    refs.failedRecommendationSongKeys.current.add(getSongKey(song));
+    failedRecommendationSongKeysRef.current.add(getSongKey(song));
     const nextIndex = getNextRecommendationCandidateIndex(
-      refs.queue.current, song, refs.failedRecommendationSongKeys.current,
+      queueRef.current, song, failedRecommendationSongKeysRef.current,
     );
-    const nextSong = nextIndex >= 0 ? refs.queue.current[nextIndex] : undefined;
+    const nextSong = nextIndex >= 0 ? queueRef.current[nextIndex] : undefined;
     if (!nextSong) return false;
     recommendation.showPlayerNotice(RECOMMENDATION_SKIP_NOTICE, "warning");
-    void refs.playSong.current(nextSong);
+    void playSongRef.current(nextSong);
     return true;
-  }, [recommendation, refs]);
+  }, [recommendation, playSongRef, failedRecommendationRequestIdRef, failedRecommendationSongKeysRef, queueRef]);
 
   const performRecoveryAction = useCallback((
     action: RecoveryAction,
@@ -72,22 +78,23 @@ export const usePlaybackRecovery = (
   ): boolean => {
     if (action === "retryNoCors") {
       recommendation.showPlayerNotice(NO_CORS_NOTICE, "warning");
-      refs.forceNoCorsPlayback.current = true;
-      void refs.playSong.current(request.song, request.quality);
+      forceNoCorsPlaybackRef.current = true;
+      void playSongRef.current(request.song, request.quality);
       return true;
     }
     if (action === "retryRefresh") {
       return retryCachedSongResolution(request.song, request.quality);
     }
     if (action === "downgradeQuality") {
+      audioQualityRef.current = RECOVERY_FALLBACK_QUALITY;
+      setAudioQuality(RECOVERY_FALLBACK_QUALITY);
       recommendation.showPlayerNotice(QUALITY_FALLBACK_NOTICE, "warning");
-      void refs.playSong.current(request.song, RECOVERY_FALLBACK_QUALITY);
+      void playSongRef.current(request.song, RECOVERY_FALLBACK_QUALITY);
       return true;
     }
     evictActiveParsedSong();
     return playNextRecommendationAfterFailure(request.song);
-  }, [evictActiveParsedSong, playNextRecommendationAfterFailure, recommendation,
-    refs, retryCachedSongResolution]);
+  }, [evictActiveParsedSong, playNextRecommendationAfterFailure, recommendation, retryCachedSongResolution, playSongRef, forceNoCorsPlaybackRef, audioQualityRef, setAudioQuality]);
 
   const runRecovery = useCallback((request: RecoveryRunRequest) => {
     const context = {
@@ -95,20 +102,20 @@ export const usePlaybackRecovery = (
       quality: request.quality,
       canRetryWithoutCors: request.canRetryWithoutCors,
     };
-    let stage: RecoveryStage = refs.recoveryStage.current;
+    let stage: RecoveryStage = recoveryStageRef.current;
     for (;;) {
       const decision = decideRecovery(stage, request.trigger, context);
       stage = decision.nextStage;
-      refs.recoveryStage.current = stage;
+      recoveryStageRef.current = stage;
       if (decision.action === "giveUp") {
         evictActiveParsedSong();
-        refs.recoveryStage.current = "initial";
+        recoveryStageRef.current = "initial";
         request.onGiveUp();
         return;
       }
       if (performRecoveryAction(decision.action, request)) return;
     }
-  }, [evictActiveParsedSong, performRecoveryAction, refs]);
+  }, [evictActiveParsedSong, performRecoveryAction, recoveryStageRef]);
 
   return useMemo(() => ({
     evictActiveParsedSong, retryCachedSongResolution,

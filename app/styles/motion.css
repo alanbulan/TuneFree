@@ -17,18 +17,8 @@
   0%, 100% { opacity: .28; transform: translate3d(-50%, 7px, 0) scale(.88) rotate(-8deg); }
   45% { opacity: .78; transform: translate3d(calc(-50% + var(--note-drift)), -12px, 0) scale(1.08) rotate(7deg); }
 }
-@keyframes karaokeWordPop {
-  0% { transform: translateY(0) scale(1); }
-  42% { transform: translateY(-0.18em) scale(1.12); }
-  100% { transform: translateY(0) scale(1); }
-}
 @keyframes lyricFloat { 0%, 100% { transform: translateY(-8px) scale(1); } 50% { transform: translateY(12px) scale(1.04); } }
 @keyframes ambientFloat { 0%, 100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(18px,-14px,0) scale(1.06); } }
-@keyframes miraPetIdleFloat { 0%, 100% { transform: translate3d(0,0,0); } 50% { transform: translate3d(0,-7px,0); } }
-@keyframes miraPetShadow { 0%, 100% { opacity: .72; transform: scaleX(1); } 50% { opacity: .46; transform: scaleX(.82); } }
-@keyframes miraPetBeat { 0%, 100% { transform: translateX(-50%) scale(var(--mira-scale)) translateY(0); } 42% { transform: translateX(-50%) scale(var(--mira-scale)) translateY(-2px); } }
-@keyframes miraPetBreathe { 0%, 100% { transform: translateX(-50%) scale(var(--mira-scale)) translateY(0); } 50% { transform: translateX(-50%) scale(var(--mira-scale)) translateY(-1px); } }
-@keyframes miraPetLoadingWiggle { 0%, 100% { transform: translateX(-50%) scale(var(--mira-scale)) rotate(0deg); } 30% { transform: translateX(-50%) scale(var(--mira-scale)) rotate(-2deg); } 70% { transform: translateX(-50%) scale(var(--mira-scale)) rotate(2deg); } }
 
 @keyframes dropdownFadeIn {
   from {
@@ -81,19 +71,6 @@
   to { opacity: 1; }
 }
 
-/* AI 智能极细边缘彩虹流动动效 */
-@keyframes rainbow-flow {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-/* 歌词当前行的放大登场：只走合成器，不改变排版尺寸 */
-@keyframes lyricLineActivate {
-  from { transform: translateY(0) scale(.88); }
-  to { transform: translateY(0) scale(1); }
-}
-
 /* 窗口不可见时暂停全部装饰动画，避免后台常驻重绘。
    .app-hidden 由 src/main.tsx 监听 visibilitychange 挂在 <html> 上。
    这里必须强制优先级：本文件在层叠顺序中位于各业务层之前，
@@ -107,11 +84,6 @@ html.app-hidden *::after {
 /* 统一的减少动态豁免：覆盖全部装饰性常驻动画与入场动画。
    同样因层叠顺序早于业务层，只有强制优先级才能压过后续文件的同名声明。 */
 @media (prefers-reduced-motion: reduce) {
-  .desktop-shell::before,
-  .desktop-shell::after,
-  .mira-pet,
-  .mira-pet-shadow,
-  .mira-pet-frame,
   .spinning-cover.is-rotating img,
   .lyric-orbit,
   .score-note,
@@ -120,9 +92,7 @@ html.app-hidden *::after {
   .skeleton-line,
   .skeleton-pill,
   .skeleton-dot,
-  .source-chip.ai-source-chip,
-  .ai-rainbow-flow-border,
-  .ai-radar-btn,
+  .context-loading-icon,
   .ai-radar-btn-mini,
   .view-scroll,
   .view-transition-panel,
@@ -137,7 +107,11 @@ html.app-hidden *::after {
   .karaoke-word.active {
     animation: none !important;
   }
-  .mira-pet-bubble { transition: none !important; }
+  .companion-bubble,
+  .desktop-shell,
+  .lyric-line,
+  .karaoke-word,
+  .karaoke-word::after { transition: none !important; }
   ::view-transition-old(root),
   ::view-transition-new(root) {
     animation: none;

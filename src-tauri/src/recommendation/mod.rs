@@ -19,3 +19,7 @@ pub mod service;
 
 pub use model::*;
 pub use service::RecommendationService;
+
+#[cfg(test)]
+#[path = "__tests__/signals.rs"]
+mod signal_tests;

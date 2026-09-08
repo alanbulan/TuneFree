@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import MotionChoice from '../../../components/MotionChoice';
 
 interface CustomSelectProps {
   value: string;
@@ -9,6 +11,7 @@ interface CustomSelectProps {
 export default function CustomSelect({ value, options, onChange }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const indicatorId = useId();
 
   const selectedOption = options.find((o) => o.value === value) || options[0];
 
@@ -23,7 +26,13 @@ export default function CustomSelect({ value, options, onChange }: CustomSelectP
   }, []);
 
   return (
-    <div ref={containerRef} className="custom-select-container">
+    <div ref={containerRef} className="custom-select-container" onKeyDown={(event) => {
+      if (event.key === 'Escape' && isOpen) {
+        setIsOpen(false);
+        containerRef.current?.querySelector('button')?.focus();
+        event.stopPropagation();
+      }
+    }}>
       <button
         type="button"
         className="custom-select-trigger"
@@ -47,14 +56,18 @@ export default function CustomSelect({ value, options, onChange }: CustomSelectP
         </svg>
       </button>
 
+      <AnimatePresence>
       {isOpen && (
-        <div className="custom-select-options" role="listbox">
+        <motion.div className="custom-select-options" role="listbox"
+          initial={{ opacity: 0, y: -6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -6, scale: 0.98 }} transition={{ duration: 0.16 }}>
           {options.map((option) => (
-            <button
+            <MotionChoice
               key={option.value}
               type="button"
               role="option"
               aria-selected={option.value === value}
+              aria-pressed={undefined} selected={option.value === value} indicatorId={indicatorId}
               className={`custom-select-option ${option.value === value ? 'is-selected' : ''}`}
               onClick={() => {
                 onChange(option.value);
@@ -62,10 +75,11 @@ export default function CustomSelect({ value, options, onChange }: CustomSelectP
               }}
             >
               {option.label}
-            </button>
+            </MotionChoice>
           ))}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -6,6 +6,10 @@ use serde_json::{json, Value};
 use super::parse;
 use crate::recommendation::model::RecSong;
 
+#[cfg(all(test, windows))]
+#[path = "../__tests__/discovery_http.rs"]
+mod tests;
+
 pub(super) async fn search_source(
     client: &Client,
     source: &str,

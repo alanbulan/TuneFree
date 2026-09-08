@@ -10,6 +10,7 @@ import { getMusicSourceLabel } from '../../../core/utils/musicSource';
 import SongTable from '../../components/SongTable';
 import { useToast } from '../../components/ToastHost';
 import VirtualRail from '../../components/VirtualRail';
+import MotionPanel from '../../components/MotionPanel';
 import type { DesktopView } from '../../types';
 import { ContextSearchPanel, HomeHero, HomeSourceTabs } from './HomePanels';
 import { attachContextSearchMeta, isCurrentContextSearch } from './contextSearch';
@@ -22,9 +23,10 @@ const cacheTtl = 3 * 60 * 1000;
 
 interface DesktopHomeProps {
   onViewChange: (view: DesktopView) => void;
+  onAiBusyChange: (busy: boolean) => void;
 }
 
-export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
+export default function DesktopHome({ onViewChange, onAiBusyChange }: DesktopHomeProps) {
   const [activeSource, setActiveSource] = useState('netease');
   const [topLists, setTopLists] = useState<TopList[]>([]);
   const [browseSongs, setBrowseSongs] = useState<Song[]>([]);
@@ -40,7 +42,6 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
   const aiRequestIdRef = useRef(0);
   const aiAbortRef = useRef<AbortController | null>(null);
   const activeSourceRef = useRef(activeSource);
-  activeSourceRef.current = activeSource;
   const { playQueue } = usePlayerActions();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
   const { favorites, playlists, toggleFavorite, isFavorite } = useLibrary();
@@ -50,11 +51,17 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
   const featuredSongs = isRecommendationSource ? recommendation.songs : browseSongs;
   const loadingSongs = isRecommendationSource ? recommendation.loading : loadingBrowseSongs;
   const error = isRecommendationSource ? recommendation.error : browseError;
+  const showResults = activeSource !== 'embeat' || loadingSongs || !!lastAiSearch;
+
+  useEffect(() => {
+    onAiBusyChange(activeSource === 'embeat' && loadingBrowseSongs);
+    return () => onAiBusyChange(false);
+  }, [activeSource, loadingBrowseSongs, onAiBusyChange]);
 
   const activeSourceLabel = useMemo(
     () => activeSource === 'recommendation'
-      ? '智能推荐'
-      : activeSource === 'embeat' ? '语境搜歌' : getMusicSourceLabel(activeSource),
+      ? '为你推荐'
+      : activeSource === 'embeat' ? 'AI 搜歌' : getMusicSourceLabel(activeSource),
     [activeSource],
   );
   const greeting = useMemo(() => {
@@ -75,13 +82,13 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
     const requestId = ++aiRequestIdRef.current;
     const recommendationRequestId = `embeat:${Date.now()}:${requestId}`;
     setLoadingBrowseSongs(true);
-    setLastAiSearch(cleanQuery);
     setBrowseError('');
     try {
       const songs = await getAIRecommendedSongs(cleanQuery, 'netease', 20, controller.signal);
       if (!isCurrentContextSearch(requestId, aiRequestIdRef.current, activeSourceRef.current)) return;
       const contextSongs = attachContextSearchMeta(songs, recommendationRequestId);
       setBrowseSongs(contextSongs);
+      setLastAiSearch(cleanQuery);
       showToast(contextSongs.length === 0 ? '暂未找到符合意境的歌曲，换个词试试看' : `已生成 ${contextSongs.length} 首语境歌曲`, contextSongs.length === 0 ? 'info' : 'success');
     } catch (cause) {
       if (!isCurrentContextSearch(requestId, aiRequestIdRef.current, activeSourceRef.current)) return;
@@ -90,7 +97,6 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
         ? '语境搜歌请求过于频繁，请稍后再试。'
         : '语境搜歌服务当前不可用，请稍后再试。';
       setBrowseError(message);
-      setBrowseSongs([]);
     } finally {
       if (requestId === aiRequestIdRef.current) {
         aiAbortRef.current = null;
@@ -99,14 +105,39 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
     }
   }, [showToast]);
 
+  const cancelAiSearch = () => {
+    aiRequestIdRef.current += 1;
+    aiAbortRef.current?.abort();
+    aiAbortRef.current = null;
+    setLoadingBrowseSongs(false);
+  };
+
+  const changeSource = (source: string) => {
+    if (source === activeSourceRef.current) return;
+    activeSourceRef.current = source;
+    cancelAiSearch();
+    requestIdRef.current += 1;
+    detailRequestIdRef.current += 1;
+    setActiveSource(source);
+    setBrowseSongs([]);
+    setTopLists([]);
+    setBrowseError('');
+    setSelectedTopListId(null);
+    setSelectedTopListName(source === 'recommendation' ? '智能推荐' : '');
+    setLastAiSearch('');
+    setLoadingLists(source !== 'recommendation' && source !== 'embeat');
+  };
+
   const loadTopListDetail = useCallback(async (list: TopList, source = activeSource) => {
     const requestId = ++detailRequestIdRef.current;
     const key = `${source}:${list.id}`;
     setSelectedTopListId(key);
     setSelectedTopListName(list.name);
+    setBrowseError('');
     const cached = detailCache.get(key);
     if (cached && Date.now() - cached.ts < cacheTtl) {
       setBrowseSongs(cached.songs);
+      setLoadingBrowseSongs(false);
       return;
     }
     setLoadingBrowseSongs(true);
@@ -116,63 +147,44 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
       detailCache.set(key, { songs, ts: Date.now() });
       setBrowseSongs(songs);
     } catch {
-      if (requestId === detailRequestIdRef.current) setBrowseSongs([]);
+      if (requestId === detailRequestIdRef.current) {
+        setBrowseSongs([]);
+        setBrowseError('榜单歌曲暂时无法加载，请重新选择榜单或切换音源。');
+      }
     } finally {
       if (requestId === detailRequestIdRef.current) setLoadingBrowseSongs(false);
     }
   }, [activeSource]);
 
   useEffect(() => {
-    aiAbortRef.current?.abort();
-    aiAbortRef.current = null;
-    aiRequestIdRef.current += 1;
-    setLoadingBrowseSongs(false);
+    if (activeSource === 'recommendation' || activeSource === 'embeat') return;
     const requestId = ++requestIdRef.current;
-    setBrowseError('');
-    setSelectedTopListId(null);
-    setSelectedTopListName(activeSource === 'recommendation' ? '智能推荐' : '');
-    if (activeSource === 'recommendation') {
-      setTopLists([]);
-      setLoadingLists(false);
-      return;
-    }
-    if (activeSource === 'embeat') {
-      setTopLists([]);
-      setBrowseSongs([]);
-      setLoadingLists(false);
-      return;
-    }
-    setLoadingLists(true);
     const cached = topListCache.get(activeSource);
-    if (cached && Date.now() - cached.ts < cacheTtl) {
-      setTopLists(cached.lists);
-      setBrowseSongs([]);
-      setLoadingLists(false);
-      return;
-    }
-    void getTopLists(activeSource).then((lists) => {
+    const request = cached && Date.now() - cached.ts < cacheTtl
+      ? Promise.resolve(cached.lists) : getTopLists(activeSource);
+    void request.then((lists) => {
       if (requestId !== requestIdRef.current) return;
       setTopLists(lists);
-      setBrowseSongs([]);
       topListCache.set(activeSource, { lists, ts: Date.now() });
     }).catch(() => {
       if (requestId !== requestIdRef.current) return;
       setBrowseError('该音源暂不可用，请切换其他音源。');
       setTopLists([]);
-      setBrowseSongs([]);
     }).finally(() => {
       if (requestId === requestIdRef.current) setLoadingLists(false);
     });
   }, [activeSource]);
 
   useEffect(() => () => {
+    requestIdRef.current += 1;
+    detailRequestIdRef.current += 1;
     aiRequestIdRef.current += 1;
     aiAbortRef.current?.abort();
   }, []);
 
   const handleFavorite = (song: Song) => {
     const wasFavorite = isFavorite(song.id, song.source);
-    toggleFavorite(song);
+    if (!toggleFavorite(song)) return;
     showToast(wasFavorite ? '已取消收藏' : '已收藏歌曲', 'success', {
       label: '撤销', onClick: () => toggleFavorite(song),
     });
@@ -198,15 +210,14 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
     <div>
       <HomeHero
         greeting={greeting}
-        sourceLabel={activeSourceLabel}
         favoritesCount={favorites.length}
-        playlistsCount={playlists.length}
+        playlistsCount={playlists.filter((playlist) => playlist.id !== 'favorites').length}
         firstSong={featuredSongs[0]}
         selectionName={selectedTopListName}
         onPlay={handlePlay}
-        onSearch={() => onViewChange('search')}
       />
-      <HomeSourceTabs activeSource={activeSource} onChange={setActiveSource} />
+      <HomeSourceTabs activeSource={activeSource} onChange={changeSource} />
+      <MotionPanel transitionKey={`${activeSource}:${selectedTopListId ?? ''}`}>
       {isRecommendationSource && recommendation.initializing && (
         <div className="content-card home-status-card">
           <span className="home-status-text">推荐服务正在初始化，请稍候…</span>
@@ -222,9 +233,9 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
         <ContextSearchPanel
           query={aiQuery}
           loading={loadingSongs}
-          currentSong={currentSong}
           onQueryChange={setAiQuery}
           onSearch={handleAiSearch}
+          onCancel={cancelAiSearch}
         />
       ) : !isRecommendationSource && (loadingLists && topLists.length === 0 ? (
         <div className="toplist-grid skeleton-rail" aria-busy="true" aria-label="榜单加载中">
@@ -252,21 +263,22 @@ export default function DesktopHome({ onViewChange }: DesktopHomeProps) {
           }}
         />
       ))}
-      {!isRecommendationSource && (
+      {!isRecommendationSource && showResults && (
         <div className="section-header">
           <h2 className="section-title">
-            {activeSource === 'embeat' ? (lastAiSearch ? `“${lastAiSearch}” 的语境歌单` : '语境搜歌歌单') : selectedTopListName ? `${selectedTopListName} · 热歌` : '榜单热歌'}
+            {activeSource === 'embeat' ? (lastAiSearch ? `“${lastAiSearch}”` : '为你寻找音乐') : selectedTopListName || '榜单歌曲'}
           </h2>
-          <span className="source-badge">{activeSourceLabel}</span>
+          <span className="section-meta">{featuredSongs.length > 0 ? `${featuredSongs.length} 首歌曲` : activeSourceLabel}</span>
         </div>
       )}
-      {loadingSongs && featuredSongs.length === 0 ? (
-        <SongTable songs={[]} currentSong={currentSong} isPlaying={isPlaying} isLoading skeletonRows={7} emptyText={isRecommendationSource ? '正在读取智能推荐...' : '正在分析语境...'} onPlay={handlePlay} onFavorite={handleFavorite} isFavorite={(song) => isFavorite(song.id, song.source)} />
+      {showResults && (loadingSongs && featuredSongs.length === 0 ? (
+        <SongTable songs={[]} isLoading skeletonRows={7} emptyText={isRecommendationSource ? '正在读取智能推荐...' : '正在分析语境...'} onPlay={handlePlay} />
       ) : featuredSongs.length === 0 ? (
-        <div className="empty-state"><p>{isRecommendationSource ? '智能推荐还没有准备好，请多播放或收藏几首歌，或确认设置中已启用推荐。' : activeSource === 'embeat' ? '请在上方输入想听的内容，或者点击提示词开启语境音乐流。' : '选择上方任意榜单后，这里会加载完整热歌列表。'}</p></div>
+        <div className="empty-state"><p>{isRecommendationSource ? '多听几首、收藏一些喜欢的歌，推荐会慢慢更懂你。也可以在设置中查看推荐是否已启用。' : activeSource === 'embeat' ? '暂时没有找到合适的歌曲，试着换一种描述。' : '选一张榜单，开始发现好音乐。'}</p></div>
       ) : (
         <SongTable songs={featuredSongs} currentSong={currentSong} isPlaying={isPlaying} emptyText="暂无榜单歌曲" onPlay={handlePlay} onFavorite={handleFavorite} isFavorite={(song) => isFavorite(song.id, song.source)} onDismiss={isRecommendationSource ? handleDismiss : undefined} />
-      )}
+      ))}
+      </MotionPanel>
     </div>
   );
 }

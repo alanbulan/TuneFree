@@ -21,6 +21,7 @@ const bridge = vi.hoisted(() => ({
 }));
 
 const ipc = vi.hoisted(() => ({
+  fail: false,
   emitted: [] as EmittedEvent[],
   listeners: new Map<string, (payload: unknown) => void>(),
 }));
@@ -50,10 +51,12 @@ vi.mock('../../../core/hooks/useLyricDisplayMode', () => ({
 vi.mock('../../../core/ipc', () => ({
   isTauri: () => true,
   emitEventTo: (target: string, event: string, payload: Record<string, unknown>) => {
+    if (ipc.fail) return Promise.reject(new Error('窗口已关闭'));
     ipc.emitted.push({ target, event, payload });
     return Promise.resolve();
   },
   listenEvent: (event: string, handler: (payload: unknown) => void) => {
+    if (ipc.fail) return Promise.reject(new Error('事件不可用'));
     ipc.listeners.set(event, handler);
     return Promise.resolve(() => ipc.listeners.delete(event));
   },
@@ -95,6 +98,7 @@ const applyState = async (rerender: (ui: React.ReactElement) => void) => {
 
 describe('LyricSyncBridge 事件拆分', () => {
   beforeEach(() => {
+    ipc.fail = false;
     vi.useFakeTimers();
     vi.setSystemTime(1_700_000_000_000);
     ipc.emitted.length = 0;
@@ -110,6 +114,16 @@ describe('LyricSyncBridge 事件拆分', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('窗口和事件通道失败时记录错误，不产生未处理的异步异常', async () => {
+    ipc.fail = true;
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await renderBridge();
+    for (const message of ['同步歌词曲目信息失败:', '同步歌词进度失败:', '监听歌词窗口就绪事件失败:']) {
+      expect(error).toHaveBeenCalledWith(message, expect.any(Error));
+    }
   });
 
   it('换歌时下发一次带完整歌词的 lyric-song', async () => {

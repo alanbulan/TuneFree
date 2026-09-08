@@ -68,6 +68,33 @@ pub struct RecommendationJob {
     pub items: Vec<RecommendationItem>,
     pub error: Option<String>,
     pub updated_at: i64,
+    pub deadline_at: Option<i64>,
+}
+
+#[cfg(test)]
+mod job_contract_tests {
+    use super::*;
+
+    #[test]
+    fn job_serializes_camel_case_fields_and_millisecond_deadline() {
+        let job = RecommendationJob {
+            job_id: "job-1".to_string(),
+            status: RecommendationJobStatus::Running,
+            stage: RecommendationJobStage::CloudRerank,
+            detail: "running".to_string(),
+            items: Vec::new(),
+            error: None,
+            updated_at: 1_700_000_000_000,
+            deadline_at: Some(1_700_000_265_000),
+        };
+        assert_eq!(
+            serde_json::to_value(job).unwrap(),
+            serde_json::json!({
+                "jobId": "job-1", "status": "running", "stage": "cloud_rerank", "detail": "running",
+                "items": [], "error": null, "updatedAt": 1_700_000_000_000_i64, "deadlineAt": 1_700_000_265_000_i64
+            })
+        );
+    }
 }
 
 /// Payload for the `recommendation-job-update` event. Never carries items:

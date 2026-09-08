@@ -1,5 +1,5 @@
 /* ── 组件层：toast、对话框、按钮、调色板、骨架屏、下拉、更新弹窗 ─── */
-/* 桌面壳组件（桌宠精灵帧、底栏小部件、关闭确认、虚拟列表布局）体量已经把本文件
+/* 桌面壳组件（音乐伙伴、底栏小部件、关闭确认、虚拟列表布局）体量已经把本文件
    顶到 700 行上限，拆到独立文件，用保序 @import 挂在本层最前面。 */
 @import "./desktop-widgets.css";
 
@@ -198,6 +198,28 @@
 .source-chip.active,
 .segment-button.active,
 .quality-button.active { color: #fff; background: var(--accent); }
+.quality-selector {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.quality-selector .quality-button {
+  min-height: 26px;
+  padding: 0 7px;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 600;
+}
+.quality-selector .quality-button:hover { color: var(--text); background: var(--glass-bg-soft); }
+.quality-selector .quality-button.active,
+.quality-selector .quality-button.active:hover { color: var(--accent); background: var(--card-solid); box-shadow: 0 1px 3px var(--shadow-sm); }
 .source-chip-icon {
   width: 13px;
   height: 13px;
@@ -205,7 +227,7 @@
 }
 
 .panel-field { display: grid; gap: 7px; margin-bottom: 13px; }
-.panel-field label { color: var(--muted); font-size: 10px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
+.panel-field label { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .01em; }
 .color-palette { display: flex; flex-direction: column; gap: 12px; }
 .color-palette-grid {
   display: flex;
@@ -492,64 +514,28 @@
   justify-content: flex-end;
 }
 
-/* 按钮与状态样式：关于页里的版本徽标与检查更新按钮统一高度对齐 */
-.about-hero-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.about-hero-actions .about-version,
-.about-hero-actions .update-check-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 28px;
-  line-height: 28px;
-  padding: 0 14px;
-  font-size: 11px;
-  font-weight: 900;
-  border-radius: 999px;
-  box-sizing: border-box;
-  margin-top: 0;
-  margin-bottom: 0;
-}
-
-.about-hero-actions .about-version {
-  color: var(--accent);
-  background: rgba(var(--accent-rgb), 0.09);
-  border: none;
-}
-
-.about-hero-actions .update-check-btn {
-  background: rgba(var(--accent-rgb), 0.05);
-  color: var(--accent);
-  border: 1px solid rgba(var(--accent-rgb), 0.2);
-}
-
+/* 关于页：检查更新按钮与忙碌状态 */
 .update-check-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 0.8rem;
-  font-weight: 500;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 13px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
-  transition: all 0.2s ease;
-  background: rgba(var(--accent-rgb), 0.1);
+  transition: background .16s ease, border-color .16s ease;
+  background: rgba(var(--accent-rgb), .06);
   color: var(--accent);
   border: 1px solid rgba(var(--accent-rgb), 0.2);
 }
 
 .update-check-btn:hover:not(:disabled) {
-  background: rgba(var(--accent-rgb), 0.15);
-  transform: translateY(-1px);
-}
-
-.update-check-btn:active:not(:disabled) {
-  transform: translateY(0);
+  background: rgba(var(--accent-rgb), .10);
+  border-color: rgba(var(--accent-rgb), .32);
 }
 
 .update-check-btn:disabled {

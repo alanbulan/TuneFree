@@ -1,6 +1,7 @@
 import { GD_STUDIO_API_BASE } from './config';
 import { toGDStudioApiSource } from './gdStudioModel';
-import { proxyFetch } from './proxy';
+import { createLinkedAbort, proxyFetch, throwIfAborted } from './proxy';
+import { bindResponseLifetime } from './responseLifetime';
 
 const GD_STUDIO_REQUEST_TIMEOUT_MS = 12_000;
 const TIME_SYNC_TIMEOUT_MS = 5_000;
@@ -60,24 +61,21 @@ export async function fetchWithTimeout(
   init: RequestInit,
   timeoutMs: number,
 ): Promise<Response> {
-  const controller = new AbortController();
-  const abortFromCaller = () => controller.abort(init.signal?.reason);
-  if (init.signal?.aborted) abortFromCaller();
-  init.signal?.addEventListener('abort', abortFromCaller, { once: true });
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const linked = createLinkedAbort(init.signal ?? undefined, timeoutMs);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-    init.signal?.removeEventListener('abort', abortFromCaller);
+    const response = await fetch(input, { ...init, signal: linked.signal });
+    return bindResponseLifetime(response, linked);
+  } catch (error) {
+    linked.cleanup();
+    throw error;
   }
 }
 
-export async function syncServerTime(): Promise<void> {
+export async function syncServerTime(signal?: AbortSignal): Promise<void> {
   const start = Date.now();
   const response = await fetchWithTimeout(
     'https://music-api.gdstudio.xyz/time',
-    { method: 'GET' },
+    { method: 'GET', signal },
     TIME_SYNC_TIMEOUT_MS,
   );
   const text = (await response.text()).trim();
@@ -174,8 +172,9 @@ export const fetchGDStudioData = async <T = any>(
 ): Promise<T> => {
   if (!timeSynced) {
     try {
-      await syncServerTime();
+      await syncServerTime(signal);
     } catch (error) {
+      throwIfAborted(signal);
       if (error instanceof GDStudioApiError) throw error;
       throw new GDStudioApiError('UNAVAILABLE', 0, String(error));
     }
@@ -190,6 +189,7 @@ export const fetchGDStudioData = async <T = any>(
       signal,
     }, GD_STUDIO_REQUEST_TIMEOUT_MS);
   } catch (error) {
+    throwIfAborted(signal);
     if (error instanceof GDStudioApiError) throw error;
     throw new GDStudioApiError('UNAVAILABLE', 0, String(error));
   }

@@ -1,10 +1,17 @@
 use super::*;
 
+#[cfg(test)]
+#[path = "__tests__/library_boundaries.rs"]
+mod boundary_tests;
+
 impl RecommendationService {
-    pub fn sync_library(&self, snapshot: LibrarySnapshot) -> CommandResult<()> {
+    pub fn sync_library(&self, snapshot: LibrarySnapshot) -> CommandResult<bool> {
         let conn = self.conn_handle()?;
         let library_changed = {
             let mut conn = conn.lock();
+            if !llm_config::load_recommendation_enabled(&conn)? {
+                return Ok(false);
+            }
             if let Some(delta) = snapshot.delta.as_ref() {
                 apply_library_delta(&mut conn, delta).map_err(CommandError::database)?
             } else {
@@ -15,7 +22,7 @@ impl RecommendationService {
         if library_changed {
             self.invalidate_and_schedule_refresh("曲库同步");
         }
-        Ok(())
+        Ok(true)
     }
 
     pub fn rebuild_index(&self) -> CommandResult<()> {

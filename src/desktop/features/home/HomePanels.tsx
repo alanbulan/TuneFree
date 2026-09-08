@@ -1,51 +1,37 @@
-import { BrainCircuit, Sparkles, WandSparkles } from 'lucide-react';
+import { useId, useRef } from 'react';
+import { ArrowRight, BrainCircuit, LoaderCircle, Sparkles } from 'lucide-react';
 import { PlayIcon } from '../../../core/components/Icons';
 import type { Song } from '../../../core/types';
 import { getMusicSourceLabel } from '../../../core/utils/musicSource';
+import MotionChoice from '../../components/MotionChoice';
 
 export function HomeHero({
-  greeting,
-  sourceLabel,
-  favoritesCount,
-  playlistsCount,
-  firstSong,
-  selectionName,
-  onPlay,
-  onSearch,
+  greeting, favoritesCount, playlistsCount, firstSong, selectionName, onPlay,
 }: {
   greeting: string;
-  sourceLabel: string;
   favoritesCount: number;
   playlistsCount: number;
   firstSong?: Song;
   selectionName: string;
   onPlay: (song: Song) => void;
-  onSearch: () => void;
 }) {
   return (
     <section className="hero-grid">
       <div className="hero-card">
-        <p className="eyebrow">by TuneFree</p>
+        <p className="eyebrow">让音乐陪你度过此刻</p>
         <h1 className="hero-title">{greeting}</h1>
-        <div className="hero-nowline"><span>桌面音乐空间</span><strong>{sourceLabel}</strong></div>
-        <div className="hero-actions">
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => firstSong && onPlay(firstSong)}
-            disabled={!firstSong}
-            title={firstSong ? `播放 ${selectionName || '当前榜单'}` : '先选择榜单'}
-          >
-            <PlayIcon size={15} /> {firstSong ? '播放榜单' : '先选择榜单'}
+        <p className="hero-copy">从熟悉的旋律，到下一首心动。</p>
+        {firstSong && (
+          <button type="button" className="primary-button hero-play"
+            onClick={() => onPlay(firstSong)} title={`播放 ${selectionName || '当前歌单'}`}>
+            <PlayIcon size={15} /> 播放当前歌单
           </button>
-          <button type="button" className="soft-button" onClick={onSearch}>搜索音乐</button>
-        </div>
+        )}
       </div>
-      <div className="stat-card">
-        <p className="eyebrow">Library</p>
-        <strong>{favoritesCount}</strong><span>收藏</span>
-        <strong>{playlistsCount}</strong><span>歌单</span>
-      </div>
+      <dl className="stat-card home-library-stats" aria-label="我的音乐库">
+        <div><dt>收藏歌曲</dt><dd>{favoritesCount}</dd></div>
+        <div><dt>我的歌单</dt><dd>{playlistsCount}</dd></div>
+      </dl>
     </section>
   );
 }
@@ -54,109 +40,87 @@ const sources = [
   { key: 'netease', label: getMusicSourceLabel('netease') },
   { key: 'qq', label: getMusicSourceLabel('qq') },
   { key: 'kuwo', label: getMusicSourceLabel('kuwo') },
-  { key: 'recommendation', label: '智能推荐' },
-  { key: 'embeat', label: '语境搜歌' },
+  { key: 'recommendation', label: '为你推荐' },
+  { key: 'embeat', label: 'AI 搜歌' },
 ];
 
 export function HomeSourceTabs({ activeSource, onChange }: { activeSource: string; onChange: (source: string) => void }) {
+  const indicatorId = useId();
   return (
-    <div className="section-header">
-      <h2 className="section-title">推荐榜单</h2>
-      <div className="inline-actions">
+    <div className="section-header home-source-header">
+      <h2 className="section-title">发现音乐</h2>
+      <div className="source-switch" role="group" aria-label="选择音源或推荐方式">
         {sources.map((source) => (
-          <button
-            type="button"
-            key={source.key}
-            className={`source-chip ${activeSource === source.key ? 'active' : ''} ${source.key === 'recommendation' ? 'smart-source-chip' : ''} ${source.key === 'embeat' ? 'ai-source-chip' : ''}`}
-            onClick={() => onChange(source.key)}
-          >
-            {source.key === 'recommendation' && <BrainCircuit className="source-chip-icon" size={13} />}
-            {source.key === 'embeat' && <WandSparkles className="source-chip-icon" size={13} />}
+          <MotionChoice key={source.key} indicatorId={indicatorId} selected={activeSource === source.key}
+            className={`source-chip${source.key === 'recommendation' ? ' source-chip-divider' : ''}`}
+            onClick={() => onChange(source.key)}>
+            {source.key === 'recommendation' && <BrainCircuit size={14} />}
+            {source.key === 'embeat' && <Sparkles size={14} />}
             <span>{source.label}</span>
-          </button>
+          </MotionChoice>
         ))}
       </div>
     </div>
   );
 }
 
-const contextTags = [
-  '下雨天的咖啡馆',
-  '沉浸写代码',
-  '晨起舒缓轻音乐',
-  '燃脂电音运动风',
-  '解压伤感民谣',
-  '禅意冥想与空灵',
-];
+const contextTags = ['下雨天的咖啡馆', '沉浸写代码', '晨起舒缓轻音乐', '夜晚散步'];
 
 export function ContextSearchPanel({
-  query,
-  loading,
-  currentSong,
-  onQueryChange,
-  onSearch,
+  query, loading, onQueryChange, onSearch, onCancel,
 }: {
   query: string;
   loading: boolean;
-  currentSong: Song | null;
   onQueryChange: (query: string) => void;
   onSearch: (query: string) => void;
+  onCancel: () => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const fillPrompt = (prompt: string) => {
+    onQueryChange(prompt);
+    inputRef.current?.focus();
+  };
   return (
-    <div className="ai-rainbow-flow-border context-search-panel">
-      <div className="context-search-body">
-        <div className="context-search-head">
+    <section className="context-search-panel" aria-labelledby="context-search-title">
+      <div className="context-search-head">
+        <div className="context-heading">
+          <span className="context-heading-icon" aria-hidden="true"><Sparkles size={21} /></span>
           <div>
-            <h3>语境搜歌</h3>
-            <p>描述想听的音乐意境、情感或特定场景，生成更贴近当下语境的歌单。</p>
+            <h3 id="context-search-title">这一刻，想听什么？</h3>
+            <p>一种心情、一个场景，让音乐跟上你的此刻。</p>
           </div>
-          {currentSong && (
-            <button
-              type="button"
-              className="ai-radar-btn"
-              onClick={() => onSearch(`和 ${currentSong.name} - ${currentSong.artist} 意境相似的歌曲`)}
-            >
-              <Sparkles size={13} />
-              <span>开启相似音乐流</span>
-            </button>
-          )}
-        </div>
-        <form
-          className="context-search-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (query.trim()) onSearch(query.trim());
-          }}
-        >
-          <input
-            type="text"
-            className="context-search-input"
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Tell me what you want to hear... (例如：适合沉浸写代码的纯音乐)"
-          />
-          <button
-            type="submit"
-            className="primary-button context-search-submit"
-            disabled={loading || !query.trim()}
-          >
-            {loading ? '分析中…' : '语境搜歌'}
-          </button>
-        </form>
-        <div className="context-tag-row">
-          <span className="context-tag-label">推荐语境：</span>
-          {contextTags.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              className="context-tag"
-              onClick={() => { onQueryChange(tag); onSearch(tag); }}
-            >
-              {tag}
-            </button>
-          ))}
         </div>
       </div>
-    </div>
+      <form className="context-search-form" onSubmit={(event) => {
+        event.preventDefault();
+        if (!loading && query.trim()) onSearch(query.trim());
+      }}>
+        <input ref={inputRef} type="text" className="context-search-input" value={query}
+          aria-label="描述想听的音乐" disabled={loading}
+          onChange={(event) => onQueryChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault();
+          }}
+          placeholder="例如：适合雨天独处的轻柔爵士" />
+        {loading ? (
+          <button type="button" className="soft-button context-search-submit" onClick={onCancel}>停止生成</button>
+        ) : (
+          <button type="submit" className="primary-button context-search-submit" disabled={!query.trim()}>
+            生成歌单 <ArrowRight size={16} />
+          </button>
+        )}
+      </form>
+      <div className="context-tag-row">
+        <span className="context-tag-label">试试</span>
+        {contextTags.map((tag) => (
+          <button key={tag} type="button" className="context-tag" disabled={loading}
+            onClick={() => fillPrompt(tag)}>{tag}</button>
+        ))}
+      </div>
+      <p className="context-search-status" role="status">
+        {loading ? <><LoaderCircle size={14} className="context-loading-icon" /> 正在为你挑选音乐…</>
+          : '选择一个灵感，或用自己的话描述。准备好后，按 Enter 生成。'}
+      </p>
+    </section>
   );
 }

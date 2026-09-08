@@ -17,6 +17,12 @@ export const useQueueControls = (
 ) => {
   const { commitCurrentSong, commitQueue, refs, setDuration,
     setIsLoading, setIsPlaying, setPlayMode } = runtime;
+  const {
+    preloadedResolutionKey: preloadedResolutionKeyRef, audio: audioRef, currentSong: currentSongRef,
+    playSong: playSongRef, queue: queueRef, playMode: playModeRef,
+    refreshedCacheKeys: refreshedCacheKeysRef, audioQuality: audioQualityRef, playRequestId: playRequestIdRef,
+    playAbort: playAbortRef, playNext: playNextRef,
+  } = refs;
   const playQueue = useCallback(async (songs: Song[], startSong?: Song) => {
     const seen = new Set<string>();
     const nextQueue = songs.filter((song) => {
@@ -30,28 +36,28 @@ export const useQueueControls = (
       ? nextQueue.find((song) => isSameSong(song, startSong)) || nextQueue[0]
       : nextQueue[0];
     if (!targetSong) return;
-    refs.preloadedResolutionKey.current = null;
+    preloadedResolutionKeyRef.current = null;
     commitQueue(nextQueue);
-    const activeAudio = refs.audio.current;
-    if (isSameSong(refs.currentSong.current, targetSong) && activeAudio?.src &&
+    const activeAudio = audioRef.current;
+    if (isSameSong(currentSongRef.current, targetSong) && activeAudio?.src &&
         activeAudio.src !== window.location.href && !activeAudio.paused) {
-      commitCurrentSong({ ...refs.currentSong.current, ...targetSong } as Song);
+      commitCurrentSong({ ...currentSongRef.current, ...targetSong } as Song);
       resolver.preloadNextSong(targetSong);
       return;
     }
-    await refs.playSong.current(targetSong);
-  }, [commitCurrentSong, commitQueue, refs, resolver]);
+    await playSongRef.current(targetSong);
+  }, [commitCurrentSong, commitQueue, resolver, preloadedResolutionKeyRef, audioRef, currentSongRef, playSongRef]);
 
   const playNext = useCallback((force = true) => {
-    const queue = refs.queue.current;
-    const current = refs.currentSong.current;
+    const queue = queueRef.current;
+    const current = currentSongRef.current;
     if (queue.length === 0) return;
     if (force) recommendation.logEarlySkipIfNeeded();
-    if (!force && refs.playMode.current === "loop") {
-      if (refs.audio.current) {
-        refs.audio.current.currentTime = 0;
+    if (!force && playModeRef.current === "loop") {
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
         audio.updateCurrentTimeState(0);
-        void refs.audio.current.play().catch((error) =>
+        void audioRef.current.play().catch((error) =>
           console.error("单曲循环重播失败:", error));
       }
       return;
@@ -61,26 +67,26 @@ export const useQueueControls = (
     if (!nextSong) return;
     if (current && isSameSong(nextSong, current)) {
       recommendation.startPlaybackSession();
-      refs.refreshedCacheKeys.current.clear();
-      void refs.playSong.current(nextSong, refs.audioQuality.current);
+      refreshedCacheKeysRef.current.clear();
+      void playSongRef.current(nextSong, audioQualityRef.current);
     } else {
-      void refs.playSong.current(nextSong);
+      void playSongRef.current(nextSong);
     }
-  }, [audio, recommendation, refs]);
+  }, [audio, recommendation, refs, audioRef, currentSongRef, playSongRef, queueRef, playModeRef, refreshedCacheKeysRef, audioQualityRef]);
 
   const playPrev = useCallback(() => {
-    const activeAudio = refs.audio.current;
+    const activeAudio = audioRef.current;
     if (activeAudio && activeAudio.currentTime > 3) {
       activeAudio.currentTime = 0;
       audio.updateCurrentTimeState(0);
       audio.updatePositionState();
       return;
     }
-    if (refs.queue.current.length === 0) return;
+    if (queueRef.current.length === 0) return;
     recommendation.logEarlySkipIfNeeded();
-    const prevIndex = resolveQueueStepIndex(refs, refs.currentSong.current, -1);
-    if (prevIndex >= 0) void refs.playSong.current(refs.queue.current[prevIndex]);
-  }, [audio, recommendation, refs]);
+    const prevIndex = resolveQueueStepIndex(refs, currentSongRef.current, -1);
+    if (prevIndex >= 0) void playSongRef.current(queueRef.current[prevIndex]);
+  }, [audio, recommendation, refs, audioRef, currentSongRef, playSongRef, queueRef]);
 
   const addToQueue = useCallback((song: Song) => {
     commitQueue((previous) => previous.some((queued) => isSameSong(queued, song))
@@ -90,17 +96,17 @@ export const useQueueControls = (
   const removeFromQueue = useCallback((songId: string | number, source?: string) => {
     const matches = (song: Song) => String(song.id) === String(songId) &&
       (!source || song.source === source);
-    const previousQueue = refs.queue.current;
+    const previousQueue = queueRef.current;
     const removedIndex = previousQueue.findIndex(matches);
     if (removedIndex < 0) return;
     const nextQueue = previousQueue.filter((song) => !matches(song));
     commitQueue(nextQueue);
-    refs.preloadedResolutionKey.current = null;
-    if (!refs.currentSong.current || !matches(refs.currentSong.current)) return;
+    preloadedResolutionKeyRef.current = null;
+    if (!currentSongRef.current || !matches(currentSongRef.current)) return;
     if (nextQueue.length === 0) {
-      refs.playRequestId.current += 1;
-      refs.playAbort.current?.abort();
-      const activeAudio = refs.audio.current;
+      playRequestIdRef.current += 1;
+      playAbortRef.current?.abort();
+      const activeAudio = audioRef.current;
       if (activeAudio) {
         activeAudio.pause();
         activeAudio.removeAttribute("src");
@@ -118,20 +124,20 @@ export const useQueueControls = (
       return;
     }
     const nextSong = nextQueue[Math.min(removedIndex, nextQueue.length - 1)] || nextQueue[0];
-    if (nextSong) void refs.playSong.current(nextSong);
-  }, [audio, commitCurrentSong, commitQueue, refs, setDuration, setIsLoading, setIsPlaying]);
+    if (nextSong) void playSongRef.current(nextSong);
+  }, [audio, commitCurrentSong, commitQueue, setDuration, setIsLoading, setIsPlaying, preloadedResolutionKeyRef, audioRef, currentSongRef, playSongRef, queueRef, playRequestIdRef, playAbortRef]);
 
   const clearQueue = useCallback(() => {
-    refs.preloadedResolutionKey.current = null;
-    commitQueue(refs.currentSong.current ? [refs.currentSong.current] : []);
-  }, [commitQueue, refs]);
+    preloadedResolutionKeyRef.current = null;
+    commitQueue(currentSongRef.current ? [currentSongRef.current] : []);
+  }, [commitQueue, preloadedResolutionKeyRef, currentSongRef]);
 
   const togglePlayMode = useCallback(() => {
     setPlayMode((previous) => previous === "sequence" ? "loop" :
       previous === "loop" ? "shuffle" : "sequence");
   }, [setPlayMode]);
 
-  useEffect(() => { refs.playNext.current = playNext; }, [playNext, refs]);
+  useEffect(() => { playNextRef.current = playNext; }, [playNext, playNextRef]);
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
     navigator.mediaSession.setActionHandler("play", () => void playback.resumePlayback());
@@ -156,9 +162,10 @@ export const useQueueControls = (
   }, [audio, runtime.currentSong, runtime.isPlaying]);
   // 依赖里刻意不含 runtime.queue：预加载成功后必然 patch 队列，
   // 把队列引用列进依赖会让本 effect 自我触发，形成级联解析。
-  // 函数内部读的是 refs.queue.current，始终是最新值。
+  // 函数内部读的是 queueRef.current，始终是最新值。
   useEffect(() => {
     if (runtime.currentSong && runtime.isPlaying) resolver.preloadNextSong(runtime.currentSong);
+  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- 预加载回调读 ref，音质或播放模式变化仍须重新计算下一首。
   }, [resolver, runtime.audioQuality, runtime.currentSong,
     runtime.isPlaying, runtime.playMode]);
 

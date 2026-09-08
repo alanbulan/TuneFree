@@ -68,32 +68,36 @@ export const usePlayerRuntime = () => {
   const [refs] = useState<PlayerRefs>(
     () => createPlayerRefs(currentSong, queue, playMode, audioQuality),
   );
+  const {
+    queue: queueRef, currentSong: currentSongRef, playMode: playModeRef,
+    audioQuality: audioQualityRef,
+  } = refs;
 
   // 队列与当前歌曲的唯一写入口：ref 先于 state 落地，
   // 因此 updater 内部不再需要（也不允许）写 ref。
   const commitQueue = useCallback((next: Song[] | ((previous: Song[]) => Song[])) => {
-    const nextQueue = typeof next === "function" ? next(refs.queue.current) : next;
-    if (nextQueue === refs.queue.current) return;
-    refs.queue.current = nextQueue;
+    const nextQueue = typeof next === "function" ? next(queueRef.current) : next;
+    if (nextQueue === queueRef.current) return;
+    queueRef.current = nextQueue;
     setQueue(nextQueue);
-  }, [refs]);
+  }, [queueRef]);
 
   const commitCurrentSong = useCallback((next: Song | null) => {
-    if (next === refs.currentSong.current) return;
-    refs.currentSong.current = next;
+    if (next === currentSongRef.current) return;
+    currentSongRef.current = next;
     setCurrentSong(next);
-  }, [refs]);
+  }, [currentSongRef]);
 
   useEffect(() => { persistQueue(queue); }, [queue]);
   useEffect(() => { persistCurrentSong(currentSong); }, [currentSong]);
   useEffect(() => {
     persistPlayMode(playMode);
-    refs.playMode.current = playMode;
-  }, [playMode, refs.playMode]);
+    playModeRef.current = playMode;
+  }, [playMode, playModeRef]);
   useEffect(() => {
     persistAudioQuality(audioQuality);
-    refs.audioQuality.current = audioQuality;
-  }, [audioQuality, refs.audioQuality]);
+    audioQualityRef.current = audioQuality;
+  }, [audioQuality, audioQualityRef]);
 
   return {
     currentSong, isPlaying, isLoading, currentTime, duration,

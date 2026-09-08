@@ -11,12 +11,14 @@ use tokio::io::AsyncWriteExt;
 use crate::app::error::{CommandError, CommandResult};
 
 use super::commands::run_downloads_blocking;
+use super::meta::{save_download_metadata, DownloadMetadataInput};
 use super::path::{
     checked_downloaded_size, cleanup_stale_partials, download_failed, partial_path_for,
     resolve_safe_download_dir, unique_download_path, validate_download_size,
     validate_download_task_id, AUDIO_FILE_EXTENSIONS, DOWNLOAD_IDLE_TIMEOUT,
     MAX_AUDIO_DOWNLOAD_BYTES,
 };
+use super::DownloadMetaStore;
 
 const DOWNLOAD_PROGRESS_EVENT: &str = "download-progress";
 
@@ -308,6 +310,7 @@ async fn download_with_progress(
 }
 
 struct PreparedDownload {
+    download_dir: PathBuf,
     file_path: PathBuf,
     filename: String,
     partial_path: PathBuf,
@@ -327,6 +330,7 @@ async fn prepare_download_paths(
             unique_download_path(&download_dir, &filename, Some("mp3"), AUDIO_FILE_EXTENSIONS)?;
         let partial_path = partial_path_for(&file_path)?;
         Ok(PreparedDownload {
+            download_dir,
             file_path,
             filename,
             partial_path,
@@ -347,7 +351,9 @@ pub(crate) async fn download_song_to_local(
     url: String,
     filename: String,
     task_id: String,
+    metadata: DownloadMetadataInput,
 ) -> CommandResult<DownloadedFile> {
+    metadata.validate()?;
     let task_id = validate_download_task_id(&task_id)?;
     let parsed_url = url::Url::parse(&url)
         .map_err(|e| CommandError::invalid_argument(format!("无效下载地址: {}", e)))?;
@@ -386,6 +392,17 @@ pub(crate) async fn download_song_to_local(
     registry.untrack_partial(&prepared.partial_path);
     registry.finish(&task_id);
     result?;
+    let store = DownloadMetaStore::resolve(&app_handle);
+    let dir = prepared.download_dir;
+    let saved_name = prepared.filename.clone();
+    run_downloads_blocking(move || save_download_metadata(&dir, &store, saved_name, metadata))
+        .await
+        .map_err(|error| {
+            CommandError::io(format!(
+                "音频已保存为 {}，但下载记录保存失败: {}",
+                prepared.filename, error
+            ))
+        })?;
 
     Ok(DownloadedFile {
         filepath: prepared.file_path.to_string_lossy().to_string(),
@@ -405,3 +422,7 @@ pub(crate) fn cancel_download(
 #[cfg(test)]
 #[path = "transfer_tests.rs"]
 mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "__tests__/transfer_commands.rs"]
+mod command_tests;

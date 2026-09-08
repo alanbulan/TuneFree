@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { usePlayerNowPlaying, usePlayerProgress } from '../../core/contexts/PlayerContext';
 import { useTheme } from '../../core/contexts/ThemeContext';
 import { useLyricDisplayMode } from '../../core/hooks/useLyricDisplayMode';
@@ -48,16 +48,12 @@ export default function LyricSyncBridge() {
     lyricDisplayMode,
     song: currentSong,
   });
-  snapshotRef.current = {
-    trackKey,
-    lrc,
-    currentTime,
-    duration,
-    isPlaying,
-    lyricOffsetSeconds,
-    lyricDisplayMode,
-    song: currentSong,
-  };
+  useLayoutEffect(() => {
+    snapshotRef.current = {
+      trackKey, lrc, currentTime, duration, isPlaying,
+      lyricOffsetSeconds, lyricDisplayMode, song: currentSong,
+    };
+  }, [trackKey, lrc, currentTime, duration, isPlaying, lyricOffsetSeconds, lyricDisplayMode, currentSong]);
 
   const emitSong = useCallback(async () => {
     const snapshot = snapshotRef.current;
@@ -102,6 +98,7 @@ export default function LyricSyncBridge() {
     void emitSong().then(emitTick);
     lastTickAtRef.current = Date.now();
     lastTickTimeRef.current = snapshotRef.current.currentTime;
+  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- 稳定回调从 ref 读最新值，曲目与歌词变化仍必须触发跨窗口广播。
   }, [trackKey, lrc, showDesktopLyric, emitSong, emitTick]);
 
   // 进度心跳：节流到 500ms，但 seek、播放状态与歌词设置变化立即同步。
