@@ -36,6 +36,7 @@ describe('发布资产验证与手动公开', () => {
   beforeEach(() => {
     vi.stubEnv('GITHUB_REPOSITORY', 'alanbulan/TuneFree_Mobile');
     vi.stubEnv('GITHUB_REF_NAME', tag);
+    vi.stubEnv('RELEASE_TAG', '');
     vi.mocked(execFileSync).mockReset().mockReturnValue(JSON.stringify(manifest()))
       .mockReturnValueOnce(JSON.stringify([[draft()]]));
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -60,6 +61,14 @@ describe('发布资产验证与手动公开', () => {
     expect(execFileSync).toHaveBeenLastCalledWith('gh', [
       'api', 'repos/alanbulan/TuneFree_Mobile/releases/123', '--method', 'PATCH', '--input', '-',
     ], { encoding: 'utf8', input: JSON.stringify({ draft: false, prerelease: false, make_latest: 'true' }) });
+  });
+
+  it('手动补包使用发布标签，不将工作流分支当作版本', () => {
+    vi.stubEnv('GITHUB_REF_NAME', 'tauri');
+    vi.stubEnv('RELEASE_TAG', tag);
+    completeRelease({ allowPublished: true });
+    expect(execFileSync).toHaveBeenCalledTimes(2);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining(tag));
   });
 
   it('发布较旧版本时保留较新的 latest', () => {
