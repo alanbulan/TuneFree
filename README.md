@@ -1,6 +1,6 @@
 <div align="center">
 
-![TuneFree Desktop — 桌面音乐工作空间](./docs/assets/readme-hero.svg)
+<img src="./src-tauri/icons/128x128@2x.png" alt="TuneFree 应用图标" width="88" height="88" />
 
 # TuneFree Desktop
 
@@ -14,9 +14,22 @@
 
 [下载安装](./INSTALL_GUIDE.md) · [技术架构](#技术架构) · [工程质量](#工程质量) · [社区与认可](#社区与认可) · [发布流程](./RELEASE.md)
 
+![TuneFree 技术概览](./docs/assets/readme-hero.svg)
+
 </div>
 
 TuneFree Desktop 是 TuneFree 的 Tauri v2 桌面客户端，主开发分支为 `tauri`。界面由 React 与 TypeScript 构建，Rust 承担原生能力、音乐解析、本地代理和推荐数据管理；应用复用系统 WebView。
+
+## 下载安装
+
+| 平台 | 安装资产 | 说明 |
+| --- | --- | --- |
+| Windows x64 | `TuneFree_{version}_x64-setup.exe` | NSIS 安装向导 |
+| macOS 11+ · Apple Silicon / Intel | `TuneFree_{version}_universal.dmg` | 同一通用安装包覆盖两种架构 |
+
+从 [GitHub Releases](https://github.com/alanbulan/TuneFree/releases/latest) 下载。`.sig`、`.app.tar.gz` 和 `latest.json` 用于自动更新，普通安装只需下载对应安装包。
+
+Mac 包采用 ad-hoc 本地签名，尚未进行 Apple Developer ID 签名与公证，首次打开方式见[安装说明](./INSTALL_GUIDE.md)。Mac 当前未实现系统凭据后端，因此不能保存 AI 模型 API Key；本地推荐与外部 Embeat 链路的能力边界见下文。Linux 暂无官方安装包。
 
 ## 桌面体验
 
@@ -27,17 +40,6 @@ TuneFree Desktop 是 TuneFree 的 Tauri v2 桌面客户端，主开发分支为 
 | 全屏播放器与主题设置 | 托盘控制、签名自动更新 | Embeat 自然语言语境搜歌 |
 
 **Bloub 音乐伙伴**复用上游 TypeScript 动画核心，通过项目维护的 React 适配层随播放与推荐状态变化。来源和许可见 [vendor/bloub](./vendor/bloub/README.md)。
-
-### 安装包
-
-| 平台 | 安装资产 | 说明 |
-| --- | --- | --- |
-| Windows x64 | `TuneFree_{version}_x64-setup.exe` | NSIS 安装向导 |
-| macOS 11+ · Apple Silicon / Intel | `TuneFree_{version}_universal.dmg` | 同一通用安装包覆盖两种架构 |
-
-从 [GitHub Releases](https://github.com/alanbulan/TuneFree/releases/latest) 下载。`.sig`、`.app.tar.gz` 和 `latest.json` 用于自动更新，普通安装只需下载对应安装包。
-
-Mac 包采用 ad-hoc 本地签名，尚未进行 Apple Developer ID 签名与公证，首次打开方式见[安装说明](./INSTALL_GUIDE.md)。Mac 当前未实现系统凭据后端，因此不能保存 AI 模型 API Key；本地推荐与外部 Embeat 链路的能力边界见下文。Linux 暂无官方安装包。
 
 ## 技术栈
 
@@ -64,42 +66,30 @@ Mac 包采用 ad-hoc 本地签名，尚未进行 Apple Developer ID 签名与公
 
 ```mermaid
 flowchart TB
-    subgraph Presentation[界面层]
-        Main[React 主窗口]
-        Lyric[独立桌面歌词窗口]
-        Core[播放状态 / 曲库 / 音源服务]
-        Main --> Core
-    end
-    subgraph Contract[契约边界]
-        IPC[类型化 IPC · 命令 / 事件 / 错误码]
-    end
-    subgraph Native[Rust 原生层]
-        App[窗口 / 下载 / 托盘 / 更新]
-        Rec[推荐服务 · 召回 / 排序 / 反馈]
-        HTTP[Axum 回环服务 · 随机端口 / 访问令牌]
-        DB[(本地 SQLite)]
-        Rec <--> DB
-    end
-    subgraph External[外部服务]
-        Music[音乐来源 / GD Music API]
-        LLM[用户配置的 OpenAI 兼容模型]
-        Release[GitHub Releases]
-    end
-    Core <--> IPC
-    Lyric <--> IPC
+    UI[React 主窗口 / 桌面歌词]
+    IPC[类型化 IPC 契约]
+    HTTP[Axum 本地代理]
+    App[Tauri 原生命令]
+    Rec[Rust 推荐服务]
+    DB[(SQLite)]
+    Music[音乐来源 / GD Music]
+    LLM[可选模型服务]
+    Release[GitHub Releases]
+    UI <--> IPC
+    UI --> HTTP
+    UI -. 音源服务 .-> Music
     IPC <--> App
     IPC <--> Rec
-    Core --> HTTP
     HTTP --> Music
-    Core --> Music
-    Rec -. 可选云端发现与重排 .-> LLM
+    Rec <--> DB
+    Rec -. 发现与重排 .-> LLM
     App --> Release
     classDef ui fill:#eef2ff,stroke:#818cf8,color:#1e293b
     classDef native fill:#ecfdf5,stroke:#34d399,color:#134e4a
     classDef edge fill:#fff7ed,stroke:#fb923c,color:#7c2d12
-    class Main,Lyric,Core ui
+    class UI,IPC ui
     class App,Rec,HTTP,DB native
-    class IPC,Music,LLM,Release edge
+    class Music,LLM,Release edge
 ```
 
 ### 三条关键链路
@@ -136,36 +126,6 @@ scripts/                     架构、IPC、发布和运行验收脚本
 ```
 
 </details>
-
-## 工程质量
-
-质量指标以仓库配置和可追溯的 Actions 运行记录为依据。
-
-| 指标 | 当前门禁 | 证据 |
-| --- | --- | --- |
-| 前端行覆盖率 | **100% 阈值**，按配置纳入业务源码 | [Vitest 配置](./vitest.config.ts)；CI 上传 `coverage-lcov` |
-| 静态检查 | Oxlint 零告警、TypeScript 类型检查、Rust fmt / Clippy | [共享 Validate 工作流](./.github/workflows/validate.yml) |
-| 架构一致性 | 分层导入、文件规模、样式预算、IPC 双向契约检查 | [架构守卫](./scripts/check-architecture.mjs)、[IPC 守卫](./scripts/check-ipc-contract.mjs) |
-| 依赖审计 | npm 高危及以上漏洞阻断流水线 | [package.json](./package.json) 中的 `audit` |
-| 启动验收 | 真正运行程序，等待界面挂载并请求本地健康检查 | [smoke-test.mjs](./scripts/smoke-test.mjs) |
-| 发布完整性 | Windows / macOS 安装与更新资产、签名、版本和平台 URL 检查 | [publish-release.mjs](./scripts/publish-release.mjs) |
-
-覆盖率阈值不代表外部音乐源、付费模型或所有平台功能均已验收。启动测试使用隔离目录，并禁用云端模型与自动更新；真实 GD Music 接口通过 `npm run api:verify:gd` 单独验证。
-
-### 项目增长
-
-[![GitHub Stars](https://img.shields.io/github/stars/alanbulan/TuneFree?style=flat-square&label=stars)](https://github.com/alanbulan/TuneFree/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/alanbulan/TuneFree?style=flat-square&label=forks)](https://github.com/alanbulan/TuneFree/forks)
-[![Downloads](https://img.shields.io/github/downloads/alanbulan/TuneFree/total?style=flat-square&label=release%20downloads&color=149eca)](https://github.com/alanbulan/TuneFree/releases)
-[![Last commit](https://img.shields.io/github/last-commit/alanbulan/TuneFree/tauri?style=flat-square)](https://github.com/alanbulan/TuneFree/commits/tauri)
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=alanbulan/TuneFree&type=Date&theme=dark" />
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=alanbulan/TuneFree&type=Date" />
-  <img alt="TuneFree GitHub Star 随时间增长的历史曲线" src="https://api.star-history.com/svg?repos=alanbulan/TuneFree&type=Date" width="100%" />
-</picture>
-
-曲线由 [Star History](https://www.star-history.com/#alanbulan/TuneFree&Date) 根据 GitHub 数据生成，展示关注度变化；Stars、Forks 和下载量均为整个仓库的统计，包含历史移动端版本，不等同于桌面端活跃用户或性能指标。
 
 ## 开发与验证
 
@@ -206,6 +166,21 @@ npm run api:verify:gd -- --source joox --details
 
 </details>
 
+## 工程质量
+
+质量指标以仓库配置和可追溯的 Actions 运行记录为依据。
+
+| 指标 | 当前门禁 | 证据 |
+| --- | --- | --- |
+| 前端行覆盖率 | **100% 阈值**，按配置纳入业务源码 | [Vitest 配置](./vitest.config.ts)；CI 上传 `coverage-lcov` |
+| 静态检查 | Oxlint 零告警、TypeScript 类型检查、Rust fmt / Clippy | [共享 Validate 工作流](./.github/workflows/validate.yml) |
+| 架构一致性 | 分层导入、文件规模、样式预算、IPC 双向契约检查 | [架构守卫](./scripts/check-architecture.mjs)、[IPC 守卫](./scripts/check-ipc-contract.mjs) |
+| 依赖审计 | npm 高危及以上漏洞阻断流水线 | [package.json](./package.json) 中的 `audit` |
+| 启动验收 | 真正运行程序，等待界面挂载并请求本地健康检查 | [smoke-test.mjs](./scripts/smoke-test.mjs) |
+| 发布完整性 | Windows / macOS 安装与更新资产、签名、版本和平台 URL 检查 | [publish-release.mjs](./scripts/publish-release.mjs) |
+
+覆盖率阈值不代表外部音乐源、付费模型或所有平台功能均已验收。启动测试使用隔离目录，并禁用云端模型与自动更新；真实 GD Music 接口通过 `npm run api:verify:gd` 单独验证。
+
 ## 构建与发布
 
 ```mermaid
@@ -221,6 +196,19 @@ flowchart LR
 构建阶段的资产暂存草稿，Windows 与 macOS 串行上传以保留 `latest.json` 的所有平台条目。Mac 构建另外验证通用二进制的两种架构、真实启动和原生 Rust 检查；全部通过才上传。新版本资产齐全后自动公开，旧版本不会覆盖更高版本的 `latest`。
 
 已公开版本可通过 `workflow_dispatch` 补发 Mac 包：版本号必须一致，已有 Mac 资产会阻止覆盖，Windows 包和原标签保持不变。操作与签名说明见 [RELEASE.md](./RELEASE.md)。
+
+## 音源与开源许可
+
+| 展示来源 | 搜索 | 播放解析 |
+| --- | --- | --- |
+| 网易云 | 原生前端服务与聚合搜索 | Tauri 本地服务优先，按现有链路解析 |
+| QQ 音乐 | 原生前端服务与聚合搜索 | 本地服务支持 `qq` / `tencent` 别名 |
+| 酷我音乐 | 原生前端服务与聚合搜索 | Tauri 本地服务解析 |
+| JOOX | GD Music 公开 API | GD Music 解析链路；需主动开启并受接口频率限制 |
+
+项目源码采用 [MIT License](./LICENSE)。Bloub 动画核心来自 [jeremy-prt/bloub](https://github.com/jeremy-prt/bloub)，沿用其 MIT 许可；本项目维护 React 适配层，上游没有官方 React 组件。
+
+音乐内容及元数据来自第三方服务，本仓库不托管音频资源。GD Music API 由 **GD音乐台（[music.gdstudio.xyz](https://music.gdstudio.xyz/)）** 提供，使用时须遵守其 CC BY-NC 4.0 与非商业使用要求。第三方内容的版权、可用性与使用限制以对应服务条款为准。
 
 ## 社区与认可
 
@@ -238,15 +226,17 @@ flowchart LR
 
 社区关联的表述与徽标形式参考 [InkOS](https://github.com/Narcooo/inkos#readme)、[mediary-scout](https://github.com/fancydirty/mediary-scout#readme) 和 [LinuxDo-Badges](https://github.com/postyizhan/LinuxDo-Badges)。问题反馈请使用 [Issues](https://github.com/alanbulan/TuneFree/issues)，附上版本、操作系统、复现步骤与脱敏日志；代码改进通过 Pull Request 提交，并通过仓库现有检查。
 
-## 音源与开源许可
+## Star History
 
-| 展示来源 | 搜索 | 播放解析 |
-| --- | --- | --- |
-| 网易云 | 原生前端服务与聚合搜索 | Tauri 本地服务优先，按现有链路解析 |
-| QQ 音乐 | 原生前端服务与聚合搜索 | 本地服务支持 `qq` / `tencent` 别名 |
-| 酷我音乐 | 原生前端服务与聚合搜索 | Tauri 本地服务解析 |
-| JOOX | GD Music 公开 API | GD Music 解析链路；需主动开启并受接口频率限制 |
+[![GitHub Stars](https://img.shields.io/github/stars/alanbulan/TuneFree?style=flat-square&label=stars)](https://github.com/alanbulan/TuneFree/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/alanbulan/TuneFree?style=flat-square&label=forks)](https://github.com/alanbulan/TuneFree/forks)
+[![Downloads](https://img.shields.io/github/downloads/alanbulan/TuneFree/total?style=flat-square&label=release%20downloads&color=149eca)](https://github.com/alanbulan/TuneFree/releases)
+[![Last commit](https://img.shields.io/github/last-commit/alanbulan/TuneFree/tauri?style=flat-square)](https://github.com/alanbulan/TuneFree/commits/tauri)
 
-项目源码采用 [MIT License](./LICENSE)。Bloub 动画核心来自 [jeremy-prt/bloub](https://github.com/jeremy-prt/bloub)，沿用其 MIT 许可；本项目维护 React 适配层，上游没有官方 React 组件。
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=alanbulan/TuneFree&type=Date&theme=dark" />
+  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=alanbulan/TuneFree&type=Date" />
+  <img alt="TuneFree GitHub Star 随时间增长的历史曲线" src="https://api.star-history.com/svg?repos=alanbulan/TuneFree&type=Date" width="100%" />
+</picture>
 
-音乐内容及元数据来自第三方服务，本仓库不托管音频资源。GD Music API 由 **GD音乐台（[music.gdstudio.xyz](https://music.gdstudio.xyz/)）** 提供，使用时须遵守其 CC BY-NC 4.0 与非商业使用要求。第三方内容的版权、可用性与使用限制以对应服务条款为准。
+曲线由 [Star History](https://www.star-history.com/#alanbulan/TuneFree&Date) 根据 GitHub 数据生成，展示关注度变化；Stars、Forks 和下载量均为整个仓库的统计，包含历史移动端版本，不等同于桌面端活跃用户或性能指标。
