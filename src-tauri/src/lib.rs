@@ -5,6 +5,6 @@ pub mod server;
 
 pub use app::run;
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, any(windows, target_os = "macos")))]
 #[path = "__tests__/support.rs"]
 pub(crate) mod test_support;

@@ -1,13 +1,19 @@
+#[cfg(windows)]
 use axum::{extract::State, http::StatusCode, Json, Router};
+#[cfg(windows)]
 use parking_lot::Mutex;
+#[cfg(windows)]
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(windows)]
 use std::{collections::VecDeque, sync::Arc};
 
+#[cfg(windows)]
 #[path = "https.rs"]
 pub(crate) mod https;
 
 /// 使用真实 Wry 运行时与空窗口配置。测试只持有应用句柄，不创建用户主窗口。
+#[cfg(windows)]
 pub(crate) fn app() -> tauri::App {
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     let mut context = tauri::test::mock_context(tauri::test::noop_assets());
@@ -39,17 +45,20 @@ pub(crate) fn config_input(base_url: &str) -> crate::recommendation::model::LlmC
 }
 
 #[derive(Clone)]
+#[cfg(windows)]
 struct ServerState {
     calls: Arc<Mutex<Vec<Value>>>,
     replies: Arc<Mutex<VecDeque<(StatusCode, Value)>>>,
 }
 
+#[cfg(windows)]
 pub(crate) struct LlmServer {
     pub(crate) base_url: String,
     pub(crate) calls: Arc<Mutex<Vec<Value>>>,
     task: tokio::task::JoinHandle<()>,
 }
 
+#[cfg(windows)]
 impl LlmServer {
     pub(crate) async fn start(replies: Vec<(u16, Value)>) -> Self {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -87,6 +96,7 @@ impl LlmServer {
     }
 }
 
+#[cfg(windows)]
 async fn reply(
     State(state): State<ServerState>,
     Json(body): Json<Value>,
@@ -100,6 +110,7 @@ async fn reply(
     (status, Json(response))
 }
 
+#[cfg(windows)]
 impl Drop for LlmServer {
     fn drop(&mut self) {
         self.task.abort();
