@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">TuneFree Desktop</title>
+  <desc id="desc">React interface, typed IPC, Rust services and local SQLite storage.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#101827"/><stop offset="1" stop-color="#182c39"/></linearGradient>
+    <linearGradient id="wave"><stop stop-color="#fb7185"/><stop offset="1" stop-color="#5eead4"/></linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#8da5ba" stroke-opacity=".08"/></pattern>
+  </defs>
+  <rect width="1200" height="360" rx="20" fill="url(#bg)"/>
+  <rect width="1200" height="360" rx="20" fill="url(#grid)"/>
+  <path d="M56 46h32" stroke="#fb7185" stroke-width="3"/>
+  <text x="104" y="51" fill="#a8bacb" font-family="Segoe UI,Arial,sans-serif" font-size="13" letter-spacing="3">DESKTOP MUSIC WORKSPACE</text>
+  <text x="54" y="134" fill="#f0f5fa" font-family="Segoe UI,Arial,sans-serif" font-size="66" font-weight="700" letter-spacing="-2">TuneFree</text>
+  <text x="58" y="177" fill="#a8bacb" font-family="Segoe UI,Arial,sans-serif" font-size="20">One library. Multiple sources. Your listening space.</text>
+  <g transform="translate(745 66)" fill="none" stroke="url(#wave)" stroke-width="5" stroke-linecap="round">
+    <path d="M0 64v12m18-34v56m18-76v96m18-116v136m18-92v48m18-30v12m18-60v108m18-135v162m18-124v86m18-70v54m18-33v12m18-56v100m18-129v158m18-122v86m18-67v48m18-31v14m18-21v28m18-20v12"/>
+  </g>
+  <path d="M56 224H1144" stroke="#344657"/>
+  <g font-family="Segoe UI,Arial,sans-serif">
+    <g transform="translate(56 249)"><text fill="#6f899e" font-size="11" letter-spacing="2">01 / INTERFACE</text><text y="32" fill="#e0e9f0" font-size="20">React + TypeScript</text></g>
+    <g transform="translate(348 249)"><text fill="#6f899e" font-size="11" letter-spacing="2">02 / CONTRACT</text><text y="32" fill="#e0e9f0" font-size="20">Typed Tauri IPC</text></g>
+    <g transform="translate(639 249)"><text fill="#6f899e" font-size="11" letter-spacing="2">03 / RUNTIME</text><text y="32" fill="#e0e9f0" font-size="20">Rust + Tokio</text></g>
+    <g transform="translate(930 249)"><text fill="#6f899e" font-size="11" letter-spacing="2">04 / STORAGE</text><text y="32" fill="#e0e9f0" font-size="20">Local SQLite</text></g>
+  </g>
+  <g fill="none" stroke="#5a7388" stroke-width="1.5"><path d="M296 269h22m-6-5 6 5-6 5M585 269h22m-6-5 6 5-6 5M873 269h22m-6-5 6 5-6 5"/></g>
+  <text x="56" y="331" fill="#829bb0" font-family="Segoe UI,Arial,sans-serif" font-size="11" letter-spacing="2">WINDOWS / macOS</text>
+  <text x="1144" y="331" text-anchor="end" fill="#829bb0" font-family="Segoe UI,Arial,sans-serif" font-size="11" letter-spacing="2">OPEN SOURCE · MIT</text>
+</svg>
