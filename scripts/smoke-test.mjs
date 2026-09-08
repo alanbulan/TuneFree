@@ -1,7 +1,7 @@
 /** 启动当前构建产物，在隔离目录验证主界面挂载、IPC 与本地 HTTP 服务。 */
 import { spawn, execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +17,7 @@ function verifyBuild() {
   if (!existsSync(executable)) throw new Error('未找到产物，请先运行 npx tauri build --no-bundle');
   const inputs = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z', '--',
     'src', 'app', 'src-tauri/src', 'src-tauri/build.rs', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock',
-    'src-tauri/tauri.conf.json', 'src-tauri/capabilities', 'package.json', 'package-lock.json', 'vite.config.ts',
+    'src-tauri/tauri.conf.json', 'src-tauri/tauri.macos.conf.json', 'src-tauri/capabilities', 'package.json', 'package-lock.json', 'vite.config.ts',
     'scripts/build-info.ts', 'rust-toolchain.toml', 'vendor/bloub',
   ], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
   const builtAt = statSync(executable).mtimeMs;
@@ -67,6 +67,15 @@ async function runSmoke() {
     throw new Error(`${timeoutMs}ms 内主界面未确认就绪`);
   } catch (error) {
     if (output.trim()) console.error(output.trim());
+    // 正式构建的 Rust 日志写入隔离目录；失败时在清理前输出，供 CI 诊断。
+    const logDir = join(workDir, 'logs');
+    try {
+      if (existsSync(logDir)) {
+        for (const entry of readdirSync(logDir, { withFileTypes: true }).filter(entry => entry.isFile())) {
+          console.error(readFileSync(join(logDir, entry.name), 'utf8').slice(-20_000));
+        }
+      }
+    } catch (logError) { console.warn(`无法读取冒烟日志：${logError.message}`); }
     throw error;
   } finally {
     if (!exited) child.kill();

@@ -20,6 +20,8 @@
 
 Mac 当前未配置系统凭据后端，因此不能保存自定义 AI 模型 API Key。通用包包含两种 CPU 架构，但 CI 启动验收运行在 Apple Silicon runner 上，不等同于 Intel 实机或所有 macOS 版本的完整验收。
 
+Mac 冒烟测试会显示主窗口以验证首帧，使用非持久化 WebView 和隔离数据目录。
+
 同一版本中的 `.sig`、`.app.tar.gz` 和 `latest.json` 供应用自动更新使用，普通安装无需手动下载。Linux 当前没有官方安装包。
 
 ## 开发环境

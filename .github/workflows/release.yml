@@ -183,6 +183,7 @@ jobs:
         with:
           workspaces: src-tauri
           key: release-universal-apple-darwin
+          cache-on-failure: true
 
       - name: Install frontend dependencies
         run: |
