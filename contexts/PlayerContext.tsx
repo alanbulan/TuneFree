@@ -40,6 +40,14 @@ const getFiniteAudioDuration = (audio: HTMLAudioElement): number =>
 
 const IOS_AUTO_ADVANCE_LEAD_SECONDS = 1.25;
 
+/** 歌词整体平移的允许范围（秒），与桌面端一致。 */
+const LYRIC_OFFSET_LIMIT_SECONDS = 10;
+
+const clampLyricOffset = (value: number): number =>
+  Number.isFinite(value)
+    ? Math.max(-LYRIC_OFFSET_LIMIT_SECONDS, Math.min(LYRIC_OFFSET_LIMIT_SECONDS, value))
+    : 0;
+
 /** iOS / iPadOS（含 iPad 桌面模式伪装成 MacIntel）判定。 */
 const isIOSDevice = (): boolean =>
   /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -71,6 +79,8 @@ interface PlayerContextType {
   isLoading: boolean;
   currentTime: number;
   duration: number;
+  /** 歌词整体平移秒数，范围 [-10, 10]，与桌面端一致（仅内存态，不持久化）。 */
+  lyricOffsetSeconds: number;
   volume: number;
   playMode: PlayMode;
   queue: Song[];
@@ -91,6 +101,8 @@ interface PlayerContextType {
   togglePlayMode: () => void;
   clearQueue: () => void;
   setAudioQuality: (quality: AudioQuality) => void;
+  setLyricOffsetSeconds: (offset: number) => void;
+  adjustLyricOffsetSeconds: (delta: number) => void;
   initAudioContext: () => void;
 }
 
@@ -110,6 +122,8 @@ type PlayerActionsType = Pick<
   | "togglePlayMode"
   | "clearQueue"
   | "setAudioQuality"
+  | "setLyricOffsetSeconds"
+  | "adjustLyricOffsetSeconds"
   | "initAudioContext"
 >;
 
@@ -124,7 +138,10 @@ type PlayerSettingsType = Pick<PlayerContextType, "audioQuality">;
 
 type PlayerAnalyserType = Pick<PlayerContextType, "analyser">;
 
-type PlayerProgressType = Pick<PlayerContextType, "currentTime" | "duration">;
+type PlayerProgressType = Pick<
+  PlayerContextType,
+  "currentTime" | "duration" | "lyricOffsetSeconds"
+>;
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 const PlayerActionsContext =
@@ -153,6 +170,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [lyricOffsetSeconds, setLyricOffsetSecondsState] = useState(0);
   const [volume, setVolume] = useState(1);
   const [queue, setQueue] = useState<Song[]>(() => loadStoredQueue());
   const [playMode, setPlayMode] = useState<PlayMode>(() => loadStoredPlayMode());
@@ -1147,8 +1165,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   }, []);
 
-  const setAudioQuality = useCallback((q: AudioQuality) => {
-    setAudioQualityState(q);
+  const setLyricOffsetSeconds = useCallback((offset: number) => {
+    setLyricOffsetSecondsState(clampLyricOffset(offset));
+  }, []);
+
+  const adjustLyricOffsetSeconds = useCallback((delta: number) => {
+    setLyricOffsetSecondsState((current) =>
+      clampLyricOffset(current + (Number.isFinite(delta) ? delta : 0)),
+    );
+  }, []);
+
+  const setAudioQuality = useCallback((q: AudioQuality) => {    setAudioQualityState(q);
     // 使用 ref 避免 stale closure，不依赖 currentSong/isPlaying state
     if (
       currentSongRef.current &&
@@ -1175,6 +1202,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       togglePlayMode,
       clearQueue,
       setAudioQuality,
+      setLyricOffsetSeconds,
+      adjustLyricOffsetSeconds,
       initAudioContext,
     }),
     [
@@ -1192,6 +1221,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       togglePlayMode,
       clearQueue,
       setAudioQuality,
+      setLyricOffsetSeconds,
+      adjustLyricOffsetSeconds,
       initAudioContext,
     ],
   );
@@ -1231,8 +1262,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     () => ({
       currentTime,
       duration,
+      lyricOffsetSeconds,
     }),
-    [currentTime, duration],
+    [currentTime, duration, lyricOffsetSeconds],
   );
 
   // Context value 用 useMemo 稳定对象引用：
@@ -1244,6 +1276,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       isLoading,
       currentTime,
       duration,
+      lyricOffsetSeconds,
       volume,
       playMode,
       queue,
@@ -1258,6 +1291,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       isLoading,
       currentTime,
       duration,
+      lyricOffsetSeconds,
       volume,
       playMode,
       queue,
@@ -1294,6 +1328,7 @@ const PLAYER_DEFAULTS: PlayerContextType = {
   isLoading: false,
   currentTime: 0,
   duration: 0,
+  lyricOffsetSeconds: 0,
   volume: 1,
   playMode: "sequence",
   queue: [],
@@ -1314,6 +1349,8 @@ const PLAYER_DEFAULTS: PlayerContextType = {
   togglePlayMode: () => {},
   clearQueue: () => {},
   setAudioQuality: () => {},
+  setLyricOffsetSeconds: () => {},
+  adjustLyricOffsetSeconds: () => {},
   initAudioContext: () => {},
 };
 
@@ -1352,6 +1389,8 @@ export const usePlayerActions = () => {
       togglePlayMode: PLAYER_DEFAULTS.togglePlayMode,
       clearQueue: PLAYER_DEFAULTS.clearQueue,
       setAudioQuality: PLAYER_DEFAULTS.setAudioQuality,
+      setLyricOffsetSeconds: PLAYER_DEFAULTS.setLyricOffsetSeconds,
+      adjustLyricOffsetSeconds: PLAYER_DEFAULTS.adjustLyricOffsetSeconds,
       initAudioContext: PLAYER_DEFAULTS.initAudioContext,
     };
   }
@@ -1422,6 +1461,7 @@ export const usePlayerProgress = () => {
     return {
       currentTime: PLAYER_DEFAULTS.currentTime,
       duration: PLAYER_DEFAULTS.duration,
+      lyricOffsetSeconds: PLAYER_DEFAULTS.lyricOffsetSeconds,
     };
   }
   return context;
