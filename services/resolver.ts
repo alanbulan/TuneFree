@@ -1,6 +1,6 @@
 import { API_PREFIX } from "./config";
 import { fixUrl } from "./utils";
-import { fetchNeteaselyrics, searchNetease } from "./netease";
+import { fetchNeteaseLyrics, searchNetease } from "./netease";
 import { fetchQQLyrics, searchQQ } from "./qq";
 import { fetchKuwoLyrics, searchKuwo } from "./kuwo";
 import {
@@ -133,7 +133,7 @@ export const fetchFallbackLyrics = async (
       // GD Studio 歌词为空且是原生源，回退官方歌词 API
       if (!lrc && isNativeMusicSource(normalizedSource)) {
         if (normalizedSource === "netease") {
-          lrc = await fetchNeteaselyrics(id);
+          lrc = await fetchNeteaseLyrics(id);
         } else if (normalizedSource === "qq") {
           lrc = await fetchQQLyrics(id);
         } else if (normalizedSource === "kuwo") {

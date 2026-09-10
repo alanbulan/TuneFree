@@ -19,6 +19,7 @@ export {
   searchNetease,
   getNeteaseTopLists,
   getNeteaseTopListDetail,
+  fetchNeteaseLyrics,
   fetchNeteaselyrics,
 } from "./netease";
 export {

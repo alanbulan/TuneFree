@@ -27,6 +27,7 @@ const ALLOWED_HOSTS = [
     'nmobi.kuwo.cn',
     'musicpay.kuwo.cn',
     'm.kuwo.cn',
+    'newlyric.kuwo.cn',
     'music-api.gdstudio.xyz',
     'tunehub.sayqz.com',
     'hdslb.com',
