@@ -1,8 +1,43 @@
 import crypto from 'node:crypto';
 import { Buffer } from 'node:buffer';
 
+/**
+ * Cloudflare Pages Function — 原生音源播放地址解析
+ * 路由：/api/url?platform=<netease|qq|kuwo>&id=<songId>&quality=<128k|320k|flac|flac24bit>
+ *
+ * 协议与桌面端 Rust provider（src-tauri/src/api/{netease,qq,kuwo}.rs）保持一致：
+ * - netease: EAPI AES-128-ECB 加密请求
+ * - qq:      musicu.fcg CgiGetVkey，filename 必须是 "M500<mid><mid>.mp3" 形式
+ * - kuwo:    mobi.s?f=kuwo&q=<base64(块加密参数)>，响应为 key=value 文本行
+ *
+ * 响应约定（客户端只关心 url 是否存在）：
+ *   200 { url: "https://..." }                解析成功
+ *   200 { url: null, reason: "vip" }          歌曲为 VIP / 版权受限
+ *   200 { url: null, reason: "unavailable" }  上游没有可用地址
+ *   400 { error }                             参数缺失或平台不支持
+ *   502 { error }                             请求上游失败
+ */
+
 // Types
 interface Env {}
+
+/** 单个音源的解析结果：要么给出地址，要么说明为什么没有。 */
+type ResolveResult =
+  | { url: string }
+  | { url: null; reason: "vip" | "unavailable" };
+
+/** 只接受 http(s) 绝对地址，避免把 file:// 之类的值交给媒体元素。 */
+const isPlayableUrl = (value: unknown): value is string => {
+    if (typeof value !== "string") return false;
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    try {
+        const parsed = new URL(trimmed);
+        return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+        return false;
+    }
+};
 
 export const onRequest: any = async (context: any) => {
     const { request } = context;
@@ -19,28 +54,28 @@ export const onRequest: any = async (context: any) => {
     }
 
     try {
-        let playUrl: string | null = null;
-        
+        let result: ResolveResult | null = null;
+
         if (platform === 'netease') {
-            playUrl = await getNeteaseUrl(id, quality);
+            result = await getNeteaseUrl(id, quality);
         } else if (platform === 'qq' || platform === 'tencent') {
-            playUrl = await getTencentUrl(id, quality);
+            result = await getQQUrl(id, quality);
         } else if (platform === 'kuwo') {
-            playUrl = await getKuwoUrl(id, quality);
+            result = await getKuwoUrl(id, quality);
         } else {
             return new Response(JSON.stringify({ error: `Platform ${platform} not supported natively` }), {
                 status: 400,
                 headers: corsHeaders()
             });
         }
-        
-        return new Response(JSON.stringify({ url: playUrl }), {
+
+        return new Response(JSON.stringify(result), {
             status: 200,
             headers: corsHeaders()
         });
     } catch (e: any) {
         return new Response(JSON.stringify({ error: e.message || 'Failed to fetch url' }), {
-            status: 500,
+            status: 502,
             headers: corsHeaders()
         });
     }
@@ -73,51 +108,100 @@ const USER_AGENTS = [
 ];
 const getRandomUserAgent = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
-async function getNeteaseUrl(songmid: string, quality: string) {
+async function getNeteaseUrl(songmid: string, quality: string): Promise<ResolveResult> {
+    // 码率表与 Rust get_netease_url 一致：未知音质按 128k 处理。
     const qualityMap: Record<string, number> = { "128k": 128000, "320k": 320000, "flac": 999000 };
     const bitrate = qualityMap[quality] || 128000;
-    
+
     const apiUrl = "https://interface3.music.163.com/eapi/song/enhance/player/url";
     const reqPath = "/api/song/enhance/player/url";
-    
+
     const payloadStr = JSON.stringify({ ids: `[${songmid}]`, br: bitrate });
     const hashStr = `nobody${reqPath}use${payloadStr}md5forencrypt`;
     const md5Hash = md5Hex(hashStr);
     const encryptTarget = `${reqPath}-36cd479b6b5-${payloadStr}-36cd479b6b5-${md5Hash}`;
     const aesKey = "e82ckenh8dichen8";
-    
+
     const formParams = {
         params: aesEncryptHex(encryptTarget, aesKey, '', "aes-128-ecb").toUpperCase()
     };
 
     const resp = await fetch(apiUrl, {
         method: "POST",
-        headers: { 
+        headers: {
             "Content-Type": "application/x-www-form-urlencoded",
             "Cookie": "os=pc;"
         },
         body: new URLSearchParams(formParams).toString()
     });
 
+    if (!resp.ok) throw new Error(`Netease responded HTTP ${resp.status}`);
+
     const data: any = await resp.json();
-    const url = data?.data?.[0]?.url;
-    if (!url) throw new Error("Netease returned empty URL (VIP/Copyright)");
-    return url;
+    const playUrl = data?.data?.[0]?.url;
+    // 网易云对 VIP / 版权受限歌曲返回空地址，属于正常结果而非错误。
+    if (!isPlayableUrl(playUrl)) return { url: null, reason: "vip" };
+    return { url: playUrl.trim() };
 }
 
-async function getTencentUrl(songmid: string, quality: string) {
-    let filenamePrefix;
-    switch (quality) {
-        case "128k": filenamePrefix = "M5000.mp3"; break;
-        case "320k": filenamePrefix = "M8000.mp3"; break;
-        case "flac": filenamePrefix = "F0000.flac"; break;
-        default: filenamePrefix = "M5000.mp3"; break;
+// ==============================
+// QQ 音乐
+// ==============================
+
+const QQ_MUSICU_ENDPOINT = "https://u.y.qq.com/cgi-bin/musicu.fcg";
+/** vkey 响应缺少 sip 时的兜底流媒体主机。 */
+const QQ_DEFAULT_STREAM_BASE = "https://ws.stream.qqmusic.qq.com/";
+
+/**
+ * vkey 请求的文件名必须把 songmid 重复两遍（M800<mid><mid>.mp3），
+ * 只写位速率前缀会拿到空的 purl，这是线上 500 的直接原因。
+ */
+const buildQQFilename = (songmid: string, quality: string): string => {
+    const [prefix, extension] =
+        quality === "320k" ? ["M800", "mp3"]
+        : quality === "flac" || quality === "flac24bit" ? ["F000", "flac"]
+        : ["M500", "mp3"];
+    return `${prefix}${songmid}${songmid}.${extension}`;
+};
+
+/** purl 可能是绝对地址，也可能是相对路径，需要按 sip 主机补全。 */
+const resolveQQPurl = (data: any): string | null => {
+    const vkeyData = data?.queryvkey?.data;
+    const rawPurl = vkeyData?.midurlinfo?.[0]?.purl;
+    const purl = typeof rawPurl === "string" ? rawPurl.trim() : "";
+    if (!purl) return null;
+    if (isPlayableUrl(purl)) return purl;
+
+    const sip = Array.isArray(vkeyData?.sip)
+        ? vkeyData.sip.find((value: unknown) => typeof value === "string" && value.trim())
+        : undefined;
+
+    try {
+        const resolved = new URL(purl, sip || QQ_DEFAULT_STREAM_BASE);
+        return isPlayableUrl(resolved.toString()) ? resolved.toString() : null;
+    } catch {
+        return null;
     }
-    
-    const endpoint = Buffer.from("aHR0cHM6Ly91LnkucXEuY29tL2NnaS1iaW4vbXVzaWN1LmZjZz9kYXRhPXsicXVlcnl2a2V5Ijp7Im1ldGhvZCI6IkNnaUdldFZrZXkiLCJtb2R1bGUiOiJ2a2V5LkdldFZrZXlTZXJ2ZXIiLCJwYXJhbSI6eyJjaGVja2xpbWl0IjowLCJjdHgiOjEsImRvd25sb2FkZnJvbSI6MCwidWluIjoiMCIsImZpbGVuYW1lIjpbIg==", "base64").toString("utf-8");
-    const apiUrl = `${endpoint}${filenamePrefix}"],"guid":"0","songmid":["${songmid}"]}}}`;
-    
-    const resp = await fetch(apiUrl, {
+};
+
+async function getQQUrl(songmid: string, quality: string): Promise<ResolveResult> {
+    const dataParam = JSON.stringify({
+        queryvkey: {
+            method: "CgiGetVkey",
+            module: "vkey.GetVkeyServer",
+            param: {
+                checklimit: 0,
+                ctx: 1,
+                downloadfrom: 0,
+                uin: "0",
+                filename: [buildQQFilename(songmid, quality)],
+                guid: "0",
+                songmid: [songmid]
+            }
+        }
+    });
+
+    const resp = await fetch(`${QQ_MUSICU_ENDPOINT}?data=${encodeURIComponent(dataParam)}`, {
         method: "GET",
         headers: {
             'User-Agent': getRandomUserAgent(),
@@ -125,13 +209,14 @@ async function getTencentUrl(songmid: string, quality: string) {
             'referer': "https://y.qq.com/portal/search.html"
         }
     });
-    
-    if (resp.status !== 200) throw new Error("Tencent request failed");
+
+    if (!resp.ok) throw new Error(`QQ Music responded HTTP ${resp.status}`);
+
     const data: any = await resp.json();
-    const purl = data?.queryvkey?.data?.midurlinfo?.[0]?.purl;
-    
-    if (!purl) throw new Error("Tencent returned empty purl (VIP/Copyright)");
-    return `http://ws.stream.qqmusic.qq.com/${purl}`;
+    const purl = resolveQQPurl(data);
+    // 空 purl 表示 VIP / 版权受限。
+    if (!purl) return { url: null, reason: "vip" };
+    return { url: purl };
 }
 
 const kuwoCryptoAlgorithm = (function() {
@@ -228,49 +313,70 @@ const kuwoCryptoAlgorithm = (function() {
     };
 })();
 
-function getKuwoQualityCandidates(quality: string): string[] {
-    if (quality === "flac" || quality === "ape") {
-        return ["2000kflac", "320kmp3", "192kmp3", "128kmp3", "48kaac"];
+// ==============================
+// 酷我音乐
+// ==============================
+
+/** 移动端 convert_url 协议的固定请求密钥（客户端内置的协议常量，非应用密钥）。 */
+const KUWO_REQUEST_KEY = "ylzsxkwm";
+const KUWO_MOBI_ENDPOINT = "https://mobi.kuwo.cn/mobi.s?f=kuwo&q=";
+
+/**
+ * 加密后的参数直接以 base64 明文拼在 q= 之后，不做百分号编码。
+ * 与桌面端 Rust provider 以及仓库内 lx-music-sixyin.js 的实现逐字一致。
+ */
+const buildKuwoQuery = (params: string): string => {
+    const bytes = kuwoCryptoAlgorithm(params, KUWO_REQUEST_KEY);
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte & 0xff);
+    return btoa(binary);
+};
+
+const kuwoBitrateFor = (quality: string): [string, string] => {
+    if (quality === "320k") return ["320kmp3", "mp3"];
+    if (quality === "192k") return ["192kmp3", "mp3"];
+    if (quality === "ape") return ["2000kape", "ape"];
+    if (quality === "flac" || quality === "flac24bit") return ["2000kflac", "flac"];
+    return ["128kmp3", "mp3"];
+};
+
+/**
+ * 响应是 key=value 文本行。bitrate=1 表示 VIP / 版权受限，
+ * 此时即使后面还有 url 行也不可播放。
+ */
+const parseKuwoResponse = (body: string): ResolveResult => {
+    const lines = body.split(/\r?\n/).map((line) => line.trim());
+
+    if (lines.includes("bitrate=1")) return { url: null, reason: "vip" };
+
+    for (const line of lines) {
+        if (!line.startsWith("url=")) continue;
+        const candidate = line.slice("url=".length).trim();
+        if (isPlayableUrl(candidate)) return { url: candidate };
     }
-    if (quality === "320k") return ["320kmp3", "192kmp3", "128kmp3", "48kaac"];
-    if (quality === "192k") return ["192kmp3", "128kmp3", "48kaac"];
-    return ["128kmp3", "48kaac"];
-}
 
-async function getKuwoMobiUrl(songmid: string, quality: string): Promise<string | null> {
-    let fallbackUrl: string | null = null;
+    return { url: null, reason: "unavailable" };
+};
 
-    for (const br of getKuwoQualityCandidates(quality)) {
-        try {
-            const apiUrl = `http://mobi.kuwo.cn/mobi.s?f=web&type=convert_url_with_sign&source=jiakong&rid=${encodeURIComponent(songmid)}&br=${br}`;
-            const resp = await fetch(apiUrl, {
-                method: "GET",
-                headers: {
-                    'User-Agent': getRandomUserAgent(),
-                    'Referer': "http://kuwo.cn/"
-                }
-            });
+/**
+ * 旧的 f=web&convert_url_with_sign 接口已失效，必须改用加密的移动端协议。
+ * 仓库里原有的块加密实现此前从未被调用，这里才真正接上。
+ */
+async function getKuwoUrl(songmid: string, quality: string): Promise<ResolveResult> {
+    const [bitrate, format] = kuwoBitrateFor(quality);
+    const params =
+        `type=convert_url&br=${bitrate}&format=${format}&sig=0&rid=${songmid}` +
+        `&network=wifi&response=url&prod=kwplayer_ar_10.3.3.0`;
 
-            const data: any = await resp.json();
-            const playUrl = data?.data?.url;
-            const format = String(data?.data?.format || "").toLowerCase();
-            if (!playUrl || !playUrl.startsWith("http")) continue;
-
-            fallbackUrl ||= playUrl;
-            if (format === "mp3" || format === "flac") return playUrl;
-        } catch {
-            // try next bitrate
+    const resp = await fetch(`${KUWO_MOBI_ENDPOINT}${buildKuwoQuery(params)}`, {
+        method: "GET",
+        headers: {
+            'User-Agent': getRandomUserAgent(),
+            'Referer': "http://kuwo.cn/"
         }
-    }
+    });
 
-    return fallbackUrl;
-}
+    if (!resp.ok) throw new Error(`Kuwo responded HTTP ${resp.status}`);
 
-async function getKuwoUrl(songmid: string, quality: string) {
-    const playUrl = await getKuwoMobiUrl(songmid, quality);
-    if (!playUrl) {
-        throw new Error("Kuwo returned empty URL (VIP / copyright)");
-    }
-
-    return playUrl;
+    return parseKuwoResponse(await resp.text());
 }
