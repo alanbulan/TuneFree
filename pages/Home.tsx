@@ -2,7 +2,8 @@ import React, { useEffect, useState, useCallback, useRef, memo } from 'react';
 import { getTopLists, getTopListDetail, getImgReferrerPolicy } from '../services/api';
 import { Song, TopList } from '../types';
 import { usePlayerActions } from '../contexts/PlayerContext';
-import { PlayIcon, MusicIcon, ErrorIcon } from '../components/Icons';
+import { useLibrary } from '../contexts/LibraryContext';
+import { PlayIcon, MusicIcon, ErrorIcon, HeartIcon, HeartFillIcon } from '../components/Icons';
 import { getMusicSourceBadgeClass, getMusicSourceLabel } from '../utils/musicSource';
 
 // ====== 数据缓存 — 切换音源时不重复请求 ======
@@ -11,7 +12,13 @@ const _detailCache = new Map<string, { songs: Song[]; ts: number }>();
 const CACHE_TTL = 3 * 60 * 1000; // 3 分钟
 
 // ====== 记忆化歌曲卡片 — 避免列表滚动时重复渲染 ======
-const SongCard = memo<{ song: Song; idx: number; onPlay: (s: Song) => void }>(({ song, idx, onPlay }) => {
+const SongCard = memo<{
+  song: Song;
+  idx: number;
+  favorite: boolean;
+  onPlay: (s: Song) => void;
+  onToggleFavorite: (s: Song) => void;
+}>(({ song, idx, favorite, onPlay, onToggleFavorite }) => {
     const songName = typeof song.name === 'string' ? song.name : '未知歌曲';
     const songArtist = typeof song.artist === 'string' ? song.artist : '未知歌手';
     const sourceLabel = getMusicSourceLabel(song.source);
@@ -38,9 +45,25 @@ const SongCard = memo<{ song: Song; idx: number; onPlay: (s: Song) => void }>(({
                     <p className="text-xs text-ios-subtext truncate">{songArtist}</p>
                 </div>
             </div>
-            <button className="p-3 text-ios-red/80 hover:text-ios-red bg-gray-50 rounded-full">
+            <div className="flex items-center shrink-0">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleFavorite(song);
+                }}
+                className="p-2 text-gray-300 hover:text-ios-red active:scale-90 transition"
+                aria-label={favorite ? "取消收藏" : "收藏歌曲"}
+              >
+                {favorite ? (
+                  <HeartFillIcon className="text-ios-red" size={18} />
+                ) : (
+                  <HeartIcon size={18} />
+                )}
+              </button>
+              <button className="p-3 text-ios-red/80 hover:text-ios-red bg-gray-50 rounded-full">
                 <PlayIcon size={18} className="fill-current ml-0.5" />
-            </button>
+              </button>
+            </div>
         </div>
     );
 });
@@ -79,6 +102,7 @@ const Home: React.FC = () => {
   const [selectedTopListId, setSelectedTopListId] = useState<string | number | null>(null);
   const [selectedTopListName, setSelectedTopListName] = useState('');
   const { playQueue } = usePlayerActions();
+  const { isFavorite, toggleFavorite } = useLibrary();
   const fetchIdRef = useRef(0);
   const detailFetchIdRef = useRef(0);
 
@@ -276,7 +300,14 @@ const Home: React.FC = () => {
         ) : featuredSongs.length > 0 ? (
             <div className="space-y-3 pb-24">
             {featuredSongs.map((song, idx) => (
-                <SongCard key={`${song.id}-${idx}`} song={song} idx={idx} onPlay={handlePlay} />
+                <SongCard
+                  key={`${song.id}-${idx}`}
+                  song={song}
+                  idx={idx}
+                  favorite={isFavorite(song.id, song.source)}
+                  onPlay={handlePlay}
+                  onToggleFavorite={toggleFavorite}
+                />
             ))}
             </div>
         ) : (
