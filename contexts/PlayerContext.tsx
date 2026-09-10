@@ -25,8 +25,9 @@ import {
   persistPlayMode,
   persistQueue,
 } from "./playerPersistence";
-import { getNextQueueIndex, getPrevQueueIndex } from "./playerQueue";
+import { resolveQueueStepIndex, type ShuffleOrder } from "./playerQueue";
 import { resolveOfflinePlayback } from "../services/offlineDownloads";
+import { BoundedCache } from "../utils/boundedCache";
 
 type ParsedSongData = NonNullable<Awaited<ReturnType<typeof parseSongFull>>>;
 
@@ -40,6 +41,10 @@ const getFiniteAudioDuration = (audio: HTMLAudioElement): number =>
   Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
 
 const IOS_AUTO_ADVANCE_LEAD_SECONDS = 1.25;
+
+/** 解析结果缓存的有效期与容量上限。 */
+const PARSED_SONG_CACHE_TTL_MS = 10 * 60 * 1000;
+const PARSED_SONG_CACHE_CAPACITY = 100;
 
 /** 歌词整体平移的允许范围（秒），与桌面端一致。 */
 const LYRIC_OFFSET_LIMIT_SECONDS = 10;
@@ -197,6 +202,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const queueRef = useRef(queue);
   const playModeRef = useRef(playMode);
   const audioQualityRef = useRef(audioQuality);
+  // 暂停期间切换了音质：恢复播放时用新音质重新解析
+  const pendingQualityChangeRef = useRef(false);
+  // 随机播放的一次性顺序表：切歌 / 预载共用，避免逐次抽签导致上一首回不去
+  const shuffleOrderRef = useRef<ShuffleOrder | null>(null);
 
   // Track error retry to prevent loops
   const retryCountRef = useRef(0);
@@ -204,7 +213,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const autoAdvanceStartedRef = useRef(false);
   // 用户是否"想让它在播"：回到前台时据此决定要不要重新接管音频会话
   const playbackIntentRef = useRef(false);
-  const parsedSongCacheRef = useRef<Map<string, ParsedSongData>>(new Map());
+  const parsedSongCacheRef = useRef<BoundedCache<string, ParsedSongData>>(
+    new BoundedCache(PARSED_SONG_CACHE_CAPACITY, PARSED_SONG_CACHE_TTL_MS),
+  );
   const preloadedAudioRef = useRef<{
     key: string;
     audio: HTMLAudioElement;
@@ -318,9 +329,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         const current = currentSongRef.current;
         const nextDuration = getFiniteAudioDuration(audio);
         const remaining = nextDuration - audio.currentTime;
-        const nextIndex = current
-          ? getNextQueueIndex(queueRef.current, current, playModeRef.current)
-          : -1;
+        const nextIndex = current ? getQueueStep(current, 1) : -1;
         const nextSong = nextIndex >= 0 ? queueRef.current[nextIndex] : null;
         if (
           isIOSRef.current &&
@@ -359,6 +368,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           `Audio Element Error: Code=${errorCode}, Msg=${errorMessage}`,
         );
         autoAdvanceStartedRef.current = false;
+        // 当前音质的解析结果已证明不可播放，从缓存剔除，避免切回该音质时又命中坏地址
+        if (currentSongRef.current) {
+          parsedSongCacheRef.current.delete(
+            getParsedSongCacheKey(
+              currentSongRef.current,
+              audioQualityRef.current,
+            ),
+          );
+        }
         if (
           currentSongRef.current &&
           audioQualityRef.current !== "128k" &&
@@ -446,6 +464,20 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     playbackIntentRef.current = isPlaying;
   }, [isPlaying]);
+
+  // 统一的前后一步解析：预载与切歌走同一入口，随机顺序表在此持续对齐。
+  // 只依赖 ref，引用保持稳定，可安全被空依赖的旧闭包调用。
+  const getQueueStep = useCallback((song: Song | null, step: 1 | -1): number => {
+    const resolved = resolveQueueStepIndex(
+      shuffleOrderRef.current,
+      queueRef.current,
+      song,
+      playModeRef.current,
+      step,
+    );
+    if (resolved.order) shuffleOrderRef.current = resolved.order;
+    return resolved.index;
+  }, []);
 
   // --- AudioContext 延迟初始化（需要用户交互上下文） ---
   const initAudioContext = useCallback(() => {
@@ -580,8 +612,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       if (cached) return cached;
 
       const parsed = await parseSongFull(song.id, song.source, quality, song);
-      if (parsed) {
+      if (parsed?.url) {
         parsedSongCacheRef.current.set(cacheKey, parsed);
+      } else {
+        // 解析不到地址的结果不入缓存（负缓存），下次仍会尝试换源
+        parsedSongCacheRef.current.delete(cacheKey);
       }
       return parsed;
     },
@@ -619,11 +654,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const preloadNextSong = useCallback(
     (song: Song) => {
-      const nextIndex = getNextQueueIndex(
-        queueRef.current,
-        song,
-        playModeRef.current,
-      );
+      const nextIndex = getQueueStep(song, 1);
       if (nextIndex < 0) return;
 
       const nextSong = queueRef.current[nextIndex];
@@ -676,6 +707,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     if (!audioRef.current.src || audioRef.current.src === window.location.href) {
       await playSongRef.current(song);
+      return;
+    }
+
+    // 暂停期间用户切了音质：带上新音质重新解析，而不是沿用旧的 src 直接播放，
+    // 并恢复到暂停时的进度。
+    if (pendingQualityChangeRef.current) {
+      pendingQualityChangeRef.current = false;
+      const resumeTime = audioRef.current?.currentTime || 0;
+      await playSongRef.current(song, audioQualityRef.current);
+      if (resumeTime > 0 && audioRef.current) {
+        audioRef.current.currentTime = resumeTime;
+      }
       return;
     }
 
@@ -1044,7 +1087,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    const nextIndex = getNextQueueIndex(q, c, mode);
+    const nextIndex = getQueueStep(c, 1);
     if (nextIndex < 0) return;
 
     const nextSong = q[nextIndex];
@@ -1061,7 +1104,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const playPrev = useCallback(() => {
     const q = queueRef.current;
     const c = currentSongRef.current;
-    const mode = playModeRef.current;
 
     if (q.length === 0) return;
 
@@ -1072,7 +1114,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    const prevIndex = getPrevQueueIndex(q, c, mode);
+    const prevIndex = getQueueStep(c, -1);
     if (prevIndex < 0) return;
 
     playSongRef.current(q[prevIndex]);
@@ -1183,7 +1225,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     );
   }, []);
 
-  const setAudioQuality = useCallback((q: AudioQuality) => {    setAudioQualityState(q);
+  const setAudioQuality = useCallback((q: AudioQuality) => {
+    pendingQualityChangeRef.current = audioQualityRef.current !== q;
+    setAudioQualityState(q);
     // 使用 ref 避免 stale closure，不依赖 currentSong/isPlaying state
     if (
       currentSongRef.current &&
