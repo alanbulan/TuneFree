@@ -10,7 +10,8 @@ import {
   usePlayerActions,
   usePlayerNowPlaying,
 } from "../contexts/PlayerContext";
-import { SearchIcon, MusicIcon, TrashIcon } from "../components/Icons";
+import { useLibrary } from "../contexts/LibraryContext";
+import { SearchIcon, MusicIcon, TrashIcon, HeartIcon, HeartFillIcon } from "../components/Icons";
 import { useToast } from "../components/ToastHost";
 import {
   SEARCH_SOURCE_OPTIONS,
@@ -32,8 +33,10 @@ const SearchResultItem = memo<{
   song: Song;
   isCurrent: boolean;
   isPlaying: boolean;
+  favorite: boolean;
   onPlay: (song: Song) => void;
-}>(({ song, isCurrent, isPlaying, onPlay }) => {
+  onToggleFavorite: (song: Song) => void;
+}>(({ song, isCurrent, isPlaying, favorite, onPlay, onToggleFavorite }) => {
   const songName = typeof song.name === "string" ? song.name : "未知歌曲";
   const songArtist = typeof song.artist === "string" ? song.artist : "未知歌手";
   const sourceLabel = getMusicSourceLabel(song.source);
@@ -76,6 +79,20 @@ const SearchResultItem = memo<{
           <p className="text-xs text-ios-subtext truncate">{songArtist}</p>
         </div>
       </div>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleFavorite(song);
+        }}
+        className="p-2 -m-1 shrink-0 text-gray-300 hover:text-ios-red active:scale-90 transition"
+        aria-label={favorite ? "取消收藏" : "收藏歌曲"}
+      >
+        {favorite ? (
+          <HeartFillIcon className="text-ios-red" size={20} />
+        ) : (
+          <HeartIcon size={20} />
+        )}
+      </button>
     </div>
   );
 });
@@ -153,6 +170,7 @@ const Search: React.FC = () => {
     };
   }, [query]);
   const { playQueue } = usePlayerActions();
+  const { isFavorite, toggleFavorite } = useLibrary();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
 
   useEffect(() => {
@@ -235,6 +253,23 @@ const Search: React.FC = () => {
       setPage((prev) => prev + 1);
     }
   }, [isSearching, hasMore]);
+
+  // 触底自动加载下一页（IntersectionObserver），滚动浏览无需点按钮。
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el || !hasMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          handleLoadMore();
+        }
+      },
+      { rootMargin: "240px 0px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, isSearching, handleLoadMore]);
 
   const handlePlaySong = useCallback(
     (song: Song) => {
@@ -390,7 +425,9 @@ const Search: React.FC = () => {
               song={song}
               isCurrent={isSameSong(currentSong, song)}
               isPlaying={isPlaying}
+              favorite={isFavorite(song.id, song.source)}
               onPlay={handlePlaySong}
+              onToggleFavorite={toggleFavorite}
             />
           ))}
 
@@ -399,12 +436,14 @@ const Search: React.FC = () => {
         {isSearching && results.length > 0 && <SearchSkeleton />}
 
         {!isSearching && results.length > 0 && hasMore && (
-          <button
-            onClick={handleLoadMore}
-            className="w-full py-4 text-sm text-ios-subtext font-medium active:bg-gray-100 rounded-xl transition"
-          >
-            查看更多结果
-          </button>
+          <div ref={loadMoreRef}>
+            <button
+              onClick={handleLoadMore}
+              className="w-full py-4 text-sm text-ios-subtext font-medium active:bg-gray-100 rounded-xl transition"
+            >
+              查看更多结果
+            </button>
+          </div>
         )}
 
         {!isSearching && results.length === 0 && query !== "" && !searchError && (
