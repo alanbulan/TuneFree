@@ -231,6 +231,10 @@ const FullPlayer: React.FC<FullPlayerProps> = ({
                       >
                         <p
                           className={`text-xl font-bold leading-relaxed whitespace-pre-line ${isActive ? "text-gray-900" : "text-gray-500/80"}`}
+                          style={{
+                            fontSize: "var(--lyric-font-size)",
+                            fontFamily: "var(--lyric-font-family)",
+                          }}
                         >
                           {lyricDisplayMode === "karaoke" ? (
                             <KaraokeLyricText line={line} currentTime={lineClock} />

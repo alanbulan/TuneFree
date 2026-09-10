@@ -7,6 +7,73 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
     <meta name="theme-color" content="#f2f2f7" />
+    <script>
+      /* 首帧主题引导：必须同步执行，逻辑与 utils/theme.ts 的 applyStoredThemeToDocument
+         保持一致，否则暗色用户每次启动都会先闪一帧浅色。 */
+      (function () {
+        try {
+          var KEYS = { mode: 'tunefree_theme_mode', color: 'tunefree_theme_color', size: 'tunefree_lyric_size', font: 'tunefree_lyric_font' };
+          var DEFAULT_ACCENT = '#fa233b';
+          var LEGACY = { red: '#fa233b', blue: '#007aff', green: '#34c759', purple: '#af52de', orange: '#ff9500' };
+          var FONTS = ['system-ui', 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif', '"PingFang SC", "Helvetica Neue", sans-serif', '"Microsoft YaHei", sans-serif', '"SimSun", serif', '"STXihei", "STHeiti", sans-serif'];
+          var read = function (key) { try { return localStorage.getItem(key); } catch (error) { return null; } };
+          var normalizeColor = function (value) {
+            if (LEGACY[value]) return LEGACY[value];
+            if (/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(String(value || '').trim())) {
+              var h = String(value).trim();
+              if (h.charAt(0) !== '#') h = '#' + h;
+              if (h.length === 4) h = '#' + h[1] + h[1] + h[2] + h[2] + h[3] + h[3];
+              return h.toLowerCase();
+            }
+            return DEFAULT_ACCENT;
+          };
+          var mode = read(KEYS.mode) === 'dark' || read(KEYS.mode) === 'light' ? read(KEYS.mode) : 'system';
+          var isDark = mode === 'dark' || (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var baseHex = normalizeColor(read(KEYS.color));
+          function lighten(hex) {
+            var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+            var rn = r / 255, gn = g / 255, bn = b / 255, max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn), d = max - min;
+            var h = 0, s = 0, l = (max + min) / 2;
+            if (d !== 0) {
+              s = d / (1 - Math.abs(2 * l - 1));
+              if (max === rn) h = ((gn - bn) / d) % 6;
+              else if (max === gn) h = (bn - rn) / d + 2;
+              else h = (rn - gn) / d + 4;
+              h *= 60; if (h < 0) h += 360;
+            }
+            var l2 = Math.min(72, (l * 100 + 8)) / 100;
+            var c = (1 - Math.abs(2 * l2 - 1)) * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l2 - c / 2;
+            var R = 0, G = 0, B = 0;
+            if (h < 60) { R = c; G = x; }
+            else if (h < 120) { R = x; G = c; }
+            else if (h < 180) { G = c; B = x; }
+            else if (h < 240) { R = 0; G = x; B = c; }
+            else if (h < 300) { R = x; B = c; }
+            else { R = c; B = x; }
+            var to = function (n) { return Math.round((n + m) * 255).toString(16).padStart(2, '0'); };
+            return '#' + to(R) + to(G) + to(B);
+          }
+          var accent = isDark ? lighten(baseHex) : baseHex;
+          var danger = isDark ? lighten('#fa233b') : '#fa233b';
+          function rgb(hex) { return parseInt(hex.slice(1, 3), 16) + ', ' + parseInt(hex.slice(3, 5), 16) + ', ' + parseInt(hex.slice(5, 7), 16); }
+          var root = document.documentElement;
+          root.classList.toggle('dark-theme', isDark);
+          root.classList.toggle('light-theme', !isDark);
+          root.style.setProperty('--accent', accent);
+          root.style.setProperty('--play', accent);
+          root.style.setProperty('--danger', danger);
+          root.style.setProperty('--accent-rgb', rgb(accent));
+          root.style.setProperty('--danger-rgb', rgb(danger));
+          root.style.setProperty('--accent-soft', 'rgba(' + rgb(accent) + ',.12)');
+          var size = parseInt(read(KEYS.size), 10);
+          if (!isFinite(size)) size = 22;
+          root.style.setProperty('--lyric-font-size', Math.max(14, Math.min(36, size)) + 'px');
+          var font = read(KEYS.font);
+          font = font && FONTS.indexOf(font.trim()) >= 0 ? font.trim() : 'system-ui';
+          root.style.setProperty('--lyric-font-family', font);
+        } catch (error) { /* 引导失败不影响启动：React 挂载后 ThemeProvider 会重新下发一次 */ }
+      })();
+    </script>
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="TuneFree" />
@@ -118,7 +185,7 @@
         content: attr(data-text);
         position: absolute;
         inset: 0;
-        color: #fa233b;
+        color: var(--accent, #fa233b);
         clip-path: inset(0 calc(100% - var(--word-progress, 0%)) 0 0);
         transition: clip-path 0.1s linear;
         pointer-events: none;
@@ -143,6 +210,41 @@
 
       .karaoke-translation-space {
         white-space: pre-wrap;
+      }
+
+      /* 主题色：红色强调统一由 --accent 驱动（html 前缀提升优先级，压过 CDN 生成的工具类） */
+      html .text-ios-red { color: var(--accent, #fa233b); }
+      html .bg-ios-red { background-color: var(--accent, #fa233b); }
+      html .border-ios-red { border-color: var(--accent, #fa233b); }
+
+      /* 暗色主题：用 css 变量覆盖工具类生成的核心表面色，保证整套 UI 一体变暗 */
+      html { color-scheme: light; }
+      html.dark-theme { color-scheme: dark; }
+      html.dark-theme body { background-color: #000; color: #f2f2f7; }
+      html.dark-theme .bg-ios-bg { background-color: #000; }
+      html.dark-theme .bg-white { background-color: #1c1c1e; }
+      html.dark-theme .bg-white\/90 { background-color: rgba(28, 28, 30, 0.9); }
+      html.dark-theme .bg-white\/60 { background-color: rgba(28, 28, 30, 0.6); }
+      html.dark-theme .bg-gray-50 { background-color: #1c1c1e; }
+      html.dark-theme .bg-gray-100 { background-color: #2c2c2e; }
+      html.dark-theme .bg-gray-200 { background-color: #3a3a3c; }
+      html.dark-theme .text-ios-text { color: #f2f2f7; }
+      html.dark-theme .text-gray-900 { color: #f2f2f7; }
+      html.dark-theme .text-gray-700 { color: #e5e5ea; }
+      html.dark-theme .text-gray-600 { color: #c7c7cc; }
+      html.dark-theme .text-gray-500 { color: #98989f; }
+      html.dark-theme .text-gray-400 { color: #6e6e73; }
+      html.dark-theme .text-gray-300 { color: #48484a; }
+      html.dark-theme .border-gray-100 { border-color: #2c2c2e; }
+      html.dark-theme .border-gray-200 { border-color: #3a3a3c; }
+      html.dark-theme .glass {
+        background: rgba(28, 28, 30, 0.8);
+        border-color: rgba(255, 255, 255, 0.06);
+      }
+      /* 黑底按钮（播放键 / 分段控件选中态）在暗色下反转为白底黑字 */
+      html.dark-theme .bg-black.text-white {
+        background-color: #f2f2f7;
+        color: #000;
       }
     </style>
     <script type="importmap">

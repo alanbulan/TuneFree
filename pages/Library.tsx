@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { usePlayerActions } from "../contexts/PlayerContext";
 import { useLibrary, type LibraryImportMode, type LibraryImportPreview } from "../contexts/LibraryContext";
+import { useTheme } from "../contexts/ThemeContext";
+import { PRESET_COLORS, type ThemeMode } from "../utils/theme";
 import { useToast } from "../components/ToastHost";
 import { getImgReferrerPolicy } from "../services/api";
 import {
@@ -57,6 +59,14 @@ const Library: React.FC = () => {
     restoreData,
   } = useLibrary();
   const { showToast } = useToast();
+  const {
+    themeMode,
+    setThemeMode,
+    themeColor,
+    setThemeColor,
+    lyricSize,
+    setLyricSize,
+  } = useTheme();
 
   const [activeTab, setActiveTab] = useState<Tab>("favorites");
   const [newPlaylistName, setNewPlaylistName] = useState("");
@@ -492,6 +502,56 @@ const Library: React.FC = () => {
 
         {activeTab === "manage" && !showDownloadManager && (
           <div className="space-y-4">
+            <div className="bg-white p-5 rounded-2xl shadow-sm">
+              <div className="flex items-center space-x-3 mb-4 text-gray-600">
+                <SettingsIcon size={20} />
+                <h3 className="font-bold text-lg">外观</h3>
+              </div>
+
+              <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">
+                主题模式
+              </label>
+              <div className="flex bg-gray-100 p-1 rounded-xl mb-4">
+                {(["light", "dark", "system"] as ThemeMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setThemeMode(mode)}
+                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${themeMode === mode ? "bg-white shadow-sm text-ios-text" : "text-gray-500"}`}
+                  >
+                    {mode === "light" ? "浅色" : mode === "dark" ? "深色" : "跟随系统"}
+                  </button>
+                ))}
+              </div>
+
+              <label className="text-[10px] font-bold text-gray-400 uppercase mb-2 block">
+                强调色
+              </label>
+              <div className="grid grid-cols-6 gap-2 mb-4">
+                {PRESET_COLORS.map((c) => (
+                  <button
+                    key={c.color}
+                    title={c.name}
+                    aria-label={c.name}
+                    onClick={() => setThemeColor(c.color)}
+                    className={`aspect-square rounded-full transition-transform active:scale-90 ${themeColor === c.color ? "ring-2 ring-offset-2 ring-gray-900 scale-110" : ""}`}
+                    style={{ backgroundColor: c.color }}
+                  />
+                ))}
+              </div>
+
+              <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">
+                歌词字号 {lyricSize}px
+              </label>
+              <input
+                type="range"
+                min={14}
+                max={36}
+                value={lyricSize}
+                onChange={(e) => setLyricSize(parseInt(e.target.value, 10))}
+                className="w-full accent-black"
+              />
+            </div>
+
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-ios-red/10">
               <div className="flex items-center space-x-3 mb-4 text-ios-red">
                 <SettingsIcon size={20} />
