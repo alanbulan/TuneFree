@@ -26,6 +26,7 @@ import {
   persistQueue,
 } from "./playerPersistence";
 import { getNextQueueIndex, getPrevQueueIndex } from "./playerQueue";
+import { resolveOfflinePlayback } from "../services/offlineDownloads";
 
 type ParsedSongData = NonNullable<Awaited<ReturnType<typeof parseSongFull>>>;
 
@@ -567,6 +568,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const resolveParsedSong = useCallback(
     async (song: Song, quality: AudioQuality): Promise<ParsedSongData | null> => {
+      // 本地优先：这首歌已离线缓存就直接播本地文件，跳过网络解析。
+      // 结果不写入解析缓存 —— blob URL 在删除下载后会失效，每次现取最可靠。
+      const local = await resolveOfflinePlayback(song, quality).catch(() => null);
+      if (local?.url) {
+        return { url: local.url, lrc: local.lrc, pic: local.pic };
+      }
+
       const cacheKey = getParsedSongCacheKey(song, quality);
       const cached = parsedSongCacheRef.current.get(cacheKey);
       if (cached) return cached;
