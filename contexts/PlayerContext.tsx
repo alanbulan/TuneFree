@@ -40,6 +40,31 @@ const getFiniteAudioDuration = (audio: HTMLAudioElement): number =>
 
 const IOS_AUTO_ADVANCE_LEAD_SECONDS = 1.25;
 
+/** iOS / iPadOS（含 iPad 桌面模式伪装成 MacIntel）判定。 */
+const isIOSDevice = (): boolean =>
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+/** 页面是否在后台（锁屏、切到其它 App 都算）。 */
+const isPageHidden = (): boolean =>
+  typeof document !== "undefined" && document.visibilityState === "hidden";
+
+/**
+ * 把音频会话标记为 playback。
+ * Safari 16.4+ 才支持；不设置时锁屏后的后台播放可能被系统静音开关影响。
+ */
+const requestPlaybackAudioSession = (): void => {
+  const session = (
+    navigator as Navigator & { audioSession?: { type?: string } }
+  ).audioSession;
+  if (!session || session.type === "playback") return;
+  try {
+    session.type = "playback";
+  } catch {
+    /* 旧版本 Safari 不支持该属性，忽略 */
+  }
+};
+
 interface PlayerContextType {
   currentSong: Song | null;
   isPlaying: boolean;
@@ -158,6 +183,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const retryCountRef = useRef(0);
   const playRequestIdRef = useRef(0);
   const autoAdvanceStartedRef = useRef(false);
+  // 用户是否"想让它在播"：回到前台时据此决定要不要重新接管音频会话
+  const playbackIntentRef = useRef(false);
   const parsedSongCacheRef = useRef<Map<string, ParsedSongData>>(new Map());
   const preloadedAudioRef = useRef<{
     key: string;
@@ -394,10 +421,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // iOS 设备检测：iOS 会在后台 suspend AudioContext 导致音频停止，
   // 因此 iOS 上不使用 createMediaElementSource，让 Audio 直接播放，可视化使用模拟模式
-  const isIOSRef = useRef(
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1),
-  );
+  const isIOSRef = useRef(isIOSDevice());
+
+  // 播放意图跟随 isPlaying 同步，供 visibilitychange 回调（空依赖闭包）读取最新值
+  useEffect(() => {
+    playbackIntentRef.current = isPlaying;
+  }, [isPlaying]);
 
   // --- AudioContext 延迟初始化（需要用户交互上下文） ---
   const initAudioContext = useCallback(() => {
@@ -451,6 +480,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             source.connect(node);
             node.connect(ctx.destination);
           } catch {}
+        }
+
+        // iOS 回到前台时重新申明播放：音频会话若在后台被系统回收，
+        // 媒体元素仍会走进度却完全没有声音，重新调用 play() 才能把音频路由接回来。
+        const audio = audioRef.current;
+        if (playbackIntentRef.current && audio?.src && !audio.ended) {
+          requestPlaybackAudioSession();
+          void audio.play().catch(() => {});
         }
       }
     };
@@ -539,6 +576,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     (cacheKey: string, url: string) => {
       if (preloadedAudioRef.current?.key === cacheKey) return;
 
+      // 后台不新建第二个媒体元素：iOS 会把音频会话挂到最新创建的媒体元素上，
+      // 真正在播的那一个随即变成"有进度没声音"。解析结果依旧会回填进队列。
+      if (isPageHidden()) return;
+
       clearPreloadedAudio();
       const audio = new Audio();
       audio.preload = "auto";
@@ -620,6 +661,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsLoading(true);
 
     try {
+      requestPlaybackAudioSession();
       await audioRef.current.play();
       if (playRequestIdRef.current !== requestId || !isSameSong(currentSongRef.current, song)) return;
       setIsPlaying(true);
@@ -670,9 +712,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       if (!isCurrentSong) {
-        audioRef.current.pause();
-        audioRef.current.removeAttribute("src");
-        audioRef.current.load();
+        const activeAudio = audioRef.current;
+        activeAudio.pause();
+        // iOS 在锁屏 / 后台一旦把媒体元素的 src 卸载再 load()，系统会回收音频会话：
+        // 换歌后进度照走却完全没有声音，必须回到前台才恢复。
+        // 这种场景下只暂停，旧资源交给随后的 src 赋值替换。
+        if (!isIOSRef.current && !isPageHidden()) {
+          activeAudio.removeAttribute("src");
+          activeAudio.load();
+        }
         setIsPlaying(false);
         setCurrentTime(0);
         setDuration(0);
@@ -753,7 +801,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           const preloadedCurrentAudio = preloadedAudioRef.current;
           autoAdvanceStartedRef.current = false;
           activeAudio.src = url;
-          activeAudio.load();
+          // 显式 load() 会把媒体元素重置一遍，iOS 上等于重新申请音频会话，
+          // 锁屏换歌就会变成"有进度没声音"。赋值 src 本身已触发加载流程。
+          if (!isIOSRef.current) {
+            activeAudio.load();
+          }
 
           if (preloadedCurrentAudio?.key === cacheKey) {
             const preloadedDuration = getFiniteAudioDuration(
@@ -776,6 +828,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
           setIsPlaying(false);
           setIsLoading(true);
+          requestPlaybackAudioSession();
 
           try {
             const playPromise = activeAudio.play();
@@ -935,6 +988,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         audioRef.current.currentTime = 0;
         autoAdvanceStartedRef.current = false;
         setIsLoading(true);
+        requestPlaybackAudioSession();
         audioRef.current
           .play()
           .then(() => {
