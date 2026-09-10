@@ -23,6 +23,7 @@ const ALLOWED_PROXY_HOSTS = [
   'm.kuwo.cn',
   'newlyric.kuwo.cn',
   'music-api.gdstudio.xyz',
+  'text.pollinations.ai',
   'hdslb.com',
   'biliimg.com',
 ];

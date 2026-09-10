@@ -29,6 +29,7 @@ const ALLOWED_HOSTS = [
     'm.kuwo.cn',
     'newlyric.kuwo.cn',
     'music-api.gdstudio.xyz',
+    'text.pollinations.ai',
     'tunehub.sayqz.com',
     'hdslb.com',
     'biliimg.com',
