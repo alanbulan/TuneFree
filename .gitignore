@@ -26,3 +26,9 @@ dist-ssr
 
 android/
 .claude/settings.local.json
+
+# Local debug artifacts (production network captures and reference screenshots)
+/kuwo-fallback-audio-network.txt
+/kuwo-fallback-network.txt
+/mira-final-left-bottom.png
+/mira-left-bottom-official-grid.png
