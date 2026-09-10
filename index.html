@@ -92,6 +92,58 @@
         backdrop-filter: blur(20px);
         -webkit-backdrop-filter: blur(20px);
       }
+
+      /*
+        逐字歌词：每个字渲染两层。
+        底层是未唱到的底色，::after 用 data-text 复制一份高亮色，
+        再用 --word-progress 控制 clip-path 裁剪宽度，得到逐字扫过的填充效果。
+      */
+      .karaoke-line {
+        display: inline-flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
+      .karaoke-word {
+        position: relative;
+        display: inline-block;
+        color: inherit;
+        transform-origin: 50% 72%;
+        transition: transform 0.14s ease;
+      }
+
+      .karaoke-word::after {
+        content: attr(data-text);
+        position: absolute;
+        inset: 0;
+        color: #fa233b;
+        clip-path: inset(0 calc(100% - var(--word-progress, 0%)) 0 0);
+        transition: clip-path 0.1s linear;
+        pointer-events: none;
+      }
+
+      .karaoke-word.active {
+        transform: translateY(-0.035em);
+      }
+
+      /* 只有当前行显示逐字填充，其余行保持普通的灰/黑配色 */
+      .lyric-line:not(.active) .karaoke-word {
+        color: inherit;
+      }
+
+      .lyric-line:not(.active) .karaoke-word::after {
+        visibility: hidden;
+      }
+
+      .karaoke-translation-character {
+        transition: color 0.12s ease, opacity 0.12s ease;
+      }
+
+      .karaoke-translation-space {
+        white-space: pre-wrap;
+      }
     </style>
     <script type="importmap">
 {

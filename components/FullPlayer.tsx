@@ -9,6 +9,10 @@ import { useLibrary } from "../contexts/LibraryContext";
 import { getImgReferrerPolicy } from "../services/api";
 import { isSameSong } from "../types";
 import { usePlayerLyrics } from "./usePlayerLyrics";
+import { KaraokeLyricText } from "./KaraokeLyricText";
+import { SynchronizedTranslationText } from "./SynchronizedTranslationText";
+import { getLyricLineTime } from "../utils/lyrics";
+import { getLyricExtensionLines } from "../utils/formatting";
 import {
   ChevronDownIcon,
   MoreIcon,
@@ -51,7 +55,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({
   layoutId,
 }) => {
   const { currentSong, isPlaying, isLoading } = usePlayerNowPlaying();
-  const { currentTime, duration } = usePlayerProgress();
+  const { currentTime, duration, lyricOffsetSeconds } = usePlayerProgress();
   const { queue, playMode } = usePlayerQueueState();
   const { togglePlay, playNext, playPrev, seek, togglePlayMode } =
     usePlayerActions();
@@ -64,13 +68,15 @@ const FullPlayer: React.FC<FullPlayerProps> = ({
   const [imgError, setImgError] = useState(false);
 
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
-  const { lyrics, activeLyricIndex } = usePlayerLyrics(
-    currentSong,
-    isOpen,
-    currentTime,
-    showLyrics,
-    lyricsContainerRef,
-  );
+  const { lyrics, activeLyricIndex, lyricClock, lyricDisplayMode } =
+    usePlayerLyrics(
+      currentSong,
+      isOpen,
+      currentTime,
+      showLyrics,
+      lyricsContainerRef,
+      lyricOffsetSeconds,
+    );
 
   useEffect(() => {
     setImgError(false);
@@ -199,33 +205,58 @@ const FullPlayer: React.FC<FullPlayerProps> = ({
                 }}
               >
                 {lyrics.length > 0 ? (
-                  lyrics.map((line, i) => (
-                    <div
-                      key={i}
-                      className={`py-4 transition-all duration-500 cursor-pointer flex flex-col items-center ${
-                        i === activeLyricIndex
-                          ? "opacity-100 scale-105"
-                          : "opacity-40 scale-100 hover:opacity-70"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        seek(line.time);
-                      }}
-                    >
-                      <p
-                        className={`text-xl font-bold leading-relaxed ${i === activeLyricIndex ? "text-gray-900" : "text-gray-500/80"}`}
+                  lyrics.map((line, i) => {
+                    const isActive = i === activeLyricIndex;
+                    // 已经唱过的行传 MAX_SAFE_INTEGER、还没唱的行传 -MAX_SAFE_INTEGER，
+                    // 这样逐字填充在非当前行上分别渲染成「已填满」和「未开始」。
+                    const lineClock = isActive
+                      ? lyricClock
+                      : i < activeLyricIndex
+                        ? Number.MAX_SAFE_INTEGER
+                        : -Number.MAX_SAFE_INTEGER;
+
+                    return (
+                      <div
+                        key={`${i}-${line.time}`}
+                        data-active={isActive ? "true" : undefined}
+                        className={`lyric-line py-4 transition-all duration-500 cursor-pointer flex flex-col items-center ${
+                          isActive
+                            ? "active opacity-100 scale-105"
+                            : "opacity-40 scale-100 hover:opacity-70"
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          seek(Math.max(0, getLyricLineTime(line, lyricDisplayMode)));
+                        }}
                       >
-                        {line.text}
-                      </p>
-                      {line.translation && (
                         <p
-                          className={`text-base font-medium mt-1 leading-normal ${i === activeLyricIndex ? "text-gray-700" : "text-gray-500/60"}`}
+                          className={`text-xl font-bold leading-relaxed whitespace-pre-line ${isActive ? "text-gray-900" : "text-gray-500/80"}`}
                         >
-                          {line.translation}
+                          {lyricDisplayMode === "karaoke" ? (
+                            <KaraokeLyricText line={line} currentTime={lineClock} />
+                          ) : (
+                            line.text
+                          )}
                         </p>
-                      )}
-                    </div>
-                  ))
+                        {getLyricExtensionLines(line).map((text, index) => (
+                          <p
+                            key={`${index}-${text}`}
+                            className={`text-base font-medium mt-1 leading-normal whitespace-pre-line ${isActive ? "text-gray-700" : "text-gray-500/60"}`}
+                          >
+                            {isActive && lyricDisplayMode === "karaoke" ? (
+                              <SynchronizedTranslationText
+                                line={line}
+                                text={text}
+                                currentTime={lineClock}
+                              />
+                            ) : (
+                              text
+                            )}
+                          </p>
+                        ))}
+                      </div>
+                    );
+                  })
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full absolute inset-0">
                     {hasSong ? (

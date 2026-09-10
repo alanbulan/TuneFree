@@ -28,11 +28,8 @@ export const isSameSong = (
 export type PlayMode = 'sequence' | 'loop' | 'shuffle';
 export type AudioQuality = '128k' | '320k' | 'flac' | 'flac24bit';
 
-export interface ParsedLyric {
-  time: number;
-  text: string;
-  translation?: string;
-}
+// 歌词行类型由歌词引擎定义（支持逐字时间轴与多轨扩展），此处仅做统一出口。
+export type { ParsedLyric } from './utils/lyrics/types';
 
 export interface Playlist {
   id: string;

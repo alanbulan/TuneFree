@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import {
   usePlayerActions,
   usePlayerNowPlaying,
+  usePlayerProgress,
   usePlayerSettings,
 } from '../contexts/PlayerContext';
+import { useLyricDisplayMode } from './useLyricDisplayMode';
+import { saveLyricDisplayMode, type LyricDisplayMode } from '../utils/lyricDisplayMode';
 import { useLibrary } from '../contexts/LibraryContext';
 import { getImgReferrerPolicy } from '../services/api';
 import { useNavigate } from 'react-router-dom';
@@ -23,7 +26,13 @@ const PlayerMorePopupContent: React.FC<{
 }> = ({ onClose, onClosePlayer }) => {
   const { currentSong } = usePlayerNowPlaying();
   const { audioQuality } = usePlayerSettings();
-  const { setAudioQuality } = usePlayerActions();
+  const { lyricOffsetSeconds } = usePlayerProgress();
+  const {
+    setAudioQuality,
+    setLyricOffsetSeconds,
+    adjustLyricOffsetSeconds,
+  } = usePlayerActions();
+  const lyricDisplayMode = useLyricDisplayMode();
   const { playlists, addToPlaylist, createPlaylist } = useLibrary();
   const { showToast } = useToast();
   const [showPlaylistSelect, setShowPlaylistSelect] = useState(false);
@@ -129,6 +138,49 @@ const PlayerMorePopupContent: React.FC<{
 
         {!showPlaylistSelect ? (
           <div className="space-y-4">
+            <div className="p-4 bg-gray-50 rounded-xl">
+              <h4 className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wider">歌词</h4>
+              <div className="flex bg-white p-1 rounded-lg shadow-sm mb-3">
+                {(["line", "karaoke"] as LyricDisplayMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => saveLyricDisplayMode(mode)}
+                    className={`flex-1 py-2 rounded-md text-xs font-bold transition-all ${
+                      lyricDisplayMode === mode ? "bg-black text-white shadow-md" : "text-gray-500 hover:bg-gray-50"
+                    }`}
+                  >
+                    {mode === "line" ? "逐行" : "逐字"}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center bg-white rounded-lg p-1 shadow-sm">
+                <button
+                  onClick={() => adjustLyricOffsetSeconds(-0.5)}
+                  aria-label="歌词提前 0.5 秒"
+                  className="w-12 py-2 text-lg font-bold text-gray-600 active:scale-90 transition"
+                >
+                  −
+                </button>
+                <button
+                  onClick={() => setLyricOffsetSeconds(0)}
+                  className="flex-1 py-1 text-xs font-bold text-gray-700 active:opacity-60 transition"
+                >
+                  歌词偏移 {lyricOffsetSeconds > 0 ? "+" : ""}
+                  {lyricOffsetSeconds.toFixed(1)}s
+                  <span className="block text-[10px] font-normal text-gray-400">
+                    点按归零
+                  </span>
+                </button>
+                <button
+                  onClick={() => adjustLyricOffsetSeconds(0.5)}
+                  aria-label="歌词延后 0.5 秒"
+                  className="w-12 py-2 text-lg font-bold text-gray-600 active:scale-90 transition"
+                >
+                  ＋
+                </button>
+              </div>
+            </div>
+
             <div className="p-4 bg-gray-50 rounded-xl">
               <h4 className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wider">在线播放音质</h4>
               <div className="flex bg-white p-1 rounded-lg shadow-sm">
