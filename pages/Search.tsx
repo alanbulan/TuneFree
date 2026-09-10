@@ -152,7 +152,7 @@ const Search: React.FC = () => {
       }
     };
   }, [query]);
-  const { playSong } = usePlayerActions();
+  const { playQueue } = usePlayerActions();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
 
   useEffect(() => {
@@ -239,9 +239,10 @@ const Search: React.FC = () => {
   const handlePlaySong = useCallback(
     (song: Song) => {
       addToHistory(searchTerm || query.trim());
-      playSong(song);
+      // 搜索结果整体成为播放队列，桌面端行为一致
+      void playQueue(results, song);
     },
-    [query, searchTerm, playSong, addToHistory],
+    [query, searchTerm, playQueue, results, addToHistory],
   );
 
   const handleKeyDown = useCallback(

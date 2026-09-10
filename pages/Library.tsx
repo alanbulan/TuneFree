@@ -193,11 +193,12 @@ const Library: React.FC = () => {
     });
   };
 
+  // 列表里点歌一律把「整个列表」设为播放队列（与首页、搜索、歌单页一致），
+  // 而不是把这一首追加到上一个队列后面。
   const renderSongList = (
     songs: Song[],
-    canRemove: boolean = false,
-    playlistId?: string,
-    queueSongs?: Song[],
+    queueSongs: Song[],
+    removeFromPlaylistId?: string,
   ) => (
     <div className="space-y-3 pb-24">
       {songs.length === 0 ? (
@@ -212,13 +213,7 @@ const Library: React.FC = () => {
             <div
               key={`${song.id}-${idx}`}
               className="flex items-center space-x-3 bg-white p-2 rounded-xl shadow-sm active:scale-[0.98] transition cursor-pointer"
-              onClick={() => {
-                if (queueSongs) {
-                  playQueue(queueSongs, song);
-                } else {
-                  playSong(song);
-                }
-              }}
+              onClick={() => playQueue(queueSongs, song)}
             >
               <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 flex items-center justify-center">
                 {song.pic ? (
@@ -239,12 +234,16 @@ const Library: React.FC = () => {
                 </p>
                 <p className="text-ios-subtext text-xs truncate">{sArtist}</p>
               </div>
-              {canRemove && playlistId && isEditMode && (
+              {removeFromPlaylistId && isEditMode && (
                 <button
                   className="p-2 text-ios-red/70 hover:text-ios-red bg-ios-red/5 rounded-full"
                   onClick={(e) => {
                     e.stopPropagation();
-                    removeFromPlaylist(playlistId, song.id, song.source);
+                    removeFromPlaylist(
+                      removeFromPlaylistId,
+                      song.id,
+                      song.source,
+                    );
                   }}
                 >
                   <TrashIcon size={16} />
@@ -288,13 +287,23 @@ const Library: React.FC = () => {
 
         {activeTab === "favorites" && (
           <div>
-            <div className="flex items-center space-x-2 mb-4 text-ios-red">
-              <HeartFillIcon size={20} />
-              <span className="font-bold text-lg">
-                我喜欢的音乐 ({favorites.length})
-              </span>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center space-x-2 text-ios-red min-w-0">
+                <HeartFillIcon size={20} className="shrink-0" />
+                <span className="font-bold text-lg truncate">
+                  我喜欢的音乐 ({favorites.length})
+                </span>
+              </div>
+              <button
+                onClick={() => playQueue(favorites)}
+                disabled={favorites.length === 0}
+                className="flex shrink-0 items-center gap-1 rounded-lg bg-ios-red px-3 py-1.5 text-xs font-bold text-white transition disabled:bg-gray-200 disabled:text-gray-400"
+              >
+                <PlayIcon size={13} className="fill-current" />
+                播放全部
+              </button>
             </div>
-            {renderSongList(favorites)}
+            {renderSongList(favorites, favorites)}
           </div>
         )}
 
@@ -397,7 +406,11 @@ const Library: React.FC = () => {
                 </div>
               )}
             </div>
-            {renderSongList(selectedPlaylist.songs, true, selectedPlaylist.id, selectedPlaylist.songs)}
+            {renderSongList(
+              selectedPlaylist.songs,
+              selectedPlaylist.songs,
+              selectedPlaylist.id,
+            )}
           </div>
         )}
 

@@ -78,7 +78,7 @@ const Home: React.FC = () => {
   const [activeSource, setActiveSource] = useState('netease');
   const [selectedTopListId, setSelectedTopListId] = useState<string | number | null>(null);
   const [selectedTopListName, setSelectedTopListName] = useState('');
-  const { playSong } = usePlayerActions();
+  const { playQueue } = usePlayerActions();
   const fetchIdRef = useRef(0);
   const detailFetchIdRef = useRef(0);
 
@@ -191,10 +191,13 @@ const Home: React.FC = () => {
       }
   }, [activeSource]);
 
-  // 稳定引用的 playSong 回调
-  const handlePlay = useCallback((song: Song) => {
-    playSong(song);
-  }, [playSong]);
+  // 榜单歌曲整体成为播放队列，桌面端行为一致
+  const handlePlay = useCallback(
+    (song: Song) => {
+      void playQueue(featuredSongs, song);
+    },
+    [playQueue, featuredSongs],
+  );
 
   return (
     <div className="p-5 pt-safe min-h-screen bg-ios-bg">
