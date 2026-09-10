@@ -95,10 +95,9 @@ const looksLikeUnsupportedSourceResponse = (
   return /source.*not supported/i.test(getGDStudioErrorText(data, text));
 };
 
-const fetchGDStudioData = async <T = any>(
+export const fetchGDStudioData = async <T = any>(
   params: Record<string, string | number>,
-): Promise<T> => {
-  const response = await proxyFetch(buildApiUrl(params), {}, 12000);
+): Promise<T> => {  const response = await proxyFetch(buildApiUrl(params), {}, 12000);
   if (!response) {
     throw new Error("GD_STUDIO_UNAVAILABLE");
   }
@@ -141,7 +140,7 @@ const normalizeId = (value: unknown): string => {
 const pickFirstId = (...values: unknown[]): string =>
   values.map(normalizeId).find((value) => value.length > 0) || "";
 
-const getTrackKey = (id: string | number, source: string): string =>
+export const getTrackKey = (id: string | number, source: string): string =>
   `${normalizeMusicSource(source)}:${String(id)}`;
 
 const getUrlCacheKey = (
@@ -160,7 +159,7 @@ const buildApiUrl = (params: Record<string, string | number>): string => {
   return `${GD_STUDIO_API_BASE}?${search.toString()}`;
 };
 
-const joinArtists = (artist: GdStudioArtist[] | string | undefined): string => {
+export const joinArtists = (artist: GdStudioArtist[] | string | undefined): string => {
   if (Array.isArray(artist)) {
     return artist
       .map((item) => (typeof item === "string" ? item : item?.name || ""))
@@ -188,7 +187,7 @@ const extractTracks = (data: any): GdStudioTrack[] => {
   return [];
 };
 
-const rememberTrackMeta = (
+export const rememberTrackMeta = (
   id: string | number,
   source: string,
   meta: CachedTrackMeta,
@@ -221,7 +220,7 @@ const seedTrackMeta = (
   }
 };
 
-const resolveTrackMeta = (
+export const resolveTrackMeta = (
   id: string | number,
   source: string,
 ): CachedTrackMeta => trackMetaCache.get(getTrackKey(id, source)) || {};

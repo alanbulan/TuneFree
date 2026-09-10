@@ -5,6 +5,11 @@ import {
   searchSongs,
   getImgReferrerPolicy,
 } from "../services/api";
+import {
+  loadAIRecommendationTracks,
+  enrichAIRecommendationCovers,
+  mapAIRecommendationTracks,
+} from "../services/gdStudioAi";
 import { Song, isSameSong } from "../types";
 import {
   usePlayerActions,
@@ -123,7 +128,8 @@ const Search: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState(initialQuery.trim());
   const [results, setResults] = useState<Song[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [searchMode, setSearchMode] = useState<"aggregate" | "single">(
+  const [aiSearching, setAiSearching] = useState(false);
+  const [searchMode, setSearchMode] = useState<"aggregate" | "single" | "ai">(
     "aggregate",
   );
   const [selectedSource, setSelectedSource] = useState("netease");
@@ -203,7 +209,7 @@ const Search: React.FC = () => {
   }, [searchTerm, searchMode, selectedSource]);
 
   useEffect(() => {
-    if (!searchTerm) return;
+    if (searchMode === "ai" || !searchTerm) return;
 
     const controller = new AbortController();
     const { signal } = controller;
@@ -280,6 +286,34 @@ const Search: React.FC = () => {
     [query, searchTerm, playQueue, results, addToHistory],
   );
 
+  const handleAiSearch = useCallback(
+    async (term: string) => {
+      const clean = term.trim();
+      if (!clean) return;
+      const requestId = ++searchRequestIdRef.current;
+      setAiSearching(true);
+      setSearchError("");
+      addToHistory(clean);
+      setSearchParams({ q: clean });
+      try {
+        const tracks = await loadAIRecommendationTracks(clean, selectedSource, 4);
+        await enrichAIRecommendationCovers(tracks);
+        const songs = mapAIRecommendationTracks(tracks);
+        if (requestId !== searchRequestIdRef.current) return;
+        setResults(songs);
+        setHasMore(false);
+      } catch (e) {
+        if (requestId !== searchRequestIdRef.current) return;
+        console.error("AI 情境推荐失败:", e);
+        setResults([]);
+        setSearchError("AI 推荐暂不可用，请稍后再试或换个说法");
+      } finally {
+        if (requestId === searchRequestIdRef.current) setAiSearching(false);
+      }
+    },
+    [selectedSource, addToHistory, setSearchParams],
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter") {
@@ -287,6 +321,12 @@ const Search: React.FC = () => {
         const term = query.trim();
         if (!term) {
           showToast("请输入关键词后再搜索", "warning");
+          return;
+        }
+        // AI 情境模式：直接请求推荐，不走关键词搜索链路。
+        if (searchMode === "ai") {
+          void handleAiSearch(term);
+          (e.target as HTMLInputElement).blur();
           return;
         }
         if (debounceRef.current !== null) {
@@ -302,7 +342,7 @@ const Search: React.FC = () => {
         (e.target as HTMLInputElement).blur();
       }
     },
-    [query, addToHistory, setSearchParams, showToast],
+    [query, searchMode, addToHistory, handleAiSearch, setSearchParams, showToast],
   );
 
   const handleQueryChange = useCallback(
@@ -327,7 +367,9 @@ const Search: React.FC = () => {
             placeholder={
               searchMode === "aggregate"
                 ? "全网聚合搜索 (已启用跨域代理)..."
-                : `搜索 ${getMusicSourceLabel(selectedSource, "full")} 资源...`
+                : searchMode === "ai"
+                  ? "输入意境，如：雨天开车、深夜图书馆…"
+                  : `搜索 ${getMusicSourceLabel(selectedSource, "full")} 资源...`
             }
             className="w-full bg-white text-ios-text pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-ios-red/20 transition-all placeholder-gray-400 text-[15px]"
             value={query}
@@ -356,6 +398,17 @@ const Search: React.FC = () => {
             }`}
           >
             指定源
+          </button>
+
+          <button
+            onClick={() => setSearchMode("ai")}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
+              searchMode === "ai"
+                ? "bg-black text-white border-black"
+                : "bg-white text-gray-600 border-gray-200"
+            }`}
+          >
+            AI 情境
           </button>
 
 
@@ -434,6 +487,8 @@ const Search: React.FC = () => {
         {isSearching && results.length === 0 && <SearchSkeleton />}
 
         {isSearching && results.length > 0 && <SearchSkeleton />}
+
+        {aiSearching && <SearchSkeleton />}
 
         {!isSearching && results.length > 0 && hasMore && (
           <div ref={loadMoreRef}>
