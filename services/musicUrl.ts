@@ -14,11 +14,28 @@ const HTTPS_UPGRADE_HOSTS = ["music.126.net", "y.gtimg.cn", "qpic.cn"];
  *
  * 开发环境（127.0.0.1:3000）播放过的歌曲会把带端口的代理地址写进 localStorage，
  * 之后换成线上域名打开时这些地址全部失效。所以读取和持久化前都要先还原。
+ * PWA 的自建代理是相对路径（/api/cors-proxy?url=…），也要一并解包，
+ * 否则存进曲库 / 导出的 JSON 里永远是相对地址，换环境就失效。
  */
 export const stableMusicUrl = (value?: string): string => {
   if (typeof value !== "string") return "";
   let current = value.trim().replace(/&amp;/g, "&");
   if (current.startsWith("//")) current = `https:${current}`;
+
+  const RELATIVE_PROXY_PREFIX = "/api/cors-proxy?url=";
+  if (current.startsWith(RELATIVE_PROXY_PREFIX)) {
+    try {
+      const target = decodeURIComponent(
+        current.slice(RELATIVE_PROXY_PREFIX.length),
+      );
+      // 解包必须让字符串变短，避免损坏输入造成死循环
+      if (target && target.length < current.length) return target;
+    } catch {
+      /* fall through */
+    }
+    return "";
+  }
+
   while (current) {
     let parsed: URL;
     try {
