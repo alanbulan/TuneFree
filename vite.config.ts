@@ -21,6 +21,7 @@ const ALLOWED_PROXY_HOSTS = [
   'nmobi.kuwo.cn',
   'musicpay.kuwo.cn',
   'm.kuwo.cn',
+  'newlyric.kuwo.cn',
   'music-api.gdstudio.xyz',
   'hdslb.com',
   'biliimg.com',

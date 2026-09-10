@@ -1,4 +1,6 @@
 import { Song, TopList } from "../types";
+import { mergeLyricTracks } from "../utils/lyrics";
+import { decryptQrc } from "qrc-decoder";
 import { SELF_HOSTED_PROXY } from "./config";
 import { getProxies } from "./proxy";
 import { fixUrl } from "./utils";
@@ -21,6 +23,44 @@ const QQ_COMM = {
 } as const;
 
 const MUSICU_URL = "https://u.y.qq.com/cgi-bin/musicu.fcg";
+
+const decodeQQBase64 = (value: unknown): string => {
+  if (typeof value !== "string" || !value) return "";
+
+  try {
+    const binary = atob(value);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder("utf-8").decode(bytes);
+  } catch {
+    return "";
+  }
+};
+
+const decodeXmlEntities = (value: string): string =>
+  value
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+
+const extractQrcLyricContent = (xml: string): string => {
+  const content = xml.match(/\bLyricContent="([\s\S]*?)"\s*\/?>/)?.[1];
+  return content ? decodeXmlEntities(content) : xml;
+};
+
+/** QQ 的逐字歌词是加密 QRC，需要先解密再取出 XML 里的 LyricContent。 */
+const decodeQQEncryptedQrc = (value: unknown): string => {
+  if (typeof value !== "string" || !value) return "";
+
+  try {
+    if (!/^[a-fA-F0-9]+$/.test(value) || value.length % 16 !== 0) return "";
+    const decrypted = decryptQrc(value);
+    return decrypted ? extractQrcLyricContent(decrypted) : "";
+  } catch {
+    return "";
+  }
+};
 
 /**
  * 通用 QQ 音乐 musicu.fcg 请求封装。
@@ -53,6 +93,10 @@ export const qqMusicuFetch = async (reqBody: any): Promise<any> => {
       });
       clearTimeout(timeoutId);
 
+      if (!resp.ok) {
+        await resp.body?.cancel();
+        continue;
+      }
       const data = await resp.json();
       if (data?.req?.code === 0) return data.req.data;
     } catch {
@@ -87,10 +131,15 @@ export const searchQQ = async (
   });
 
   const songs = data?.body?.song?.list;
-  if (!songs || !Array.isArray(songs) || songs.length === 0) return [];
+  if (!Array.isArray(songs)) {
+    // 明确的「零结果」是正常返回，其余情况必须抛出，否则会被误判成没有搜到。
+    if (data?.body?.song?.totalnum === 0) return [];
+    throw new Error('QQ 音乐搜索响应不可用');
+  }
 
   return songs.map((s: any) => ({
     id: s.mid || String(s.id),
+    lyricId: s.id ? String(s.id) : undefined,
     name: s.name || "",
     artist: s.singer?.map((si: any) => si.name).join(", ") || "",
     album: s.album?.name || "",
@@ -166,6 +215,7 @@ export const getQQTopListDetail = async (
 
   return songs.map((s: any) => ({
     id: s.mid || String(s.id || ""),
+    lyricId: s.id ? String(s.id) : undefined,
     name: s.title || s.name || "",
     artist: s.singer?.map((si: any) => si.name).join(", ") || "",
     album: s.album?.title || s.album?.name || "",
@@ -184,7 +234,8 @@ export const getQQTopListDetail = async (
 
 /**
  * QQ 音乐歌词：通过 musicu.fcg music.musichallSong.PlayLyricInfo 接口。
- * 返回 Base64 解码后的 LRC 文本（原文 + 译文，如有）。
+ * 请求 qrc/trans/roma 三轨，逐字歌词是加密 QRC，需解密后取 XML 内容，
+ * 最后合并成带 [tunefree:xxx] 轨标记的文档交给 utils/lyrics 解析。
  *
  * 注意：旧版 fcg_query_lyric_new 接口在 CORS 代理下返回 -1310 错误，
  * 必须使用此 musicu.fcg 统一接口。
@@ -195,30 +246,36 @@ export const fetchQQLyrics = async (
   id: string | number,
 ): Promise<string> => {
   try {
+    const numericId = /^\d+$/.test(String(id)) ? Number(id) : 0;
     const data = await qqMusicuFetch({
       module: "music.musichallSong.PlayLyricInfo",
       method: "GetPlayLyricInfo",
-      param: { songMID: String(id), songID: 0 },
+      param: {
+        songMID: String(id),
+        songID: numericId,
+        crypt: 0,
+        qrc: 1,
+        trans: 1,
+        roma: 1,
+      },
     });
 
     if (!data) return "";
 
-    const lyricB64: string = data.lyric || "";
-    const transB64: string = data.trans || "";
+    const encryptedQrc = typeof data.qrc === "number" && data.qrc === 1;
+    const karaoke = encryptedQrc ? decodeQQEncryptedQrc(data.lyric) : "";
+    // 逐字解密失败时退回普通 Base64 的逐行歌词。
+    const main = karaoke || decodeQQBase64(data.lyric);
+    const trans = decodeQQBase64(data.trans);
+    const romanization = decodeQQBase64(data.roma);
 
-    // QQ 歌词 API 返回 Base64 编码的 LRC 文本
-    const decode = (b64: string): string => {
-      try {
-        return b64 ? decodeURIComponent(escape(atob(b64))) : "";
-      } catch {
-        return "";
-      }
-    };
-
-    const main = decode(lyricB64);
-    const trans = decode(transB64);
-
-    return main && trans ? `${main}\n${trans}` : main;
+    return mergeLyricTracks({
+      main,
+      translation: trans,
+      romanization,
+      karaoke,
+      source: "qq",
+    });
   } catch {
     return "";
   }
