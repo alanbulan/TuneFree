@@ -45,6 +45,7 @@ const Library: React.FC = () => {
     playlists,
     corsProxy,
     setCorsProxy,
+    saveError,
     createPlaylist,
     deletePlaylist,
     addToPlaylist,
@@ -262,6 +263,12 @@ const Library: React.FC = () => {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold text-ios-text">我的资料库</h1>
         </div>
+
+        {saveError && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-ios-red text-xs font-medium p-3 rounded-xl">
+            {saveError.message}
+          </div>
+        )}
 
         <div className="flex bg-gray-200/50 p-1 rounded-xl mb-6 overflow-x-auto no-scrollbar">
           {(["favorites", "playlists", "manage", "about"] as Tab[]).map((t) => (

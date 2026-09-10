@@ -2,45 +2,50 @@ import React, {
   createContext,
   useCallback,
   useContext,
-  useEffect,
+  useMemo,
   useRef,
   useState,
-} from "react";
-import { Song, Playlist, getSongKey } from "../types";
+} from 'react';
+import { Song, Playlist, getSongKey } from '../types';
+import {
+  CORS_PROXY_KEY,
+  DEFAULT_PROXY,
+  LIBRARY_SAVE_ERROR,
+  LibraryApplyImportResult,
+  LibraryBackup,
+  LibraryExportResult,
+  LibraryImportMode,
+  LibraryImportPreview,
+  LibraryImportResult,
+  exportLibraryData,
+  getStoredValue,
+  mergePlaylists,
+  mergeSongLists,
+  normalizePlaylistArray,
+  normalizeSong,
+  normalizeSongArray,
+  parseLibraryImport,
+  setStoredValue,
+  uniqueSongs,
+} from './libraryData';
+import { loadLibrary, persistLibrary } from './libraryStorage';
 
-export interface LibraryBackup {
-  favorites: Song[];
-  playlists: Playlist[];
-}
-
-export interface LibraryImportPreview {
-  favorites: Song[];
-  playlists: Playlist[];
-  favoriteCount: number;
-  playlistCount: number;
-  playlistSongCount: number;
-  backup: LibraryBackup;
-}
-
-export type LibraryImportMode = "replace" | "merge";
-
-export type LibraryImportResult =
-  | { ok: true; data: LibraryImportPreview }
-  | { ok: false; error: string };
-
-export type LibraryExportResult =
-  | { ok: true; filename: string }
-  | { ok: false; error: string };
-
-export type LibraryApplyImportResult =
-  | { ok: true; backup: LibraryBackup }
-  | { ok: false; error: string };
+// 兼容出口：类型定义现在统一在 libraryData 里。
+export type {
+  LibraryApplyImportResult,
+  LibraryBackup,
+  LibraryExportResult,
+  LibraryImportMode,
+  LibraryImportPreview,
+  LibraryImportResult,
+} from './libraryData';
 
 interface LibraryContextType {
   favorites: Song[];
   playlists: Playlist[];
   corsProxy: string;
   setCorsProxy: (url: string) => void;
+  saveError: { message: string } | null;
   toggleFavorite: (song: Song) => void;
   isFavorite: (songId: number | string, source?: string) => boolean;
   createPlaylist: (name: string, initialSongs?: Song[]) => void;
@@ -63,353 +68,199 @@ interface LibraryContextType {
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
-const DEFAULT_PROXY = "";
-const FAVORITES_KEY = "tunefree_favorites";
-const PLAYLISTS_KEY = "tunefree_playlists";
-const CORS_PROXY_KEY = "tunefree_cors_proxy";
 
-type StoredValue<T> = {
-  value: T;
-  corrupt: boolean;
-};
-
-const asString = (value: unknown, fallback: string) => {
-  if (typeof value !== "string") return fallback;
-  const trimmed = value.trim();
-  return trimmed || fallback;
-};
-
-const normalizeSong = (value: unknown): Song | null => {
-  if (!value || typeof value !== "object") return null;
-  const input = value as Partial<Song>;
-  if (input.id === undefined || input.id === null) return null;
-  if (typeof input.source !== "string" || !input.source.trim()) return null;
-
-  const song: Song = {
-    id: input.id,
-    source: input.source,
-    name: asString(input.name, "未知歌曲"),
-    artist: asString(input.artist, "未知歌手"),
-    album: asString(input.album, "未知专辑"),
-  };
-
-  if (typeof input.pic === "string") song.pic = input.pic;
-  if (typeof input.picId === "string") song.picId = input.picId;
-  if (typeof input.url === "string") song.url = input.url;
-  if (typeof input.urlId === "string") song.urlId = input.urlId;
-  if (typeof input.lrc === "string") song.lrc = input.lrc;
-  if (typeof input.lyricId === "string") song.lyricId = input.lyricId;
-  if (Array.isArray(input.types)) {
-    song.types = input.types.filter((type): type is string => typeof type === "string");
-  }
-
-  return song;
-};
-
-const uniqueSongs = (songs: Song[]) => {
-  const seen = new Set<string>();
-  const result: Song[] = [];
-  songs.forEach((song) => {
-    const key = getSongKey(song);
-    if (seen.has(key)) return;
-    seen.add(key);
-    result.push(song);
-  });
-  return result;
-};
-
-const normalizeSongArray = (value: unknown): Song[] => {
-  if (!Array.isArray(value)) return [];
-  return uniqueSongs(value.map(normalizeSong).filter((song): song is Song => Boolean(song)));
-};
-
-const normalizePlaylist = (value: unknown): Playlist | null => {
-  if (!value || typeof value !== "object") return null;
-  const input = value as Partial<Playlist>;
-  if (typeof input.id !== "string" || !input.id.trim()) return null;
-  if (!Array.isArray(input.songs)) return null;
-
-  return {
-    id: input.id,
-    name: asString(input.name, "未命名歌单"),
-    createTime: typeof input.createTime === "number" ? input.createTime : Date.now(),
-    songs: normalizeSongArray(input.songs),
-  };
-};
-
-const normalizePlaylistArray = (value: unknown): Playlist[] => {
-  if (!Array.isArray(value)) return [];
-  const playlists = value
-    .map(normalizePlaylist)
-    .filter((playlist): playlist is Playlist => Boolean(playlist));
-  const seen = new Set<string>();
-  return playlists.filter((playlist) => {
-    if (seen.has(playlist.id)) return false;
-    seen.add(playlist.id);
-    return true;
-  });
-};
-
-const backupCorruptStorage = (key: string, rawValue: string) => {
-  try {
-    localStorage.setItem(`${key}_corrupt_${Date.now()}`, rawValue);
-  } catch {
-    return;
-  }
-};
-
-const getStoredJson = <T,>(
-  key: string,
-  fallback: T,
-  normalize: (value: unknown) => T,
-): StoredValue<T> => {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return { value: fallback, corrupt: false };
-    return { value: normalize(JSON.parse(raw)), corrupt: false };
-  } catch {
-    const raw = localStorage.getItem(key);
-    if (raw) backupCorruptStorage(key, raw);
-    return { value: fallback, corrupt: true };
-  }
-};
-
-const mergeSongs = (incoming: Song[], current: Song[]) => uniqueSongs([...incoming, ...current]);
-
-const mergePlaylists = (incoming: Playlist[], current: Playlist[]) => {
-  const map = new Map(current.map((playlist) => [playlist.id, playlist]));
-  incoming.forEach((playlist) => {
-    const existing = map.get(playlist.id);
-    map.set(
-      playlist.id,
-      existing
-        ? { ...existing, ...playlist, songs: mergeSongs(playlist.songs, existing.songs) }
-        : playlist,
-    );
-  });
-  return Array.from(map.values()).sort((a, b) => b.createTime - a.createTime);
-};
+const createPlaylistId = (): string =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
 
 export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const favoriteStorageRef = useRef<StoredValue<Song[]> | null>(null);
-  const playlistStorageRef = useRef<StoredValue<Playlist[]> | null>(null);
-  if (!favoriteStorageRef.current) {
-    favoriteStorageRef.current = getStoredJson(FAVORITES_KEY, [] as Song[], normalizeSongArray);
-  }
-  if (!playlistStorageRef.current) {
-    playlistStorageRef.current = getStoredJson(PLAYLISTS_KEY, [] as Playlist[], normalizePlaylistArray);
-  }
-
-  const [favorites, setFavorites] = useState<Song[]>(favoriteStorageRef.current.value);
-  const [playlists, setPlaylists] = useState<Playlist[]>(playlistStorageRef.current.value);
+  const [snapshot, setSnapshot] = useState<LibraryBackup>(() => loadLibrary());
+  const snapshotRef = useRef(snapshot);
+  const [saveError, setSaveError] = useState<{ message: string } | null>(null);
   const [corsProxy, setCorsProxyInternal] = useState<string>(
-    () => localStorage.getItem(CORS_PROXY_KEY) || DEFAULT_PROXY,
+    () => getStoredValue(CORS_PROXY_KEY, DEFAULT_PROXY),
   );
 
-  const favoritesRef = useRef(favorites);
-  const playlistsRef = useRef(playlists);
-  const firstFavoritePersistRef = useRef(true);
-  const firstPlaylistPersistRef = useRef(true);
-
-  useEffect(() => {
-    favoritesRef.current = favorites;
-  }, [favorites]);
-
-  useEffect(() => {
-    playlistsRef.current = playlists;
-  }, [playlists]);
-
-  useEffect(() => {
-    if (firstFavoritePersistRef.current) {
-      firstFavoritePersistRef.current = false;
-      if (favoriteStorageRef.current?.corrupt) return;
+  // 提交即写盘：写入失败时状态回滚，错误对外暴露为 saveError。
+  const commit = useCallback((next: LibraryBackup): boolean => {
+    if (!persistLibrary(next)) {
+      setSaveError({ message: LIBRARY_SAVE_ERROR });
+      return false;
     }
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
-  }, [favorites]);
+    snapshotRef.current = next;
+    setSnapshot(next);
+    setSaveError(null);
+    return true;
+  }, []);
 
-  useEffect(() => {
-    if (firstPlaylistPersistRef.current) {
-      firstPlaylistPersistRef.current = false;
-      if (playlistStorageRef.current?.corrupt) return;
-    }
-    localStorage.setItem(PLAYLISTS_KEY, JSON.stringify(playlists));
-  }, [playlists]);
+  const { favorites, playlists } = snapshot;
+  const favoriteKeys = useMemo(
+    () => new Set(favorites.map(getSongKey)),
+    [favorites],
+  );
 
   const setCorsProxy = useCallback((url: string) => {
     setCorsProxyInternal(url);
-    localStorage.setItem(CORS_PROXY_KEY, url);
+    setStoredValue(CORS_PROXY_KEY, url);
   }, []);
 
-  const toggleFavorite = useCallback((song: Song) => {
-    setFavorites((prev) => {
+  const toggleFavorite = useCallback(
+    (song: Song) => {
       const normalized = normalizeSong(song);
-      if (!normalized) return prev;
-      const songKey = getSongKey(normalized);
-      if (prev.find((s) => getSongKey(s) === songKey)) {
-        return prev.filter((s) => getSongKey(s) !== songKey);
-      }
-      return [normalized, ...prev];
-    });
-  }, []);
+      if (!normalized) return;
+      const current = snapshotRef.current;
+      const key = getSongKey(normalized);
+      const exists = current.favorites.some((item) => getSongKey(item) === key);
+      const next = exists
+        ? current.favorites.filter((item) => getSongKey(item) !== key)
+        : [normalized, ...current.favorites];
+      commit({ ...current, favorites: next });
+    },
+    [commit],
+  );
 
   const isFavorite = useCallback(
     (songId: number | string, source?: string) =>
-      favorites.some(
-        (s) =>
-          String(s.id) === String(songId) && (!source || s.source === source),
-      ),
-    [favorites],
+      source
+        ? favoriteKeys.has(getSongKey({ id: songId, source }))
+        : favorites.some((song) => String(song.id) === String(songId)),
+    [favoriteKeys, favorites],
   );
 
   const createPlaylist = useCallback(
     (name: string, initialSongs: Song[] = []) => {
-      const newPlaylist: Playlist = {
-        id: Date.now().toString(),
+      const playlist: Playlist = {
+        id: createPlaylistId(),
         name: String(name),
         createTime: Date.now(),
-        songs: normalizeSongArray(initialSongs),
+        songs: uniqueSongs(
+          initialSongs
+            .map(normalizeSong)
+            .filter((song): song is Song => Boolean(song)),
+        ),
       };
-      setPlaylists((prev) => [newPlaylist, ...prev]);
+      const current = snapshotRef.current;
+      commit({ ...current, playlists: [playlist, ...current.playlists] });
     },
-    [],
+    [commit],
   );
 
-  const renamePlaylist = useCallback((id: string, name: string) => {
-    setPlaylists((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, name: String(name) } : p)),
-    );
-  }, []);
+  const renamePlaylist = useCallback(
+    (id: string, name: string) => {
+      const current = snapshotRef.current;
+      commit({
+        ...current,
+        playlists: current.playlists.map((playlist) =>
+          playlist.id === id ? { ...playlist, name: String(name) } : playlist,
+        ),
+      });
+    },
+    [commit],
+  );
 
-  const deletePlaylist = useCallback((id: string) => {
-    setPlaylists((prev) => prev.filter((p) => p.id !== id));
-  }, []);
+  const deletePlaylist = useCallback(
+    (id: string) => {
+      const current = snapshotRef.current;
+      commit({
+        ...current,
+        playlists: current.playlists.filter((playlist) => playlist.id !== id),
+      });
+    },
+    [commit],
+  );
 
-  const addToPlaylist = useCallback((playlistId: string, song: Song) => {
-    setPlaylists((prev) =>
-      prev.map((p) => {
-        if (p.id !== playlistId) return p;
-        const normalized = normalizeSong(song);
-        if (!normalized) return p;
-        const songKey = getSongKey(normalized);
-        if (p.songs.find((s) => getSongKey(s) === songKey)) return p;
-        return { ...p, songs: [...p.songs, normalized] };
-      }),
-    );
-  }, []);
+  const addToPlaylist = useCallback(
+    (playlistId: string, song: Song) => {
+      const normalized = normalizeSong(song);
+      if (!normalized) return;
+      const current = snapshotRef.current;
+      const target = current.playlists.find((playlist) => playlist.id === playlistId);
+      if (!target) return;
+      const key = getSongKey(normalized);
+      if (target.songs.some((item) => getSongKey(item) === key)) return;
+      commit({
+        ...current,
+        playlists: current.playlists.map((playlist) =>
+          playlist.id === playlistId
+            ? { ...playlist, songs: [...playlist.songs, normalized] }
+            : playlist,
+        ),
+      });
+    },
+    [commit],
+  );
 
   const removeFromPlaylist = useCallback(
     (playlistId: string, songId: number | string, source?: string) => {
-      setPlaylists((prev) =>
-        prev.map((p) => {
-          if (p.id !== playlistId) return p;
-          return {
-            ...p,
-            songs: p.songs.filter(
-              (s) => !(String(s.id) === String(songId) && (!source || s.source === source)),
-            ),
-          };
-        }),
-      );
+      const current = snapshotRef.current;
+      commit({
+        ...current,
+        playlists: current.playlists.map((playlist) =>
+          playlist.id !== playlistId
+            ? playlist
+            : {
+                ...playlist,
+                songs: playlist.songs.filter(
+                  (song) =>
+                    !(
+                      String(song.id) === String(songId) &&
+                      (!source || song.source === source)
+                    ),
+                ),
+              },
+        ),
+      });
     },
+    [commit],
+  );
+
+  const exportData = useCallback(
+    (): LibraryExportResult =>
+      exportLibraryData(snapshotRef.current.favorites, snapshotRef.current.playlists),
     [],
   );
 
-  const exportData = useCallback((): LibraryExportResult => {
-    try {
-      const data = {
-        version: 4,
-        favorites: favoritesRef.current,
-        playlists: playlistsRef.current,
-        exportDate: new Date().toISOString(),
-      };
-      const filename = `tunefree_backup_${new Date().toISOString().slice(0, 10)}.json`;
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      return { ok: true, filename };
-    } catch {
-      return { ok: false, error: "导出失败，请稍后再试" };
-    }
-  }, []);
-
-  const parseImportData = useCallback((jsonData: string): LibraryImportResult => {
-    try {
-      const parsed = JSON.parse(jsonData) as Record<string, unknown>;
-      if (!parsed || typeof parsed !== "object") {
-        return { ok: false, error: "导入文件格式不正确" };
-      }
-      if (!Array.isArray(parsed.favorites) && !Array.isArray(parsed.playlists)) {
-        return { ok: false, error: "不是 TuneFree 备份文件" };
-      }
-
-      const nextFavorites = normalizeSongArray(parsed.favorites);
-      const nextPlaylists = normalizePlaylistArray(parsed.playlists);
-      const playlistSongCount = nextPlaylists.reduce((total, playlist) => total + playlist.songs.length, 0);
-      if (nextFavorites.length === 0 && nextPlaylists.length === 0) {
-        return { ok: false, error: "没有可导入的有效数据" };
-      }
-
-      return {
-        ok: true,
-        data: {
-          favorites: nextFavorites,
-          playlists: nextPlaylists,
-          favoriteCount: nextFavorites.length,
-          playlistCount: nextPlaylists.length,
-          playlistSongCount,
-          backup: {
-            favorites: favoritesRef.current,
-            playlists: playlistsRef.current,
-          },
-        },
-      };
-    } catch {
-      return { ok: false, error: "JSON 解析失败" };
-    }
-  }, []);
+  const parseImportData = useCallback(
+    (jsonData: string): LibraryImportResult => parseLibraryImport(jsonData),
+    [],
+  );
 
   const applyImportData = useCallback(
     (data: LibraryImportPreview, mode: LibraryImportMode): LibraryApplyImportResult => {
-      try {
-        const backup = {
-          favorites: favoritesRef.current,
-          playlists: playlistsRef.current,
-        };
-        if (mode === "merge") {
-          setFavorites((prev) => mergeSongs(data.favorites, prev));
-          setPlaylists((prev) => mergePlaylists(data.playlists, prev));
-        } else {
-          setFavorites(data.favorites);
-          setPlaylists(data.playlists);
-        }
-        return { ok: true, backup };
-      } catch {
-        return { ok: false, error: "导入失败，请稍后再试" };
+      const importedFavorites = normalizeSongArray(data.favorites);
+      const importedPlaylists = normalizePlaylistArray(data.playlists);
+      if (!importedFavorites || !importedPlaylists) {
+        return { ok: false, error: '导入数据结构不正确，未修改现有数据' };
       }
+      const backup = snapshotRef.current;
+      const next =
+        mode === 'merge'
+          ? {
+              favorites: mergeSongLists(backup.favorites, importedFavorites),
+              playlists: mergePlaylists(backup.playlists, importedPlaylists),
+            }
+          : { favorites: importedFavorites, playlists: importedPlaylists };
+      return commit(next)
+        ? { ok: true, backup }
+        : { ok: false, error: LIBRARY_SAVE_ERROR };
     },
-    [],
+    [commit],
   );
 
-  const restoreData = useCallback((backup: LibraryBackup) => {
-    setFavorites(normalizeSongArray(backup.favorites));
-    setPlaylists(normalizePlaylistArray(backup.playlists));
-  }, []);
+  const restoreData = useCallback(
+    (backup: LibraryBackup) => {
+      commit(backup);
+    },
+    [commit],
+  );
 
   const importData = useCallback(
     (jsonData: string): boolean => {
       const parsed = parseImportData(jsonData);
-      if (!parsed.ok) return false;
-      return applyImportData(parsed.data, "replace").ok;
+      return parsed.ok && applyImportData(parsed.data, 'replace').ok;
     },
     [applyImportData, parseImportData],
   );
@@ -421,6 +272,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
         playlists,
         corsProxy,
         setCorsProxy,
+        saveError,
         toggleFavorite,
         isFavorite,
         createPlaylist,
@@ -445,6 +297,7 @@ const LIBRARY_DEFAULTS: LibraryContextType = {
   playlists: [],
   corsProxy: "",
   setCorsProxy: () => {},
+  saveError: null,
   toggleFavorite: () => {},
   isFavorite: () => false,
   createPlaylist: () => {},
