@@ -600,7 +600,9 @@ mixin _PlayerControllerRuntimeApi {
         final playableQueue = List<Song>.unmodifiable(
           _replaceQueueSong(nextQueue, queueAnchor, playableSong),
         );
-        return commitPlayableSong(
+        // 必须 await：commitPlayableSong 返回 Future，不 await 的话它抛出的错误
+        // 不会被下面的 catch 捕获，失败会直接冒泡出去而不是走 return false。
+        return await commitPlayableSong(
           playableSong,
           playableQueue,
           candidateQuality,
