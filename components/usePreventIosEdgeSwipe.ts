@@ -16,7 +16,7 @@ const isStandalonePwa = (): boolean => {
 };
 
 export const usePreventIosEdgeSwipe = (
-  containerRef: RefObject<HTMLElement>,
+  containerRef: RefObject<HTMLElement | null>,
 ): void => {
   useEffect(() => {
     if (!isIosDevice() || !isStandalonePwa()) return;
