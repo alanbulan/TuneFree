@@ -19,18 +19,25 @@ export const directFirstFetch = async (
   url: string,
   timeoutMs = 12000,
 ): Promise<Response | null> => {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    const resp = await fetch(url, {
-      credentials: "omit",
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return resp;
-  } catch {
-    return proxyFetch(url, {}, timeoutMs);
+  // 直连失败通常是一次性的：GD Studio 的风控响应不带 CORS 头时，浏览器只会报
+  // ERR_FAILED，同一秒重发就能拿到正常响应（线上实测已出现）。直接退回代理在
+  // 线上必然是 520，所以先重试一次再退。
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const resp = await fetch(url, {
+        credentials: "omit",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      return resp;
+    } catch {
+      /* 再试一次 */
+    }
   }
+
+  return proxyFetch(url, {}, timeoutMs);
 };
 
 export const proxyFetchJson = async (
