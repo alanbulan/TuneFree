@@ -7,12 +7,13 @@ import {
 } from '../contexts/PlayerContext';
 import { useLyricDisplayMode } from './useLyricDisplayMode';
 import { saveLyricDisplayMode, type LyricDisplayMode } from '../utils/lyricDisplayMode';
-import { useLibrary } from '../contexts/LibraryContext';
 import { getImgReferrerPolicy } from '../services/api';
 import { useNavigate } from 'react-router-dom';
-import { FolderIcon, PlusIcon, MusicIcon, SearchIcon, DownloadIcon, ShareIcon } from './Icons';
+import { FolderIcon, PlusIcon, MusicIcon, SearchIcon, DownloadIcon, ShareIcon, HeartFillIcon } from './Icons';
 import { getSongKey } from '../types';
 import { useToast } from './ToastHost';
+import { useLibrary } from '../contexts/LibraryContext';
+import { FAVORITES_PLAYLIST_ID } from '../contexts/libraryData';
 
 interface PlayerMorePopupProps {
   isOpen: boolean;
@@ -33,7 +34,7 @@ const PlayerMorePopupContent: React.FC<{
     adjustLyricOffsetSeconds,
   } = usePlayerActions();
   const lyricDisplayMode = useLyricDisplayMode();
-  const { playlists, addToPlaylist, createPlaylist } = useLibrary();
+  const { playlists, favorites, isFavorite, addToPlaylist, createPlaylist } = useLibrary();
   const { showToast } = useToast();
   const [showPlaylistSelect, setShowPlaylistSelect] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
@@ -280,6 +281,28 @@ const PlayerMorePopupContent: React.FC<{
                   </button>
                 </div>
               )}
+
+              <button
+                onClick={() => handleAddToPlaylist(FAVORITES_PLAYLIST_ID)}
+                className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 rounded-xl transition active:scale-[0.98]"
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-white rounded-full text-ios-red shadow-sm">
+                    <HeartFillIcon size={20} />
+                  </div>
+                  <div className="text-left">
+                    <p className="font-medium text-sm text-gray-800">我喜欢</p>
+                    <p className="text-[10px] text-gray-400">
+                      {favorites.length} 首歌曲
+                    </p>
+                  </div>
+                </div>
+                {isFavorite(currentSong.id, currentSong.source) && (
+                  <span className="text-[10px] bg-ios-red/10 text-ios-red px-2 py-0.5 rounded-full">
+                    已添加
+                  </span>
+                )}
+              </button>
 
               {playlists.map(p => (
                 <button
