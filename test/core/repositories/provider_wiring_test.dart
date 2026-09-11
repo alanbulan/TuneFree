@@ -46,6 +46,9 @@ LibraryController _libraryController() {
       recordStore: _EmptyDownloadRecordStore(),
       fileExists: (_) async => false,
       deleteFile: (_) async {},
+      trashDirectoryPath: () async => '',
+      moveFile: ({required String from, required String to}) async {},
+      listFiles: (_) async => const <String>[],
     ),
   );
 }

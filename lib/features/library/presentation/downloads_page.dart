@@ -12,6 +12,7 @@ import '../../../shared/music_source_display.dart';
 import '../../../shared/theme/tune_free_spacing.dart';
 import '../../../shared/widgets/tune_free_badge.dart';
 import '../../../shared/widgets/tune_free_card.dart';
+import '../../../shared/widgets/tune_free_feedback.dart';
 import '../../player/application/player_controller.dart';
 import '../../player/data/download_library_repository.dart';
 import '../application/library_controller.dart';
@@ -83,8 +84,13 @@ class _LibraryDownloadsPageState extends ConsumerState<LibraryDownloadsPage> {
     });
 
     try {
+      // 删除是被挪进回收站的，所以每一首都留得下撤销所需的快照。
+      final deleted = <DeletedDownload>[];
       for (final item in selectedDownloads) {
-        await controller.deleteDownload(item);
+        final snapshot = await controller.deleteDownload(item);
+        if (snapshot != null) {
+          deleted.add(snapshot);
+        }
       }
       if (!mounted) {
         return;
@@ -94,8 +100,11 @@ class _LibraryDownloadsPageState extends ConsumerState<LibraryDownloadsPage> {
         _isEditing = false;
         _selectedDownloadKeys.clear();
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已删除 ${selectedDownloads.length} 首歌曲')),
+      showUndoToast(
+        context,
+        '已删除 ${selectedDownloads.length} 首歌曲',
+        tone: TuneFreeToastTone.success,
+        onUndo: () => controller.restoreDownloads(deleted),
       );
     } catch (_) {
       if (!mounted) {

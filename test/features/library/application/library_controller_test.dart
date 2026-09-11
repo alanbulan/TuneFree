@@ -17,7 +17,7 @@ final class InMemoryDownloadLibraryRepository
   final List<DownloadedTrackItem> records = <DownloadedTrackItem>[];
 
   @override
-  Future<void> deleteDownload({
+  Future<DeletedDownload?> deleteDownload({
     required String songKey,
     required String quality,
     required String filePath,
@@ -28,7 +28,14 @@ final class InMemoryDownloadLibraryRepository
           record.quality == quality &&
           record.filePath == filePath,
     );
+    return null;
   }
+
+  @override
+  Future<void> restoreDownload(DeletedDownload deleted) async {}
+
+  @override
+  Future<int> purgeTrash({Duration? maxAge}) async => 0;
 
   @override
   Future<List<DownloadedTrackItem>> listDownloads() async =>
@@ -273,32 +280,44 @@ void main() {
     },
   );
 
-  test('importBackupJson rejects a payload that is not a JSON object', () async {
-    final storage = InMemoryLibraryStorage();
-    final repository = InMemoryDownloadLibraryRepository();
-    final controller = LibraryController(
-      storage: storage,
-      downloadLibraryRepository: repository,
-    );
-    await controller.load();
+  test(
+    'importBackupJson rejects a payload that is not a JSON object',
+    () async {
+      final storage = InMemoryLibraryStorage();
+      final repository = InMemoryDownloadLibraryRepository();
+      final controller = LibraryController(
+        storage: storage,
+        downloadLibraryRepository: repository,
+      );
+      await controller.load();
 
-    await expectLater(
-      controller.importBackupJson('[1, 2, 3]'),
-      throwsA(isA<FormatException>()),
-    );
-    // 解析失败时不能动到资料库。
-    expect(controller.state.favorites, isEmpty);
-  });
+      await expectLater(
+        controller.importBackupJson('[1, 2, 3]'),
+        throwsA(isA<FormatException>()),
+      );
+      // 解析失败时不能动到资料库。
+      expect(controller.state.favorites, isEmpty);
+    },
+  );
 
   group('restorePlaylist', () {
-    Playlist playlist(String id, String name, {List<String> songIds = const []}) {
+    Playlist playlist(
+      String id,
+      String name, {
+      List<String> songIds = const [],
+    }) {
       return Playlist(
         id: id,
         name: name,
         createTime: int.parse(id),
         songs: <Song>[
           for (final songId in songIds)
-            Song(id: songId, name: songId, artist: '歌手', source: MusicSource.netease),
+            Song(
+              id: songId,
+              name: songId,
+              artist: '歌手',
+              source: MusicSource.netease,
+            ),
         ],
       );
     }

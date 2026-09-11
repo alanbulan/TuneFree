@@ -82,18 +82,57 @@ class DownloadFileStore {
     }
   }
 
+  /// 回收站目录：删掉的下载先挪到这里，撤销时再挪回去。
+  ///
+  /// 和音频文件同在 `downloads/` 下，是为了保证两端在同一条文件系统上：
+  /// 跨设备 `rename` 会失败，而退回复制会白白多写一份上百兆的文件。
+  Future<String> trashDirectoryPath() async {
+    return '${await _resolveDownloadsDirectory()}/trash';
+  }
+
+  Future<void> moveFile({required String from, required String to}) async {
+    final source = File(from);
+    if (!await source.exists()) {
+      return;
+    }
+    final target = File(to);
+    await target.parent.create(recursive: true);
+    if (await target.exists()) {
+      await target.delete();
+    }
+    await source.rename(to);
+  }
+
+  /// 列出一个目录下的全部文件。目录不存在时返回空列表 —— 首次删除之前
+  /// 回收站是不存在的，那不算错误。
+  Future<List<String>> listFiles(String directory) async {
+    final directoryHandle = Directory(directory);
+    if (!await directoryHandle.exists()) {
+      return const <String>[];
+    }
+    return directoryHandle
+        .listSync()
+        .whereType<File>()
+        .map((file) => file.path)
+        .toList(growable: false);
+  }
+
   Future<void> deleteTestRoot() async {
     if (_deleteRootOnDispose && await _rootDirectory.exists()) {
       await _rootDirectory.delete(recursive: true);
     }
   }
 
-  Future<Directory> _resolveAudioDirectory() async {
+  Future<String> _resolveDownloadsDirectory() async {
     if (_deleteRootOnDispose) {
-      return Directory('${_rootDirectory.path}/downloads/audio');
+      return '${_rootDirectory.path}/downloads';
     }
     final documentsDirectory = await getApplicationDocumentsDirectory();
-    return Directory('${documentsDirectory.path}/downloads/audio');
+    return '${documentsDirectory.path}/downloads';
+  }
+
+  Future<Directory> _resolveAudioDirectory() async {
+    return Directory('${await _resolveDownloadsDirectory()}/audio');
   }
 
   String _extensionFor(AudioQuality quality) {

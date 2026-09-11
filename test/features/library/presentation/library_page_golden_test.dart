@@ -177,7 +177,7 @@ final class TestDownloadLibraryRepository implements DownloadLibraryRepository {
   int deleteCallCount = 0;
 
   @override
-  Future<void> deleteDownload({
+  Future<DeletedDownload?> deleteDownload({
     required String songKey,
     required String quality,
     required String filePath,
@@ -192,7 +192,15 @@ final class TestDownloadLibraryRepository implements DownloadLibraryRepository {
           item.quality == quality &&
           item.filePath == filePath,
     );
+    // 这个假实现没有真实文件，给不出可撤销的快照。
+    return null;
   }
+
+  @override
+  Future<void> restoreDownload(DeletedDownload deleted) async {}
+
+  @override
+  Future<int> purgeTrash({Duration? maxAge}) async => 0;
 
   @override
   Future<List<DownloadedTrackItem>> listDownloads() async {
