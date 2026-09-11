@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/build_info.g.dart';
 import '../../../core/models/playlist.dart';
 import '../../../core/models/song.dart';
 import '../../../core/network/source_http_client.dart';
@@ -1578,21 +1579,13 @@ class _AboutTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        const _AboutCard(
+        // 版本号来自 tool/generate_build_info.dart 生成的 kTechStack，
+        // 不再手写 —— 手写的话每次升级依赖这里就过期了。
+        _AboutCard(
           title: '技术栈',
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _TechChip(label: 'Flutter'),
-              _TechChip(label: 'Dart'),
-              _TechChip(label: 'Riverpod'),
-              _TechChip(label: 'go_router'),
-              _TechChip(label: 'just_audio'),
-              _TechChip(label: 'audio_service'),
-              _TechChip(label: 'Dio'),
-              _TechChip(label: 'shared_preferences'),
-              _TechChip(label: 'path_provider'),
+          child: Column(
+            children: <Widget>[
+              for (final entry in kTechStack) _TechStackRow(entry: entry),
             ],
           ),
         ),
@@ -1832,22 +1825,48 @@ class _FeatureRow extends StatelessWidget {
   }
 }
 
-class _TechChip extends StatelessWidget {
-  const _TechChip({required this.label});
+class _TechStackRow extends StatelessWidget {
+  const _TechStackRow({required this.entry});
 
-  final String label;
+  final TechStackEntry entry;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 11, color: Color(0xFF4B5563)),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Text(
+                  entry.name,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF111111),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    entry.detail,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF9CA3AF),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            entry.version,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
+          ),
+        ],
       ),
     );
   }
