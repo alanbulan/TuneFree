@@ -6,7 +6,7 @@ import {
   toGDStudioApiSource,
 } from "../utils/musicSource";
 import { GD_STUDIO_API_BASE } from "./config";
-import { proxyFetch } from "./proxy";
+import { directFirstFetch } from "./proxy";
 import { fixUrl } from "./utils";
 
 export { isGDStudioOnlySource, isGDStudioSource } from "../utils/musicSource";
@@ -95,9 +95,25 @@ const looksLikeUnsupportedSourceResponse = (
   return /source.*not supported/i.test(getGDStudioErrorText(data, text));
 };
 
+/**
+ * GD Studio 会随上游版权情况动态开关音乐源（站点首页实时公示），关掉的源
+ * 一律回 `{"detail":"Value of `source` is not supported."}`。这类拒绝是稳定的，
+ * 同一个源在一次会话里不必反复试探，否则每首歌都要白打一次请求。
+ */
+const unsupportedSources = new Set<string>();
+
+export const isGDStudioSourceUnsupported = (source: string): boolean =>
+  unsupportedSources.has(normalizeMusicSource(source));
+
 export const fetchGDStudioData = async <T = any>(
   params: Record<string, string | number>,
-): Promise<T> => {  const response = await proxyFetch(buildApiUrl(params), {}, 12000);
+): Promise<T> => {
+  const source = normalizeMusicSource(String(params.source ?? ""));
+  if (source && unsupportedSources.has(source)) {
+    throw new Error("GD_STUDIO_UNSUPPORTED_SOURCE");
+  }
+
+  const response = await directFirstFetch(buildApiUrl(params), 12000);
   if (!response) {
     throw new Error("GD_STUDIO_UNAVAILABLE");
   }
@@ -110,6 +126,7 @@ export const fetchGDStudioData = async <T = any>(
       throw new Error("GD_STUDIO_RATE_LIMIT");
     }
     if (looksLikeUnsupportedSourceResponse(response.status, text, data)) {
+      if (source) unsupportedSources.add(source);
       throw new Error("GD_STUDIO_UNSUPPORTED_SOURCE");
     }
     throw new Error("GD_STUDIO_UNAVAILABLE");

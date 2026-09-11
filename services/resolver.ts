@@ -194,7 +194,16 @@ const searchFallbackSource = async (
   keyword: string,
   source: string,
 ): Promise<Song[]> => {
-  if (source === "netease") return searchNetease(keyword, 1, FALLBACK_SEARCH_LIMIT);
+  // 网易云同样优先 GD Studio：直连会撞上 Cloudflare 出口 IP 的风控验证墙。
+  if (source === "netease") {
+    return searchGDStudio(keyword, source, 1, FALLBACK_SEARCH_LIMIT)
+      .then((songs) =>
+        songs.length > 0
+          ? songs
+          : searchNetease(keyword, 1, FALLBACK_SEARCH_LIMIT),
+      )
+      .catch(() => searchNetease(keyword, 1, FALLBACK_SEARCH_LIMIT));
+  }
   if (source === "qq") return searchQQ(keyword, 1, FALLBACK_SEARCH_LIMIT);
   if (source === "kuwo") return searchKuwo(keyword, 1, FALLBACK_SEARCH_LIMIT);
   if (isGDStudioOnlySource(source)) {
