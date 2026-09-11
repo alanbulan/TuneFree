@@ -699,6 +699,15 @@ void main() {
       expect(container.read(playerControllerProvider).currentTrack, isNull);
       expect(find.byKey(const Key('player-queue-sheet')), findsNothing);
 
+      // 清空队列现在会弹一条带撤销的提示条。ScaffoldMessenger 是**排队**的，
+      // 不主动清掉，下面下载完成的提示要等它 5 秒才轮得到。
+      expect(find.text('已清空播放队列'), findsOneWidget);
+      expect(find.text('撤销'), findsOneWidget);
+      tester
+          .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger))
+          .clearSnackBars();
+      await tester.pumpAndSettle();
+
       await controller.openTrack(
         firstTrack,
         queue: const <PlayerTrack>[firstTrack, secondTrack],
@@ -1397,20 +1406,33 @@ void main() {
       // 歌词推迟 2 秒 → 等效时间 11 秒，已经进到第二句。
       final appearance = container.read(appearanceControllerProvider.notifier);
       await appearance.setLyricOffsetMs(2000);
-      await tester.pump();
+      // 必须 settle：pump() 不推进时钟，行上的 AnimatedScale 还停在起始帧，
+      // 这时候 tap 会落在空处（报 "would not hit test"）。
+      await tester.pumpAndSettle();
       expect(
         find.byKey(const Key('player-lyrics-line-active-1')),
         findsOneWidget,
       );
 
-      // 点歌词行的换算由 lyricSeekTarget 的单元测试覆盖 —— 歌词行在 widget
-      // 测试里命不中（`tester.tap` 报 "would not hit test"），这是既有现象，
-      // 与本次改动无关，不在这一层重复验证。
+      // 点第二句要 seek 到 10 - 2 = 8 秒，而不是原始行时间 10 秒。
+      await tester.tap(find.byKey(const Key('player-lyrics-line-active-1')));
+      await tester.pumpAndSettle();
+      expect(
+        container.read(playerControllerProvider).position,
+        const Duration(seconds: 8),
+      );
 
-      // 提前 4 秒则相反：等效时间 9 + 2 - 4 = 7 秒，回到第一句。
+      // 点第一句要 seek 到 5 - 2 = 3 秒。
+      await tester.tap(find.byKey(const Key('player-lyrics-line-inactive-0')));
+      await tester.pumpAndSettle();
+      expect(
+        container.read(playerControllerProvider).position,
+        const Duration(seconds: 3),
+      );
+
+      // 提前 4 秒则相反：等效时间 3 + 2 - 4 = 1 秒，回到第一句。
       await appearance.setLyricOffsetMs(-4000);
-      await tester.pump();
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(
         find.byKey(const Key('player-lyrics-line-active-0')),
         findsOneWidget,

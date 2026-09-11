@@ -14,6 +14,7 @@ import '../../../../shared/music_source_display.dart';
 import '../../../../shared/theme/appearance_controller.dart';
 import '../../../../shared/theme/appearance_preferences.dart';
 import '../../../../shared/theme/tune_free_palette.dart';
+import '../../../../shared/widgets/tune_free_feedback.dart';
 import '../../../library/application/library_controller.dart';
 import '../../application/audio_spectrum_analyzer.dart';
 import '../../application/player_controller.dart';
@@ -150,9 +151,28 @@ class FullPlayerSheet extends ConsumerWidget {
                                       onDownload: () => playerController
                                           .setShowDownload(true),
                                       onFavorite: () async {
-                                        await ref
-                                            .read(libraryControllerProvider)
-                                            .toggleFavorite(song);
+                                        final library = ref.read(
+                                          libraryControllerProvider,
+                                        );
+                                        // 收藏/取消收藏原来完全没有反馈，
+                                        // 这里补上提示条与撤销（再切一次即还原）。
+                                        final wasFavorite = library
+                                            .isFavoriteSong(song);
+                                        await library.toggleFavorite(song);
+                                        if (!context.mounted) {
+                                          return;
+                                        }
+                                        showUndoToast(
+                                          context,
+                                          wasFavorite
+                                              ? '已取消收藏'
+                                              : '已加入我喜欢',
+                                          tone: wasFavorite
+                                              ? TuneFreeToastTone.info
+                                              : TuneFreeToastTone.success,
+                                          onUndo: () =>
+                                              library.toggleFavorite(song),
+                                        );
                                       },
                                     ),
                                     const SizedBox(height: 12),
@@ -197,7 +217,28 @@ class FullPlayerSheet extends ConsumerWidget {
                               forceQuality: state.audioQuality,
                             );
                           },
-                          onClearQueue: playerController.clearQueue,
+                          onClearQueue: () async {
+                            // 清空队列会把当前歌、播放位置和落盘记录一起清掉，
+                            // 所以快照要包括当前歌；撤销只能走 playSong 重新
+                            // 起播 —— 光把 queue 写回去会留下「有队列但没在放」
+                            // 的中间态。
+                            final previousSong = state.currentSong;
+                            final previousQueue = state.queue;
+                            await playerController.clearQueue();
+                            if (!context.mounted || previousSong == null) {
+                              return;
+                            }
+                            showUndoToast(
+                              context,
+                              '已清空播放队列',
+                              tone: TuneFreeToastTone.warning,
+                              onUndo: () => playerController.playSong(
+                                previousSong,
+                                queue: previousQueue,
+                                forceQuality: state.audioQuality,
+                              ),
+                            );
+                          },
                         ),
                         PlayerDownloadSheet(
                           isOpen: state.showDownload,

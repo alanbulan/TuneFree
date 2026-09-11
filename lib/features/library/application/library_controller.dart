@@ -154,6 +154,26 @@ final class LibraryController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 用一份歌单快照覆盖当前状态，供「撤销删除」与「撤销移除歌曲」共用。
+  ///
+  /// 列表里已有同 id 就原位覆盖，没有就按 [index] 插回去 —— 删除和移除
+  /// 因此走同一条路径。**不能复用 `createPlaylist`**：它自己铸新 id，
+  /// 撤销出来的会是一个「另一张」歌单，页面上的选中态和引用全断。
+  Future<void> restorePlaylist(Playlist snapshot, {int index = 0}) async {
+    final existingIndex = _state.playlists.indexWhere(
+      (playlist) => playlist.id == snapshot.id,
+    );
+    final playlists = <Playlist>[..._state.playlists];
+    if (existingIndex >= 0) {
+      playlists[existingIndex] = snapshot;
+    } else {
+      playlists.insert(index.clamp(0, playlists.length), snapshot);
+    }
+    await _storage.savePlaylists(playlists);
+    _state = _state.copyWith(playlists: playlists);
+    notifyListeners();
+  }
+
   Future<void> setCorsProxy(String value) async {
     await _storage.saveCorsProxy(value);
     _state = _state.copyWith(corsProxy: value);
