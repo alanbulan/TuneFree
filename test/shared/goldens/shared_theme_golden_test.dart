@@ -136,7 +136,7 @@ void main() {
       'shared_theme_parity_harness',
       customPump: (tester) => tester.pump(),
     );
-  });
+  }, tags: 'golden');
 }
 
 class _ReferenceThumbnail extends StatelessWidget {

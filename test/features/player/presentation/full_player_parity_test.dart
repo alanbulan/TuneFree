@@ -1458,7 +1458,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await screenMatchesGolden(tester, 'full_player_parity_more_sheet');
-  });
+  }, tags: 'golden');
 
   testWidgets(
     'mini and full player controls advance queue, toggle mode, and favorite tracks',
