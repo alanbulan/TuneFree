@@ -24,6 +24,7 @@ class TopListCarousel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         final cardWidth = _cardWidthFor(constraints.maxWidth);
@@ -46,18 +47,18 @@ class TopListCarousel extends StatelessWidget {
                   width: cardWidth,
                   padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
-                    color: TuneFreePalette.surface,
+                    color: colors.surface,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: isSelected
-                          ? TuneFreePalette.accent
+                          ? colors.accent
                           : Colors.transparent,
                       width: 1.2,
                     ),
                     boxShadow: [
                       if (isSelected)
                         BoxShadow(
-                          color: TuneFreePalette.accent.withValues(alpha: 0.1),
+                          color: colors.accent.withValues(alpha: 0.1),
                           blurRadius: 0,
                           spreadRadius: 2,
                         ),
@@ -81,9 +82,9 @@ class TopListCarousel extends StatelessWidget {
                         list.updateFrequency ?? '每日更新',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10,
-                          color: TuneFreePalette.textSecondary,
+                          color: colors.textSecondary,
                         ),
                       ),
                     ],
@@ -111,6 +112,7 @@ class _TopListArtwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final artworkUrl = (list.coverImgUrl ?? list.picUrl)?.trim();
 
     return ClipRRect(
@@ -119,11 +121,11 @@ class _TopListArtwork extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           if (artworkUrl == null || artworkUrl.isEmpty)
-            const ColoredBox(
-              color: Color(0xFFF0F1F5),
+            ColoredBox(
+              color: colors.fillPanel,
               child: Icon(
                 Icons.music_note_rounded,
-                color: Color(0xFFB6B8BF),
+                color: colors.lyricInactive,
                 size: 32,
               ),
             )
@@ -133,11 +135,11 @@ class _TopListArtwork extends StatelessWidget {
               key: Key('top-list-artwork-${list.id}'),
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) {
-                return const ColoredBox(
-                  color: Color(0xFFF0F1F5),
+                return ColoredBox(
+                  color: colors.fillPanel,
                   child: Icon(
                     Icons.music_note_rounded,
-                    color: Color(0xFFB6B8BF),
+                    color: colors.lyricInactive,
                     size: 32,
                   ),
                 );

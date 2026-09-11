@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import '../../../shared/theme/tune_free_palette.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/audio_quality.dart';
@@ -140,16 +141,17 @@ class _LibraryDownloadsPageState extends ConsumerState<LibraryDownloadsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final state = ref.watch(libraryControllerProvider).state;
     final downloads = state.downloads;
     final hasDownloads = downloads.isNotEmpty;
 
     return Scaffold(
       key: const Key('library-downloads-page'),
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: colors.fillMuted,
       appBar: AppBar(
         title: Text(_isEditing ? '选择下载歌曲' : '下载管理'),
-        backgroundColor: const Color(0xFFF5F7FA),
+        backgroundColor: colors.fillMuted,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         actions: [
@@ -257,8 +259,9 @@ class _DownloadedTrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final source = _sourceFromSongKey(item.songKey);
-    final colors = musicSourceBadgeColors(source);
+    final badge = musicSourceBadgeColors(source, colors);
 
     return TuneFreeCard(
       padding: EdgeInsets.zero,
@@ -310,9 +313,9 @@ class _DownloadedTrackTile extends StatelessWidget {
                             item.artist.isEmpty ? '未知歌手' : item.artist,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: Color(0xFF6B7280),
+                              color: colors.textMuted,
                             ),
                           ),
                         ),
@@ -326,8 +329,8 @@ class _DownloadedTrackTile extends StatelessWidget {
                       children: [
                         TuneFreeBadge(
                           text: musicSourceBadgeLabel(source),
-                          background: colors.background,
-                          foreground: colors.foreground,
+                          background: badge.background,
+                          foreground: badge.foreground,
                         ),
                         TuneFreeBadge(
                           text: _qualityBadgeLabel(item.quality),
@@ -341,9 +344,9 @@ class _DownloadedTrackTile extends StatelessWidget {
                       '${_qualityDetailLabel(item.quality)} · ${_downloadedAtLabel(item.downloadedAt)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
-                        color: Color(0xFF9CA3AF),
+                        color: colors.textTertiary,
                       ),
                     ),
                   ],
@@ -351,9 +354,9 @@ class _DownloadedTrackTile extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               if (!isEditing)
-                const Icon(
+                Icon(
                   Icons.play_circle_fill_rounded,
-                  color: Color(0xFFE94B5B),
+                  color: TuneFreeColors.of(context).accent,
                   size: 26,
                 ),
             ],
@@ -405,12 +408,13 @@ class _DownloadArtworkFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       key: Key(
         'downloaded-track-artwork-fallback-${item.songKey}-${item.quality}',
       ),
       color: const Color(0xFFFFEEF1),
-      child: const Icon(Icons.music_note_rounded, color: Color(0xFFE94B5B)),
+      child: Icon(Icons.music_note_rounded, color: colors.accent),
     );
   }
 }
@@ -432,7 +436,7 @@ class _DownloadsSelectionToolbar extends StatelessWidget {
       key: const Key('library-downloads-selection-toolbar'),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: TuneFreeColors.of(context).surface,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
@@ -459,10 +463,11 @@ class _DownloadsEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: const [
+        children: [
           Icon(Icons.download_done_rounded, size: 42, color: Color(0xFFCBD5E1)),
           SizedBox(height: 14),
           Text(
@@ -470,13 +475,13 @@ class _DownloadsEmptyState extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF6B7280),
+              color: colors.textMuted,
             ),
           ),
           SizedBox(height: 6),
           Text(
             '下载完成后会在这里显示完整歌曲信息。',
-            style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
+            style: TextStyle(fontSize: 13, color: colors.textTertiary),
           ),
         ],
       ),

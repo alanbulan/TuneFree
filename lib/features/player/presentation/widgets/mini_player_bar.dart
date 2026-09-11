@@ -20,6 +20,7 @@ class MiniPlayerBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = TuneFreeColors.of(context);
     final state = ref.watch(playerControllerProvider);
     final song = state.currentSong;
     final hasSong = song != null;
@@ -66,10 +67,10 @@ class MiniPlayerBar extends ConsumerWidget {
                               key: ValueKey<String>('mini-title-$title'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: TuneFreePalette.textPrimary,
+                                color: colors.textPrimary,
                               ),
                             ),
                           ),
@@ -82,9 +83,9 @@ class MiniPlayerBar extends ConsumerWidget {
                               key: ValueKey<String>('mini-artist-$artist'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: TuneFreePalette.textSecondary,
+                                color: colors.textSecondary,
                               ),
                             ),
                           ),
@@ -117,14 +118,14 @@ class MiniPlayerBar extends ConsumerWidget {
                 ),
               ),
               if (state.isLoading)
-                const Positioned(
+                Positioned(
                   left: 0,
                   right: 0,
                   bottom: 0,
                   child: LinearProgressIndicator(
                     key: Key('mini-player-loading-progress'),
                     minHeight: 2,
-                    color: TuneFreePalette.accent,
+                    color: colors.accent,
                     backgroundColor: Colors.transparent,
                   ),
                 ),
@@ -151,6 +152,7 @@ class _MiniPlayerCardState extends State<_MiniPlayerCard> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),
       duration: const Duration(milliseconds: 220),
@@ -171,7 +173,7 @@ class _MiniPlayerCardState extends State<_MiniPlayerCard> {
         child: SizedBox(
           height: TuneFreeSpacing.miniPlayerHeight,
           child: Material(
-            color: TuneFreePalette.surface.withValues(alpha: 0.9),
+            color: colors.surface.withValues(alpha: 0.9),
             elevation: 8,
             shadowColor: Colors.black.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(14),
@@ -211,24 +213,25 @@ class _MiniPlayerIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return IconButton(
       onPressed: isLoading ? null : onPressed,
       icon: AnimatedSwitcher(
         duration: const Duration(milliseconds: 160),
         child: isLoading
-            ? const SizedBox(
+            ? SizedBox(
                 key: Key('mini-player-loading-indicator'),
                 width: 16,
                 height: 16,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: TuneFreePalette.textPrimary,
+                  color: colors.textPrimary,
                 ),
               )
             : Icon(
                 icon,
                 key: ValueKey<IconData>(icon),
-                color: TuneFreePalette.textPrimary,
+                color: colors.textPrimary,
               ),
       ),
       iconSize: 22,
@@ -254,11 +257,12 @@ class _MiniPlayerArtwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final resolvedUrl = artworkUrl?.trim();
     final decoration = BoxDecoration(
       shape: BoxShape.circle,
-      color: const Color(0xFFF3F4F6),
-      border: Border.all(color: TuneFreePalette.border),
+      color: colors.fillSubtle,
+      border: Border.all(color: colors.border),
     );
 
     final artwork = resolvedUrl == null || resolvedUrl.isEmpty
@@ -316,12 +320,13 @@ class _MiniPlayerPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return ColoredBox(
       key: const Key('mini-player-placeholder'),
-      color: const Color(0xFFF3F4F6),
+      color: colors.fillSubtle,
       child: Icon(
         Icons.music_note_rounded,
-        color: isPlaying ? TuneFreePalette.accent : const Color(0xFF9CA3AF),
+        color: isPlaying ? colors.accent : colors.textTertiary,
         size: 22,
       ),
     );

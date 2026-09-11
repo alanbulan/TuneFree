@@ -16,6 +16,7 @@ class HomePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = TuneFreeColors.of(context);
     final controller = ref.watch(homeControllerProvider);
     final state = controller.state;
     final greeting = _greeting();
@@ -25,7 +26,7 @@ class HomePage extends ConsumerWidget {
         : '$selectedName · 热歌';
 
     return Scaffold(
-      backgroundColor: TuneFreePalette.background,
+      backgroundColor: colors.background,
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
@@ -37,10 +38,10 @@ class HomePage extends ConsumerWidget {
           children: [
             Text(
               greeting,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.w700,
-                color: TuneFreePalette.textPrimary,
+                color: colors.textPrimary,
                 letterSpacing: -0.4,
               ),
             ),
@@ -131,19 +132,19 @@ class _SourceChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = musicSourceBadgeColors(source);
+    final badge = musicSourceBadgeColors(source, TuneFreeColors.of(context));
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: colors.background,
+        color: badge.background,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         musicSourceBadgeLabel(source),
         style: TextStyle(
           fontSize: 10,
-          color: colors.foreground,
+          color: badge.foreground,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -156,6 +157,7 @@ class _HomeErrorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -163,11 +165,11 @@ class _HomeErrorCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFFECACA)),
       ),
-      child: const Text(
+      child: Text(
         '该音源暂不可用，请切换其他音源',
         style: TextStyle(
           fontSize: 12,
-          color: Color(0xFFDC2626),
+          color: colors.danger,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -180,13 +182,14 @@ class _HomeEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       decoration: BoxDecoration(
-        color: TuneFreePalette.surface.withValues(alpha: 0.72),
+        color: colors.surface.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: const Column(
+      child: Column(
         children: [
           Text(
             '暂无歌曲数据',
@@ -197,7 +200,7 @@ class _HomeEmptyState extends StatelessWidget {
             '请尝试切换其他榜单或音源',
             style: TextStyle(
               fontSize: 12,
-              color: TuneFreePalette.textSecondary,
+              color: colors.textSecondary,
             ),
           ),
         ],
@@ -263,10 +266,11 @@ class _SkeletonCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       padding: const EdgeInsets.all(7),
       decoration: BoxDecoration(
-        color: TuneFreePalette.surface,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -290,10 +294,11 @@ class _SkeletonSongTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: TuneFreePalette.surface,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(14),
       ),
       child: const Row(
@@ -327,11 +332,12 @@ class _SkeletonBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: const Color(0xFFE5E7EB),
+        color: colors.borderSubtle,
         borderRadius: borderRadius ?? BorderRadius.circular(8),
       ),
     );

@@ -19,15 +19,19 @@ class FeaturedSongTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final highlight = index < 3;
-    final badgeColors = musicSourceBadgeColors(song.source.wireValue);
+    final badgeColors = musicSourceBadgeColors(
+      song.source.wireValue,
+      TuneFreeColors.of(context),
+    );
 
     return GestureDetector(
       onTap: () => onPlay(song),
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: TuneFreePalette.surface,
+          color: colors.surface,
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
@@ -49,8 +53,8 @@ class FeaturedSongTile extends StatelessWidget {
                   fontStyle: FontStyle.italic,
                   fontWeight: FontWeight.w700,
                   color: highlight
-                      ? TuneFreePalette.accent
-                      : TuneFreePalette.textSecondary.withValues(alpha: 0.5),
+                      ? colors.accent
+                      : colors.textSecondary.withValues(alpha: 0.5),
                 ),
               ),
             ),
@@ -97,9 +101,9 @@ class FeaturedSongTile extends StatelessWidget {
                           song.artist,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
-                            color: TuneFreePalette.textSecondary,
+                            color: colors.textSecondary,
                           ),
                         ),
                       ),
@@ -112,13 +116,13 @@ class FeaturedSongTile extends StatelessWidget {
             Container(
               width: 32,
               height: 32,
-              decoration: const BoxDecoration(
-                color: Color(0xFFF9FAFB),
+              decoration: BoxDecoration(
+                color: colors.fillFaint,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.play_arrow_rounded,
-                color: TuneFreePalette.accent,
+                color: colors.accent,
                 size: 20,
               ),
             ),
@@ -162,9 +166,10 @@ class _SongArtworkFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const ColoredBox(
-      color: Color(0xFFF0F1F5),
-      child: Icon(Icons.music_note_rounded, color: Color(0xFFB6B8BF), size: 22),
+    final colors = TuneFreeColors.of(context);
+    return ColoredBox(
+      color: colors.fillPanel,
+      child: Icon(Icons.music_note_rounded, color: colors.lyricInactive, size: 22),
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import '../../../../shared/theme/tune_free_palette.dart';
 
 import '../../../../core/models/song.dart';
 import '../../../../shared/widgets/music_network_image.dart';
@@ -20,7 +21,11 @@ class SearchResultTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final badgeColors = searchSourceBadgeColors(song.source.wireValue);
+    final colors = TuneFreeColors.of(context);
+    final badgeColors = searchSourceBadgeColors(
+      song.source.wireValue,
+      TuneFreeColors.of(context),
+    );
 
     return Material(
       color: Colors.transparent,
@@ -34,16 +39,16 @@ class SearchResultTile extends StatelessWidget {
             color: isCurrent ? Colors.white : Colors.transparent,
             borderRadius: BorderRadius.circular(14),
             boxShadow: isCurrent
-                ? const [
+                ? [
                     BoxShadow(
-                      color: Color(0x14E94B5B),
+                      color: colors.accentSoft,
                       blurRadius: 12,
                       offset: Offset(0, 4),
                     ),
                   ]
                 : null,
             border: isCurrent
-                ? Border.all(color: const Color(0x33E94B5B))
+                ? Border.all(color: colors.accentSoft)
                 : null,
           ),
           child: Row(
@@ -62,10 +67,10 @@ class SearchResultTile extends StatelessWidget {
                           color: Colors.black.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Center(
+                        child: Center(
                           child: DecoratedBox(
                             decoration: BoxDecoration(
-                              color: Color(0xFFE94B5B),
+                              color: colors.accent,
                               shape: BoxShape.circle,
                             ),
                             child: SizedBox(width: 12, height: 12),
@@ -88,8 +93,8 @@ class SearchResultTile extends StatelessWidget {
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                         color: isCurrent
-                            ? const Color(0xFFE94B5B)
-                            : const Color(0xFF111111),
+                            ? colors.accent
+                            : colors.textStrong,
                       ),
                     ),
                     const SizedBox(height: 3),
@@ -120,9 +125,9 @@ class SearchResultTile extends StatelessWidget {
                             song.artist,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
-                              color: Color(0xFF8B8B95),
+                              color: colors.textSubtle,
                             ),
                           ),
                         ),
@@ -169,18 +174,19 @@ class _FallbackArtwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       key: Key('search-result-fallback-${song.key}'),
       width: 44,
       height: 44,
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: colors.fillSubtle,
         borderRadius: BorderRadius.circular(10),
       ),
-      child: const Icon(
+      child: Icon(
         Icons.music_note_rounded,
         size: 22,
-        color: Color(0xFFB6B8BF),
+        color: colors.lyricInactive,
       ),
     );
   }

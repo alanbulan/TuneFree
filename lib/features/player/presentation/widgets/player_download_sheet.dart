@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import '../../../../shared/theme/tune_free_palette.dart';
 
 import '../../../../core/models/audio_quality.dart';
 import '../../../../core/models/song.dart';
@@ -32,6 +33,7 @@ class _PlayerDownloadSheetState extends State<PlayerDownloadSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     if (!widget.isOpen) {
       return const SizedBox.shrink();
     }
@@ -42,9 +44,9 @@ class _PlayerDownloadSheetState extends State<PlayerDownloadSheet> {
       onClose: widget.onClose,
       child: Container(
         key: const Key('player-download-sheet'),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: BoxDecoration(
+          color: TuneFreeColors.of(context).surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
         child: SafeArea(
@@ -67,11 +69,11 @@ class _PlayerDownloadSheetState extends State<PlayerDownloadSheet> {
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 4),
-                        const Text(
+                        Text(
                           '选择下载音质',
                           style: TextStyle(
                             fontSize: 12,
-                            color: Color(0xFF8B8B95),
+                            color: colors.textSubtle,
                           ),
                         ),
                       ],
@@ -159,6 +161,7 @@ class _DownloadOptionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -168,11 +171,11 @@ class _DownloadOptionTile extends StatelessWidget {
         child: Ink(
           decoration: BoxDecoration(
             color: isSelected
-                ? const Color(0x1AE94B5B)
-                : const Color(0xFFF9FAFB),
+                ? colors.accentSoft
+                : colors.fillFaint,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: isSelected ? const Color(0xFFE94B5B) : Colors.transparent,
+              color: isSelected ? colors.accent : Colors.transparent,
             ),
           ),
           child: Padding(
@@ -193,9 +196,9 @@ class _DownloadOptionTile extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         quality.downloadDescription,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: Color(0xFF8B8B95),
+                          color: colors.textSubtle,
                         ),
                       ),
                     ],
@@ -208,7 +211,7 @@ class _DownloadOptionTile extends StatelessWidget {
                     color: Colors.white,
                     shape: BoxShape.circle,
                     border: isSelected
-                        ? Border.all(color: const Color(0xFFE94B5B))
+                        ? Border.all(color: colors.accent)
                         : null,
                   ),
                   child: isPreparing
@@ -222,8 +225,8 @@ class _DownloadOptionTile extends StatelessWidget {
                               ? Icons.check_rounded
                               : Icons.download_rounded,
                           color: isSelected
-                              ? const Color(0xFFE94B5B)
-                              : const Color(0xFF6B7280),
+                              ? colors.accent
+                              : colors.textMuted,
                           size: 18,
                         ),
                 ),

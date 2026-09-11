@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/models/song.dart';
+import '../../../../shared/theme/tune_free_palette.dart';
 import '../../../../shared/widgets/music_network_image.dart';
 import '../../../../shared/widgets/tune_free_card.dart';
 
@@ -19,6 +20,7 @@ class LibrarySongTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return GestureDetector(
       onTap: onTap,
       onLongPress: () => _showShareSheet(context, song),
@@ -45,9 +47,9 @@ class LibrarySongTile extends StatelessWidget {
                     song.artist,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: Color(0xFF8B8B95),
+                      color: colors.textSubtle,
                     ),
                   ),
                 ],
@@ -68,9 +70,10 @@ class _LibrarySongArtwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final imageUrl = song.pic?.trim();
     final decoration = BoxDecoration(
-      color: const Color(0xFFF0F1F5),
+      color: colors.fillPanel,
       borderRadius: BorderRadius.circular(10),
     );
 
@@ -80,7 +83,7 @@ class _LibrarySongArtwork extends StatelessWidget {
         width: 44,
         height: 44,
         decoration: decoration,
-        child: const Icon(Icons.music_note_rounded, color: Color(0xFFB6B8BF)),
+        child: Icon(Icons.music_note_rounded, color: colors.lyricInactive),
       );
     }
 
@@ -98,9 +101,9 @@ class _LibrarySongArtwork extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: decoration,
-            child: const Icon(
+            child: Icon(
               Icons.music_note_rounded,
-              color: Color(0xFFB6B8BF),
+              color: colors.lyricInactive,
             ),
           );
         },
@@ -118,9 +121,9 @@ void _showShareSheet(BuildContext context, Song song) {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(
+              leading: Icon(
                 Icons.share_rounded,
-                color: Color(0xFFE94B5B),
+                color: TuneFreeColors.of(sheetContext).accent,
               ),
               title: const Text('分享歌曲'),
               subtitle: Text('${song.name} - ${song.artist}'),

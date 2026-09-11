@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import '../../../../shared/theme/tune_free_palette.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -29,6 +30,7 @@ class PlayerMoreSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = TuneFreeColors.of(context);
     if (!isOpen) {
       return const SizedBox.shrink();
     }
@@ -88,8 +90,8 @@ class PlayerMoreSheet extends ConsumerWidget {
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.8,
         ),
-        decoration: const BoxDecoration(
-          color: Colors.white,
+        decoration: BoxDecoration(
+          color: colors.surface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
@@ -117,9 +119,9 @@ class PlayerMoreSheet extends ConsumerWidget {
                             activeTrack?.artist ?? '当前未选择歌曲',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: Color(0xFF8B8B95),
+                              color: colors.textSubtle,
                             ),
                           ),
                         ],
@@ -246,12 +248,13 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Text(
       title,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.w700,
-        color: Color(0xFF9CA3AF),
+        color: colors.textTertiary,
       ),
     );
   }
@@ -272,6 +275,7 @@ class _QualityChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -282,8 +286,8 @@ class _QualityChip extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: isSelected
-                ? const Color(0xFF111111)
-                : const Color(0xFFF3F4F6),
+                ? colors.textStrong
+                : colors.fillSubtle,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Text(
@@ -291,7 +295,7 @@ class _QualityChip extends StatelessWidget {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: isSelected ? Colors.white : const Color(0xFF6B7280),
+              color: isSelected ? Colors.white : colors.textMuted,
             ),
           ),
         ),
@@ -317,6 +321,7 @@ class _ActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -326,7 +331,7 @@ class _ActionTile extends StatelessWidget {
         child: Ink(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFFF9FAFB),
+            color: colors.fillFaint,
             borderRadius: BorderRadius.circular(18),
           ),
           child: Row(
@@ -338,7 +343,7 @@ class _ActionTile extends StatelessWidget {
                   color: Colors.white,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, color: const Color(0xFFE94B5B), size: 20),
+                child: Icon(icon, color: colors.accent, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -355,9 +360,9 @@ class _ActionTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: Color(0xFF8B8B95),
+                        color: colors.textSubtle,
                       ),
                     ),
                   ],
@@ -386,8 +391,9 @@ class _PlaylistTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Material(
-      color: const Color(0xFFF9FAFB),
+      color: colors.fillFaint,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
@@ -396,9 +402,9 @@ class _PlaylistTile extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.folder_outlined,
-                color: Color(0xFFE94B5B),
+                color: colors.accent,
                 size: 20,
               ),
               const SizedBox(width: 12),
@@ -416,9 +422,9 @@ class _PlaylistTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: Color(0xFF8B8B95),
+                        color: colors.textSubtle,
                       ),
                     ),
                   ],
@@ -431,22 +437,22 @@ class _PlaylistTile extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0x1AE94B5B),
+                    color: colors.accentSoft,
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: const Text(
+                  child: Text(
                     '已添加',
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFFE94B5B),
+                      color: colors.accent,
                     ),
                   ),
                 )
               else
-                const Icon(
+                Icon(
                   Icons.add_rounded,
-                  color: Color(0xFF9CA3AF),
+                  color: colors.textTertiary,
                   size: 18,
                 ),
             ],
@@ -464,16 +470,17 @@ class _EmptyStateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: colors.fillFaint,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Text(
         message,
-        style: const TextStyle(fontSize: 13, color: Color(0xFF8B8B95)),
+        style: TextStyle(fontSize: 13, color: colors.textSubtle),
       ),
     );
   }

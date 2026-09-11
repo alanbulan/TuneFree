@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart';
+import '../../../shared/theme/tune_free_palette.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:go_router/go_router.dart';
@@ -23,6 +24,7 @@ import '../application/library_controller.dart';
 import '../application/library_state.dart';
 import '../data/playlist_import_repository.dart';
 import 'downloads_page.dart';
+import 'widgets/appearance_settings_card.dart';
 import 'widgets/library_backup_transfer.dart';
 import 'widgets/library_playlist_grid.dart';
 import 'widgets/library_song_tile.dart';
@@ -105,19 +107,20 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final controller = ref.watch(libraryControllerProvider);
     final state = controller.state;
     final selectedPlaylist = _selectedPlaylist(state.playlists);
 
     if (!state.isLoaded) {
-      return const Scaffold(
-        backgroundColor: Color(0xFFF5F7FA),
+      return Scaffold(
+        backgroundColor: colors.fillMuted,
         body: SafeArea(child: Center(child: CircularProgressIndicator())),
       );
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: colors.fillMuted,
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(
@@ -344,7 +347,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                   key: const Key('confirm-delete-playlist-button'),
                   onPressed: () => Navigator.of(dialogContext).pop(true),
                   style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFFE94B5B),
+                    backgroundColor: TuneFreeColors.of(dialogContext).accent,
                   ),
                   child: const Text('删除'),
                 ),
@@ -435,7 +438,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                     key: const Key('confirm-open-update-button'),
                     onPressed: () => Navigator.of(dialogContext).pop(true),
                     style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFE94B5B),
+                      backgroundColor: TuneFreeColors.of(dialogContext).accent,
                     ),
                     child: const Text('去更新'),
                   ),
@@ -607,7 +610,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                 Navigator.of(dialogContext).pop(trimmedValue);
               },
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFE94B5B),
+                backgroundColor: TuneFreeColors.of(dialogContext).accent,
               ),
               child: Text(confirmLabel),
             ),
@@ -677,7 +680,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                     Navigator.of(dialogContext).pop((source, trimmedId));
                   },
                   style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFFE94B5B),
+                    backgroundColor: TuneFreeColors.of(dialogContext).accent,
                   ),
                   child: const Text('导入'),
                 ),
@@ -770,14 +773,15 @@ class _FavoritesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            const Icon(
+            Icon(
               Icons.favorite_rounded,
-              color: Color(0xFFE94B5B),
+              color: colors.accent,
               size: 20,
             ),
             const SizedBox(width: 8),
@@ -789,12 +793,12 @@ class _FavoritesTab extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         if (state.favorites.isEmpty)
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 36),
             child: Center(
               child: Text(
                 '暂无歌曲',
-                style: TextStyle(fontSize: 14, color: Color(0xFF9CA3AF)),
+                style: TextStyle(fontSize: 14, color: colors.textTertiary),
               ),
             ),
           )
@@ -826,6 +830,7 @@ class _PlaylistsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Column(
       children: [
         Row(
@@ -835,8 +840,8 @@ class _PlaylistsTab extends StatelessWidget {
                 cardKey: const Key('create-playlist-action'),
                 icon: Icons.add_rounded,
                 label: '新建歌单',
-                borderColor: const Color(0xFFE5E7EB),
-                foregroundColor: const Color(0xFF9CA3AF),
+                borderColor: colors.borderSubtle,
+                foregroundColor: colors.textTertiary,
                 onTap: onCreatePlaylist,
               ),
             ),
@@ -846,8 +851,8 @@ class _PlaylistsTab extends StatelessWidget {
                 cardKey: const Key('import-playlist-action'),
                 icon: Icons.download_rounded,
                 label: '导入在线歌单',
-                borderColor: const Color(0x4DE94B5B),
-                foregroundColor: const Color(0xFFE94B5B),
+                borderColor: colors.accentSoft,
+                foregroundColor: colors.accent,
                 onTap: onImportPlaylist,
               ),
             ),
@@ -889,7 +894,7 @@ class _ActionPlaylistCard extends StatelessWidget {
         child: Container(
           height: 132,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: TuneFreeColors.of(context).surface,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: borderColor, width: 2),
           ),
@@ -946,6 +951,7 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final playlist = widget.playlist;
     final isEditMode = widget.isEditMode;
     final totalSongs = playlist.songs.length;
@@ -957,11 +963,11 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
       children: [
         TextButton.icon(
           onPressed: widget.onBack,
-          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFFE94B5B)),
-          label: const Text(
+          icon: Icon(Icons.arrow_back_rounded, color: colors.accent),
+          label: Text(
             '返回歌单列表',
             style: TextStyle(
-              color: Color(0xFFE94B5B),
+              color: colors.accent,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -970,7 +976,7 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: TuneFreeColors.of(context).surface,
             borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
@@ -992,9 +998,9 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
                         const SizedBox(height: 4),
                         Text(
                           '$totalSongs 首歌曲',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: Color(0xFF8B8B95),
+                            color: colors.textSubtle,
                           ),
                         ),
                       ],
@@ -1005,11 +1011,11 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
                     onPressed: widget.onToggleEditMode,
                     style: FilledButton.styleFrom(
                       backgroundColor: isEditMode
-                          ? const Color(0xFFE94B5B)
-                          : const Color(0xFFF3F4F6),
+                          ? colors.accent
+                          : colors.fillSubtle,
                       foregroundColor: isEditMode
                           ? Colors.white
-                          : const Color(0xFFE94B5B),
+                          : colors.accent,
                     ),
                     child: Text(isEditMode ? '完成' : '编辑'),
                   ),
@@ -1032,8 +1038,8 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
                         key: const Key('playlist-delete-button'),
                         onPressed: widget.onDeletePlaylist,
                         style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0x1AE94B5B),
-                          foregroundColor: const Color(0xFFE94B5B),
+                          backgroundColor: colors.accentSoft,
+                          foregroundColor: colors.accent,
                         ),
                         child: const Text('删除歌单'),
                       ),
@@ -1046,12 +1052,12 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
         ),
         const SizedBox(height: 12),
         if (playlist.songs.isEmpty)
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 36),
             child: Center(
               child: Text(
                 '暂无歌曲',
-                style: TextStyle(fontSize: 14, color: Color(0xFF9CA3AF)),
+                style: TextStyle(fontSize: 14, color: colors.textTertiary),
               ),
             ),
           )
@@ -1066,9 +1072,9 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
                     ? IconButton(
                         key: Key('playlist-remove-song-${song.key}'),
                         onPressed: () => widget.onRemoveSong(song),
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.delete_outline_rounded,
-                          color: Color(0xFFE94B5B),
+                          color: colors.accent,
                         ),
                       )
                     : null,
@@ -1085,8 +1091,8 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
                   }),
                   child: Text(
                     '加载更多 (${totalSongs - _displayCount} 首剩余)',
-                    style: const TextStyle(
-                      color: Color(0xFFE94B5B),
+                    style: TextStyle(
+                      color: colors.accent,
                       fontSize: 13,
                     ),
                   ),
@@ -1366,8 +1372,11 @@ class _ManageTabState extends State<_ManageTab> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Column(
       children: [
+        const AppearanceSettingsCard(),
+        const SizedBox(height: 14),
         SettingsCard(
           title: '网络设置',
           icon: Icons.settings_rounded,
@@ -1391,7 +1400,7 @@ class _ManageTabState extends State<_ManageTab> {
                   ).showSnackBar(const SnackBar(content: Text('设置已保存')));
                 },
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFE94B5B),
+                  backgroundColor: colors.accent,
                   minimumSize: const Size(double.infinity, 48),
                 ),
                 child: const Text('保存配置'),
@@ -1410,18 +1419,18 @@ class _ManageTabState extends State<_ManageTab> {
                 widget.state.downloads.isEmpty
                     ? '暂无离线条目，下载后会自动出现在独立页面。'
                     : '当前保存了 ${widget.state.downloads.length} 个离线条目。',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
-                  color: Color(0xFF6B7280),
+                  color: colors.textMuted,
                   height: 1.5,
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 '播放时会优先使用本地文件。',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF9CA3AF),
+                  color: colors.textTertiary,
                   height: 1.5,
                 ),
               ),
@@ -1430,7 +1439,7 @@ class _ManageTabState extends State<_ManageTab> {
                 key: const Key('library-downloads-management-button'),
                 onPressed: _openDownloadsPage,
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFE94B5B),
+                  backgroundColor: colors.accent,
                   minimumSize: const Size(double.infinity, 48),
                 ),
                 child: const Text('打开下载管理'),
@@ -1502,15 +1511,16 @@ class _SettingsField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF9CA3AF),
+            color: colors.textTertiary,
           ),
         ),
         const SizedBox(height: 6),
@@ -1519,14 +1529,14 @@ class _SettingsField extends StatelessWidget {
           decoration: InputDecoration(
             hintText: hintText,
             filled: true,
-            fillColor: const Color(0xFFF9FAFB),
+            fillColor: colors.fillFaint,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+              borderSide: BorderSide(color: colors.borderSubtle),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+              borderSide: BorderSide(color: colors.borderSubtle),
             ),
           ),
         ),
@@ -1554,6 +1564,7 @@ class _SecondaryActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Semantics(
       label: semanticsLabel,
       button: true,
@@ -1563,8 +1574,8 @@ class _SecondaryActionButton extends StatelessWidget {
         onPressed: busy ? null : onTap,
         style: FilledButton.styleFrom(
           minimumSize: const Size(double.infinity, 44),
-          backgroundColor: const Color(0xFFF3F4F6),
-          foregroundColor: const Color(0xFF111111),
+          backgroundColor: colors.fillSubtle,
+          foregroundColor: colors.textStrong,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -1595,11 +1606,12 @@ class _BackupPreviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: colors.fillFaint,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
@@ -1615,7 +1627,7 @@ class _BackupPreviewCard extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
                 line,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                style: TextStyle(fontSize: 12, color: colors.textMuted),
               ),
             ),
           ),
@@ -1639,6 +1651,7 @@ class _AboutTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1653,9 +1666,9 @@ class _AboutTab extends StatelessWidget {
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 '一个高颜值的 Flutter Android 音乐播放器',
-                style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+                style: TextStyle(fontSize: 13, color: colors.textMuted),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
@@ -1711,7 +1724,7 @@ class _AboutTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        const _AboutCard(
+        _AboutCard(
           title: '后端 API',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1720,7 +1733,7 @@ class _AboutTab extends StatelessWidget {
                 '网易云、QQ音乐、酷我音乐使用直连接口；JOOX 扩展音源与播放解析由 GD音乐台 (music.gdstudio.xyz) 提供。',
                 style: TextStyle(
                   fontSize: 14,
-                  color: Color(0xFF6B7280),
+                  color: colors.textMuted,
                   height: 1.5,
                 ),
               ),
@@ -1729,7 +1742,7 @@ class _AboutTab extends StatelessWidget {
                 '播放地址、歌词和封面通过 music-api.gdstudio.xyz/api.php 解析。GD 音乐台为公开接口，建议控制请求频率：5 分钟内不超过 50 次请求。',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF9CA3AF),
+                  color: colors.textTertiary,
                   height: 1.5,
                 ),
               ),
@@ -1784,7 +1797,7 @@ class _AboutCard extends StatelessWidget {
       width: double.infinity,
       padding: padding ?? const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: TuneFreeColors.of(context).surface,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Column(
@@ -1809,17 +1822,18 @@ class _AboutAppIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       width: 50,
       height: 50,
       decoration: BoxDecoration(
-        color: const Color(0x1AE94B5B),
+        color: colors.accentSoft,
         borderRadius: BorderRadius.circular(18),
       ),
-      child: const Icon(
+      child: Icon(
         Icons.music_note_rounded,
         size: 26,
-        color: Color(0xFFE94B5B),
+        color: colors.accent,
       ),
     );
   }
@@ -1836,6 +1850,7 @@ class _VersionUpdateBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -1848,7 +1863,7 @@ class _VersionUpdateBadge extends StatelessWidget {
             final version = snapshot.data?.version ?? '...';
             return Text(
               'v$version',
-              style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+              style: TextStyle(fontSize: 11, color: colors.textTertiary),
             );
           },
         ),
@@ -1861,7 +1876,7 @@ class _VersionUpdateBadge extends StatelessWidget {
             decoration: BoxDecoration(
               color: const Color(0xFFFFEEF1),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: const Color(0x1AE94B5B)),
+              border: Border.all(color: colors.accentSoft),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -1870,8 +1885,8 @@ class _VersionUpdateBadge extends StatelessWidget {
                   Icons.system_update_alt_rounded,
                   size: 13,
                   color: isCheckingUpdate
-                      ? const Color(0xFF9CA3AF)
-                      : const Color(0xFFE94B5B),
+                      ? colors.textTertiary
+                      : colors.accent,
                 ),
                 const SizedBox(width: 4),
                 Text(
@@ -1880,8 +1895,8 @@ class _VersionUpdateBadge extends StatelessWidget {
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: isCheckingUpdate
-                        ? const Color(0xFF9CA3AF)
-                        : const Color(0xFFE94B5B),
+                        ? colors.textTertiary
+                        : colors.accent,
                   ),
                 ),
               ],
@@ -1906,15 +1921,16 @@ class _FeatureRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           index,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w700,
-            color: Color(0xFFE94B5B),
+            color: colors.accent,
           ),
         ),
         const SizedBox(width: 12),
@@ -1932,9 +1948,9 @@ class _FeatureRow extends StatelessWidget {
               const SizedBox(height: 1),
               Text(
                 subtitle,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: Color(0xFF9CA3AF),
+                  color: colors.textTertiary,
                   height: 1.35,
                 ),
               ),
@@ -1953,6 +1969,7 @@ class _TechStackRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -1962,10 +1979,10 @@ class _TechStackRow extends StatelessWidget {
               children: [
                 Text(
                   entry.name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF111111),
+                    color: colors.textStrong,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -1973,9 +1990,9 @@ class _TechStackRow extends StatelessWidget {
                   child: Text(
                     entry.detail,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: Color(0xFF9CA3AF),
+                      color: colors.textTertiary,
                     ),
                   ),
                 ),
@@ -1985,7 +2002,7 @@ class _TechStackRow extends StatelessWidget {
           const SizedBox(width: 12),
           Text(
             entry.version,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
+            style: TextStyle(fontSize: 11, color: colors.textMuted),
           ),
         ],
       ),
@@ -2008,6 +2025,7 @@ class _LinkRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2017,15 +2035,15 @@ class _LinkRow extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: const Color(0xFFF9FAFB),
+            color: colors.fillFaint,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.open_in_new_rounded,
                 size: 16,
-                color: Color(0xFFE94B5B),
+                color: colors.accent,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -2039,7 +2057,7 @@ class _LinkRow extends StatelessWidget {
               ),
               Text(
                 subtitle,
-                style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+                style: TextStyle(fontSize: 11, color: colors.textTertiary),
               ),
             ],
           ),
@@ -2054,20 +2072,21 @@ class _DisclaimerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: colors.fillFaint,
         borderRadius: BorderRadius.circular(24),
       ),
-      child: const Column(
+      child: Column(
         children: [
           Text(
             '本项目仅供学习 Flutter 与移动端音乐播放器实现使用。音乐资源来源于第三方 API，请支持正版音乐。',
             style: TextStyle(
               fontSize: 11,
-              color: Color(0xFF9CA3AF),
+              color: colors.textTertiary,
               height: 1.6,
             ),
             textAlign: TextAlign.center,

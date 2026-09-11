@@ -1,5 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../../../shared/music_source_display.dart';
+import '../../../../shared/theme/tune_free_palette.dart';
+
 const Map<String, String> _searchSourceFullLabels = <String, String>{
   'netease': '网易云',
   'qq': 'QQ音乐',
@@ -16,24 +19,18 @@ const Map<String, String> _searchSourceBadgeLabels = <String, String>{
   'bilibili': 'B站',
 };
 
-const Map<String, ({Color background, Color foreground})>
-_searchSourceBadgeColors = <String, ({Color background, Color foreground})>{
-  'netease': (background: Color(0xFFFEE2E2), foreground: Color(0xFFDC2626)),
-  'qq': (background: Color(0xFFDCFCE7), foreground: Color(0xFF16A34A)),
-  'kuwo': (background: Color(0xFFFEF3C7), foreground: Color(0xFFA16207)),
-  'joox': (background: Color(0xFFF3E8FF), foreground: Color(0xFF7E22CE)),
-  'bilibili': (background: Color(0xFFFCE7F3), foreground: Color(0xFFDB2777)),
-};
-
 String searchSourceFullLabel(String source) =>
     _searchSourceFullLabels[source] ?? source;
 
 String searchSourceBadgeLabel(String source) =>
     _searchSourceBadgeLabels[source] ?? source.toUpperCase();
 
-({Color background, Color foreground}) searchSourceBadgeColors(String source) =>
-    _searchSourceBadgeColors[source] ??
-    (background: const Color(0xFFE5E7EB), foreground: const Color(0xFF4B5563));
+/// 与 `music_source_display.dart` 的音源徽标是同一套配色，这里不再复制一份
+/// —— 重复的那份在加暗色时刻意漏掉，正是这类复制品会漂移的原因。
+({Color background, Color foreground}) searchSourceBadgeColors(
+  String source,
+  TuneFreeColors colors,
+) => musicSourceBadgeColors(source, colors);
 
 class SearchSourceSelector extends StatelessWidget {
   const SearchSourceSelector({
@@ -47,6 +44,7 @@ class SearchSourceSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return PopupMenuButton<String>(
       key: const Key('search-source-selector'),
       onSelected: onSelected,
@@ -74,7 +72,7 @@ class SearchSourceSelector extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: colors.borderSubtle),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -88,10 +86,10 @@ class SearchSourceSelector extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
-            const Icon(
+            Icon(
               Icons.keyboard_arrow_down_rounded,
               size: 15,
-              color: Color(0xFF6B7280),
+              color: colors.textMuted,
             ),
           ],
         ),
