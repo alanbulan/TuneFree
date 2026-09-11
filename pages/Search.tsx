@@ -16,7 +16,8 @@ import {
   usePlayerNowPlaying,
 } from "../contexts/PlayerContext";
 import { useLibrary } from "../contexts/LibraryContext";
-import { SearchIcon, MusicIcon, TrashIcon, HeartIcon, HeartFillIcon } from "../components/Icons";
+import { SearchIcon, MusicIcon, TrashIcon, HeartIcon, HeartFillIcon, MoreIcon } from "../components/Icons";
+import SongActionSheet from "../components/SongActionSheet";
 import { useToast } from "../components/ToastHost";
 import {
   SEARCH_SOURCE_OPTIONS,
@@ -41,7 +42,8 @@ const SearchResultItem = memo<{
   favorite: boolean;
   onPlay: (song: Song) => void;
   onToggleFavorite: (song: Song) => void;
-}>(({ song, isCurrent, isPlaying, favorite, onPlay, onToggleFavorite }) => {
+  onMore: (song: Song) => void;
+}>(({ song, isCurrent, isPlaying, favorite, onPlay, onToggleFavorite, onMore }) => {
   const songName = typeof song.name === "string" ? song.name : "未知歌曲";
   const songArtist = typeof song.artist === "string" ? song.artist : "未知歌手";
   const sourceLabel = getMusicSourceLabel(song.source);
@@ -98,6 +100,16 @@ const SearchResultItem = memo<{
           <HeartIcon size={20} />
         )}
       </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onMore(song);
+        }}
+        className="p-2 -m-1 shrink-0 text-gray-300 hover:text-gray-600 active:scale-90 transition"
+        aria-label="更多操作"
+      >
+        <MoreIcon size={20} />
+      </button>
     </div>
   );
 });
@@ -129,6 +141,7 @@ const Search: React.FC = () => {
   const [results, setResults] = useState<Song[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [aiSearching, setAiSearching] = useState(false);
+  const [moreSong, setMoreSong] = useState<Song | null>(null);
   const [searchMode, setSearchMode] = useState<"aggregate" | "single" | "ai">(
     "aggregate",
   );
@@ -487,6 +500,7 @@ const Search: React.FC = () => {
               favorite={isFavorite(song.id, song.source)}
               onPlay={handlePlaySong}
               onToggleFavorite={toggleFavorite}
+              onMore={setMoreSong}
             />
           ))}
 
@@ -514,6 +528,10 @@ const Search: React.FC = () => {
           </div>
         )}
       </div>
+
+      {moreSong && (
+        <SongActionSheet song={moreSong} onClose={() => setMoreSong(null)} />
+      )}
     </div>
   );
 };
