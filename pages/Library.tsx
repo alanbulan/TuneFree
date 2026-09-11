@@ -18,7 +18,8 @@ import {
   formatOfflineSize,
   type OfflineDownloadMeta,
 } from "../services/offlineDownloads";
-import { Song } from "../types";
+import { Song, type Playlist } from "../types";
+import { FAVORITES_PLAYLIST_ID } from "../contexts/libraryData";
 import {
   HeartFillIcon,
   FolderIcon,
@@ -118,9 +119,19 @@ const Library: React.FC = () => {
     null,
   );
 
+  // 「我喜欢」是伪歌单：不存在 playlists 里，由收藏即时合成，固定排在最前，
+  // 与 Tauri 端一致。往它里面增删歌曲由 LibraryContext 转发到收藏。
+  const allPlaylists = useMemo<Playlist[]>(
+    () => [
+      { id: FAVORITES_PLAYLIST_ID, name: "我喜欢", createTime: 0, songs: favorites },
+      ...playlists,
+    ],
+    [favorites, playlists],
+  );
+
   const selectedPlaylist = useMemo(
-    () => playlists.find((p) => p.id === selectedPlaylistId) || null,
-    [playlists, selectedPlaylistId],
+    () => allPlaylists.find((p) => p.id === selectedPlaylistId) || null,
+    [allPlaylists, selectedPlaylistId],
   );
 
   // 离线下载列表：加载 + 订阅变更（下载/删除后自动刷新）
@@ -380,26 +391,55 @@ const Library: React.FC = () => {
               <LinkIcon size={32} className="mb-2" />
               <span className="text-sm font-medium">导入歌单</span>
             </div>
-            {playlists.map((p) => (
-              <div
-                key={p.id}
-                onClick={() => {
-                  setSelectedPlaylistId(p.id);
-                  setIsEditMode(false);
-                }}
-                className="aspect-square bg-white rounded-2xl p-4 shadow-sm flex flex-col justify-between active:scale-95 transition relative overflow-hidden"
-              >
-                <FolderIcon size={28} className="text-ios-red z-10" />
-                <div className="z-10">
-                  <p className="font-bold text-ios-text truncate">
-                    {String(p.name || "未命名歌单")}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {p.songs.length} 首歌曲
-                  </p>
+            {allPlaylists.map((p) => {
+              // 封面取歌单第一首歌的图，和 Tauri 端一致；空歌单退回文件夹图标。
+              const coverUrl = p.songs[0]?.pic;
+              const name = String(p.name || "未命名歌单");
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => {
+                    setSelectedPlaylistId(p.id);
+                    setIsEditMode(false);
+                  }}
+                  className="aspect-square rounded-2xl shadow-sm active:scale-95 transition relative overflow-hidden cursor-pointer"
+                >
+                  {coverUrl ? (
+                    <>
+                      <img
+                        src={coverUrl}
+                        alt={name}
+                        referrerPolicy={getImgReferrerPolicy(coverUrl)}
+                        loading="lazy"
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                      {/* 底部压暗，保证白字压在任何封面上都读得清 */}
+                      <div className="absolute inset-0 bg-gradient-to-b from-black/10 to-black/60" />
+                      <div className="absolute inset-x-0 bottom-0 p-3">
+                        <p className="font-bold text-white text-sm truncate">
+                          {name}
+                        </p>
+                        <p className="text-[11px] text-white/80">
+                          {p.songs.length} 首歌曲
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="absolute inset-0 bg-white p-4 flex flex-col justify-between">
+                      <FolderIcon size={28} className="text-ios-red" />
+                      <div>
+                        <p className="font-bold text-ios-text truncate">
+                          {name}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {p.songs.length} 首歌曲
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -438,7 +478,9 @@ const Library: React.FC = () => {
                   </button>
                 </div>
               </div>
-              {isEditMode && (
+              {/* 「我喜欢」是伪歌单，改名和删除对它没有意义（与 Tauri 端一致）；
+                  编辑模式仍保留，用它逐首取消收藏。 */}
+              {isEditMode && selectedPlaylist.id !== FAVORITES_PLAYLIST_ID && (
                 <div className="flex items-center space-x-3 mt-4 pt-4 border-t border-gray-100">
                   <button
                     onClick={() => {
