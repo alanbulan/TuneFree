@@ -220,7 +220,9 @@ class _AccentSwatch extends StatelessWidget {
             color: preset.color,
             shape: BoxShape.circle,
             border: Border.all(
-              color: selected ? TuneFreeColors.of(context).textPrimary : borderColor,
+              color: selected
+                  ? TuneFreeColors.of(context).textPrimary
+                  : borderColor,
               width: selected ? 2.5 : 1,
             ),
           ),

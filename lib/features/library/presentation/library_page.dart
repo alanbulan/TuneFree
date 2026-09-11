@@ -794,11 +794,7 @@ class _FavoritesTab extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(
-              Icons.favorite_rounded,
-              color: colors.accent,
-              size: 20,
-            ),
+            Icon(Icons.favorite_rounded, color: colors.accent, size: 20),
             const SizedBox(width: 8),
             Text(
               '我喜欢的音乐 (${state.favorites.length})',
@@ -981,10 +977,7 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
           icon: Icon(Icons.arrow_back_rounded, color: colors.accent),
           label: Text(
             '返回歌单列表',
-            style: TextStyle(
-              color: colors.accent,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(color: colors.accent, fontWeight: FontWeight.w600),
           ),
         ),
         const SizedBox(height: 8),
@@ -1106,10 +1099,7 @@ class _PlaylistDetailTabState extends State<_PlaylistDetailTab> {
                   }),
                   child: Text(
                     '加载更多 (${totalSongs - _displayCount} 首剩余)',
-                    style: TextStyle(
-                      color: colors.accent,
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: colors.accent, fontSize: 13),
                   ),
                 ),
               ),
@@ -1845,11 +1835,7 @@ class _AboutAppIcon extends StatelessWidget {
         color: colors.accentSoft,
         borderRadius: BorderRadius.circular(18),
       ),
-      child: Icon(
-        Icons.music_note_rounded,
-        size: 26,
-        color: colors.accent,
-      ),
+      child: Icon(Icons.music_note_rounded, size: 26, color: colors.accent),
     );
   }
 }
@@ -1899,9 +1885,7 @@ class _VersionUpdateBadge extends StatelessWidget {
                 Icon(
                   Icons.system_update_alt_rounded,
                   size: 13,
-                  color: isCheckingUpdate
-                      ? colors.textTertiary
-                      : colors.accent,
+                  color: isCheckingUpdate ? colors.textTertiary : colors.accent,
                 ),
                 const SizedBox(width: 4),
                 Text(
@@ -2005,10 +1989,7 @@ class _TechStackRow extends StatelessWidget {
                   child: Text(
                     entry.detail,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: colors.textTertiary,
-                    ),
+                    style: TextStyle(fontSize: 11, color: colors.textTertiary),
                   ),
                 ),
               ],
@@ -2055,11 +2036,7 @@ class _LinkRow extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(
-                Icons.open_in_new_rounded,
-                size: 16,
-                color: colors.accent,
-              ),
+              Icon(Icons.open_in_new_rounded, size: 16, color: colors.accent),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(

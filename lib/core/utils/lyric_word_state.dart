@@ -10,11 +10,7 @@ import '../models/lyric_timeline.dart';
 ///
 /// `duration == 0` 退化为「到点即满」，与 Tauri 一致：真·逐字源里偶尔会出现
 /// 零时长的词，除零会得到 Infinity / NaN，进而污染整行的比例。
-double lyricWordProgress(
-  double start,
-  double duration,
-  double currentTime,
-) {
+double lyricWordProgress(double start, double duration, double currentTime) {
   if (duration == 0) {
     return currentTime < start ? 0 : 1;
   }
@@ -39,11 +35,9 @@ double lyricLineProgress(List<LyricWord> words, double currentTime) {
   var filled = 0.0;
   for (final word in words) {
     total += word.duration;
-    filled += word.duration * lyricWordProgress(
-      word.start,
-      word.duration,
-      currentTime,
-    );
+    filled +=
+        word.duration *
+        lyricWordProgress(word.start, word.duration, currentTime);
   }
 
   if (total <= 0) {

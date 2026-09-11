@@ -21,7 +21,9 @@ class TuneFreeApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // 用 select 只订阅偏好本身，避免控制器因别的原因 notify 时整棵树重建。
     final preferences = ref.watch(
-      appearanceControllerProvider.select((controller) => controller.preferences),
+      appearanceControllerProvider.select(
+        (controller) => controller.preferences,
+      ),
     );
 
     return MaterialApp.router(

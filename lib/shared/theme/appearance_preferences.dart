@@ -66,10 +66,7 @@ final class LyricFontOption {
     if (resolved == null) {
       return style;
     }
-    return style.copyWith(
-      fontFamily: resolved,
-      fontFamilyFallback: fallback,
-    );
+    return style.copyWith(fontFamily: resolved, fontFamilyFallback: fallback);
   }
 }
 

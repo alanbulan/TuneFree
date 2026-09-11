@@ -105,14 +105,12 @@ final class ReactNeteaseClient implements NeteaseClient {
       final idsParam = '[${batch.join(',')}]';
       try {
         final payload = await _httpClient.getJson(
-          Uri.https('music.163.com', '/api/song/detail', {
-            'ids': idsParam,
-          }),
+          Uri.https('music.163.com', '/api/song/detail', {'ids': idsParam}),
         );
         result.addAll(
-          readMapList(readPath(payload, const ['songs']))
-              .map(_songFromDetail)
-              .whereType<Song>(),
+          readMapList(
+            readPath(payload, const ['songs']),
+          ).map(_songFromDetail).whereType<Song>(),
         );
       } catch (_) {
         // Skip failed batches; partial results are still useful.

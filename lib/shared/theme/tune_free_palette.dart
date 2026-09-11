@@ -220,8 +220,11 @@ final class TuneFreeColors extends ThemeExtension<TuneFreeColors> {
       glassBorder: Color.lerp(glassBorder, other.glassBorder, t)!,
       lyricActive: Color.lerp(lyricActive, other.lyricActive, t)!,
       lyricInactive: Color.lerp(lyricInactive, other.lyricInactive, t)!,
-      lyricTranslation:
-          Color.lerp(lyricTranslation, other.lyricTranslation, t)!,
+      lyricTranslation: Color.lerp(
+        lyricTranslation,
+        other.lyricTranslation,
+        t,
+      )!,
       inputFill: Color.lerp(inputFill, other.inputFill, t)!,
       placeholderFill: Color.lerp(placeholderFill, other.placeholderFill, t)!,
       textTertiary: Color.lerp(textTertiary, other.textTertiary, t)!,

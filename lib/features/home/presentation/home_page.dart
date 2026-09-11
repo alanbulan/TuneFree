@@ -370,10 +370,7 @@ class _HomeEmptyState extends StatelessWidget {
           SizedBox(height: 6),
           Text(
             '请尝试切换其他榜单或音源',
-            style: TextStyle(
-              fontSize: 12,
-              color: colors.textSecondary,
-            ),
+            style: TextStyle(fontSize: 12, color: colors.textSecondary),
           ),
         ],
       ),

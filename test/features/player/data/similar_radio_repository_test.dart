@@ -35,18 +35,17 @@ final class _FakeSearch implements RemoteSearchRepository {
   }
 
   @override
-  Future<List<Song>> searchAggregate(String keyword, {required int page}) async {
+  Future<List<Song>> searchAggregate(
+    String keyword, {
+    required int page,
+  }) async {
     aggregateCalls += 1;
     return aggregateResults;
   }
 }
 
-Song _song(String id, String name, {String artist = '目标歌手'}) => Song(
-  id: id,
-  name: name,
-  artist: artist,
-  source: MusicSource.netease,
-);
+Song _song(String id, String name, {String artist = '目标歌手'}) =>
+    Song(id: id, name: name, artist: artist, source: MusicSource.netease);
 
 const _seed = Song(
   id: 'seed',
@@ -71,9 +70,7 @@ void main() {
   });
 
   test('种子自己不会出现在结果里', () async {
-    final search = _FakeSearch(
-      singleResults: <Song>[_seed, _song('a', '另一首')],
-    );
+    final search = _FakeSearch(singleResults: <Song>[_seed, _song('a', '另一首')]);
     final repository = SimilarRadioRepository(search: search);
 
     final songs = await repository.songsLike(_seed);
@@ -95,7 +92,8 @@ void main() {
   test('限制条数，默认 20', () async {
     final search = _FakeSearch(
       singleResults: <Song>[
-        for (var index = 0; index < 50; index += 1) _song('s$index', '第$index首'),
+        for (var index = 0; index < 50; index += 1)
+          _song('s$index', '第$index首'),
       ],
     );
     final repository = SimilarRadioRepository(search: search);
@@ -121,9 +119,7 @@ void main() {
   });
 
   test('种子音源搜不到时退回聚合搜索', () async {
-    final search = _FakeSearch(
-      aggregateResults: <Song>[_song('a', '另一首')],
-    );
+    final search = _FakeSearch(aggregateResults: <Song>[_song('a', '另一首')]);
     final repository = SimilarRadioRepository(search: search);
 
     final songs = await repository.songsLike(_seed);
