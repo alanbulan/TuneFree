@@ -39,6 +39,24 @@ import {
   GD_STUDIO_RATE_LIMIT_HINT,
 } from "../utils/musicSource";
 
+const buildInfo = __TUNEFREE_BUILD_INFO__;
+
+// 版本号在构建时从 package-lock.json 注入，升级依赖后关于页会自己跟着变，
+// 不会像手写字符串那样悄悄过期。
+const TECH_STACK = [
+  { name: "React", version: buildInfo.tech.react, detail: "界面与交互" },
+  { name: "React Router", version: buildInfo.tech.reactRouter, detail: "路由与导航" },
+  { name: "Motion", version: buildInfo.tech.motion, detail: "播放器与面板动效" },
+  { name: "Lucide React", version: buildInfo.tech.lucide, detail: "界面图标" },
+  { name: "TypeScript", version: buildInfo.tech.typescript, detail: "类型与业务逻辑" },
+  { name: "Vite", version: buildInfo.tech.vite, detail: "开发与构建" },
+  // Tailwind 走 Play CDN，没有可锁定的版本，这里如实标注来源。
+  { name: "Tailwind CSS", version: "CDN", detail: "原子化样式" },
+  { name: "pako", version: buildInfo.tech.pako, detail: "音源响应解压" },
+  { name: "qrc-decoder", version: buildInfo.tech.qrcDecoder, detail: "QQ 音乐请求解密" },
+  { name: "Wrangler", version: buildInfo.tech.wrangler, detail: "Cloudflare 部署" },
+];
+
 type Tab = "favorites" | "playlists" | "manage" | "about";
 
 const Library: React.FC = () => {
@@ -708,7 +726,7 @@ const Library: React.FC = () => {
               <p className="text-sm text-gray-500 mt-1">
                 一个高颜值的现代化 PWA 音乐播放器
               </p>
-              <p className="text-xs text-gray-400 mt-2">v1.2.0</p>
+              <p className="text-xs text-gray-400 mt-2">v{buildInfo.appVersion}</p>
             </div>
 
             {/* 功能特性 */}
@@ -768,25 +786,33 @@ const Library: React.FC = () => {
 
             {/* 技术栈 */}
             <div className="bg-white p-5 rounded-2xl shadow-sm">
-              <h3 className="font-bold text-lg mb-3 text-ios-text">技术栈</h3>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  "React 18",
-                  "TypeScript",
-                  "Tailwind CSS",
-                  "Vite",
-                  "Framer Motion",
-                  "Web Audio API",
-                  "Canvas",
-                ].map((tech) => (
-                  <span
-                    key={tech}
-                    className="text-xs font-medium bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full"
-                  >
-                    {tech}
-                  </span>
-                ))}
+              <div className="flex items-baseline justify-between gap-3 mb-3">
+                <h3 className="font-bold text-lg text-ios-text">技术栈</h3>
+                <span className="text-[10px] text-gray-400 shrink-0">当前构建版本</span>
               </div>
+              <dl className="space-y-2">
+                {TECH_STACK.map((tech) => (
+                  <div
+                    key={tech.name}
+                    className="flex items-center justify-between gap-3 bg-gray-100 rounded-xl px-3 py-2"
+                  >
+                    <dt className="min-w-0">
+                      <span className="block text-xs font-medium text-ios-text truncate">
+                        {tech.name}
+                      </span>
+                      <span className="block text-[10px] text-gray-400 truncate">
+                        {tech.detail}
+                      </span>
+                    </dt>
+                    <dd className="shrink-0 text-[11px] font-medium text-gray-500 tabular-nums">
+                      {tech.version}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="text-[10px] text-gray-400 mt-3 leading-relaxed">
+                音频频谱由 Web Audio API 与 Canvas 绘制。
+              </p>
             </div>
 
             {/* 后端 API 致谢 */}
