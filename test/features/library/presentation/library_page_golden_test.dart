@@ -1014,7 +1014,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await screenMatchesGolden(tester, 'library_page_favorites');
-  });
+  }, tags: 'golden');
 
   testWidgets(
     'library manage tab exports to a file and imports from a picked backup file',
