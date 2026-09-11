@@ -16,6 +16,8 @@ const String _kModeKey = 'tunefree_theme_mode';
 const String _kColorKey = 'tunefree_theme_color';
 const String _kLyricSizeKey = 'tunefree_lyric_size';
 const String _kLyricFontKey = 'tunefree_lyric_font';
+// Tauri 没有对应的键：那边歌词偏移只有内存状态，不落盘。
+const String _kLyricOffsetKey = 'tunefree_lyric_offset_ms';
 
 final class SharedPreferencesAppearanceStore extends AppearanceStore {
   const SharedPreferencesAppearanceStore();
@@ -32,6 +34,7 @@ final class SharedPreferencesAppearanceStore extends AppearanceStore {
         accentHex: normalizeAccentHex(prefs.getString(_kColorKey)),
         lyricSize: clampLyricSize(prefs.getInt(_kLyricSizeKey)),
         lyricFontId: normalizeLyricFontId(prefs.getString(_kLyricFontKey)),
+        lyricOffsetMs: clampLyricOffsetMs(prefs.getInt(_kLyricOffsetKey)),
       );
     } catch (error) {
       debugPrint('外观偏好读取失败，回退默认值: $error');
@@ -47,6 +50,7 @@ final class SharedPreferencesAppearanceStore extends AppearanceStore {
       await prefs.setString(_kColorKey, preferences.accentHex);
       await prefs.setInt(_kLyricSizeKey, preferences.lyricSize);
       await prefs.setString(_kLyricFontKey, preferences.lyricFontId);
+      await prefs.setInt(_kLyricOffsetKey, preferences.lyricOffsetMs);
     } catch (error) {
       // 存不下去只影响「下次启动还记得」，不该让当前这次操作失败。
       debugPrint('外观偏好写入失败: $error');

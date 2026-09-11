@@ -101,6 +101,35 @@ class AppearanceSettingsCard extends ConsumerWidget {
               }
             },
           ),
+          const SizedBox(height: 18),
+          _FieldLabel('歌词偏移  ${formatLyricOffset(preferences.lyricOffsetMs)}'),
+          Slider(
+            key: const Key('appearance-lyric-offset-slider'),
+            min: kMinLyricOffsetMs.toDouble(),
+            max: kMaxLyricOffsetMs.toDouble(),
+            // 100ms 一档：±10 秒的范围要能精确回到「不偏不倚」。
+            divisions: (kMaxLyricOffsetMs - kMinLyricOffsetMs) ~/ 100,
+            value: preferences.lyricOffsetMs.toDouble(),
+            activeColor: colors.accent,
+            onChanged: (value) =>
+                controller.setLyricOffsetMs((value / 100).round() * 100),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '正值让歌词晚一点出现，负值让它提前。',
+                  style: TextStyle(fontSize: 11, color: colors.textTertiary),
+                ),
+              ),
+              if (preferences.lyricOffsetMs != 0)
+                TextButton(
+                  key: const Key('appearance-lyric-offset-reset'),
+                  onPressed: () => controller.setLyricOffsetMs(0),
+                  child: const Text('归零'),
+                ),
+            ],
+          ),
         ],
       ),
     );

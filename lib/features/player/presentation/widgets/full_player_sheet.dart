@@ -303,19 +303,24 @@ class _PlayerLyricsPanel extends ConsumerWidget {
       ),
     );
 
+    final preferences = ref.watch(
+      appearanceControllerProvider.select(
+        (controller) => controller.preferences,
+      ),
+    );
+    // 偏移只在这一层加：时间轴本身保持纯净，否则按原始串记忆化的缓存
+    // 会因为拖一下滑块就整条作废（还得重新估算逐字）。
+    final offset = preferences.lyricOffset;
+
     final timeline = ref.watch(playerLyricsControllerProvider).buildLyrics(
       rawLyrics,
     );
     final activeLyricIndex = ref.watch(
       playerControllerProvider.select(
         (state) => timeline.activeIndexAt(
-          state.position.inMicroseconds / Duration.microsecondsPerSecond,
+          (state.position + offset).inMicroseconds /
+              Duration.microsecondsPerSecond,
         ),
-      ),
-    );
-    final preferences = ref.watch(
-      appearanceControllerProvider.select(
-        (controller) => controller.preferences,
       ),
     );
 
@@ -327,7 +332,7 @@ class _PlayerLyricsPanel extends ConsumerWidget {
       onSeekToLine: (line) {
         ref
             .read(playerControllerProvider.notifier)
-            .seek(Duration(milliseconds: (line.time * 1000).round()));
+            .seek(lyricSeekTarget(line.time, offset));
       },
     );
   }
@@ -965,12 +970,19 @@ class _ActiveLyricLine extends ConsumerWidget {
     final isPlaying = ref.watch(
       playerControllerProvider.select((state) => state.isPlaying),
     );
+    final offset = ref.watch(
+      appearanceControllerProvider.select(
+        (controller) => controller.preferences.lyricOffset,
+      ),
+    );
 
     return _KaraokeLyricText(
       text: entry.line.text,
       words: entry.words,
       endTime: entry.endTime,
-      currentTime: position.inMicroseconds / Duration.microsecondsPerSecond,
+      currentTime:
+          (position + offset).inMicroseconds /
+          Duration.microsecondsPerSecond,
       isPlaying: isPlaying,
       textKey: textKey,
       style: style,

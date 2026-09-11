@@ -29,6 +29,13 @@ const int kDefaultLyricSize = 22;
 const int kMinLyricSize = 14;
 const int kMaxLyricSize = 36;
 
+/// 歌词时间轴偏移。正值 = 歌词整体**推迟**出现（唱到了才亮），
+/// 负值 = 提前。范围与 Tauri 的 `setLyricOffsetSeconds` 一致（±10 秒），
+/// 但 Tauri 那边只有状态、没有落盘也没有 UI —— 这里两样都补上了。
+const int kDefaultLyricOffsetMs = 0;
+const int kMinLyricOffsetMs = -10000;
+const int kMaxLyricOffsetMs = 10000;
+
 /// 歌词字体。**刻意与 Tauri 不是同一份列表**：那份是桌面字体栈
 /// （PingFang SC / Microsoft YaHei / SimSun / STXihei），Android 上大多并不存在，
 /// 照抄过去只会静默回退到默认字体。这里改用各平台真正可能命中的家族，
@@ -126,14 +133,19 @@ final class AppearancePreferences {
     this.accentHex = kDefaultAccentHex,
     this.lyricSize = kDefaultLyricSize,
     this.lyricFontId = 'system',
+    this.lyricOffsetMs = kDefaultLyricOffsetMs,
   });
 
   final ThemeModeSetting themeMode;
   final String accentHex;
   final int lyricSize;
   final String lyricFontId;
+  final int lyricOffsetMs;
 
   Color get accent => parseHexColor(accentHex);
+
+  /// 歌词偏移的时长形式，供播放位置换算用。
+  Duration get lyricOffset => Duration(milliseconds: lyricOffsetMs);
 
   LyricFontOption get lyricFont => kLyricFontOptions.firstWhere(
     (option) => option.id == lyricFontId,
@@ -145,12 +157,14 @@ final class AppearancePreferences {
     String? accentHex,
     int? lyricSize,
     String? lyricFontId,
+    int? lyricOffsetMs,
   }) {
     return AppearancePreferences(
       themeMode: themeMode ?? this.themeMode,
       accentHex: accentHex ?? this.accentHex,
       lyricSize: lyricSize ?? this.lyricSize,
       lyricFontId: lyricFontId ?? this.lyricFontId,
+      lyricOffsetMs: lyricOffsetMs ?? this.lyricOffsetMs,
     );
   }
 
@@ -160,10 +174,12 @@ final class AppearancePreferences {
       other.themeMode == themeMode &&
       other.accentHex == accentHex &&
       other.lyricSize == lyricSize &&
-      other.lyricFontId == lyricFontId;
+      other.lyricFontId == lyricFontId &&
+      other.lyricOffsetMs == lyricOffsetMs;
 
   @override
-  int get hashCode => Object.hash(themeMode, accentHex, lyricSize, lyricFontId);
+  int get hashCode =>
+      Object.hash(themeMode, accentHex, lyricSize, lyricFontId, lyricOffsetMs);
 }
 
 // ─── 归一化：所有读入都必须过一遍，localStorage 可能被改坏或来自旧版本 ───
@@ -228,6 +244,23 @@ String normalizeLyricFontId(Object? value) {
     }
   }
   return kLyricFontOptions.first.id;
+}
+
+int clampLyricOffsetMs(Object? value) {
+  final parsed = value is int ? value : int.tryParse('${value ?? ''}');
+  if (parsed == null) {
+    return kDefaultLyricOffsetMs;
+  }
+  return parsed.clamp(kMinLyricOffsetMs, kMaxLyricOffsetMs);
+}
+
+/// 把毫秒偏移渲染成带上符号的秒数，例如 `+1.2s` / `-0.5s` / `0.0s`。
+///
+/// 符号必须显式写出来：只显示 `1.2s` 看不出是提前还是推迟。
+String formatLyricOffset(int milliseconds) {
+  final seconds = milliseconds / 1000;
+  final sign = seconds > 0 ? '+' : (seconds < 0 ? '-' : '');
+  return '$sign${seconds.abs().toStringAsFixed(1)}s';
 }
 
 /// 暗色下把强调色提亮一档，否则深色背景上的品牌色会发闷。

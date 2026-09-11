@@ -193,4 +193,34 @@ void main() {
       expect(LyricTimeline.empty.activeIndexAt(12.0), 0);
     });
   });
+
+  group('lyricSeekTarget', () {
+    test('没有偏移时就是行时间', () {
+      expect(lyricSeekTarget(12.5, Duration.zero), const Duration(
+        milliseconds: 12500,
+      ));
+    });
+
+    test('歌词推迟了 2 秒，就要早 2 秒开始放', () {
+      // 偏移 +2s 时这一行在第 12 秒才亮，所以要现在听到它必须回到第 10 秒。
+      expect(
+        lyricSeekTarget(12.0, const Duration(seconds: 2)),
+        const Duration(seconds: 10),
+      );
+    });
+
+    test('歌词提前了 2 秒，就要晚 2 秒开始放', () {
+      expect(
+        lyricSeekTarget(12.0, const Duration(seconds: -2)),
+        const Duration(seconds: 14),
+      );
+    });
+
+    test('算出来是负数时夹到 0，不产生负的播放位置', () {
+      expect(
+        lyricSeekTarget(1.0, const Duration(seconds: 5)),
+        Duration.zero,
+      );
+    });
+  });
 }

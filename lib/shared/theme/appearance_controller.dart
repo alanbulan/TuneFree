@@ -49,6 +49,10 @@ final class AppearanceController extends ChangeNotifier {
     _preferences.copyWith(lyricFontId: normalizeLyricFontId(value)),
   );
 
+  Future<void> setLyricOffsetMs(int value) => _update(
+    _preferences.copyWith(lyricOffsetMs: clampLyricOffsetMs(value)),
+  );
+
   Future<void> _update(AppearancePreferences next) async {
     if (next == _preferences) {
       return;
