@@ -13,9 +13,38 @@ const RESPONSE_CURVE = 0.7;             // 非线性响应曲线指数
 const MIN_BAR_PERCENT = 0.04;           // 最小可见高度百分比
 const DECAY_SPEED = 0.92;               // 暂停时衰减系数 (越接近1越慢)
 
+/** 读取当前主题强调色（--accent），返回 [r, g, b]。 */
+const getAccentRgb = (): [number, number, number] => {
+  let computed = '';
+  try {
+    computed = getComputedStyle(document.documentElement)
+      .getPropertyValue('--accent')
+      .trim();
+  } catch {
+    /* ignore */
+  }
+  if (computed.startsWith('#')) {
+    const hex =
+      computed.length === 4
+        ? '#' + computed[1] + computed[1] + computed[2] + computed[2] + computed[3] + computed[3]
+        : computed;
+    return [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16),
+    ];
+  }
+  const match = computed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (match) return [Number(match[1]), Number(match[2]), Number(match[3])];
+  return [250, 35, 59]; // 默认 ios-red
+};
+
 const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
   const { analyser } = usePlayerAnalyser();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // 当前强调色的 rgb；主题切换（ThemeProvider / 首帧引导写 --accent）时由
+  // MutationObserver 刷新，避免每帧 getComputedStyle。
+  const accentRgbRef = useRef<[number, number, number]>([0, 0, 0]);
 
   // 持久化状态，跨帧保留
   const stateRef = useRef({
@@ -25,6 +54,19 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
       // 当前显示值（用于平滑过渡，包括暂停衰减）
       displayValues: new Array(BAR_COUNT).fill(0),
   });
+
+  useEffect(() => {
+    // 跟随主题强调色变化刷新柱色
+    accentRgbRef.current = getAccentRgb();
+    const observer = new MutationObserver(() => {
+      accentRgbRef.current = getAccentRgb();
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['style'],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -57,9 +99,10 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying }) => {
         const radius = w / 2;
         const y = h - barHeight;
 
-        // 简洁深色风格 — 强度越大越不透明
-        const alpha = 0.12 + percent * 0.38;
-        ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+        // 主题强调色风格 — 强度越大越不透明（暗色主题下也清晰可见）
+        const alpha = 0.16 + percent * 0.4;
+        const [r, g, b] = accentRgbRef.current;
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
 
         // 绘制圆角柱子
         ctx.beginPath();
