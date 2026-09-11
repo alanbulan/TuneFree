@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/song.dart';
 import '../../../shared/theme/tune_free_spacing.dart';
+import '../../../shared/widgets/tune_free_feedback.dart';
 import '../../player/application/player_controller.dart';
 import '../../player/domain/player_state.dart';
 import '../application/search_controller.dart' as search_application;
@@ -87,7 +88,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 controller.updateQuery(value);
                 controller.submitSearch();
               },
-              onClearHistory: controller.clearHistory,
+              onClearHistory: () => _clearHistoryWithUndo(context, controller),
               onClearHistoryRequested: () => _confirmClearHistory(context),
               showInitialLoading: showInitialLoading,
               results: state.results,
@@ -137,6 +138,28 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       return '${searchSourceFullLabel(state.selectedSource)} 使用 $_gdStudioAttribution 公开接口，建议控制频率：$_gdStudioRateLimitHint。';
     }
     return '';
+  }
+
+  /// 清空搜索历史，并留一条撤销入口。
+  ///
+  /// 历史上限 15 条、只活在内存里，撤销就是把这串字符串原样放回去 ——
+  /// 不需要像删除下载那样先做回收站。
+  void _clearHistoryWithUndo(
+    BuildContext context,
+    search_application.SearchController controller,
+  ) {
+    final previousHistory = controller.state.history;
+    if (previousHistory.isEmpty) {
+      return;
+    }
+
+    controller.clearHistory();
+    showUndoToast(
+      context,
+      '已清空搜索历史',
+      tone: TuneFreeToastTone.success,
+      onUndo: () async => controller.restoreHistory(previousHistory),
+    );
   }
 
   Future<bool> _confirmClearHistory(BuildContext context) async {

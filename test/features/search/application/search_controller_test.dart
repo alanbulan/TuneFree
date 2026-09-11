@@ -145,6 +145,30 @@ void main() {
     },
   );
 
+  test('清空历史后能原样恢复', () async {
+    final repository = FakeSearchRepository(
+      aggregateSearch: (String keyword, {required int page}) async =>
+          const <Song>[],
+    );
+    final controller = SearchController(repository: repository);
+
+    controller.updateQuery('gbc');
+    await controller.submitSearch();
+    controller.updateQuery('yorushika');
+    await controller.submitSearch();
+
+    final before = controller.state.history;
+    expect(before, <String>['yorushika', 'gbc']);
+
+    // 历史只活在内存里，所以「快照」就是把这串字符串留在调用方手里 ——
+    // 撤销不需要任何持久化结构。
+    controller.clearHistory();
+    expect(controller.state.history, isEmpty);
+
+    controller.restoreHistory(before);
+    expect(controller.state.history, <String>['yorushika', 'gbc']);
+  });
+
   test('changing filters invalidates pending search responses', () async {
     final pendingResults = Completer<List<Song>>();
     final repository = FakeSearchRepository(
