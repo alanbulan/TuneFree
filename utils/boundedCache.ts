@@ -1,7 +1,13 @@
 /** 容量有界的 LRU 缓存；访问与写入时淘汰过期条目，命中不延长有效期。 */
 export class BoundedCache<K, V> {
   private readonly entries = new Map<K, { value: V; expiresAt: number }>();
-  constructor(private readonly capacity: number, private readonly ttlMs: number) {}
+  private readonly capacity: number;
+  private readonly ttlMs: number;
+
+  constructor(capacity: number, ttlMs: number) {
+    this.capacity = capacity;
+    this.ttlMs = ttlMs;
+  }
 
   get size(): number { this.prune(); return this.entries.size; }
   clear(): void { this.entries.clear(); }
