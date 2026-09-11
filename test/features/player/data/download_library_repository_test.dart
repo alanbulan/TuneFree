@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tunefree/features/player/data/download_library_repository.dart';
 import 'package:tunefree/features/player/data/download_record.dart';
@@ -218,11 +220,39 @@ void main() {
       files,
     );
 
-    await repository.listDownloads();
+    // 直接调清理：它在 listDownloads 里是后台跑的（不 await），
+    // 从这里走列表没法确定性地断言。
+    expect(await repository.purgeTrash(), 1);
 
     expect(files.deleted, <String>[stale]);
     expect(files.contains(fresh), isTrue);
     expect(files.contains(unknown), isTrue);
+  });
+
+  test('列下载不等待回收站清理', () async {
+    // 清理的第一步要 path_provider，widget 测试里那条通道永远不完成 ——
+    // 一旦 await 住，整条 load() 会跟着挂住，页面停在加载态。
+    final recordStore = InMemoryDownloadRecordStore(<DownloadRecord>[
+      _record(songKey: 'netease:1', fileName: '1.mp3'),
+    ]);
+    final files = _FakeFiles(<String>['/downloads/1.mp3']);
+    final neverCompletes = Completer<String>();
+    final repository = DownloadLibraryRepository(
+      recordStore: recordStore,
+      fileExists: files.exists,
+      deleteFile: files.delete,
+      trashDirectoryPath: () => neverCompletes.future,
+      moveFile: files.move,
+      listFiles: files.list,
+    );
+
+    // 清理永远回不来，列表也必须出得来。
+    final items = await repository.listDownloads().timeout(
+      const Duration(seconds: 2),
+    );
+
+    expect(items.single.songKey, 'netease:1');
+    addTearDown(() => neverCompletes.complete(''));
   });
 
   test('回收站取不到时照样列得出下载，清理只是尽力而为', () async {
