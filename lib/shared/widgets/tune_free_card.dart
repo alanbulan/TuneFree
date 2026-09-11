@@ -15,8 +15,9 @@ class TuneFreeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Material(
-      color: TuneFreePalette.surface,
+      color: colors.surface,
       borderRadius: BorderRadius.circular(TuneFreeSpacing.cardRadius),
       child: Padding(padding: padding, child: child),
     );

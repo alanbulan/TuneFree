@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import '../../../../shared/theme/tune_free_palette.dart';
 
 class SearchHistorySection extends StatelessWidget {
   const SearchHistorySection({
@@ -16,6 +17,7 @@ class SearchHistorySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     if (history.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -58,7 +60,7 @@ class SearchHistorySection extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFF0F1F5)),
+                      border: Border.all(color: colors.fillPanel),
                     ),
                     child: Text(
                       term,

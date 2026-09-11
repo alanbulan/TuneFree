@@ -24,6 +24,7 @@ class FullPlayerSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = TuneFreeColors.of(context);
     final state = ref.watch(playerControllerProvider);
     final song = state.currentSong;
 
@@ -75,7 +76,7 @@ class FullPlayerSheet extends ConsumerWidget {
                   },
                   child: Material(
                     key: const Key('full-player'),
-                    color: TuneFreePalette.surface,
+                    color: colors.surface,
                     child: Stack(
                       children: [
                         _AmbientArtworkBackground(artworkUrl: song.pic),
@@ -164,7 +165,7 @@ class FullPlayerSheet extends ConsumerWidget {
                                     Slider(
                                       value: positionSeconds.toDouble(),
                                       max: durationSeconds.toDouble(),
-                                      activeColor: TuneFreePalette.textPrimary,
+                                      activeColor: colors.textPrimary,
                                       inactiveColor: const Color(0xFFD1D5DB),
                                       onChanged: (value) {
                                         playerController.seek(
@@ -178,16 +179,16 @@ class FullPlayerSheet extends ConsumerWidget {
                                       children: [
                                         Text(
                                           _formatSeconds(positionSeconds),
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 12,
-                                            color: Color(0xFF6B7280),
+                                            color: colors.textMuted,
                                           ),
                                         ),
                                         Text(
                                           _formatSeconds(durationSeconds),
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 12,
-                                            color: Color(0xFF6B7280),
+                                            color: colors.textMuted,
                                           ),
                                         ),
                                       ],
@@ -281,6 +282,7 @@ class _AmbientArtworkBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final resolvedUrl = artworkUrl?.trim();
 
     return Stack(
@@ -309,7 +311,7 @@ class _AmbientArtworkBackground extends StatelessWidget {
                   ),
                 ),
         ),
-        ColoredBox(color: TuneFreePalette.surface.withValues(alpha: 0.62)),
+        ColoredBox(color: colors.surface.withValues(alpha: 0.62)),
       ],
     );
   }
@@ -330,6 +332,7 @@ class _FullPlayerHeaderState extends State<_FullPlayerHeader> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onVerticalDragUpdate: (details) {
@@ -350,10 +353,10 @@ class _FullPlayerHeaderState extends State<_FullPlayerHeader> {
             IconButton(
               key: const Key('close-full-player'),
               onPressed: widget.onClose,
-              icon: const Icon(
+              icon: Icon(
                 Icons.expand_more_rounded,
                 size: 28,
-                color: Color(0xFF6B7280),
+                color: colors.textMuted,
               ),
             ),
             const Expanded(
@@ -373,10 +376,10 @@ class _FullPlayerHeaderState extends State<_FullPlayerHeader> {
             IconButton(
               key: const Key('player-more-button'),
               onPressed: widget.onMore,
-              icon: const Icon(
+              icon: Icon(
                 Icons.more_horiz_rounded,
                 size: 24,
-                color: Color(0xFF6B7280),
+                color: colors.textMuted,
               ),
             ),
           ],
@@ -481,6 +484,7 @@ class _PlayerCoverPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Center(
       child: AnimatedScale(
         duration: const Duration(milliseconds: 700),
@@ -528,7 +532,7 @@ class _PlayerCoverPanel extends StatelessWidget {
                 Positioned.fill(
                   child: Container(
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF3F4F6),
+                      color: colors.fillSubtle,
                       borderRadius: BorderRadius.circular(18),
                       boxShadow: [
                         BoxShadow(
@@ -617,12 +621,13 @@ class _PlayerCoverPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    final colors = TuneFreeColors.of(context);
+    return Center(
       child: Icon(
         Icons.music_note_rounded,
         key: Key('full-player-cover-placeholder'),
         size: 96,
-        color: Color(0xFFB6B8BF),
+        color: colors.lyricInactive,
       ),
     );
   }
@@ -721,11 +726,12 @@ class _PlayerLyricsViewState extends State<_PlayerLyricsView> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     if (widget.lyrics.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           '加载歌词中...',
-          style: TextStyle(fontSize: 14, color: TuneFreePalette.textSecondary),
+          style: TextStyle(fontSize: 14, color: colors.textSecondary),
         ),
       );
     }
@@ -795,6 +801,7 @@ class _PlayerLyricLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final lineKey = Key(
       'player-lyrics-line-${isActive ? 'active' : 'inactive'}-$index',
     );
@@ -822,8 +829,8 @@ class _PlayerLyricLine extends StatelessWidget {
                   fontSize: isActive ? 22 : 18,
                   fontWeight: FontWeight.w700,
                   color: isActive
-                      ? const Color(0xFF111111)
-                      : TuneFreePalette.textSecondary,
+                      ? colors.textStrong
+                      : colors.textSecondary,
                   height: 1.35,
                 ),
               ),
@@ -838,8 +845,8 @@ class _PlayerLyricLine extends StatelessWidget {
                     fontSize: isActive ? 14 : 12,
                     fontWeight: FontWeight.w500,
                     color: isActive
-                        ? const Color(0xFF4B5563)
-                        : const Color(0xFFB6B8BF),
+                        ? colors.lyricTranslation
+                        : colors.lyricInactive,
                     height: 1.35,
                   ),
                 ),
@@ -871,6 +878,7 @@ class _SongInfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -913,7 +921,7 @@ class _SongInfoRow extends StatelessWidget {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF9CA3AF),
+                      color: colors.textTertiary,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -942,10 +950,10 @@ class _SongInfoRow extends StatelessWidget {
                         key: ValueKey<String>('full-artist-$source-$artist'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w500,
-                          color: TuneFreePalette.accent,
+                          color: colors.accent,
                         ),
                       ),
                     ),
@@ -960,7 +968,7 @@ class _SongInfoRow extends StatelessWidget {
           key: const Key('player-download-button'),
           onPressed: onDownload,
           iconSize: 22,
-          icon: const Icon(Icons.download_rounded, color: Color(0xFF6B7280)),
+          icon: Icon(Icons.download_rounded, color: colors.textMuted),
         ),
         IconButton(
           key: const Key('player-like-button'),
@@ -969,8 +977,8 @@ class _SongInfoRow extends StatelessWidget {
           icon: Icon(
             isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
             color: isFavorite
-                ? TuneFreePalette.accent
-                : const Color(0xFF6B7280),
+                ? colors.accent
+                : colors.textMuted,
           ),
         ),
       ],
@@ -1100,6 +1108,7 @@ class _PlayerVisualizerState extends ConsumerState<_PlayerVisualizer>
       child: CustomPaint(
         painter: _VisualizerPainter(
           values: List<double>.unmodifiable(_displayValues),
+          barColor: TuneFreeColors.of(context).visualizerBar,
         ),
       ),
     );
@@ -1107,9 +1116,13 @@ class _PlayerVisualizerState extends ConsumerState<_PlayerVisualizer>
 }
 
 class _VisualizerPainter extends CustomPainter {
-  const _VisualizerPainter({required this.values});
+  const _VisualizerPainter({required this.values, required this.barColor});
 
   final List<double> values;
+
+  /// 频谱柱颜色。浅色下是深色、深色下是浅色 —— 写死黑色的话，
+  /// 在深色背景上整片频谱等于看不见（这正是一个已有的问题）。
+  final Color barColor;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1125,7 +1138,7 @@ class _VisualizerPainter extends CustomPainter {
       final barHeight = size.height * percent;
       final left = index * slotWidth + (slotWidth - barWidth) / 2;
       final top = size.height - barHeight;
-      paint.color = Colors.black.withValues(alpha: 0.12 + percent * 0.38);
+      paint.color = barColor.withValues(alpha: 0.12 + percent * 0.38);
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(left, top, barWidth, barHeight),
@@ -1173,6 +1186,7 @@ class _PlaybackControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -1187,8 +1201,8 @@ class _PlaybackControls extends StatelessWidget {
             },
             size: 22,
             color: playMode == 'sequence'
-                ? const Color(0xFF9CA3AF)
-                : TuneFreePalette.accent,
+                ? colors.textTertiary
+                : colors.accent,
           ),
         ),
         Row(
@@ -1208,8 +1222,8 @@ class _PlaybackControls extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   shape: const CircleBorder(),
                   padding: EdgeInsets.zero,
-                  backgroundColor: TuneFreePalette.textPrimary,
-                  disabledBackgroundColor: TuneFreePalette.textPrimary,
+                  backgroundColor: colors.textPrimary,
+                  disabledBackgroundColor: colors.textPrimary,
                   shadowColor: Colors.black.withValues(alpha: 0.18),
                   elevation: 10,
                 ),
@@ -1251,9 +1265,9 @@ class _PlaybackControls extends StatelessWidget {
         IconButton(
           key: const Key('player-queue-button'),
           onPressed: onQueue,
-          icon: const Icon(
+          icon: Icon(
             Icons.queue_music_rounded,
-            color: Color(0xFF9CA3AF),
+            color: colors.textTertiary,
             size: 22,
           ),
         ),

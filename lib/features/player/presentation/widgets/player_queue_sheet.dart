@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import '../../../../shared/theme/tune_free_palette.dart';
 
 import '../../../../core/models/song.dart';
 import '../../../../shared/widgets/music_network_image.dart';
@@ -27,6 +28,7 @@ class PlayerQueueSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     if (!isOpen) {
       return const SizedBox.shrink();
     }
@@ -36,9 +38,9 @@ class PlayerQueueSheet extends StatelessWidget {
       child: Container(
         key: const Key('player-queue-sheet'),
         height: MediaQuery.of(context).size.height * 0.6,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: BoxDecoration(
+          color: TuneFreeColors.of(context).surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
           children: [
@@ -58,9 +60,9 @@ class PlayerQueueSheet extends StatelessWidget {
                       '${queue.length} 首 · ${_playModeLabel(playMode)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: Color(0xFF8B8B95),
+                        color: colors.textSubtle,
                       ),
                     ),
                   ),
@@ -82,12 +84,12 @@ class PlayerQueueSheet extends StatelessWidget {
             const Divider(height: 1),
             Expanded(
               child: queue.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Text(
                         '队列为空',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Color(0xFF9CA3AF),
+                          color: colors.textTertiary,
                         ),
                       ),
                     )
@@ -188,15 +190,16 @@ class _QueueTrackListState extends State<_QueueTrackList> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return ListView.separated(
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 20),
       itemCount: widget.queue.length,
-      separatorBuilder: (_, _) => const Divider(
+      separatorBuilder: (_, _) => Divider(
         height: 1,
         indent: 82,
         endIndent: 12,
-        color: Color(0xFFE5E7EB),
+        color: colors.borderSubtle,
       ),
       itemBuilder: (context, index) {
         final song = widget.queue[index];
@@ -231,8 +234,9 @@ class _QueueTrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Material(
-      color: isCurrent ? const Color(0x0FE94B5B) : Colors.transparent,
+      color: isCurrent ? colors.accentSoft : Colors.transparent,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -258,19 +262,19 @@ class _QueueTrackTile extends StatelessWidget {
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
                               color: isCurrent
-                                  ? const Color(0xFFE94B5B)
-                                  : const Color(0xFF111111),
+                                  ? colors.accent
+                                  : colors.textStrong,
                             ),
                           ),
                         ),
                         if (isCurrent) ...[
                           const SizedBox(width: 8),
-                          const Text(
+                          Text(
                             '播放中',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
-                              color: Color(0xFFE94B5B),
+                              color: colors.accent,
                             ),
                           ),
                         ],
@@ -281,9 +285,9 @@ class _QueueTrackTile extends StatelessWidget {
                       _artistText(song),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: Color(0xFF6B7280),
+                        color: colors.textMuted,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -296,9 +300,9 @@ class _QueueTrackTile extends StatelessWidget {
                             _albumText(song),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: Color(0xFF9CA3AF),
+                              color: colors.textTertiary,
                             ),
                           ),
                         ),
@@ -311,8 +315,8 @@ class _QueueTrackTile extends StatelessWidget {
               Icon(
                 isCurrent ? Icons.graphic_eq_rounded : Icons.play_arrow_rounded,
                 color: isCurrent
-                    ? const Color(0xFFE94B5B)
-                    : const Color(0xFF9CA3AF),
+                    ? colors.accent
+                    : colors.textTertiary,
                 size: 20,
               ),
             ],
@@ -341,13 +345,14 @@ class _QueueArtwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       width: 56,
       height: 56,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isCurrent ? const Color(0xFFE94B5B) : const Color(0xFFE5E7EB),
+          color: isCurrent ? colors.accent : colors.borderSubtle,
         ),
       ),
       child: ClipRRect(
@@ -376,9 +381,10 @@ class _ArtworkPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const ColoredBox(
-      color: Color(0xFFF3F4F6),
-      child: Icon(Icons.music_note_rounded, color: Color(0xFF9CA3AF), size: 22),
+    final colors = TuneFreeColors.of(context);
+    return ColoredBox(
+      color: colors.fillSubtle,
+      child: Icon(Icons.music_note_rounded, color: colors.textTertiary, size: 22),
     );
   }
 }
@@ -390,18 +396,19 @@ class _SourceBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: colors.fillSubtle,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         musicSourceBadgeLabel(source),
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 9,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF6B7280),
+          color: colors.textMuted,
         ),
       ),
     );

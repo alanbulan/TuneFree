@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import '../../../../shared/theme/tune_free_palette.dart';
 
 class SettingsCard extends StatelessWidget {
   const SettingsCard({
@@ -14,10 +15,11 @@ class SettingsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Column(
@@ -26,7 +28,7 @@ class SettingsCard extends StatelessWidget {
           Row(
             children: [
               if (icon != null) ...[
-                Icon(icon, color: const Color(0xFFE94B5B), size: 18),
+                Icon(icon, color: colors.accent, size: 18),
                 const SizedBox(width: 10),
               ],
               Text(

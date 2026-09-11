@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:material_ui/material_ui.dart';
+import '../../../shared/theme/tune_free_palette.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/song.dart';
@@ -42,6 +43,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final controller = ref.watch(searchControllerProvider);
     final state = controller.state;
     final playerState = ref.watch(playerControllerProvider);
@@ -67,7 +69,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     );
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: colors.fillMuted,
       body: SafeArea(
         child: Stack(
           children: [
@@ -203,6 +205,7 @@ class _SearchHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
@@ -210,8 +213,8 @@ class _SearchHeader extends StatelessWidget {
           key: headerKey,
           child: Container(
             key: const Key('search-header-surface'),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF5F7FA),
+            decoration: BoxDecoration(
+              color: colors.fillMuted,
               boxShadow: [
                 BoxShadow(
                   color: Color(0x14000000),
@@ -256,7 +259,7 @@ class _SearchHeader extends StatelessWidget {
                         : '搜索 ${searchSourceFullLabel(state.selectedSource)} 资源...',
                     hintStyle: const TextStyle(fontSize: 13),
                     filled: true,
-                    fillColor: Colors.white,
+                    fillColor: TuneFreeColors.of(context).surface,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
                       borderSide: BorderSide.none,
@@ -295,7 +298,7 @@ class _SearchHeader extends StatelessWidget {
                     message: state.searchError,
                     backgroundColor: const Color(0xFFFEF2F2),
                     borderColor: const Color(0xFFFECACA),
-                    foregroundColor: const Color(0xFFDC2626),
+                    foregroundColor: colors.danger,
                   ),
                 ],
               ],
@@ -342,6 +345,7 @@ class _SearchScrollableContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final leadingCount = showHistory ? 2 : 0;
     final resultCount = showInitialLoading ? 0 : results.length;
     final footerCount = _footerCount;
@@ -390,7 +394,7 @@ class _SearchScrollableContent extends StatelessWidget {
         contentIndex -= results.length;
         if (showLoadMoreSpinner) {
           if (contentIndex == 0) {
-            return const Padding(
+            return Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Center(
                 child: SizedBox(
@@ -398,7 +402,7 @@ class _SearchScrollableContent extends StatelessWidget {
                   height: 22,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Color(0xFFE94B5B),
+                    color: colors.accent,
                   ),
                 ),
               ),
@@ -410,14 +414,14 @@ class _SearchScrollableContent extends StatelessWidget {
           if (contentIndex == 0) {
             return TextButton(
               onPressed: onLoadMore,
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
                 child: Text(
                   '查看更多结果',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF8B8B95),
+                    color: colors.textSubtle,
                   ),
                 ),
               ),
@@ -426,7 +430,7 @@ class _SearchScrollableContent extends StatelessWidget {
           contentIndex -= 1;
         }
 
-        return const Padding(
+        return Padding(
           padding: EdgeInsets.symmetric(vertical: 36),
           child: Column(
             children: [
@@ -438,7 +442,7 @@ class _SearchScrollableContent extends StatelessWidget {
               SizedBox(height: 12),
               Text(
                 '未找到相关歌曲，请尝试简化关键词',
-                style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
+                style: TextStyle(fontSize: 13, color: colors.textTertiary),
               ),
             ],
           ),
@@ -548,11 +552,12 @@ class _SearchLoadingBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: const Color(0xFFE5E7EB),
+        color: colors.borderSubtle,
         borderRadius: BorderRadius.circular(radius),
       ),
     );

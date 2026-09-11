@@ -32,11 +32,12 @@ class TuneFreeShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final path = GoRouterState.of(context).uri.path;
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
     return Scaffold(
-      backgroundColor: TuneFreePalette.background,
+      backgroundColor: colors.background,
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -89,6 +90,7 @@ class _ShellNavigationBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
     return ClipRect(
@@ -97,9 +99,9 @@ class _ShellNavigationBar extends StatelessWidget {
         child: DecoratedBox(
           key: const Key('shell-bottom-nav'),
           decoration: BoxDecoration(
-            color: TuneFreePalette.surface.withValues(alpha: 0.76),
+            color: colors.surface.withValues(alpha: 0.76),
             border: Border(
-              top: BorderSide(color: Colors.black.withValues(alpha: 0.05)),
+              top: BorderSide(color: colors.glassBorder),
             ),
           ),
           child: Padding(
@@ -147,9 +149,10 @@ class _ShellNavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final color = selected
-        ? TuneFreePalette.accent
-        : TuneFreePalette.textSecondary;
+        ? colors.accent
+        : colors.textSecondary;
 
     return Material(
       color: Colors.transparent,

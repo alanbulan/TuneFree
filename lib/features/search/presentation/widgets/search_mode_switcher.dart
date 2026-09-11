@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import '../../../../shared/theme/tune_free_palette.dart';
 
 class SearchModeSwitcher extends StatelessWidget {
   const SearchModeSwitcher({
@@ -12,6 +13,7 @@ class SearchModeSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     Widget buildChip(
       String label,
       bool active,
@@ -23,7 +25,7 @@ class SearchModeSwitcher extends StatelessWidget {
     }) {
       final borderColor = active
           ? (activeBorderColor ?? activeBackgroundColor)
-          : const Color(0xFFE5E7EB);
+          : colors.borderSubtle;
       return GestureDetector(
         key: key,
         onTap: onTap,

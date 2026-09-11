@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import '../../../../shared/theme/tune_free_palette.dart';
 
 import '../../../../core/models/playlist.dart';
 import '../../../../shared/widgets/music_network_image.dart';
@@ -15,6 +16,7 @@ class LibraryPlaylistGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -82,7 +84,7 @@ class LibraryPlaylistGrid extends StatelessWidget {
                           fontSize: 12,
                           color: hasCover
                               ? const Color(0xE6FFFFFF)
-                              : const Color(0xFF8B8B95),
+                              : colors.textSubtle,
                         ),
                       ),
                     ],
@@ -112,8 +114,9 @@ class _PlaylistCoverFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
-      color: Colors.white,
+      color: colors.surface,
       padding: const EdgeInsets.all(14),
       alignment: Alignment.topLeft,
       child: Container(
@@ -123,9 +126,9 @@ class _PlaylistCoverFallback extends StatelessWidget {
           color: const Color(0xFFFFEEF1),
           borderRadius: BorderRadius.circular(16),
         ),
-        child: const Icon(
+        child: Icon(
           Icons.folder_rounded,
-          color: Color(0xFFE94B5B),
+          color: colors.accent,
           size: 26,
         ),
       ),

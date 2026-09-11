@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import '../../../../shared/theme/tune_free_palette.dart';
 
 class LibraryTabSwitcher extends StatelessWidget {
   const LibraryTabSwitcher({
@@ -14,6 +15,7 @@ class LibraryTabSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     final activeIndex = tabs.indexOf(activeTab).clamp(0, tabs.length - 1);
 
     return DecoratedBox(
@@ -77,7 +79,7 @@ class LibraryTabSwitcher extends StatelessWidget {
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                     color: isActive
-                                        ? const Color(0xFF111111)
+                                        ? colors.textStrong
                                         : const Color(0xFF7B7D84),
                                   ),
                                   child: Text(

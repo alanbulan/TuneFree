@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import '../../../../shared/theme/tune_free_palette.dart';
 
 import '../../../../shared/widgets/tune_free_card.dart';
 import '../../../player/data/download_library_repository.dart';
@@ -16,6 +17,7 @@ class DownloadsManagementSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return SettingsCard(
       title: '已下载歌曲',
       icon: Icons.download_done_rounded,
@@ -23,12 +25,12 @@ class DownloadsManagementSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (downloads.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(vertical: 36),
               child: Center(
                 child: Text(
                   '暂无已下载歌曲',
-                  style: TextStyle(fontSize: 14, color: Color(0xFF9CA3AF)),
+                  style: TextStyle(fontSize: 14, color: colors.textTertiary),
                 ),
               ),
             )
@@ -39,9 +41,9 @@ class DownloadsManagementSection extends StatelessWidget {
                 child: TuneFreeCard(
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.music_note_rounded,
-                        color: Color(0xFFB6B8BF),
+                        color: colors.lyricInactive,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -62,9 +64,9 @@ class DownloadsManagementSection extends StatelessWidget {
                               download.artist,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: Color(0xFF8B8B95),
+                                color: colors.textSubtle,
                               ),
                             ),
                           ],
@@ -75,9 +77,9 @@ class DownloadsManagementSection extends StatelessWidget {
                           'delete-downloaded-track-${download.songKey}-${download.quality}',
                         ),
                         onPressed: () async => onDelete(download),
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.delete_outline_rounded,
-                          color: Color(0xFFE94B5B),
+                          color: colors.accent,
                         ),
                       ),
                     ],
