@@ -9,22 +9,22 @@
 
   <p>
     <a href="https://flutter.dev/">
-      <img src="https://img.shields.io/badge/Flutter-3-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter 3">
+      <img src="https://img.shields.io/badge/Flutter-3.47-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter 3.47">
     </a>
     <a href="https://dart.dev/">
-      <img src="https://img.shields.io/badge/Dart-3.10-0175C2?style=for-the-badge&logo=dart&logoColor=white" alt="Dart 3.10">
+      <img src="https://img.shields.io/badge/Dart-3.13-0175C2?style=for-the-badge&logo=dart&logoColor=white" alt="Dart 3.13">
     </a>
     <a href="https://riverpod.dev/">
-      <img src="https://img.shields.io/badge/Riverpod-2.6-42A5F5?style=for-the-badge" alt="Riverpod">
+      <img src="https://img.shields.io/badge/Riverpod-3-42A5F5?style=for-the-badge" alt="Riverpod">
     </a>
     <a href="https://pub.dev/packages/go_router">
-      <img src="https://img.shields.io/badge/go_router-16-0175C2?style=for-the-badge&logo=dart&logoColor=white" alt="go_router">
+      <img src="https://img.shields.io/badge/go_router-18-0175C2?style=for-the-badge&logo=dart&logoColor=white" alt="go_router">
     </a>
     <a href="https://pub.dev/packages/just_audio">
       <img src="https://img.shields.io/badge/just_audio-0.10-FFCA28?style=for-the-badge&logo=audacity&logoColor=black" alt="just_audio">
     </a>
     <a href="https://pub.dev/packages/dio">
-      <img src="https://img.shields.io/badge/Dio-5.9-6A5ACD?style=for-the-badge" alt="Dio">
+      <img src="https://img.shields.io/badge/Dio-5.11-6A5ACD?style=for-the-badge" alt="Dio">
     </a>
   </p>
 
@@ -74,10 +74,11 @@
 
 ## 🛠 技术栈
 
-- **Flutter 3**：跨平台 UI 与应用工程。
-- **Dart 3.10+**：业务逻辑与类型系统。
-- **flutter_riverpod**：状态管理。
-- **go_router**：页面路由。
+- **Flutter 3.47**：跨平台 UI 与应用工程。
+- **Dart 3.13+**：业务逻辑与类型系统。
+- **flutter_riverpod 3**：状态管理。
+- **material_ui**：Material 组件（Flutter 3.44 起从框架拆分为独立包）。
+- **go_router 18**：页面路由。
 - **just_audio**：音频播放。
 - **audio_service / audio_session**：后台播放、媒体会话与音频焦点。
 - **shared_preferences**：轻量本地配置与记录。
@@ -88,10 +89,10 @@
 
 建议使用：
 
-- Flutter Stable
-- Dart 3.10+
+- Flutter 3.47.3（stable）
+- Dart 3.13+
 - JDK 17
-- Android SDK
+- Android SDK（compileSdk 36）
 - Xcode（构建 iOS 时需要）
 
 ## 🚀 本地开发
