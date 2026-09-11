@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 final class TuneFreePalette {
   static const background = Color(0xFFF2F2F7);

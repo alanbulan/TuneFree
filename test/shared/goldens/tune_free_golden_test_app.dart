@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:tunefree/shared/theme/tune_free_palette.dart';
 
 class TuneFreeGoldenTestApp extends StatelessWidget {
