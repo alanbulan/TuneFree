@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tunefree/core/models/parsed_lyric.dart';
+import 'package:tunefree/core/utils/lyric_document.dart';
 import 'package:tunefree/features/player/application/player_lyrics_controller.dart';
 
 void main() {
@@ -85,6 +86,75 @@ void main() {
         );
       },
     );
+  });
+
+  group('多轨文档', () {
+    test('按轨道标记贴上译文与罗马音', () {
+      final controller = PlayerLyricsController();
+      final lyrics = controller.parseRawLyrics(
+        '[00:10.00]原文一\n'
+        '[00:12.00]原文二\n'
+        '${LyricDocument.translationMarker}\n'
+        '[00:10.00]译文一\n'
+        '[00:12.00]译文二\n'
+        '${LyricDocument.romanizationMarker}\n'
+        '[00:10.00]genbun ichi\n'
+        '[00:12.00]genbun ni',
+      );
+
+      expect(lyrics, hasLength(2));
+      expect(lyrics[0].text, '原文一');
+      expect(lyrics[0].translation, '译文一');
+      expect(lyrics[0].romanization, 'genbun ichi');
+      expect(lyrics[1].translation, '译文二');
+      expect(lyrics[1].romanization, 'genbun ni');
+    });
+
+    test('扩展轨道里对不上的行被丢掉，不会变成独立歌词', () {
+      final controller = PlayerLyricsController();
+      final lyrics = controller.parseRawLyrics(
+        '[00:10.00]原文\n'
+        '${LyricDocument.translationMarker}\n'
+        '[00:40.00]一条对不上的译文\n'
+        '[00:10.00]译文',
+      );
+
+      // 关键：多出来的那条不能变成第三行歌词。
+      expect(lyrics, hasLength(1));
+      expect(lyrics[0].text, '原文');
+      expect(lyrics[0].translation, '译文');
+    });
+
+    test('没有罗马音轨时 romanization 留空', () {
+      final controller = PlayerLyricsController();
+      final lyrics = controller.parseRawLyrics(
+        '[00:10.00]原文\n'
+        '${LyricDocument.translationMarker}\n'
+        '[00:10.00]译文',
+      );
+
+      expect(lyrics[0].translation, '译文');
+      expect(lyrics[0].romanization, isNull);
+    });
+
+    test('旧格式（没有标记、译文混在正文里）行为不变', () {
+      final controller = PlayerLyricsController();
+      final lyrics = controller.parseRawLyrics(
+        '[00:10.00]Original line\n'
+        '[00:10.20]Translated line\n'
+        '[00:12.00]Next line',
+      );
+
+      // 这条是老规则的回归护栏：已收藏歌曲里存的就是这种串。
+      expect(lyrics, const [
+        ParsedLyric(
+          time: 10.0,
+          text: 'Original line',
+          translation: 'Translated line',
+        ),
+        ParsedLyric(time: 12.0, text: 'Next line'),
+      ]);
+    });
   });
 
   group('PlayerLyricsController.buildLyrics', () {

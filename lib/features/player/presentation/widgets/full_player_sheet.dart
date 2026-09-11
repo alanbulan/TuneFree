@@ -909,6 +909,9 @@ class _PlayerLyricLine extends StatelessWidget {
     final translationKey = Key(
       'player-lyrics-translation-${isActive ? 'active' : 'inactive'}-$index',
     );
+    final romanizationKey = Key(
+      'player-lyrics-romanization-${isActive ? 'active' : 'inactive'}-$index',
+    );
 
     // 当前行比其余行大一档，译文再小一档；三档都由用户的「歌词字号」推出来。
     // 字号 22（默认值）时正好是改造前的 22 / 18 / 14 / 12。
@@ -962,6 +965,26 @@ class _PlayerLyricLine extends StatelessWidget {
                     ),
                   ),
                 ),
+              // 扩展轨的顺序与 Tauri 一致：罗马音在前，译文在后。
+              if (line.romanization case final romanization?) ...[
+                const SizedBox(height: 6),
+                Text(
+                  romanization,
+                  key: romanizationKey,
+                  textAlign: TextAlign.center,
+                  softWrap: true,
+                  style: lyricFont.apply(
+                    TextStyle(
+                      fontSize: translationFontSize,
+                      fontWeight: FontWeight.w500,
+                      color: isActive
+                          ? colors.textTertiary
+                          : colors.lyricInactive,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
               if (line.translation case final translation?) ...[
                 const SizedBox(height: 6),
                 Text(

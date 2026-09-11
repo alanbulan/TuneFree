@@ -13,6 +13,7 @@ import 'package:tunefree/core/models/music_source.dart';
 import 'package:tunefree/core/models/playlist.dart';
 import 'package:tunefree/core/models/song.dart';
 import 'package:tunefree/core/models/top_list.dart';
+import 'package:tunefree/core/utils/lyric_document.dart';
 import 'package:tunefree/features/home/application/home_providers.dart';
 import 'package:tunefree/features/home/data/remote_top_list_repository.dart';
 import 'package:tunefree/features/library/application/library_controller.dart';
@@ -1946,4 +1947,104 @@ void main() {
       expect(find.byType(SearchPage), findsOneWidget);
     },
   );
+
+  testWidgets('romanization renders above the translation track', (
+    tester,
+  ) async {
+    const rawLyrics =
+        '[00:05.00]原文一句\n'
+        '${LyricDocument.translationMarker}\n'
+        '[00:05.00]翻译一句\n'
+        '${LyricDocument.romanizationMarker}\n'
+        '[00:05.00]genbun ichi ku';
+
+    final storage = TestPlayerLibraryStorage(
+      favorites: const <Song>[
+        Song(
+          id: 'romanized-track',
+          name: '日文曲目',
+          artist: '日文歌手',
+          lrc: rawLyrics,
+          source: MusicSource.netease,
+        ),
+      ],
+    );
+    final engine = JustAudioPlayerEngine.test();
+    addTearDown(engine.dispose);
+
+    final container = ProviderContainer(
+      overrides: [
+        playerEngineProvider.overrideWithValue(engine),
+        mediaSessionAdapterProvider.overrideWithValue(
+          NoopMediaSessionAdapter(),
+        ),
+        remoteTopListRepositoryProvider.overrideWithValue(
+          const _FakeTopListRepository(),
+        ),
+        libraryStorageProvider.overrideWithValue(storage),
+        downloadLibraryRepositoryProvider.overrideWithValue(
+          _noopDownloadLibraryRepository(),
+        ),
+        playerPreferencesStoreProvider.overrideWithValue(
+          TestPlayerPreferencesStore(),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          _noopLocalPlaybackResolver(),
+        ),
+        songResolutionRepositoryProvider.overrideWithValue(
+          SongResolutionRepository.test(
+            resolveSongValue: (song, quality) async => song.copyWith(
+              url: 'https://example.com/${song.id}-$quality.mp3',
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const TuneFreeApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await container
+        .read(playerControllerProvider.notifier)
+        .openLegacySong(
+          id: 'romanized-track',
+          source: 'netease',
+          title: '日文曲目',
+          artist: '日文歌手',
+          lyrics: rawLyrics,
+          queue: const <PlayerTrack>[
+            PlayerTrack(
+              id: 'romanized-track',
+              source: 'netease',
+              title: '日文曲目',
+              artist: '日文歌手',
+            ),
+          ],
+        );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('mini-player')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('player-lyrics-toggle-area')));
+    await tester.pumpAndSettle();
+
+    // 三条轨道都在，而且没有多出别的行。
+    expect(find.text('原文一句'), findsOneWidget);
+    expect(find.text('翻译一句'), findsOneWidget);
+    expect(find.text('genbun ichi ku'), findsOneWidget);
+    expect(
+      find.byKey(const Key('player-lyrics-romanization-active-0')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('player-lyrics-translation-active-0')),
+      findsOneWidget,
+    );
+  });
 }

@@ -10,6 +10,7 @@ _ParsedLyric _$ParsedLyricFromJson(Map<String, dynamic> json) => _ParsedLyric(
   time: (json['time'] as num).toDouble(),
   text: json['text'] as String,
   translation: json['translation'] as String?,
+  romanization: json['romanization'] as String?,
 );
 
 Map<String, dynamic> _$ParsedLyricToJson(_ParsedLyric instance) =>
@@ -17,4 +18,5 @@ Map<String, dynamic> _$ParsedLyricToJson(_ParsedLyric instance) =>
       'time': instance.time,
       'text': instance.text,
       'translation': instance.translation,
+      'romanization': instance.romanization,
     };

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tunefree/core/models/music_source.dart';
 import 'package:tunefree/core/models/song.dart';
 import 'package:tunefree/core/network/tune_free_http_client.dart';
+import 'package:tunefree/core/utils/lyric_document.dart';
 import 'package:tunefree/features/player/data/song_resolution_repository.dart';
 
 final class _FakeGdStudioAdapter implements HttpClientAdapter {
@@ -90,7 +91,14 @@ void main() {
     final resolvedSong = await client.resolveSong(song, 'flac');
 
     expect(resolvedSong.url, 'https://music.126.net/song-320.mp3');
-    expect(resolvedSong.lrc, '[00:00.00]第一句\n[00:00.00]First line');
+    // 译文现在带轨道标记，而不是和正文拼在一起 —— 正文里混进译文会让
+    // 「按时间戳近似」那条老规则把多出来的行丢掉。
+    expect(
+      resolvedSong.lrc,
+      '[00:00.00]第一句\n'
+      '${LyricDocument.translationMarker}\n'
+      '[00:00.00]First line',
+    );
     expect(resolvedSong.pic, 'https://p3.music.126.net/cover-500x500.jpg');
     expect(adapter.requestedUris, hasLength(3));
     expect(

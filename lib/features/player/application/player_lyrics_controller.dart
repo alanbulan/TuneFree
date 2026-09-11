@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/lyric_timeline.dart';
 import '../../../core/models/parsed_lyric.dart';
+import '../../../core/utils/lyric_document.dart';
 import '../../../core/utils/lyric_word_estimator.dart';
 
 final playerLyricsControllerProvider = Provider<PlayerLyricsController>((ref) {
@@ -10,7 +11,6 @@ final playerLyricsControllerProvider = Provider<PlayerLyricsController>((ref) {
 
 final class PlayerLyricsController {
   static const _emptyLyrics = [ParsedLyric(time: 0, text: '暂无歌词')];
-  static final _timeExp = RegExp(r'\[(\d{2}):(\d{2})\.(\d{2,3})\]');
 
   /// 解析结果按原始歌词串记忆化。
   ///
@@ -61,13 +61,46 @@ final class PlayerLyricsController {
       return _emptyLyrics;
     }
 
-    final parsedEntries =
-        raw.split('\n').expand(_parseLine).toList(growable: false)
-          ..sort((left, right) => left.time.compareTo(right.time));
+    final document = LyricDocument.parse(raw);
+    final mergedEntries = _mergeMainTrack(document.main);
 
-    if (parsedEntries.isEmpty) {
+    if (mergedEntries.isEmpty) {
       return _emptyLyrics;
     }
+
+    // 扩展轨道贴在主轨之后。译文轨优先于「近似时间戳」那条老规则：
+    // 老规则只在旧格式文档（没有标记、译文和原文混在一段里）上才有用。
+    final withTranslation = attachLyricTrack(
+      mergedEntries,
+      document.translation,
+      (line, value) => line.translation == null
+          ? line.copyWith(translation: value)
+          : line,
+    );
+    final withRomanization = attachLyricTrack(
+      withTranslation,
+      document.romanization,
+      (line, value) => line.copyWith(romanization: value),
+    );
+
+    return List<ParsedLyric>.unmodifiable(withRomanization);
+  }
+
+  /// 主轨解析：解析、排序，再把「时间戳挨得很近」的行并起来。
+  ///
+  /// 这条 `< 0.5 秒` 的规则是改造前就有的，保留它有两个理由：
+  /// - 旧格式的歌词串（译文和原文混在一段里、没有轨道标记）全靠它；
+  ///   这类数据还躺在用户已收藏的歌曲里。
+  /// - 主轨本身偶尔也有重复行（同一个时间戳出现两次）。
+  ///
+  /// 它**不再**是译文的唯一来源 —— 带标记的文档由 `attachLyricTrack` 按轨道
+  /// 贴，那条路径不会像这里一样把第三条近似行丢掉。
+  List<ParsedLyric> _mergeMainTrack(String main) {
+    if (main.trim().isEmpty) {
+      return const <ParsedLyric>[];
+    }
+
+    final parsedEntries = parseLyricTrackLines(main);
 
     final mergedEntries = <ParsedLyric>[];
     for (final entry in parsedEntries) {
@@ -93,31 +126,6 @@ final class PlayerLyricsController {
       mergedEntries.add(entry);
     }
 
-    return List<ParsedLyric>.unmodifiable(mergedEntries);
-  }
-
-  Iterable<ParsedLyric> _parseLine(String line) sync* {
-    final matches = _timeExp.allMatches(line);
-    if (matches.isEmpty) {
-      return;
-    }
-
-    final text = line.replaceAll(_timeExp, '').trim();
-    if (text.isEmpty) {
-      return;
-    }
-
-    for (final match in matches) {
-      final minutes = int.parse(match.group(1)!);
-      final seconds = int.parse(match.group(2)!);
-      final millisecondString = match.group(3)!;
-      final millisecondValue = int.parse(millisecondString);
-      final milliseconds = millisecondString.length == 2
-          ? millisecondValue * 10
-          : millisecondValue;
-      final time = minutes * 60 + seconds + milliseconds / 1000;
-
-      yield ParsedLyric(time: time, text: text);
-    }
+    return mergedEntries;
   }
 }
