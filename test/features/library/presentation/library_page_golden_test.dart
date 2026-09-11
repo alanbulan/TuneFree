@@ -1125,6 +1125,17 @@ void main() {
       await tester.tap(find.byKey(const Key('library-import-data-button')));
       await tester.pumpAndSettle();
 
+      // 导入是整体替换，必须先弹确认框把「当前」和「文件」摆出来。
+      expect(
+        find.byKey(const Key('import-backup-confirm-dialog')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('文件：1 首收藏 / 1 个歌单'), findsOneWidget);
+      expect(find.textContaining('当前：1 首收藏 / 1 个歌单'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('confirm-import-backup-button')));
+      await tester.pumpAndSettle();
+
       expect(transfer.importCallCount, 1);
       expect(find.byKey(const Key('library-import-json-field')), findsNothing);
       expect(utf8.decode(transfer.importBytes!), importJson);

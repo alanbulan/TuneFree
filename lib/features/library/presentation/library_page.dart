@@ -1118,6 +1118,11 @@ class _ManageTab extends StatefulWidget {
 class _ManageTabState extends State<_ManageTab> {
   late final TextEditingController _proxyController;
 
+  /// 导出/导入进行中。Android 上系统分享面板与 SAF 文件选择器可能停留很久，
+  /// 没有忙碌态用户会以为按钮没反应而反复点。web 上是瞬时的，所以以前没暴露出来。
+  bool _isExportingJson = false;
+  bool _isImportingJson = false;
+
   @override
   void initState() {
     super.initState();
@@ -1154,6 +1159,10 @@ class _ManageTabState extends State<_ManageTab> {
   }
 
   Future<void> _handleExportJson(BuildContext context) async {
+    if (_isExportingJson) {
+      return;
+    }
+    setState(() => _isExportingJson = true);
     try {
       final jsonText = await widget.controller.exportBackupJson();
       final fileName = _buildBackupFileName();
@@ -1161,6 +1170,8 @@ class _ManageTabState extends State<_ManageTab> {
         fileName: fileName,
         content: jsonText,
       );
+      // 文件真的交出去之后才记「最近导出」，失败时不该留下这张卡。
+      widget.controller.markBackupExported(jsonText);
       if (!context.mounted) {
         return;
       }
@@ -1181,30 +1192,33 @@ class _ManageTabState extends State<_ManageTab> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('导出失败，请稍后重试')));
+    } finally {
+      if (mounted) {
+        setState(() => _isExportingJson = false);
+      }
     }
   }
 
   Future<void> _handleImportJson(BuildContext context) async {
+    if (_isImportingJson) {
+      return;
+    }
+    final fileBytes = await _pickImportFile(context);
+    if (fileBytes == null || !context.mounted) {
+      return;
+    }
+
+    final String rawJson;
     try {
-      final fileBytes = await widget.backupTransfer.pickJsonFileBytes();
-      if (fileBytes == null) {
+      rawJson = utf8.decode(fileBytes);
+      // 导入是整体替换，先让用户看清「当前有什么 / 文件里有什么」再动手。
+      final incoming = _countBackupEntries(rawJson);
+      // 确认框期间刻意不显示忙碌态：此刻是用户在思考，不是我们在干活。
+      // 一直转圈还会让测试里的 pumpAndSettle 永远等不到静止。
+      final confirmed = await _confirmImport(context, incoming);
+      if (!confirmed || !context.mounted) {
         return;
       }
-      final rawJson = utf8.decode(fileBytes);
-      await widget.controller.importBackupJson(rawJson);
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('备份数据已导入')));
-    } on UnsupportedError catch (_) {
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('当前平台暂不支持导入备份文件')));
     } on FormatException catch (_) {
       if (!context.mounted) {
         return;
@@ -1212,6 +1226,25 @@ class _ManageTabState extends State<_ManageTab> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('导入失败，请检查 JSON 文件格式')));
+      return;
+    }
+
+    // 真正开始替换资料库了，这时才置忙碌。
+    setState(() => _isImportingJson = true);
+    try {
+      final previous = await widget.controller.importBackupJson(rawJson);
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('备份数据已导入'),
+          action: SnackBarAction(
+            label: '撤销',
+            onPressed: () => widget.controller.restoreBackup(previous),
+          ),
+        ),
+      );
     } catch (_) {
       if (!context.mounted) {
         return;
@@ -1219,7 +1252,79 @@ class _ManageTabState extends State<_ManageTab> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('导入失败，请稍后重试')));
+    } finally {
+      if (mounted) {
+        setState(() => _isImportingJson = false);
+      }
     }
+  }
+
+  /// 选文件阶段。Android 的 SAF 选择器可能停留很久，所以这一小段要有忙碌态。
+  Future<List<int>?> _pickImportFile(BuildContext context) async {
+    setState(() => _isImportingJson = true);
+    try {
+      return await widget.backupTransfer.pickJsonFileBytes();
+    } on UnsupportedError catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('当前平台暂不支持导入备份文件')));
+      }
+      return null;
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('导入失败，请稍后重试')));
+      }
+      return null;
+    } finally {
+      if (mounted) {
+        setState(() => _isImportingJson = false);
+      }
+    }
+  }
+
+  /// 只取条数，用于导入确认 —— 不解析成完整模型，避免在选择阶段就产生副作用。
+  ({int favorites, int playlists}) _countBackupEntries(String jsonText) {
+    final decoded = jsonDecode(jsonText) as Map<String, dynamic>;
+    return (
+      favorites:
+          (decoded['favorites'] as List<dynamic>? ?? const <dynamic>[]).length,
+      playlists:
+          (decoded['playlists'] as List<dynamic>? ?? const <dynamic>[]).length,
+    );
+  }
+
+  Future<bool> _confirmImport(
+    BuildContext context,
+    ({int favorites, int playlists}) incoming,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: const Key('import-backup-confirm-dialog'),
+        title: const Text('覆盖导入备份'),
+        content: Text(
+          '当前：${widget.state.favorites.length} 首收藏 / '
+          '${widget.state.playlists.length} 个歌单\n'
+          '文件：${incoming.favorites} 首收藏 / ${incoming.playlists} 个歌单\n\n'
+          '覆盖导入会替换当前收藏和歌单，导入后可通过提示条撤销。是否继续？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            key: const Key('confirm-import-backup-button'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('覆盖导入'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
   }
 
   String _buildBackupFileName() {
@@ -1346,6 +1451,7 @@ class _ManageTabState extends State<_ManageTab> {
                     child: _SecondaryActionButton(
                       buttonKey: const Key('library-export-json-button'),
                       label: '导出 JSON',
+                      busy: _isExportingJson,
                       onTap: () => _handleExportJson(context),
                     ),
                   ),
@@ -1355,6 +1461,7 @@ class _ManageTabState extends State<_ManageTab> {
                       buttonKey: const Key('library-import-data-button'),
                       label: '导入数据',
                       semanticsLabel: '选择备份文件导入数据',
+                      busy: _isImportingJson,
                       onTap: () => _handleImportJson(context),
                     ),
                   ),
@@ -1434,12 +1541,16 @@ class _SecondaryActionButton extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.semanticsLabel,
+    this.busy = false,
   });
 
   final Key buttonKey;
   final String label;
   final VoidCallback onTap;
   final String? semanticsLabel;
+
+  /// 进行中：按钮置灰并显示转圈，避免重复触发。
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -1448,7 +1559,8 @@ class _SecondaryActionButton extends StatelessWidget {
       button: true,
       child: FilledButton.tonal(
         key: buttonKey,
-        onPressed: onTap,
+        // 传 null 即进入禁用态，FilledButton 会自己处理置灰。
+        onPressed: busy ? null : onTap,
         style: FilledButton.styleFrom(
           minimumSize: const Size(double.infinity, 44),
           backgroundColor: const Color(0xFFF3F4F6),
@@ -1457,10 +1569,19 @@ class _SecondaryActionButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
           ),
         ),
-        child: Text(
-          label,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        ),
+        child: busy
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
       ),
     );
   }
