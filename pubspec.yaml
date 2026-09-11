@@ -35,10 +35,10 @@ dependencies:
   audio_session: ^0.2.4
   shared_preferences: ^2.5.3
   path_provider: ^2.1.6
-  package_info_plus: ^8.3.1
+  package_info_plus: ^10.2.1
   url_launcher: ^6.3.2
   open_filex: ^4.7.0
-  share_plus: ^10.1.4
+  share_plus: ^13.3.0
   material_ui: ^1.2.0
 
 dev_dependencies:
