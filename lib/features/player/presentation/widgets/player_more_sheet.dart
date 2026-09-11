@@ -3,12 +3,16 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import '../../../../shared/theme/tune_free_palette.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/models/audio_quality.dart';
 import '../../../../core/models/music_source.dart';
 import '../../../../core/models/song.dart';
+import '../../../../shared/widgets/tune_free_feedback.dart';
 import '../../../library/application/library_controller.dart';
+import '../../../search/application/search_providers.dart';
+import '../../application/player_controller.dart';
 import '../../domain/player_track.dart';
 import 'player_bottom_sheet_transition.dart';
 
@@ -20,6 +24,7 @@ class PlayerMoreSheet extends ConsumerWidget {
     required this.selectedQuality,
     required this.onSelectQuality,
     required this.onClose,
+    this.album,
   });
 
   final bool isOpen;
@@ -27,6 +32,12 @@ class PlayerMoreSheet extends ConsumerWidget {
   final AudioQuality selectedQuality;
   final Future<void> Function(AudioQuality) onSelectQuality;
   final VoidCallback onClose;
+
+  /// 当前歌曲的专辑名。
+  ///
+  /// 单独传进来而不是挂到 [PlayerTrack] 上：只有「搜索专辑」这一个消费者，
+  /// 而给 PlayerTrack 加字段要连带改代码生成和 20 多处构造点，不划算。
+  final String? album;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -39,6 +50,11 @@ class PlayerMoreSheet extends ConsumerWidget {
     final libraryController = ref.watch(libraryControllerProvider);
     final libraryState = libraryController.state;
     final currentSong = activeTrack == null ? null : _toSong(activeTrack);
+    final artistName = activeTrack?.artist.trim() ?? '';
+    final albumName = album?.trim() ?? '';
+    // 专辑常常是空的（资料库里显示为「未收录」），标签上要看得出来，
+    // 而不是留一对空引号。
+    final albumLabel = albumName.isEmpty ? '—' : albumName;
 
     Future<void> addToPlaylist(String playlistId) async {
       if (currentSong == null) {
@@ -50,9 +66,7 @@ class PlayerMoreSheet extends ConsumerWidget {
       if (!context.mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('已添加到歌单')));
+      showToast(context, '已添加到歌单', tone: TuneFreeToastTone.success);
     }
 
     Future<void> createPlaylistWithCurrentTrack() async {
@@ -67,9 +81,41 @@ class PlayerMoreSheet extends ConsumerWidget {
       if (!context.mounted) {
         return;
       }
-      ScaffoldMessenger.of(
+      showToast(
         context,
-      ).showSnackBar(SnackBar(content: Text('已创建歌单「${playlist.name}」')));
+        '已创建歌单「${playlist.name}」',
+        tone: TuneFreeToastTone.success,
+      );
+    }
+
+    /// 收起面板与全屏播放器，切到搜索页并搜这个词。
+    ///
+    /// 与 Tauri 的两处差别：
+    /// - 那边只把关键词塞进输入框（localStorage + nonce），不触发搜索。
+    ///   手机上点「搜索歌手」就是想看结果，多一步回车没有意义。
+    /// - 那边**不关全屏播放器**，于是搜索页被播放器盖住。这里必须先收起来
+    ///   （播放本身不受影响，只是收起界面）。
+    ///
+    /// 顺序上先跳转再收起：collapse 会把整个全屏播放器从树上摘掉，
+    /// 之后就再也拿不到这个 context 去导航了。
+    void searchFor(String value, String label) {
+      final query = value.trim();
+      if (query.isEmpty) {
+        showToast(
+          context,
+          '这首歌没有$label信息，无法搜索',
+          tone: TuneFreeToastTone.warning,
+        );
+        return;
+      }
+
+      context.go('/search');
+      onClose();
+      ref.read(playerControllerProvider.notifier).collapse();
+
+      final searchController = ref.read(searchControllerProvider);
+      searchController.updateQuery(query);
+      unawaited(searchController.submitSearch());
     }
 
     Future<void> shareCurrentTrack() async {
@@ -152,23 +198,19 @@ class PlayerMoreSheet extends ConsumerWidget {
                                 if (!context.mounted) {
                                   return;
                                 }
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      '已切换为${quality.shortLabel}音质播放',
-                                    ),
-                                  ),
+                                showToast(
+                                  context,
+                                  '已切换为${quality.shortLabel}音质播放',
+                                  tone: TuneFreeToastTone.success,
                                 );
                               } catch (_) {
                                 if (!context.mounted) {
                                   return;
                                 }
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      '切换${quality.shortLabel}音质失败',
-                                    ),
-                                  ),
+                                showToast(
+                                  context,
+                                  '切换${quality.shortLabel}音质失败',
+                                  tone: TuneFreeToastTone.error,
                                 );
                               }
                             }());
@@ -197,6 +239,22 @@ class PlayerMoreSheet extends ConsumerWidget {
                   title: '分享歌曲',
                   subtitle: '复制当前歌曲分享文案并显示提示',
                   onTap: shareCurrentTrack,
+                ),
+                const SizedBox(height: 8),
+                _ActionTile(
+                  actionKey: const Key('player-search-artist-action'),
+                  icon: Icons.person_search_outlined,
+                  title: '搜索歌手',
+                  subtitle: '在搜索页查找「${artistName.isEmpty ? '—' : artistName}」',
+                  onTap: () => searchFor(artistName, '歌手'),
+                ),
+                const SizedBox(height: 8),
+                _ActionTile(
+                  actionKey: const Key('player-search-album-action'),
+                  icon: Icons.album_outlined,
+                  title: '搜索专辑',
+                  subtitle: '在搜索页查找「$albumLabel」',
+                  onTap: () => searchFor(album ?? '', '专辑'),
                 ),
                 const SizedBox(height: 20),
                 const _SectionHeader(title: '添加到歌单'),
