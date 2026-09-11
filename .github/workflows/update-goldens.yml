@@ -24,7 +24,9 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          # 必须与 android-release.yml 钉同一个版本，否则重生成的基线会在
+          # 下一次构建时又不匹配 —— 这正是这个 workflow 一直无法收敛的原因。
+          flutter-version: 3.47.3
           cache: true
 
       - name: Install dependencies

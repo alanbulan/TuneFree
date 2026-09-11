@@ -29,7 +29,6 @@ dependencies:
   freezed_annotation: ^3.1.0
   json_annotation: ^4.12.0
   dio: ^5.11.1
-  golden_toolkit: ^0.15.0
   just_audio: ^0.10.6
   audio_service: ^0.18.19
   audio_session: ^0.2.4
@@ -45,6 +44,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # 纯测试依赖（只有 test/ 用它，lib/ 零引用），此前被误放在 dependencies 里，
+  # 会跟着进生产依赖图。已废弃且不再维护，迁移到 successor 是后续独立任务。
+  golden_toolkit: ^0.15.0
   build_runner: ^2.16.1
   freezed: ^4.0.1
   json_serializable: ^6.14.1
