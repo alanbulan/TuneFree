@@ -140,7 +140,7 @@ Future<void> _shareSong(Song song) async {
   final url = _songSourceUrl(song);
   final text = '${song.name} - ${song.artist}';
   final shareText = url != null ? '$text\n$url' : text;
-  await Share.share(shareText, subject: text);
+  await SharePlus.instance.share(ShareParams(text: shareText, subject: text));
 }
 
 String? _songSourceUrl(Song song) {
