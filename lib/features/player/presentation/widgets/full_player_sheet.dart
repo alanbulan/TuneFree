@@ -118,9 +118,7 @@ class FullPlayerSheet extends ConsumerWidget {
                                       ),
                                       child: state.showLyrics
                                           ? const _PlayerLyricsPanel(
-                                              key: Key(
-                                                'player-lyrics-panel',
-                                              ),
+                                              key: Key('player-lyrics-panel'),
                                             )
                                           : _PlayerCoverPanel(
                                               key: const Key(
@@ -164,9 +162,7 @@ class FullPlayerSheet extends ConsumerWidget {
                                         }
                                         showUndoToast(
                                           context,
-                                          wasFavorite
-                                              ? '已取消收藏'
-                                              : '已加入我喜欢',
+                                          wasFavorite ? '已取消收藏' : '已加入我喜欢',
                                           tone: wasFavorite
                                               ? TuneFreeToastTone.info
                                               : TuneFreeToastTone.success,
@@ -342,9 +338,7 @@ class _PlayerLyricsPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // 只跟踪原始歌词串：换歌时它才会变。
     final rawLyrics = ref.watch(
-      playerControllerProvider.select(
-        (state) => state.currentSong?.lrc ?? '',
-      ),
+      playerControllerProvider.select((state) => state.currentSong?.lrc ?? ''),
     );
 
     final preferences = ref.watch(
@@ -356,9 +350,9 @@ class _PlayerLyricsPanel extends ConsumerWidget {
     // 会因为拖一下滑块就整条作废（还得重新估算逐字）。
     final offset = preferences.lyricOffset;
 
-    final timeline = ref.watch(playerLyricsControllerProvider).buildLyrics(
-      rawLyrics,
-    );
+    final timeline = ref
+        .watch(playerLyricsControllerProvider)
+        .buildLyrics(rawLyrics);
     final activeLyricIndex = ref.watch(
       playerControllerProvider.select(
         (state) => timeline.activeIndexAt(
@@ -1052,8 +1046,7 @@ class _ActiveLyricLine extends ConsumerWidget {
       words: entry.words,
       endTime: entry.endTime,
       currentTime:
-          (position + offset).inMicroseconds /
-          Duration.microsecondsPerSecond,
+          (position + offset).inMicroseconds / Duration.microsecondsPerSecond,
       isPlaying: isPlaying,
       textKey: textKey,
       style: style,
@@ -1067,9 +1060,11 @@ class _ActiveLyricLine extends ConsumerWidget {
 ///
 /// 用硬停而不是软边：软边看起来像发光，不是卡拉OK 的观感。
 ///
-/// 之所以按整行连续推进、而不是逐字裁切：Flutter 侧的歌词源只有整行时间轴，
-/// 词边界本身就是按版面宽度估出来的，逐字跳变反而比连续推进更假。
-/// 真·逐字源（网易 yrc）接进来之后，这里换成按词裁切即可，数据层不用动。
+/// 之所以按整行连续推进、而不是逐字裁切：填充比例是按**每个词的时长**加权
+/// 汇总的（`lyricLineProgress`），词与词之间若留了空隙（换气、拖腔），比例会
+/// 在空隙里停住。有真·逐字数据（网易 yrc）时这样走出来的就是真实节奏；
+/// 没有的话词边界是按版面宽度估的，连续推进比逐字跳变更接近观感。
+/// 两种情况共用这一条渲染路径，数据来源不影响这里。
 class _KaraokeLyricText extends StatefulWidget {
   const _KaraokeLyricText({
     required this.text,
@@ -1128,7 +1123,9 @@ class _KaraokeLyricTextState extends State<_KaraokeLyricText>
     // 只有位置**确实在推进**时才外推。暂停、缓冲、拖动进度条时位置不动，
     // 这时候外推只会跑到音频前面去 —— 不启动反而更准。
     final isAdvancing = widget.currentTime > oldWidget.currentTime;
-    if (widget.isPlaying && isAdvancing && widget.currentTime < widget.endTime) {
+    if (widget.isPlaying &&
+        isAdvancing &&
+        widget.currentTime < widget.endTime) {
       _ensureTicker();
     } else {
       _stopTicker();
@@ -1343,9 +1340,7 @@ class _SongInfoRow extends StatelessWidget {
           iconSize: 22,
           icon: Icon(
             isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-            color: isFavorite
-                ? colors.accent
-                : colors.textMuted,
+            color: isFavorite ? colors.accent : colors.textMuted,
           ),
         ),
       ],
@@ -1567,9 +1562,7 @@ class _PlaybackControls extends StatelessWidget {
               _ => Icons.repeat_rounded,
             },
             size: 22,
-            color: playMode == 'sequence'
-                ? colors.textTertiary
-                : colors.accent,
+            color: playMode == 'sequence' ? colors.textTertiary : colors.accent,
           ),
         ),
         Row(

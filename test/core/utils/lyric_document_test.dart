@@ -27,6 +27,22 @@ void main() {
       expect(document.romanization.trim(), '[00:01.00]romaji');
     });
 
+    test('逐字轨里带括号和逗号，不会被当成译文或罗马音', () {
+      final document = LyricDocument.parse(
+        '${LyricDocument.translationMarker}\n'
+        '[00:00.830]如果这一切都是梦境\n'
+        '${LyricDocument.romanizationMarker}\n'
+        '[00:00.830]yu me na ra ba\n'
+        '${LyricDocument.karaokeMarker}\n'
+        '[830,4980](830,380,0)夢(1210,330,0)な',
+      );
+
+      expect(document.main, isEmpty);
+      expect(document.translation.trim(), '[00:00.830]如果这一切都是梦境');
+      expect(document.romanization.trim(), '[00:00.830]yu me na ra ba');
+      expect(document.karaoke.trim(), '[830,4980](830,380,0)夢(1210,330,0)な');
+    });
+
     test('空串得到空的文档', () {
       final document = LyricDocument.parse('');
       expect(document.main, isEmpty);
@@ -54,10 +70,31 @@ void main() {
 
       expect(encoded.contains(LyricDocument.translationMarker), isFalse);
       expect(encoded.contains(LyricDocument.romanizationMarker), isFalse);
+      expect(encoded.contains(LyricDocument.karaokeMarker), isFalse);
+    });
+
+    test('主轨为空、只有逐字轨时也能往返，且不留开头空行', () {
+      // 有 yrc 的歌主轨就是空的（正文由逐字轨自带），这是常态而不是异常。
+      const document = LyricDocument(
+        main: '',
+        translation: '[00:00.830]如果这一切都是梦境',
+        karaoke: '[830,4980](830,380,0)夢',
+      );
+
+      final encoded = document.encode();
+      expect(encoded.startsWith(LyricDocument.translationMarker), isTrue);
+
+      final restored = LyricDocument.parse(encoded);
+      expect(restored.main.trim(), isEmpty);
+      expect(restored.translation.trim(), document.translation);
+      expect(restored.karaoke.trim(), document.karaoke);
     });
 
     test('只有罗马音时也能往返', () {
-      const document = LyricDocument(main: '[00:01.00]原文', romanization: '[00:01.00]romaji');
+      const document = LyricDocument(
+        main: '[00:01.00]原文',
+        romanization: '[00:01.00]romaji',
+      );
       final restored = LyricDocument.parse(document.encode());
 
       expect(restored.translation, isEmpty);
