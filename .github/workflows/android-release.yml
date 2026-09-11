@@ -78,6 +78,11 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # 关于页的技术栈版本由 lib/core/build_info.g.dart 提供。这一步确保
+      # 「改了依赖却忘了重新生成」会明确失败，而不是让关于页悄悄显示旧版本。
+      - name: Check generated build info is up to date
+        run: dart run tool/generate_build_info.dart --check
+
       - name: Analyze Dart code
         run: flutter analyze
 

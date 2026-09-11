@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golden_toolkit/golden_toolkit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tunefree/core/build_info.g.dart';
 import 'package:tunefree/core/models/audio_quality.dart';
 import 'package:tunefree/core/models/music_source.dart';
 import 'package:tunefree/core/models/playlist.dart';
@@ -619,9 +620,12 @@ void main() {
       expect(find.textContaining('JOOX'), findsWidgets);
       expect(find.text('Android 离线体验'), findsOneWidget);
       expect(find.text('实时音频可视化'), findsOneWidget);
-      expect(find.text('Flutter'), findsOneWidget);
-      expect(find.text('Riverpod'), findsOneWidget);
-      expect(find.text('just_audio'), findsOneWidget);
+      // 断言绑定到技术栈的数据源，而不是写死版本号：既证明关于页渲染的确实是
+      // kTechStack（而不是又退回手写清单），又不会因为升级依赖而过期。
+      for (final entry in kTechStack) {
+        expect(find.text(entry.name), findsOneWidget);
+        expect(find.text(entry.version), findsOneWidget);
+      }
       expect(find.textContaining('TuneHub /v1/parse'), findsNothing);
 
       await tester.ensureVisible(find.byKey(const Key('about-link-GD音乐台')));
