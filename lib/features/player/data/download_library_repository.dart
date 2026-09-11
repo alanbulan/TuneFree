@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'download_record.dart';
 import 'download_record_store.dart';
 
@@ -79,7 +81,16 @@ class DownloadLibraryRepository {
   Future<List<DownloadedTrackItem>> listDownloads() async {
     // 顺手清一次过期的回收站条目。放在这里是因为它是唯一一个「打开下载页
     // 就一定走到」的入口，不需要再挂一个启动任务。
-    await purgeTrash();
+    //
+    // **不 await**，两个理由：
+    // - 清理是后台琐事，不该拦在列表前面。回收站攒得多的时候它是一次目录
+    //   扫描加若干次删除，让用户等着它跑完再看见列表没有道理。
+    // - 它的第一步就要 `path_provider`。widget 测试里那条通道没有实现，
+    //   在 `testWidgets` 的 fake async 区里**永远不会完成**（既不成功也不
+    //   抛错，实测如此），await 住就会把 `LibraryController.load()` 一起挂住，
+    //   页面停在加载态、`pumpAndSettle` 转到超时。取消 await 之后实测
+    //   `pumpAndSettle` 正常返回。
+    unawaited(purgeTrash());
 
     final records = await _recordStore.listAll();
     final items = <DownloadedTrackItem>[];
