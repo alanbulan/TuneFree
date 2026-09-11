@@ -49,7 +49,7 @@ class SearchSourceSelector extends StatelessWidget {
       key: const Key('search-source-selector'),
       onSelected: onSelected,
       tooltip: '选择音源',
-      color: Colors.white,
+      color: colors.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       itemBuilder: (context) {
         return _searchSourceFullLabels.entries
@@ -70,7 +70,7 @@ class SearchSourceSelector extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: colors.raisedFill,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(color: colors.borderSubtle),
         ),
@@ -79,10 +79,10 @@ class SearchSourceSelector extends StatelessWidget {
           children: [
             Text(
               searchSourceFullLabel(selectedSource),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF374151),
+                color: colors.textStrong,
               ),
             ),
             const SizedBox(width: 4),

@@ -123,7 +123,7 @@ class _PlaylistCoverFallback extends StatelessWidget {
         width: 50,
         height: 50,
         decoration: BoxDecoration(
-          color: const Color(0xFFFFEEF1),
+          color: colors.accentSoft,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Icon(Icons.folder_rounded, color: colors.accent, size: 26),

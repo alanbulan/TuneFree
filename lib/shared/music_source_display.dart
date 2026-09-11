@@ -65,3 +65,21 @@ MusicSourceBadgeColors musicSourceBadgeColors(
   return palette[source] ??
       (background: colors.borderSubtle, foreground: colors.lyricTranslation);
 }
+
+/// 音质徽标配色。和音源徽标同一套关系：浅色是粉彩底 + 深色字，
+/// 深色是基色的低透明度底 + 提亮后的字。
+///
+/// 原来这对颜色写死在下载页里（0xFFEFF6FF / 0xFF2563EB），深色下是一块发亮的
+/// 淡蓝。浅色值保持逐位相同。
+MusicSourceBadgeColors qualityBadgeColors(TuneFreeColors colors) {
+  final isDark = colors.background.computeLuminance() < 0.5;
+  return isDark
+      ? (
+          background: const Color(0x262563EB),
+          foreground: const Color(0xFF60A5FA),
+        )
+      : (
+          background: const Color(0xFFEFF6FF),
+          foreground: const Color(0xFF2563EB),
+        );
+}

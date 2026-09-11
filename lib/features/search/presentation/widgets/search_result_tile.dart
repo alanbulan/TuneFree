@@ -36,7 +36,7 @@ class SearchResultTile extends StatelessWidget {
           key: isCurrent ? Key('search-result-current-${song.key}') : null,
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: isCurrent ? Colors.white : Colors.transparent,
+            color: isCurrent ? colors.raisedFill : Colors.transparent,
             borderRadius: BorderRadius.circular(14),
             boxShadow: isCurrent
                 ? [

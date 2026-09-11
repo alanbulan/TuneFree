@@ -333,9 +333,9 @@ class _HomeErrorCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
+        color: colors.dangerSoft,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFECACA)),
+        border: Border.all(color: colors.dangerBorder),
       ),
       child: Text(
         '该音源暂不可用，请切换其他音源',

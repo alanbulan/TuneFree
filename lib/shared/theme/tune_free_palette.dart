@@ -51,8 +51,15 @@ final class TuneFreeColors extends ThemeExtension<TuneFreeColors> {
     required this.fillMuted,
     required this.fillPanel,
     required this.borderSubtle,
+    required this.trackFill,
+    required this.raisedFill,
     required this.danger,
     required this.success,
+    required this.warning,
+    required this.dangerSoft,
+    required this.dangerBorder,
+    required this.warningSoft,
+    required this.warningBorder,
     required this.textStrong,
   });
 
@@ -108,11 +115,42 @@ final class TuneFreeColors extends ThemeExtension<TuneFreeColors> {
   /// 细边框（原 0xFFE5E7EB）。
   final Color borderSubtle;
 
+  /// 分段控件的底槽（原 0x80E5E7EB）。
+  ///
+  /// 和 [raisedFill] 必须**成对**定义，不能拿 fill* 系列拼：
+  /// 那套填充的明暗方向在浅色下是「越往上越浅」、深色下反过来是「越往上越亮」，
+  /// 所以没有任何一对 fill 能同时满足「滑块比底槽更突出」这个关系。
+  final Color trackFill;
+
+  /// 抬起的胶囊 / 滑块（原 `Colors.white`）。
+  ///
+  /// 分段控件的选中块、搜索页未选中的模式胶囊都用它 —— 共同点是「浮在一个
+  /// 有主题色的底上，要显得比底高一档」。浅色下就是纯白。
+  final Color raisedFill;
+
   /// 危险 / 错误色（原 0xFFDC2626）。
   final Color danger;
 
   /// 成功色。取自音源徽标里已经在用的那支绿，免得再引入一个近似的绿。
   final Color success;
+
+  /// 警告色（原 0xFFB45309，搜索页限流提示的字色）。
+  final Color warning;
+
+  /// 危险色的「面」：错误横幅的底色。
+  ///
+  /// 深色下不是把浅色值调暗，而是换成基色的低透明度 —— 粉彩底在暗背景上会
+  /// 整片发亮。这与 `music_source_display.dart` 里音源徽标的处理是同一套。
+  final Color dangerSoft;
+
+  /// 危险色的「描边」：错误横幅的边框（原 0xFFFECACA）。
+  final Color dangerBorder;
+
+  /// 警告色的「面」：原 0xFFFFFBEB。
+  final Color warningSoft;
+
+  /// 警告色的「描边」：原 0xFFFDE68A。
+  final Color warningBorder;
 
   /// 强调文字（原 0xFF111111）。
   ///
@@ -158,8 +196,15 @@ final class TuneFreeColors extends ThemeExtension<TuneFreeColors> {
       fillMuted: const Color(0xFFF5F7FA),
       fillPanel: const Color(0xFFF0F1F5),
       borderSubtle: const Color(0xFFE5E7EB),
+      trackFill: const Color(0x80E5E7EB),
+      raisedFill: Colors.white,
       danger: const Color(0xFFDC2626),
       success: const Color(0xFF16A34A),
+      warning: const Color(0xFFB45309),
+      dangerSoft: const Color(0xFFFEF2F2),
+      dangerBorder: const Color(0xFFFECACA),
+      warningSoft: const Color(0xFFFFFBEB),
+      warningBorder: const Color(0xFFFDE68A),
       textStrong: const Color(0xFF111111),
     );
   }
@@ -192,8 +237,17 @@ final class TuneFreeColors extends ThemeExtension<TuneFreeColors> {
       fillMuted: const Color(0xFF202024),
       fillPanel: const Color(0xFF27272A),
       borderSubtle: const Color(0xFF2E2E33),
+      // 深色下底槽比卡片暗、滑块比底槽亮，跟浅色是同一个「滑块在上」的关系。
+      trackFill: const Color(0xFF202024),
+      raisedFill: const Color(0xFF3F3F46),
       danger: const Color(0xFFF87171),
       success: const Color(0xFF4ADE80),
+      warning: const Color(0xFFFBBF24),
+      // 14% / 35% 的基色，与音源徽标深色版的 0x26 同一个量级。
+      dangerSoft: const Color(0x24F87171),
+      dangerBorder: const Color(0x59F87171),
+      warningSoft: const Color(0x24FBBF24),
+      warningBorder: const Color(0x59FBBF24),
       textStrong: const Color(0xFFF4F4F5),
     );
   }
@@ -235,8 +289,15 @@ final class TuneFreeColors extends ThemeExtension<TuneFreeColors> {
       fillMuted: Color.lerp(fillMuted, other.fillMuted, t)!,
       fillPanel: Color.lerp(fillPanel, other.fillPanel, t)!,
       borderSubtle: Color.lerp(borderSubtle, other.borderSubtle, t)!,
+      trackFill: Color.lerp(trackFill, other.trackFill, t)!,
+      raisedFill: Color.lerp(raisedFill, other.raisedFill, t)!,
       danger: Color.lerp(danger, other.danger, t)!,
       success: Color.lerp(success, other.success, t)!,
+      warning: Color.lerp(warning, other.warning, t)!,
+      dangerSoft: Color.lerp(dangerSoft, other.dangerSoft, t)!,
+      dangerBorder: Color.lerp(dangerBorder, other.dangerBorder, t)!,
+      warningSoft: Color.lerp(warningSoft, other.warningSoft, t)!,
+      warningBorder: Color.lerp(warningBorder, other.warningBorder, t)!,
       textStrong: Color.lerp(textStrong, other.textStrong, t)!,
     );
   }

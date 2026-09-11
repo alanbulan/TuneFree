@@ -58,7 +58,7 @@ class SearchHistorySection extends StatelessWidget {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: colors.raisedFill,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: colors.fillPanel),
                     ),

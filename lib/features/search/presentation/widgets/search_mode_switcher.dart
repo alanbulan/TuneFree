@@ -18,13 +18,17 @@ class SearchModeSwitcher extends StatelessWidget {
       String label,
       bool active,
       VoidCallback onTap, {
-      Color activeBackgroundColor = Colors.black,
-      Color activeForegroundColor = Colors.white,
+      Color? activeBackgroundColor,
+      Color? activeForegroundColor,
       Color? activeBorderColor,
       Key? key,
     }) {
+      // 选中的胶囊是**反色**的：浅色下黑底白字，深色下白底深字。
+      // 以前写死黑底白字 —— 深色主题下这颗胶囊连边框一起整颗消失。
+      final resolvedBackground = activeBackgroundColor ?? colors.textStrong;
+      final resolvedForeground = activeForegroundColor ?? colors.surface;
       final borderColor = active
-          ? (activeBorderColor ?? activeBackgroundColor)
+          ? (activeBorderColor ?? resolvedBackground)
           : colors.borderSubtle;
       return GestureDetector(
         key: key,
@@ -32,7 +36,9 @@ class SearchModeSwitcher extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: active ? activeBackgroundColor : Colors.white,
+            // 未选中的胶囊用「抬起的面」色：浅色下是白的，深色下比页底亮一档。
+            // 换成 colors.surface 的话深色下它和页底几乎同色，只剩一圈边框。
+            color: active ? resolvedBackground : colors.raisedFill,
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: borderColor),
           ),
@@ -41,7 +47,7 @@ class SearchModeSwitcher extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: active ? activeForegroundColor : const Color(0xFF666666),
+              color: active ? resolvedForeground : colors.textMuted,
             ),
           ),
         ),

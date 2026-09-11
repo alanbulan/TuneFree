@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../shared/music_source_display.dart';
+import '../../../../shared/theme/tune_free_palette.dart';
 
 class TopSourceSwitcher extends StatelessWidget {
   const TopSourceSwitcher({
@@ -16,9 +17,12 @@ class TopSourceSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 以前这里写死 `#E7E8ED` + 白色滑块 + 黑色文字，深色主题下是一块亮灰色的
+    // 底槽配一颗白胶囊，和 `LibraryTabSwitcher` 是同一个毛病。
+    final colors = TuneFreeColors.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFE7E8ED),
+        color: colors.trackFill,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Padding(
@@ -36,7 +40,7 @@ class TopSourceSwitcher extends StatelessWidget {
                       vertical: 5,
                     ),
                     decoration: BoxDecoration(
-                      color: isActive ? Colors.white : Colors.transparent,
+                      color: isActive ? colors.raisedFill : Colors.transparent,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -44,9 +48,7 @@ class TopSourceSwitcher extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
-                        color: isActive
-                            ? Colors.black
-                            : const Color(0xFF8C8F97),
+                        color: isActive ? colors.textStrong : colors.textSubtle,
                       ),
                     ),
                   ),
