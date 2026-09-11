@@ -35,37 +35,63 @@ const int kMaxLyricSize = 36;
 /// 并且 Flutter 里字体栈是 family + fallback 两个字段，不是一条 CSS 字符串。
 /// 不打包字体 asset —— 那会给 APK 增加几 MB，而这里要的只是「能生效的选择」。
 final class LyricFontOption {
-  const LyricFontOption(this.label, this.family, this.fallback);
+  const LyricFontOption(
+    this.label,
+    this.id, {
+    this.family,
+    this.fallback = const <String>[],
+  });
 
   final String label;
-  final String family;
+
+  /// 落盘用的稳定标识，与 [family] 解耦（默认项根本没有 family）。
+  final String id;
+
+  /// `null` 表示**不指定字体**，交给平台。「系统默认」必须是这个语义：
+  /// 指定一个不存在的家族名再让引擎回退回来，等于白白多绕一层，
+  /// 而且会让本来稳定的排版结果变得不可预期。
+  final String? family;
+
   final List<String> fallback;
 
-  /// 落盘用的稳定标识。
-  String get id => family;
-
-  TextStyle apply(TextStyle style) => style.copyWith(
-    fontFamily: family,
-    fontFamilyFallback: fallback,
-  );
+  TextStyle apply(TextStyle style) {
+    final resolved = family;
+    if (resolved == null) {
+      return style;
+    }
+    return style.copyWith(
+      fontFamily: resolved,
+      fontFamilyFallback: fallback,
+    );
+  }
 }
 
 const List<LyricFontOption> kLyricFontOptions = <LyricFontOption>[
-  LyricFontOption('系统默认', 'system-ui', <String>[
-    'Roboto',
-    'Noto Sans CJK SC',
+  LyricFontOption('系统默认', 'system'),
+  LyricFontOption(
+    '思源黑体',
+    'noto-sans-cjk',
+    family: 'Noto Sans CJK SC',
+    fallback: <String>['Source Han Sans SC', 'sans-serif'],
+  ),
+  LyricFontOption(
+    '思源宋体',
+    'noto-serif-cjk',
+    family: 'Noto Serif CJK SC',
+    fallback: <String>['Source Han Serif SC', 'serif'],
+  ),
+  LyricFontOption(
+    '无衬线',
     'sans-serif',
-  ]),
-  LyricFontOption('思源黑体', 'Noto Sans CJK SC', <String>[
-    'Source Han Sans SC',
-    'sans-serif',
-  ]),
-  LyricFontOption('思源宋体', 'Noto Serif CJK SC', <String>[
-    'Source Han Serif SC',
+    family: 'sans-serif',
+    fallback: <String>['Roboto'],
+  ),
+  LyricFontOption(
+    '衬线',
     'serif',
-  ]),
-  LyricFontOption('无衬线', 'sans-serif', <String>['Roboto']),
-  LyricFontOption('衬线', 'serif', <String>['Noto Serif']),
+    family: 'serif',
+    fallback: <String>['Noto Serif'],
+  ),
 ];
 
 /// 预设强调色。与 Tauri 的 `PRESET_COLORS` 是同一份 12 色。
@@ -99,7 +125,7 @@ final class AppearancePreferences {
     this.themeMode = ThemeModeSetting.system,
     this.accentHex = kDefaultAccentHex,
     this.lyricSize = kDefaultLyricSize,
-    this.lyricFontId = 'system-ui',
+    this.lyricFontId = 'system',
   });
 
   final ThemeModeSetting themeMode;
