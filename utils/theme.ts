@@ -100,10 +100,16 @@ const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
   };
 };
 
-/** 转成 "r, g, b" 字符串，供 CSS rgba() 使用。 */
+/**
+ * 转成 "r g b" 通道串（空格分隔，不带 rgb() 外壳）。
+ *
+ * 必须是空格分隔：Tailwind 的 `rgb(var(--x) / <alpha-value>)` 配方会把透明度
+ * 代到斜杠后面，若通道用逗号分隔（"41, 144, 255 / 0.1"）整条声明就是非法值，
+ * 属性会静默失效。
+ */
 export const hexToRgbStr = (hex: string): string => {
   const { r, g, b } = hexToRgb(hex);
-  return `${r}, ${g}, ${b}`;
+  return `${r} ${g} ${b}`;
 };
 
 const rgbToHsl = (r: number, g: number, b: number): { h: number; s: number; l: number } => {
@@ -262,7 +268,7 @@ export const applyThemeVariables = (
   target.style.setProperty('--danger', tokens.danger);
   target.style.setProperty('--accent-rgb', tokens.accentRgb);
   target.style.setProperty('--danger-rgb', tokens.dangerRgb);
-  target.style.setProperty('--accent-soft', `rgba(${tokens.accentRgb},.12)`);
+  target.style.setProperty('--accent-soft', `rgb(${tokens.accentRgb} / .12)`);
 
   if (lyric) {
     target.style.setProperty('--lyric-font-size', `${clampLyricSize(lyric.lyricSize)}px`);
