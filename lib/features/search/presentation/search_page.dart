@@ -310,17 +310,17 @@ class _SearchHeader extends StatelessWidget {
                   const SizedBox(height: 8),
                   _SearchMessageBanner(
                     message: searchHint,
-                    backgroundColor: const Color(0xFFFFFBEB),
-                    borderColor: const Color(0xFFFDE68A),
-                    foregroundColor: const Color(0xFFB45309),
+                    backgroundColor: colors.warningSoft,
+                    borderColor: colors.warningBorder,
+                    foregroundColor: colors.warning,
                   ),
                 ],
                 if (state.searchError.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   _SearchMessageBanner(
                     message: state.searchError,
-                    backgroundColor: const Color(0xFFFEF2F2),
-                    borderColor: const Color(0xFFFECACA),
+                    backgroundColor: colors.dangerSoft,
+                    borderColor: colors.dangerBorder,
                     foregroundColor: colors.danger,
                   ),
                 ],
@@ -536,10 +536,11 @@ class _SearchLoadingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = TuneFreeColors.of(context);
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.55),
+        color: colors.raisedFill.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(14),
       ),
       child: const Row(

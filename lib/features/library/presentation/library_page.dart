@@ -1875,7 +1875,7 @@ class _VersionUpdateBadge extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFEEF1),
+              color: colors.accentSoft,
               borderRadius: BorderRadius.circular(999),
               border: Border.all(color: colors.accentSoft),
             ),
@@ -2086,7 +2086,7 @@ class _DisclaimerCard extends StatelessWidget {
           SizedBox(height: 8),
           Text(
             'MIT License © 2026 TuneFree',
-            style: TextStyle(fontSize: 11, color: Color(0xFFD1D5DB)),
+            style: TextStyle(fontSize: 11, color: colors.textTertiary),
             textAlign: TextAlign.center,
           ),
         ],

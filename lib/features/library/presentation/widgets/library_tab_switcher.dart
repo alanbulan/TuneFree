@@ -20,7 +20,7 @@ class LibraryTabSwitcher extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0x80E5E7EB),
+        color: colors.trackFill,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Padding(
@@ -41,7 +41,7 @@ class LibraryTabSwitcher extends StatelessWidget {
                     width: tabWidth,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: colors.raisedFill,
                         borderRadius: BorderRadius.circular(10),
                         boxShadow: [
                           BoxShadow(
@@ -80,7 +80,7 @@ class LibraryTabSwitcher extends StatelessWidget {
                                     fontWeight: FontWeight.w600,
                                     color: isActive
                                         ? colors.textStrong
-                                        : const Color(0xFF7B7D84),
+                                        : colors.textMuted,
                                   ),
                                   child: Text(
                                     label,

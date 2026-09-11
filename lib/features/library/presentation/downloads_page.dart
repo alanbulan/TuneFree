@@ -271,6 +271,7 @@ class _DownloadedTrackTile extends StatelessWidget {
     final colors = TuneFreeColors.of(context);
     final source = _sourceFromSongKey(item.songKey);
     final badge = musicSourceBadgeColors(source, colors);
+    final qualityBadge = qualityBadgeColors(colors);
 
     return TuneFreeCard(
       padding: EdgeInsets.zero,
@@ -343,8 +344,8 @@ class _DownloadedTrackTile extends StatelessWidget {
                         ),
                         TuneFreeBadge(
                           text: _qualityBadgeLabel(item.quality),
-                          background: const Color(0xFFEFF6FF),
-                          foreground: const Color(0xFF2563EB),
+                          background: qualityBadge.background,
+                          foreground: qualityBadge.foreground,
                         ),
                       ],
                     ),
@@ -422,7 +423,7 @@ class _DownloadArtworkFallback extends StatelessWidget {
       key: Key(
         'downloaded-track-artwork-fallback-${item.songKey}-${item.quality}',
       ),
-      color: const Color(0xFFFFEEF1),
+      color: colors.accentSoft,
       child: Icon(Icons.music_note_rounded, color: colors.accent),
     );
   }
@@ -477,7 +478,11 @@ class _DownloadsEmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.download_done_rounded, size: 42, color: Color(0xFFCBD5E1)),
+          Icon(
+            Icons.download_done_rounded,
+            size: 42,
+            color: colors.textTertiary,
+          ),
           SizedBox(height: 14),
           Text(
             '暂无下载歌曲',
