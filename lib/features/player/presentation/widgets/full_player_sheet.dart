@@ -302,8 +302,10 @@ class _PlaybackProgressBar extends ConsumerWidget {
         Slider(
           value: positionSeconds.toDouble(),
           max: durationSeconds.toDouble(),
+          // 只覆盖已唱部分：播放器的进度条是黑白的（随主题在深/浅之间走），
+          // 而不是强调色。未唱部分交给主题的 `sliderTheme.inactiveTrackColor`
+          // —— 这里以前写死了浅色的 #D1D5DB，暗色主题下那道轨道会太亮。
           activeColor: colors.textPrimary,
-          inactiveColor: const Color(0xFFD1D5DB),
           onChanged: (value) {
             ref
                 .read(playerControllerProvider.notifier)
@@ -464,16 +466,20 @@ class _FullPlayerHeaderState extends State<_FullPlayerHeader> {
                 color: colors.textMuted,
               ),
             ),
-            const Expanded(
+            Expanded(
               child: Center(
                 child: SizedBox(
                   width: 36,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: Color(0xCCD1D5DB),
-                      borderRadius: BorderRadius.all(Radius.circular(999)),
+                      // 这条拖动指示条以前写死成浅灰，暗色主题下是一道刺眼的
+                      // 亮线。跟着主题的「分隔线」色走。
+                      color: colors.separator,
+                      borderRadius: const BorderRadius.all(
+                        Radius.circular(999),
+                      ),
                     ),
-                    child: SizedBox(height: 4),
+                    child: const SizedBox(height: 4),
                   ),
                 ),
               ),
