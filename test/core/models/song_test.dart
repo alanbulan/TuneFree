@@ -96,6 +96,20 @@ void main() {
       'time': 12.5,
       'text': '海与你',
       'translation': 'Sea and You',
+      // 罗马音轨是可选的；缺失时序列化成 null，和 translation 的处理一致。
+      'romanization': null,
     });
+  });
+
+  test('parsed lyric JSON round-trips the romanization track', () {
+    final parsedLyric = ParsedLyric.fromJson(const {
+      'time': 12.5,
+      'text': '海与你',
+      'romanization': 'umi to kimi',
+    });
+
+    expect(parsedLyric.romanization, 'umi to kimi');
+    expect(parsedLyric.translation, isNull);
+    expect(parsedLyric.toJson()['romanization'], 'umi to kimi');
   });
 }
