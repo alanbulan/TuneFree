@@ -3,7 +3,8 @@ import { getTopLists, getTopListDetail, getImgReferrerPolicy } from '../services
 import { Song, TopList } from '../types';
 import { usePlayerActions } from '../contexts/PlayerContext';
 import { useLibrary } from '../contexts/LibraryContext';
-import { PlayIcon, MusicIcon, ErrorIcon, HeartIcon, HeartFillIcon } from '../components/Icons';
+import { PlayIcon, MusicIcon, ErrorIcon, HeartIcon, HeartFillIcon, MoreIcon } from '../components/Icons';
+import SongActionSheet from '../components/SongActionSheet';
 import { getMusicSourceBadgeClass, getMusicSourceLabel } from '../utils/musicSource';
 
 // ====== 数据缓存 — 切换音源时不重复请求 ======
@@ -18,7 +19,8 @@ const SongCard = memo<{
   favorite: boolean;
   onPlay: (s: Song) => void;
   onToggleFavorite: (s: Song) => void;
-}>(({ song, idx, favorite, onPlay, onToggleFavorite }) => {
+  onMore: (s: Song) => void;
+}>(({ song, idx, favorite, onPlay, onToggleFavorite, onMore }) => {
     const songName = typeof song.name === 'string' ? song.name : '未知歌曲';
     const songArtist = typeof song.artist === 'string' ? song.artist : '未知歌手';
     const sourceLabel = getMusicSourceLabel(song.source);
@@ -60,6 +62,16 @@ const SongCard = memo<{
                   <HeartIcon size={18} />
                 )}
               </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMore(song);
+                }}
+                className="p-2 text-gray-300 hover:text-gray-600 active:scale-90 transition"
+                aria-label="更多操作"
+              >
+                <MoreIcon size={18} />
+              </button>
               <button className="p-3 text-ios-red/80 hover:text-ios-red bg-gray-50 rounded-full">
                 <PlayIcon size={18} className="fill-current ml-0.5" />
               </button>
@@ -100,6 +112,7 @@ const Home: React.FC = () => {
   const [error, setError] = useState(false);
   const [activeSource, setActiveSource] = useState('netease');
   const [selectedTopListId, setSelectedTopListId] = useState<string | number | null>(null);
+  const [moreSong, setMoreSong] = useState<Song | null>(null);
   const [selectedTopListName, setSelectedTopListName] = useState('');
   const { playQueue } = usePlayerActions();
   const { isFavorite, toggleFavorite } = useLibrary();
@@ -307,6 +320,7 @@ const Home: React.FC = () => {
                   favorite={isFavorite(song.id, song.source)}
                   onPlay={handlePlay}
                   onToggleFavorite={toggleFavorite}
+                  onMore={setMoreSong}
                 />
             ))}
             </div>
@@ -319,6 +333,10 @@ const Home: React.FC = () => {
             )
         )}
       </section>
+
+      {moreSong && (
+        <SongActionSheet song={moreSong} onClose={() => setMoreSong(null)} />
+      )}
     </div>
   );
 };
