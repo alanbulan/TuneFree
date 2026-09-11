@@ -9,6 +9,7 @@ abstract class ParsedLyric with _$ParsedLyric {
     required double time,
     required String text,
     String? translation,
+    String? romanization,
   }) = _ParsedLyric;
 
   factory ParsedLyric.fromJson(Map<String, dynamic> json) =>

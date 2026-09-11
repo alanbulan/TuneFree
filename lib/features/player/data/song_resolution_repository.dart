@@ -5,13 +5,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/song.dart';
 import '../../../core/network/tune_free_http_client.dart';
+import '../../../core/utils/lyric_document.dart';
+import 'netease_lyric_client.dart';
 
 typedef SongResolver = Future<Song> Function(Song song, String quality);
 
 const defaultGdStudioApiBase = 'https://music-api.gdstudio.xyz/api.php';
 
 final songResolutionClientProvider = Provider<SongResolutionClient>((ref) {
-  return GdStudioSongResolutionClient(httpClient: TuneFreeHttpClient());
+  return GdStudioSongResolutionClient(
+    httpClient: TuneFreeHttpClient(),
+    romanizationLoader: ref.watch(neteaseRomanizationLoaderProvider),
+  );
 });
 
 final songResolutionRepositoryProvider = Provider<SongResolutionRepository>((
@@ -56,14 +61,17 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
   GdStudioSongResolutionClient({
     required TuneFreeHttpClient httpClient,
     String apiBase = defaultGdStudioApiBase,
+    RomanizationLoader? romanizationLoader,
   }) : _dio = httpClient.dio,
-       _apiBase = apiBase;
+       _apiBase = apiBase,
+       _romanizationLoader = romanizationLoader;
 
   static const _urlCacheTtl = Duration(minutes: 5);
   static const _maxCacheEntries = 80;
 
   final Dio _dio;
   final String _apiBase;
+  final RomanizationLoader? _romanizationLoader;
   final Map<String, _CachedResolution<String>> _urlCache =
       <String, _CachedResolution<String>>{};
   final Map<String, String> _lyricsCache = <String, String>{};
@@ -153,6 +161,10 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
     }
 
     try {
+      // 罗马音要和主歌词并行取：它是第二个 HTTP 往返，串行会白白拖慢
+      // 每一次歌词加载，而中文歌那边多半是空的。
+      final romanizationFuture = _loadRomanization(source, id);
+
       final payload = await _getGdStudioData(<String, String>{
         'types': 'lyric',
         'source': source,
@@ -160,8 +172,13 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
       });
       final main = _readString(payload?['lyric']);
       final translated = _readString(payload?['tlyric']);
-      final lines = <String>[?main, ?translated];
-      final resolvedLyrics = lines.join('\n');
+      final romanization = await romanizationFuture;
+
+      final resolvedLyrics = LyricDocument(
+        main: main ?? '',
+        translation: translated ?? '',
+        romanization: romanization ?? '',
+      ).encode();
       if (resolvedLyrics.isNotEmpty) {
         _cacheString(_lyricsCache, cacheKey, resolvedLyrics);
         return resolvedLyrics;
@@ -180,8 +197,23 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
     return null;
   }
 
-  Future<String?> _loadKuwoUrl(String id) async {
-    final normalizedId = id.startsWith('MUSIC_') ? id : 'MUSIC_$id';
+  /// 取罗马音轨。只有网易源有这条路 —— 别的源拿的 id 是 GD Studio 自己的
+  /// id 空间，发去网易只会得到一个错误响应。
+  ///
+  /// 没配 loader（例如测试里直接构造的客户端）就整个跳过，等于关掉这个功能。
+  Future<String?> _loadRomanization(String source, String id) async {
+    final loader = _romanizationLoader;
+    if (loader == null || source != 'netease') {
+      return null;
+    }
+    try {
+      return await loader(id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _loadKuwoUrl(String id) async {    final normalizedId = id.startsWith('MUSIC_') ? id : 'MUSIC_$id';
     try {
       final response = await _dio.getUri<dynamic>(
         Uri.https('antiserver.kuwo.cn', '/anti.s', <String, String>{
