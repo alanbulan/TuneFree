@@ -217,35 +217,104 @@
       html .bg-ios-red { background-color: var(--accent, #fa233b); }
       html .border-ios-red { border-color: var(--accent, #fa233b); }
 
-      /* 暗色主题：用 css 变量覆盖工具类生成的核心表面色，保证整套 UI 一体变暗 */
+      /*
+        暗色主题：覆盖工具类生成的核心表面色，保证整套 UI 一体变暗。
+
+        注意 Tailwind 会把透明度直接烘焙进工具类——bg-white/90 生成的是写死的
+        rgba(255,255,255,.9)，不带任何变量。所以每个用到的透明度都必须单独登记，
+        否则那一块在暗色下会原样漏出浅色。新增带 /xx 的色值类时，回到这里补一条。
+      */
       html { color-scheme: light; }
       html.dark-theme { color-scheme: dark; }
       html.dark-theme body { background-color: #000; color: #f2f2f7; }
+
+      /* 表面：页底 → 卡片 → 嵌套填充 → 抬升层 → 轨道，逐级变亮 */
       html.dark-theme .bg-ios-bg { background-color: #000; }
+      html.dark-theme .bg-ios-bg\/95 { background-color: rgba(0, 0, 0, 0.95); }
+      html.dark-theme .bg-ios-bg\/80 { background-color: rgba(0, 0, 0, 0.8); }
       html.dark-theme .bg-white { background-color: #1c1c1e; }
+      html.dark-theme .bg-white\/95 { background-color: rgba(28, 28, 30, 0.95); }
       html.dark-theme .bg-white\/90 { background-color: rgba(28, 28, 30, 0.9); }
+      html.dark-theme .bg-white\/70 { background-color: rgba(28, 28, 30, 0.7); }
       html.dark-theme .bg-white\/60 { background-color: rgba(28, 28, 30, 0.6); }
-      html.dark-theme .bg-gray-50 { background-color: #1c1c1e; }
+      html.dark-theme .bg-white\/50 { background-color: rgba(28, 28, 30, 0.5); }
+      html.dark-theme .hover\:bg-white\/50:hover { background-color: rgba(28, 28, 30, 0.5); }
+      html.dark-theme .bg-gray-50 { background-color: #242426; }
       html.dark-theme .bg-gray-100 { background-color: #2c2c2e; }
       html.dark-theme .bg-gray-200 { background-color: #3a3a3c; }
-      html.dark-theme .text-ios-text { color: #f2f2f7; }
-      html.dark-theme .text-gray-900 { color: #f2f2f7; }
+      html.dark-theme .bg-gray-200\/80 { background-color: rgba(58, 58, 60, 0.8); }
+      html.dark-theme .bg-gray-200\/50 { background-color: rgba(58, 58, 60, 0.5); }
+      html.dark-theme .bg-gray-300 { background-color: #48484a; }
+      html.dark-theme .bg-gray-300\/80 { background-color: rgba(72, 72, 74, 0.8); }
+      html.dark-theme .bg-gray-400 { background-color: #5a5a5c; }
+
+      /* 文本 */
+      html.dark-theme .text-ios-text,
+      html.dark-theme .text-black,
+      html.dark-theme .text-gray-900,
+      html.dark-theme .text-gray-800 { color: #f2f2f7; }
       html.dark-theme .text-gray-700 { color: #e5e5ea; }
       html.dark-theme .text-gray-600 { color: #c7c7cc; }
+      html.dark-theme .text-ios-subtext,
       html.dark-theme .text-gray-500 { color: #98989f; }
+      html.dark-theme .text-ios-subtext\/50 { color: rgba(152, 152, 159, 0.5); }
+      html.dark-theme .text-gray-500\/80 { color: rgba(152, 152, 159, 0.8); }
+      html.dark-theme .text-gray-500\/60 { color: rgba(152, 152, 159, 0.6); }
       html.dark-theme .text-gray-400 { color: #6e6e73; }
       html.dark-theme .text-gray-300 { color: #48484a; }
+      html.dark-theme .hover\:text-black:hover { color: #f2f2f7; }
+
+      /* 边框 */
       html.dark-theme .border-gray-100 { border-color: #2c2c2e; }
       html.dark-theme .border-gray-200 { border-color: #3a3a3c; }
+      html.dark-theme .border-gray-300 { border-color: #48484a; }
+
+      /* 错误态：浅底深字换成低透明度红底 + 亮红字 */
+      html.dark-theme .bg-red-50 { background-color: rgba(250, 35, 59, 0.14); }
+      html.dark-theme .border-red-200 { border-color: rgba(250, 35, 59, 0.32); }
+      html.dark-theme .text-red-500,
+      html.dark-theme .text-red-600,
+      html.dark-theme .text-red-700 { color: #ff6b7f; }
+
+      /* 音源徽标：粉彩浅底在暗色下整片发亮，改成同色相半透明底 + 亮字 */
+      html.dark-theme .bg-red-100 { background-color: rgba(250, 35, 59, 0.16); }
+      html.dark-theme .bg-green-100,
+      html.dark-theme .bg-green-50,
+      html.dark-theme .bg-emerald-100 { background-color: rgba(52, 199, 89, 0.16); }
+      html.dark-theme .text-green-600,
+      html.dark-theme .text-emerald-700 { color: #4cd964; }
+      html.dark-theme .bg-yellow-100 { background-color: rgba(255, 204, 0, 0.18); }
+      html.dark-theme .text-yellow-700 { color: #ffd60a; }
+      html.dark-theme .bg-blue-100 { background-color: rgba(0, 122, 255, 0.18); }
+      html.dark-theme .text-blue-700 { color: #6cb2ff; }
+      html.dark-theme .bg-cyan-100 { background-color: rgba(0, 199, 190, 0.18); }
+      html.dark-theme .text-cyan-700 { color: #4dd8d2; }
+      html.dark-theme .bg-purple-100 { background-color: rgba(175, 82, 222, 0.18); }
+      html.dark-theme .text-purple-700 { color: #c98cf0; }
+      html.dark-theme .bg-pink-100 { background-color: rgba(255, 45, 85, 0.18); }
+      html.dark-theme .text-pink-700 { color: #ff7a9c; }
+
       html.dark-theme .glass {
         background: rgba(28, 28, 30, 0.8);
         border-color: rgba(255, 255, 255, 0.06);
       }
-      /* 黑底按钮（播放键 / 分段控件选中态）在暗色下反转为白底黑字 */
+
+      /* 黑底控件（播放键 / 分段控件选中态）在暗色下反转为白底黑字 */
       html.dark-theme .bg-black.text-white {
         background-color: #f2f2f7;
         color: #000;
       }
+
+      /* 分段控件：暗色下轨道已经比页底亮，选中的药丸要再亮一档才分得出来 */
+      html.dark-theme .bg-gray-200\/50 > .bg-white,
+      html.dark-theme .bg-gray-200\/80 > .bg-white {
+        background-color: #48484a;
+      }
+
+      /* 原生控件与选中描边 */
+      html.dark-theme .accent-black { accent-color: #f2f2f7; }
+      html.dark-theme .ring-gray-900 { --tw-ring-color: #f2f2f7; }
+      html.dark-theme .ring-offset-2 { --tw-ring-offset-color: #1c1c1e; }
     </style>
   </head>
   <body oncontextmenu="return false;">
