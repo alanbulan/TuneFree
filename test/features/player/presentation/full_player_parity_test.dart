@@ -1927,6 +1927,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('player-more-sheet')), findsOneWidget);
+      // 面板内容比 80% 屏高长，快捷操作要滚动才看得见 —— 直接 tap 会落空。
+      await tester.ensureVisible(
+        find.byKey(const Key('player-search-artist-action')),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('player-search-artist-action')));
       // 不能 pumpAndSettle：搜索页此刻正在转菊花，settle 不下来。
       await tester.pump();
@@ -2046,5 +2051,90 @@ void main() {
       find.byKey(const Key('player-lyrics-translation-active-0')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('similar radio seeds off the artist and swaps the queue', (
+    tester,
+  ) async {
+    final storage = TestPlayerLibraryStorage();
+    final engine = JustAudioPlayerEngine.test();
+    addTearDown(engine.dispose);
+
+    final container = ProviderContainer(
+      overrides: [
+        playerEngineProvider.overrideWithValue(engine),
+        mediaSessionAdapterProvider.overrideWithValue(
+          NoopMediaSessionAdapter(),
+        ),
+        remoteTopListRepositoryProvider.overrideWithValue(
+          const _FakeTopListRepository(),
+        ),
+        // 仓库里现成的假搜索：单源会返回「<关键词> 单源结果」。
+        remoteSearchRepositoryProvider.overrideWithValue(
+          const LegacySearchRepository(),
+        ),
+        libraryStorageProvider.overrideWithValue(storage),
+        downloadLibraryRepositoryProvider.overrideWithValue(
+          _noopDownloadLibraryRepository(),
+        ),
+        playerPreferencesStoreProvider.overrideWithValue(
+          TestPlayerPreferencesStore(),
+        ),
+        localPlaybackResolverProvider.overrideWithValue(
+          _noopLocalPlaybackResolver(),
+        ),
+        songResolutionRepositoryProvider.overrideWithValue(
+          SongResolutionRepository.test(
+            resolveSongValue: (song, quality) async => song.copyWith(
+              url: 'https://example.com/${song.id}-$quality.mp3',
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const TuneFreeApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await container
+        .read(playerControllerProvider.notifier)
+        .openLegacySong(
+          id: 'seed-track',
+          source: 'netease',
+          title: '种子曲',
+          artist: '目标歌手',
+          queue: const <PlayerTrack>[
+            PlayerTrack(
+              id: 'seed-track',
+              source: 'netease',
+              title: '种子曲',
+              artist: '目标歌手',
+            ),
+          ],
+        );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('mini-player')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('player-more-button')));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const Key('player-similar-radio-action')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('player-similar-radio-action')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    // 种子退出队列，换成搜到的那批。
+    final playerState = container.read(playerControllerProvider);
+    expect(playerState.currentSong?.name, '目标歌手 单源结果');
   });
 }
