@@ -215,13 +215,6 @@ void main() {
             removeRecord: ({required songKey, required quality}) async {},
           ),
         ),
-        localPlaybackResolverProvider.overrideWithValue(
-          LocalPlaybackResolver(
-            recordsForSong: (songKey) async => const <DownloadRecord>[],
-            fileExists: (path) async => false,
-            removeRecord: ({required songKey, required quality}) async {},
-          ),
-        ),
       ],
     );
     addTearDown(container.dispose);
@@ -273,20 +266,6 @@ void main() {
           ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
-          ),
-          localPlaybackResolverProvider.overrideWithValue(
-            LocalPlaybackResolver(
-              recordsForSong: (songKey) async => const <DownloadRecord>[],
-              fileExists: (path) async => false,
-              removeRecord: ({required songKey, required quality}) async {},
-            ),
-          ),
-          localPlaybackResolverProvider.overrideWithValue(
-            LocalPlaybackResolver(
-              recordsForSong: (songKey) async => const <DownloadRecord>[],
-              fileExists: (path) async => false,
-              removeRecord: ({required songKey, required quality}) async {},
-            ),
           ),
           localPlaybackResolverProvider.overrideWithValue(
             LocalPlaybackResolver(
@@ -423,13 +402,6 @@ void main() {
             removeRecord: ({required songKey, required quality}) async {},
           ),
         ),
-        localPlaybackResolverProvider.overrideWithValue(
-          LocalPlaybackResolver(
-            recordsForSong: (songKey) async => const <DownloadRecord>[],
-            fileExists: (path) async => false,
-            removeRecord: ({required songKey, required quality}) async {},
-          ),
-        ),
       ],
     );
     addTearDown(container.dispose);
@@ -475,13 +447,6 @@ void main() {
         ),
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
-        ),
-        localPlaybackResolverProvider.overrideWithValue(
-          LocalPlaybackResolver(
-            recordsForSong: (songKey) async => const <DownloadRecord>[],
-            fileExists: (path) async => false,
-            removeRecord: ({required songKey, required quality}) async {},
-          ),
         ),
         localPlaybackResolverProvider.overrideWithValue(
           LocalPlaybackResolver(
@@ -604,13 +569,6 @@ void main() {
         ),
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
-        ),
-        localPlaybackResolverProvider.overrideWithValue(
-          LocalPlaybackResolver(
-            recordsForSong: (songKey) async => const <DownloadRecord>[],
-            fileExists: (path) async => false,
-            removeRecord: ({required songKey, required quality}) async {},
-          ),
         ),
         localPlaybackResolverProvider.overrideWithValue(
           LocalPlaybackResolver(
@@ -1066,13 +1024,6 @@ void main() {
             removeRecord: ({required songKey, required quality}) async {},
           ),
         ),
-        localPlaybackResolverProvider.overrideWithValue(
-          LocalPlaybackResolver(
-            recordsForSong: (songKey) async => const <DownloadRecord>[],
-            fileExists: (path) async => false,
-            removeRecord: ({required songKey, required quality}) async {},
-          ),
-        ),
       ],
     );
     addTearDown(container.dispose);
@@ -1122,13 +1073,6 @@ void main() {
             removeRecord: ({required songKey, required quality}) async {},
           ),
         ),
-        localPlaybackResolverProvider.overrideWithValue(
-          LocalPlaybackResolver(
-            recordsForSong: (songKey) async => const <DownloadRecord>[],
-            fileExists: (path) async => false,
-            removeRecord: ({required songKey, required quality}) async {},
-          ),
-        ),
       ],
     );
     addTearDown(container.dispose);
@@ -1153,13 +1097,6 @@ void main() {
         ),
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
-        ),
-        localPlaybackResolverProvider.overrideWithValue(
-          LocalPlaybackResolver(
-            recordsForSong: (songKey) async => const <DownloadRecord>[],
-            fileExists: (path) async => false,
-            removeRecord: ({required songKey, required quality}) async {},
-          ),
         ),
         localPlaybackResolverProvider.overrideWithValue(
           LocalPlaybackResolver(
@@ -1264,13 +1201,6 @@ void main() {
           ),
           playerPreferencesStoreProvider.overrideWithValue(
             TestPlayerPreferencesStore(),
-          ),
-          localPlaybackResolverProvider.overrideWithValue(
-            LocalPlaybackResolver(
-              recordsForSong: (songKey) async => const <DownloadRecord>[],
-              fileExists: (path) async => false,
-              removeRecord: ({required songKey, required quality}) async {},
-            ),
           ),
           localPlaybackResolverProvider.overrideWithValue(
             LocalPlaybackResolver(

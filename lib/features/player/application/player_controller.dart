@@ -105,6 +105,10 @@ final class PlayerController extends ChangeNotifier
 
   PlayerState _state = const PlayerState();
 
+  // ChangeNotifier 宿主不参与 Riverpod 的生命周期，恒为可用（保持升级前的行为）。
+  @override
+  bool get isRuntimeActive => true;
+
   @override
   PlayerState get state => _state;
 
@@ -121,6 +125,9 @@ final class PlayerController extends ChangeNotifier
 final class PlayerControllerNotifier extends Notifier<PlayerState>
     with _PlayerControllerRuntimeApi {
   bool _initialized = false;
+
+  @override
+  bool get isRuntimeActive => ref.mounted;
 
   @override
   PlayerState build() {
@@ -175,6 +182,11 @@ mixin _PlayerControllerRuntimeApi {
 
   PlayerState get state;
   set state(PlayerState value);
+
+  /// 宿主是否仍然可用。两个宿主语义不同：
+  /// - Riverpod 的 Notifier 可能在异步间隙后被销毁，此时 Ref 失效、再读写 state 会抛异常；
+  /// - ChangeNotifier 宿主不参与 Riverpod 的生命周期，恒为可用。
+  bool get isRuntimeActive;
 
   @protected
   void initializeRuntime({
@@ -496,6 +508,12 @@ mixin _PlayerControllerRuntimeApi {
     final queue = await _preferencesStore.loadQueue();
     final playMode = normalizePlayMode(await _preferencesStore.loadPlayMode());
     final audioQuality = await _preferencesStore.loadAudioQuality();
+    // Riverpod 3：跨过异步间隙后宿主可能已被销毁，再去碰 state 会直接抛
+    // "Cannot use the Ref ... after it has been disposed"。v2 在这里是静默写入一个
+    // 已销毁的 notifier，v3 把它变成了显式错误。已销毁就没什么可 hydrate 的了。
+    if (!isRuntimeActive) {
+      return;
+    }
     final hydratedQueue = List<Song>.unmodifiable(
       queue.isEmpty && currentSong != null ? <Song>[currentSong] : queue,
     );
