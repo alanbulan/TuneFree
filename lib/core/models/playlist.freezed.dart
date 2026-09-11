@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'playlist.dart';
@@ -9,6 +9,7 @@ part of 'playlist.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 
@@ -28,16 +29,21 @@ $PlaylistCopyWith<Playlist> get copyWith => _$PlaylistCopyWithImpl<Playlist>(thi
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Playlist&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.createTime, createTime) || other.createTime == createTime)&&const DeepCollectionEquality().equals(other.songs, songs));
+  final _this = this as Playlist;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Playlist&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.createTime, _this.createTime) || other.createTime == _this.createTime)&&const DeepCollectionEquality().equals(other.songs, _this.songs));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,createTime,const DeepCollectionEquality().hash(songs));
+int get hashCode {
+  final _this = this as Playlist;
+  return Object.hash(runtimeType,_this.id,_this.name,_this.createTime,const DeepCollectionEquality().hash(_this.songs));
+}
 
 @override
 String toString() {
-  return 'Playlist(id: $id, name: $name, createTime: $createTime, songs: $songs)';
+  final _this = this as Playlist;
+  return 'Playlist(id: ${_this.id}, name: ${_this.name}, createTime: ${_this.createTime}, songs: ${_this.songs})';
 }
 
 
@@ -66,7 +72,7 @@ class _$PlaylistCopyWithImpl<$Res>
 /// Create a copy of Playlist
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? createTime = null,Object? songs = null,}) {
-  return _then(_self.copyWith(
+  return _then(Playlist(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,createTime: null == createTime ? _self.createTime : createTime // ignore: cast_nullable_to_non_nullable
@@ -212,7 +218,7 @@ return $default(_that.id,_that.name,_that.createTime,_that.songs);case _:
 @JsonSerializable()
 
 class _Playlist implements Playlist {
-  const _Playlist({required this.id, required this.name, required this.createTime, final  List<Song> songs = const <Song>[]}): _songs = songs;
+  const _Playlist({required this.id, required this.name, required this.createTime,  List<Song> songs = const <Song>[]}): _songs = songs;
   factory _Playlist.fromJson(Map<String, dynamic> json) => _$PlaylistFromJson(json);
 
 @override final  String id;
@@ -239,16 +245,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Playlist&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.createTime, createTime) || other.createTime == createTime)&&const DeepCollectionEquality().equals(other._songs, _songs));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _Playlist&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.createTime, createTime) || other.createTime == createTime)&&const DeepCollectionEquality().equals(other.songs, _songs));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,createTime,const DeepCollectionEquality().hash(_songs));
+int get hashCode {
+    return Object.hash(runtimeType,id,name,createTime,const DeepCollectionEquality().hash(_songs));
+}
 
 @override
 String toString() {
-  return 'Playlist(id: $id, name: $name, createTime: $createTime, songs: $songs)';
+    return 'Playlist(id: $id, name: $name, createTime: $createTime, songs: $songs)';
 }
 
 

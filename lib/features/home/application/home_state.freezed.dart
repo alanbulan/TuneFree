@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'home_state.dart';
@@ -9,6 +9,7 @@ part of 'home_state.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
@@ -25,16 +26,21 @@ $HomeStateCopyWith<HomeState> get copyWith => _$HomeStateCopyWithImpl<HomeState>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is HomeState&&(identical(other.activeSource, activeSource) || other.activeSource == activeSource)&&const DeepCollectionEquality().equals(other.topLists, topLists)&&const DeepCollectionEquality().equals(other.featuredSongs, featuredSongs)&&(identical(other.selectedTopListId, selectedTopListId) || other.selectedTopListId == selectedTopListId)&&(identical(other.selectedTopListName, selectedTopListName) || other.selectedTopListName == selectedTopListName)&&(identical(other.listsLoading, listsLoading) || other.listsLoading == listsLoading)&&(identical(other.songsLoading, songsLoading) || other.songsLoading == songsLoading)&&(identical(other.hasError, hasError) || other.hasError == hasError));
+  final _this = this as HomeState;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is HomeState&&(identical(other.activeSource, _this.activeSource) || other.activeSource == _this.activeSource)&&const DeepCollectionEquality().equals(other.topLists, _this.topLists)&&const DeepCollectionEquality().equals(other.featuredSongs, _this.featuredSongs)&&(identical(other.selectedTopListId, _this.selectedTopListId) || other.selectedTopListId == _this.selectedTopListId)&&(identical(other.selectedTopListName, _this.selectedTopListName) || other.selectedTopListName == _this.selectedTopListName)&&(identical(other.listsLoading, _this.listsLoading) || other.listsLoading == _this.listsLoading)&&(identical(other.songsLoading, _this.songsLoading) || other.songsLoading == _this.songsLoading)&&(identical(other.hasError, _this.hasError) || other.hasError == _this.hasError));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,activeSource,const DeepCollectionEquality().hash(topLists),const DeepCollectionEquality().hash(featuredSongs),selectedTopListId,selectedTopListName,listsLoading,songsLoading,hasError);
+int get hashCode {
+  final _this = this as HomeState;
+  return Object.hash(runtimeType,_this.activeSource,const DeepCollectionEquality().hash(_this.topLists),const DeepCollectionEquality().hash(_this.featuredSongs),_this.selectedTopListId,_this.selectedTopListName,_this.listsLoading,_this.songsLoading,_this.hasError);
+}
 
 @override
 String toString() {
-  return 'HomeState(activeSource: $activeSource, topLists: $topLists, featuredSongs: $featuredSongs, selectedTopListId: $selectedTopListId, selectedTopListName: $selectedTopListName, listsLoading: $listsLoading, songsLoading: $songsLoading, hasError: $hasError)';
+  final _this = this as HomeState;
+  return 'HomeState(activeSource: ${_this.activeSource}, topLists: ${_this.topLists}, featuredSongs: ${_this.featuredSongs}, selectedTopListId: ${_this.selectedTopListId}, selectedTopListName: ${_this.selectedTopListName}, listsLoading: ${_this.listsLoading}, songsLoading: ${_this.songsLoading}, hasError: ${_this.hasError})';
 }
 
 
@@ -63,7 +69,7 @@ class _$HomeStateCopyWithImpl<$Res>
 /// Create a copy of HomeState
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? activeSource = null,Object? topLists = null,Object? featuredSongs = null,Object? selectedTopListId = freezed,Object? selectedTopListName = freezed,Object? listsLoading = null,Object? songsLoading = null,Object? hasError = null,}) {
-  return _then(_self.copyWith(
+  return _then(HomeState(
 activeSource: null == activeSource ? _self.activeSource : activeSource // ignore: cast_nullable_to_non_nullable
 as String,topLists: null == topLists ? _self.topLists : topLists // ignore: cast_nullable_to_non_nullable
 as List<TopList>,featuredSongs: null == featuredSongs ? _self.featuredSongs : featuredSongs // ignore: cast_nullable_to_non_nullable
@@ -213,7 +219,7 @@ return $default(_that.activeSource,_that.topLists,_that.featuredSongs,_that.sele
 
 
 class _HomeState implements HomeState {
-  const _HomeState({this.activeSource = 'netease', final  List<TopList> topLists = const <TopList>[], final  List<Song> featuredSongs = const <Song>[], this.selectedTopListId, this.selectedTopListName, this.listsLoading = false, this.songsLoading = false, this.hasError = false}): _topLists = topLists,_featuredSongs = featuredSongs;
+  const _HomeState({this.activeSource = 'netease',  List<TopList> topLists = const <TopList>[],  List<Song> featuredSongs = const <Song>[], this.selectedTopListId, this.selectedTopListName, this.listsLoading = false, this.songsLoading = false, this.hasError = false}): _topLists = topLists,_featuredSongs = featuredSongs;
   
 
 @override@JsonKey() final  String activeSource;
@@ -247,16 +253,18 @@ _$HomeStateCopyWith<_HomeState> get copyWith => __$HomeStateCopyWithImpl<_HomeSt
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _HomeState&&(identical(other.activeSource, activeSource) || other.activeSource == activeSource)&&const DeepCollectionEquality().equals(other._topLists, _topLists)&&const DeepCollectionEquality().equals(other._featuredSongs, _featuredSongs)&&(identical(other.selectedTopListId, selectedTopListId) || other.selectedTopListId == selectedTopListId)&&(identical(other.selectedTopListName, selectedTopListName) || other.selectedTopListName == selectedTopListName)&&(identical(other.listsLoading, listsLoading) || other.listsLoading == listsLoading)&&(identical(other.songsLoading, songsLoading) || other.songsLoading == songsLoading)&&(identical(other.hasError, hasError) || other.hasError == hasError));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _HomeState&&(identical(other.activeSource, activeSource) || other.activeSource == activeSource)&&const DeepCollectionEquality().equals(other.topLists, _topLists)&&const DeepCollectionEquality().equals(other.featuredSongs, _featuredSongs)&&(identical(other.selectedTopListId, selectedTopListId) || other.selectedTopListId == selectedTopListId)&&(identical(other.selectedTopListName, selectedTopListName) || other.selectedTopListName == selectedTopListName)&&(identical(other.listsLoading, listsLoading) || other.listsLoading == listsLoading)&&(identical(other.songsLoading, songsLoading) || other.songsLoading == songsLoading)&&(identical(other.hasError, hasError) || other.hasError == hasError));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,activeSource,const DeepCollectionEquality().hash(_topLists),const DeepCollectionEquality().hash(_featuredSongs),selectedTopListId,selectedTopListName,listsLoading,songsLoading,hasError);
+int get hashCode {
+    return Object.hash(runtimeType,activeSource,const DeepCollectionEquality().hash(_topLists),const DeepCollectionEquality().hash(_featuredSongs),selectedTopListId,selectedTopListName,listsLoading,songsLoading,hasError);
+}
 
 @override
 String toString() {
-  return 'HomeState(activeSource: $activeSource, topLists: $topLists, featuredSongs: $featuredSongs, selectedTopListId: $selectedTopListId, selectedTopListName: $selectedTopListName, listsLoading: $listsLoading, songsLoading: $songsLoading, hasError: $hasError)';
+    return 'HomeState(activeSource: $activeSource, topLists: $topLists, featuredSongs: $featuredSongs, selectedTopListId: $selectedTopListId, selectedTopListName: $selectedTopListName, listsLoading: $listsLoading, songsLoading: $songsLoading, hasError: $hasError)';
 }
 
 

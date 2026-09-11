@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'song.dart';
@@ -9,6 +9,7 @@ part of 'song.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 
@@ -28,16 +29,21 @@ $SongCopyWith<Song> get copyWith => _$SongCopyWithImpl<Song>(this as Song, _$ide
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Song&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.artist, artist) || other.artist == artist)&&(identical(other.album, album) || other.album == album)&&(identical(other.pic, pic) || other.pic == pic)&&(identical(other.picId, picId) || other.picId == picId)&&(identical(other.url, url) || other.url == url)&&(identical(other.urlId, urlId) || other.urlId == urlId)&&(identical(other.lrc, lrc) || other.lrc == lrc)&&(identical(other.lyricId, lyricId) || other.lyricId == lyricId)&&(identical(other.source, source) || other.source == source)&&const DeepCollectionEquality().equals(other.audioQualities, audioQualities));
+  final _this = this as Song;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Song&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.artist, _this.artist) || other.artist == _this.artist)&&(identical(other.album, _this.album) || other.album == _this.album)&&(identical(other.pic, _this.pic) || other.pic == _this.pic)&&(identical(other.picId, _this.picId) || other.picId == _this.picId)&&(identical(other.url, _this.url) || other.url == _this.url)&&(identical(other.urlId, _this.urlId) || other.urlId == _this.urlId)&&(identical(other.lrc, _this.lrc) || other.lrc == _this.lrc)&&(identical(other.lyricId, _this.lyricId) || other.lyricId == _this.lyricId)&&(identical(other.source, _this.source) || other.source == _this.source)&&const DeepCollectionEquality().equals(other.audioQualities, _this.audioQualities));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,artist,album,pic,picId,url,urlId,lrc,lyricId,source,const DeepCollectionEquality().hash(audioQualities));
+int get hashCode {
+  final _this = this as Song;
+  return Object.hash(runtimeType,_this.id,_this.name,_this.artist,_this.album,_this.pic,_this.picId,_this.url,_this.urlId,_this.lrc,_this.lyricId,_this.source,const DeepCollectionEquality().hash(_this.audioQualities));
+}
 
 @override
 String toString() {
-  return 'Song(id: $id, name: $name, artist: $artist, album: $album, pic: $pic, picId: $picId, url: $url, urlId: $urlId, lrc: $lrc, lyricId: $lyricId, source: $source, audioQualities: $audioQualities)';
+  final _this = this as Song;
+  return 'Song(id: ${_this.id}, name: ${_this.name}, artist: ${_this.artist}, album: ${_this.album}, pic: ${_this.pic}, picId: ${_this.picId}, url: ${_this.url}, urlId: ${_this.urlId}, lrc: ${_this.lrc}, lyricId: ${_this.lyricId}, source: ${_this.source}, audioQualities: ${_this.audioQualities})';
 }
 
 
@@ -66,7 +72,7 @@ class _$SongCopyWithImpl<$Res>
 /// Create a copy of Song
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? artist = null,Object? album = null,Object? pic = freezed,Object? picId = freezed,Object? url = freezed,Object? urlId = freezed,Object? lrc = freezed,Object? lyricId = freezed,Object? source = null,Object? audioQualities = null,}) {
-  return _then(_self.copyWith(
+  return _then(Song(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,artist: null == artist ? _self.artist : artist // ignore: cast_nullable_to_non_nullable
@@ -220,7 +226,7 @@ return $default(_that.id,_that.name,_that.artist,_that.album,_that.pic,_that.pic
 @JsonSerializable()
 
 class _Song extends Song {
-  const _Song({required this.id, required this.name, required this.artist, this.album = '', this.pic, this.picId, this.url, this.urlId, this.lrc, this.lyricId, @JsonKey(fromJson: _sourceFromJson, toJson: _sourceToJson) required this.source, @JsonKey(name: 'types', fromJson: _audioQualitiesFromJson, toJson: _audioQualitiesToJson) final  List<AudioQuality> audioQualities = const <AudioQuality>[]}): _audioQualities = audioQualities,super._();
+  const _Song({required this.id, required this.name, required this.artist, this.album = '', this.pic, this.picId, this.url, this.urlId, this.lrc, this.lyricId, @JsonKey(fromJson: _sourceFromJson, toJson: _sourceToJson) required this.source, @JsonKey(name: 'types', fromJson: _audioQualitiesFromJson, toJson: _audioQualitiesToJson)  List<AudioQuality> audioQualities = const <AudioQuality>[]}): _audioQualities = audioQualities,super._();
   factory _Song.fromJson(Map<String, dynamic> json) => _$SongFromJson(json);
 
 @override final  String id;
@@ -255,16 +261,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Song&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.artist, artist) || other.artist == artist)&&(identical(other.album, album) || other.album == album)&&(identical(other.pic, pic) || other.pic == pic)&&(identical(other.picId, picId) || other.picId == picId)&&(identical(other.url, url) || other.url == url)&&(identical(other.urlId, urlId) || other.urlId == urlId)&&(identical(other.lrc, lrc) || other.lrc == lrc)&&(identical(other.lyricId, lyricId) || other.lyricId == lyricId)&&(identical(other.source, source) || other.source == source)&&const DeepCollectionEquality().equals(other._audioQualities, _audioQualities));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _Song&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.artist, artist) || other.artist == artist)&&(identical(other.album, album) || other.album == album)&&(identical(other.pic, pic) || other.pic == pic)&&(identical(other.picId, picId) || other.picId == picId)&&(identical(other.url, url) || other.url == url)&&(identical(other.urlId, urlId) || other.urlId == urlId)&&(identical(other.lrc, lrc) || other.lrc == lrc)&&(identical(other.lyricId, lyricId) || other.lyricId == lyricId)&&(identical(other.source, source) || other.source == source)&&const DeepCollectionEquality().equals(other.audioQualities, _audioQualities));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,artist,album,pic,picId,url,urlId,lrc,lyricId,source,const DeepCollectionEquality().hash(_audioQualities));
+int get hashCode {
+    return Object.hash(runtimeType,id,name,artist,album,pic,picId,url,urlId,lrc,lyricId,source,const DeepCollectionEquality().hash(_audioQualities));
+}
 
 @override
 String toString() {
-  return 'Song(id: $id, name: $name, artist: $artist, album: $album, pic: $pic, picId: $picId, url: $url, urlId: $urlId, lrc: $lrc, lyricId: $lyricId, source: $source, audioQualities: $audioQualities)';
+    return 'Song(id: $id, name: $name, artist: $artist, album: $album, pic: $pic, picId: $picId, url: $url, urlId: $urlId, lrc: $lrc, lyricId: $lyricId, source: $source, audioQualities: $audioQualities)';
 }
 
 
