@@ -225,6 +225,28 @@ void main() {
     expect(files.contains(unknown), isTrue);
   });
 
+  test('回收站取不到时照样列得出下载，清理只是尽力而为', () async {
+    // 回归护栏：清理曾被放进 listDownloads 的前置路径里，而它要 path_provider。
+    // widget 测试里没有平台通道，整条 load() 直接抛，下载页卡在加载态出不来。
+    final recordStore = InMemoryDownloadRecordStore(<DownloadRecord>[
+      _record(songKey: 'netease:1', fileName: '1.mp3'),
+    ]);
+    final files = _FakeFiles(<String>['/downloads/1.mp3']);
+    final repository = DownloadLibraryRepository(
+      recordStore: recordStore,
+      fileExists: files.exists,
+      deleteFile: files.delete,
+      trashDirectoryPath: () async => throw StateError('平台通道不可用'),
+      moveFile: files.move,
+      listFiles: files.list,
+    );
+
+    final items = await repository.listDownloads();
+
+    expect(items.single.songKey, 'netease:1');
+    expect(await repository.purgeTrash(), 0);
+  });
+
   test('删除记录里时间戳坏掉的条目，而不是抛错', () async {
     final recordStore = InMemoryDownloadRecordStore(<DownloadRecord>[
       _record(

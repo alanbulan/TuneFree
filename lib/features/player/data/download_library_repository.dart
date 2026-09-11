@@ -162,26 +162,34 @@ class DownloadLibraryRepository {
 
   /// 清掉回收站里超过 [maxAge] 的文件，返回清掉的数量。
   ///
+  /// **整件事是尽力而为的**：回收站目录取不到（比如平台通道不可用）、目录读不了、
+  /// 单个文件删不掉，都只算「这次没清成」。清理是顺手做的事，不是列下载的前置
+  /// 条件 —— 让它把 [listDownloads] 带崩，下载页就会卡在加载态出不来。
+  ///
   /// 名字解析不出删除时刻的文件**不动**：那说明它不是这里放进去的，
   /// 与其猜一个时间删掉，不如留着。
   Future<int> purgeTrash({Duration maxAge = _trashMaxAge}) async {
-    final directory = await _trashDirectoryPath();
-    final paths = await _listFiles(directory);
-    if (paths.isEmpty) {
+    try {
+      final directory = await _trashDirectoryPath();
+      final paths = await _listFiles(directory);
+      if (paths.isEmpty) {
+        return 0;
+      }
+
+      final cutoff = DateTime.now().subtract(maxAge).millisecondsSinceEpoch;
+      var removed = 0;
+      for (final path in paths) {
+        final deletedAt = _deletedAtOf(path);
+        if (deletedAt == null || deletedAt.millisecondsSinceEpoch >= cutoff) {
+          continue;
+        }
+        await _deleteFile(path);
+        removed += 1;
+      }
+      return removed;
+    } catch (_) {
       return 0;
     }
-
-    final cutoff = DateTime.now().subtract(maxAge).millisecondsSinceEpoch;
-    var removed = 0;
-    for (final path in paths) {
-      final deletedAt = _deletedAtOf(path);
-      if (deletedAt == null || deletedAt.millisecondsSinceEpoch >= cutoff) {
-        continue;
-      }
-      await _deleteFile(path);
-      removed += 1;
-    }
-    return removed;
   }
 
   Future<String> _trashPathFor(String filePath) async {
