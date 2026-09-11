@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golden_toolkit/golden_toolkit.dart';
 import 'package:tunefree/app/app.dart';
+import 'package:tunefree/app/router/app_router.dart';
 import 'package:tunefree/core/models/audio_quality.dart';
 import 'package:tunefree/core/models/music_source.dart';
 import 'package:tunefree/core/models/playlist.dart';
@@ -28,6 +29,9 @@ import 'package:tunefree/features/player/data/player_download_service.dart';
 import 'package:tunefree/features/player/data/player_preferences_store.dart';
 import 'package:tunefree/features/player/data/song_resolution_repository.dart';
 import 'package:tunefree/features/player/domain/play_mode.dart';
+import 'package:tunefree/features/search/application/search_providers.dart';
+import 'package:tunefree/features/search/data/remote_search_repository.dart';
+import 'package:tunefree/features/search/presentation/search_page.dart';
 import 'package:tunefree/shared/theme/appearance_controller.dart';
 import 'package:tunefree/shared/theme/appearance_store.dart';
 import 'package:tunefree/features/player/domain/player_track.dart';
@@ -1843,6 +1847,103 @@ void main() {
           .state
           .favorites;
       expect(favorites.map((song) => song.key).toList(), ['qq:track-2']);
+    },
+  );
+
+  testWidgets(
+    'more sheet hands the artist over to search and closes the player',
+    (tester) async {
+      // 路由是全局单例，测完要还回去，否则后面的用例会从 /search 开始。
+      addTearDown(() => appRouter.go('/'));
+
+      final storage = TestPlayerLibraryStorage();
+      final engine = JustAudioPlayerEngine.test();
+      addTearDown(engine.dispose);
+
+      final container = ProviderContainer(
+        overrides: [
+          playerEngineProvider.overrideWithValue(engine),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
+          remoteTopListRepositoryProvider.overrideWithValue(
+            const _FakeTopListRepository(),
+          ),
+          // 用仓库里现成的假搜索，避免真发请求留下悬挂的 timer。
+          remoteSearchRepositoryProvider.overrideWithValue(
+            const LegacySearchRepository(),
+          ),
+          libraryStorageProvider.overrideWithValue(storage),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            _noopDownloadLibraryRepository(),
+          ),
+          playerPreferencesStoreProvider.overrideWithValue(
+            TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            _noopLocalPlaybackResolver(),
+          ),
+          songResolutionRepositoryProvider.overrideWithValue(
+            SongResolutionRepository.test(
+              resolveSongValue: (song, quality) async => song.copyWith(
+                url: 'https://example.com/${song.id}-$quality.mp3',
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const TuneFreeApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await container
+          .read(playerControllerProvider.notifier)
+          .openLegacySong(
+            id: 'search-track',
+            source: 'netease',
+            title: '被搜索的歌',
+            artist: '目标歌手',
+            queue: const <PlayerTrack>[
+              PlayerTrack(
+                id: 'search-track',
+                source: 'netease',
+                title: '被搜索的歌',
+                artist: '目标歌手',
+              ),
+            ],
+          );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('mini-player')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('player-more-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('player-more-sheet')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('player-search-artist-action')));
+      // 不能 pumpAndSettle：搜索页此刻正在转菊花，settle 不下来。
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // 关键词交出去了，而且真的发起了搜索。
+      final searchState = container.read(searchControllerProvider).state;
+      expect(searchState.query, '目标歌手');
+      expect(
+        searchState.results.map((song) => song.name),
+        contains('目标歌手 日常的小曲'),
+      );
+
+      // 全屏播放器必须收起来 —— 它是盖在 shell 上的一层，
+      // 不收掉的话搜索页根本看不见（Tauri 那边就留着这个毛病）。
+      expect(container.read(playerControllerProvider).isExpanded, isFalse);
+      expect(find.byKey(const Key('full-player')), findsNothing);
+      expect(find.byType(SearchPage), findsOneWidget);
     },
   );
 }

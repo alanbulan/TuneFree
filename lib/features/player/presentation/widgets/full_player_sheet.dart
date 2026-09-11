@@ -261,6 +261,7 @@ class FullPlayerSheet extends ConsumerWidget {
                         PlayerMoreSheet(
                           isOpen: state.showMore,
                           track: state.currentTrack,
+                          album: song.album,
                           selectedQuality: state.audioQuality,
                           onSelectQuality: playerController.setPlaybackQuality,
                           onClose: () => playerController.setShowMore(false),
