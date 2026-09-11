@@ -122,6 +122,16 @@ final class SearchController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 撤销清空。
+  ///
+  /// 历史只活在内存里（不落盘），所以「快照」就是把这一串字符串留在调用方
+  /// 手里 —— 不需要任何持久化结构。进程重启后历史本来就会清空，这条撤销
+  /// 自然也只在本次会话内有效。
+  void restoreHistory(List<String> history) {
+    _state = _state.copyWith(history: List<String>.unmodifiable(history));
+    notifyListeners();
+  }
+
   Future<void> _performSearch({
     required String normalizedQuery,
     required int page,

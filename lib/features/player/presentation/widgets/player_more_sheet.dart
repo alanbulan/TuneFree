@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/models/audio_quality.dart';
 import '../../../../core/models/music_source.dart';
+import '../../../../core/models/playlist.dart';
 import '../../../../core/models/song.dart';
 import '../../../../shared/widgets/tune_free_feedback.dart';
 import '../../../library/application/library_controller.dart';
@@ -57,17 +58,32 @@ class PlayerMoreSheet extends ConsumerWidget {
     // 而不是留一对空引号。
     final albumLabel = albumName.isEmpty ? '—' : albumName;
 
-    Future<void> addToPlaylist(String playlistId) async {
-      if (currentSong == null) {
+    /// 添加到歌单，并留一条撤销入口。
+    ///
+    /// 已经在歌单里的歌要在**加之前**就拦下来：`addToPlaylist` 自己会跳过
+    /// 重复项，但那样一来「撤销」就会把一首本来就有的歌移出去 ——
+    /// 撤销变成了一次意料之外的删除。
+    Future<void> addToPlaylist(Playlist playlist) async {
+      final song = currentSong;
+      if (song == null) {
         return;
       }
-      await ref
-          .read(libraryControllerProvider)
-          .addToPlaylist(playlistId, currentSong);
+      if (playlist.songs.any((item) => item.key == song.key)) {
+        showToast(context, '「${playlist.name}」里已经有这首歌了');
+        return;
+      }
+
+      final controller = ref.read(libraryControllerProvider);
+      await controller.addToPlaylist(playlist.id, song);
       if (!context.mounted) {
         return;
       }
-      showToast(context, '已添加到歌单', tone: TuneFreeToastTone.success);
+      showUndoToast(
+        context,
+        '已添加到「${playlist.name}」',
+        tone: TuneFreeToastTone.success,
+        onUndo: () async => controller.removeFromPlaylist(playlist.id, song),
+      );
     }
 
     Future<void> createPlaylistWithCurrentTrack() async {
@@ -327,7 +343,7 @@ class PlayerMoreSheet extends ConsumerWidget {
                             ),
                         onTap: currentSong == null
                             ? null
-                            : () => addToPlaylist(playlist.id),
+                            : () => addToPlaylist(playlist),
                       ),
                     ),
                   ),
