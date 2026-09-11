@@ -47,9 +47,7 @@ class SearchResultTile extends StatelessWidget {
                     ),
                   ]
                 : null,
-            border: isCurrent
-                ? Border.all(color: colors.accentSoft)
-                : null,
+            border: isCurrent ? Border.all(color: colors.accentSoft) : null,
           ),
           child: Row(
             children: [
@@ -92,9 +90,7 @@ class SearchResultTile extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: isCurrent
-                            ? colors.accent
-                            : colors.textStrong,
+                        color: isCurrent ? colors.accent : colors.textStrong,
                       ),
                     ),
                     const SizedBox(height: 3),

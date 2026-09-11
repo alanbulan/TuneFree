@@ -50,9 +50,7 @@ class TopListCarousel extends StatelessWidget {
                     color: colors.surface,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: isSelected
-                          ? colors.accent
-                          : Colors.transparent,
+                      color: isSelected ? colors.accent : Colors.transparent,
                       width: 1.2,
                     ),
                     boxShadow: [

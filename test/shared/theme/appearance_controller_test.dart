@@ -83,7 +83,10 @@ void main() {
 
     await controller.setLyricOffsetMs(1800);
     expect(controller.preferences.lyricOffsetMs, 1800);
-    expect(controller.preferences.lyricOffset, const Duration(milliseconds: 1800));
+    expect(
+      controller.preferences.lyricOffset,
+      const Duration(milliseconds: 1800),
+    );
 
     // 越界值也要先被夹住再落盘。
     await controller.setLyricOffsetMs(60000);
@@ -97,10 +100,22 @@ void main() {
   });
 
   test('resolveIsDark follows the mode, with system deferring to the OS', () {
-    expect(resolveIsDark(ThemeModeSetting.dark, systemPrefersDark: false), isTrue);
-    expect(resolveIsDark(ThemeModeSetting.light, systemPrefersDark: true), isFalse);
-    expect(resolveIsDark(ThemeModeSetting.system, systemPrefersDark: true), isTrue);
-    expect(resolveIsDark(ThemeModeSetting.system, systemPrefersDark: false), isFalse);
+    expect(
+      resolveIsDark(ThemeModeSetting.dark, systemPrefersDark: false),
+      isTrue,
+    );
+    expect(
+      resolveIsDark(ThemeModeSetting.light, systemPrefersDark: true),
+      isFalse,
+    );
+    expect(
+      resolveIsDark(ThemeModeSetting.system, systemPrefersDark: true),
+      isTrue,
+    );
+    expect(
+      resolveIsDark(ThemeModeSetting.system, systemPrefersDark: false),
+      isFalse,
+    );
   });
 
   test('controller loads from the store and persists every change', () async {

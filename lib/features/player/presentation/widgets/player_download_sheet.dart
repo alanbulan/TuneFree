@@ -170,9 +170,7 @@ class _DownloadOptionTile extends StatelessWidget {
         onTap: onTap,
         child: Ink(
           decoration: BoxDecoration(
-            color: isSelected
-                ? colors.accentSoft
-                : colors.fillFaint,
+            color: isSelected ? colors.accentSoft : colors.fillFaint,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
               color: isSelected ? colors.accent : Colors.transparent,
@@ -224,9 +222,7 @@ class _DownloadOptionTile extends StatelessWidget {
                           isSelected
                               ? Icons.check_rounded
                               : Icons.download_rounded,
-                          color: isSelected
-                              ? colors.accent
-                              : colors.textMuted,
+                          color: isSelected ? colors.accent : colors.textMuted,
                           size: 18,
                         ),
                 ),

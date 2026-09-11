@@ -25,7 +25,9 @@ void showToast(
   TuneFreeToastTone tone = TuneFreeToastTone.info,
 }) {
   ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: TuneFreeToastContent(message: message, tone: tone)),
+    SnackBar(
+      content: TuneFreeToastContent(message: message, tone: tone),
+    ),
   );
 }
 

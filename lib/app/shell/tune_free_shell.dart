@@ -100,9 +100,7 @@ class _ShellNavigationBar extends StatelessWidget {
           key: const Key('shell-bottom-nav'),
           decoration: BoxDecoration(
             color: colors.surface.withValues(alpha: 0.76),
-            border: Border(
-              top: BorderSide(color: colors.glassBorder),
-            ),
+            border: Border(top: BorderSide(color: colors.glassBorder)),
           ),
           child: Padding(
             padding: EdgeInsets.only(bottom: bottomInset),
@@ -150,9 +148,7 @@ class _ShellNavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = TuneFreeColors.of(context);
-    final color = selected
-        ? colors.accent
-        : colors.textSecondary;
+    final color = selected ? colors.accent : colors.textSecondary;
 
     return Material(
       color: Colors.transparent,

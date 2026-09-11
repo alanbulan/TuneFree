@@ -47,10 +47,7 @@ class LibrarySongTile extends StatelessWidget {
                     song.artist,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: colors.textSubtle,
-                    ),
+                    style: TextStyle(fontSize: 11, color: colors.textSubtle),
                   ),
                 ],
               ),
@@ -101,10 +98,7 @@ class _LibrarySongArtwork extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: decoration,
-            child: Icon(
-              Icons.music_note_rounded,
-              color: colors.lyricInactive,
-            ),
+            child: Icon(Icons.music_note_rounded, color: colors.lyricInactive),
           );
         },
       ),

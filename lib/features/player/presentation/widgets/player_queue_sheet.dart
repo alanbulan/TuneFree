@@ -60,10 +60,7 @@ class PlayerQueueSheet extends StatelessWidget {
                       '${queue.length} 首 · ${_playModeLabel(playMode)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: colors.textSubtle,
-                      ),
+                      style: TextStyle(fontSize: 12, color: colors.textSubtle),
                     ),
                   ),
                   IconButton(
@@ -285,10 +282,7 @@ class _QueueTrackTile extends StatelessWidget {
                       _artistText(song),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: colors.textMuted,
-                      ),
+                      style: TextStyle(fontSize: 12, color: colors.textMuted),
                     ),
                     const SizedBox(height: 4),
                     Row(
@@ -314,9 +308,7 @@ class _QueueTrackTile extends StatelessWidget {
               const SizedBox(width: 8),
               Icon(
                 isCurrent ? Icons.graphic_eq_rounded : Icons.play_arrow_rounded,
-                color: isCurrent
-                    ? colors.accent
-                    : colors.textTertiary,
+                color: isCurrent ? colors.accent : colors.textTertiary,
                 size: 20,
               ),
             ],
@@ -384,7 +376,11 @@ class _ArtworkPlaceholder extends StatelessWidget {
     final colors = TuneFreeColors.of(context);
     return ColoredBox(
       color: colors.fillSubtle,
-      child: Icon(Icons.music_note_rounded, color: colors.textTertiary, size: 22),
+      child: Icon(
+        Icons.music_note_rounded,
+        color: colors.textTertiary,
+        size: 22,
+      ),
     );
   }
 }

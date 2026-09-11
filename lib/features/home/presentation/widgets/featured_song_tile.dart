@@ -169,7 +169,11 @@ class _SongArtworkFallback extends StatelessWidget {
     final colors = TuneFreeColors.of(context);
     return ColoredBox(
       color: colors.fillPanel,
-      child: Icon(Icons.music_note_rounded, color: colors.lyricInactive, size: 22),
+      child: Icon(
+        Icons.music_note_rounded,
+        color: colors.lyricInactive,
+        size: 22,
+      ),
     );
   }
 }

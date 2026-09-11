@@ -27,7 +27,10 @@ const Map<String, MusicSourceBadgeColors> _lightBadgeColors =
       'qq': (background: Color(0xFFDCFCE7), foreground: Color(0xFF16A34A)),
       'kuwo': (background: Color(0xFFFEF3C7), foreground: Color(0xFFA16207)),
       'joox': (background: Color(0xFFF3E8FF), foreground: Color(0xFF7E22CE)),
-      'bilibili': (background: Color(0xFFFCE7F3), foreground: Color(0xFFDB2777)),
+      'bilibili': (
+        background: Color(0xFFFCE7F3),
+        foreground: Color(0xFFDB2777),
+      ),
     };
 
 /// 深色：粉彩底在暗背景上会整片发亮，改成同色相的低透明度底 + 提亮后的字。
@@ -37,7 +40,10 @@ const Map<String, MusicSourceBadgeColors> _darkBadgeColors =
       'qq': (background: Color(0x2616A34A), foreground: Color(0xFF4ADE80)),
       'kuwo': (background: Color(0x26A16207), foreground: Color(0xFFFBBF24)),
       'joox': (background: Color(0x267E22CE), foreground: Color(0xFFC084FC)),
-      'bilibili': (background: Color(0x26DB2777), foreground: Color(0xFFF472B6)),
+      'bilibili': (
+        background: Color(0x26DB2777),
+        foreground: Color(0xFFF472B6),
+      ),
     };
 
 String musicSourceFullLabel(String source) =>
