@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -221,5 +222,71 @@ void main() {
 
     expect(controller.state.playlists.single.name, '我的歌单');
     expect(storage.playlists.single.name, '我的歌单');
+  });
+
+  test(
+    'importBackupJson replaces the library and returns a restorable snapshot',
+    () async {
+      const original = Song(
+        id: 'fav-1',
+        name: '原有收藏',
+        artist: '原有歌手',
+        source: MusicSource.netease,
+      );
+      final storage = InMemoryLibraryStorage()
+        ..favorites = <Song>[original]
+        ..corsProxy = 'https://old.example.com';
+      final repository = InMemoryDownloadLibraryRepository();
+      final controller = LibraryController(
+        storage: storage,
+        downloadLibraryRepository: repository,
+      );
+      await controller.load();
+
+      final previous = await controller.importBackupJson(
+        jsonEncode(<String, dynamic>{
+          'favorites': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'id': 'imported-1',
+              'name': '导入收藏曲',
+              'artist': '备份歌手',
+              'source': 'kuwo',
+            },
+          ],
+          'playlists': <Map<String, dynamic>>[],
+          'corsProxy': 'https://new.example.com',
+        }),
+      );
+
+      // 导入是整体替换。
+      expect(controller.state.favorites.single.name, '导入收藏曲');
+      expect(controller.state.corsProxy, 'https://new.example.com');
+      // 返回的快照必须是替换「之前」的样子 —— 撤销提示条全靠它。
+      expect(previous.favorites.single.name, '原有收藏');
+      expect(previous.corsProxy, 'https://old.example.com');
+
+      await controller.restoreBackup(previous);
+
+      expect(controller.state.favorites.single.name, '原有收藏');
+      expect(controller.state.corsProxy, 'https://old.example.com');
+      expect(storage.favorites.single.name, '原有收藏');
+    },
+  );
+
+  test('importBackupJson rejects a payload that is not a JSON object', () async {
+    final storage = InMemoryLibraryStorage();
+    final repository = InMemoryDownloadLibraryRepository();
+    final controller = LibraryController(
+      storage: storage,
+      downloadLibraryRepository: repository,
+    );
+    await controller.load();
+
+    await expectLater(
+      controller.importBackupJson('[1, 2, 3]'),
+      throwsA(isA<FormatException>()),
+    );
+    // 解析失败时不能动到资料库。
+    expect(controller.state.favorites, isEmpty);
   });
 }

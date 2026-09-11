@@ -160,23 +160,33 @@ final class LibraryController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 只负责生成 JSON，不改状态。
+  ///
+  /// 「最近导出」必须等文件真的交出去之后再记录：以前这里顺手就写了状态，
+  /// 于是传输失败时（比如平台不支持）用户会同时看到预览卡和错误提示。
   Future<String> exportBackupJson() async {
     final backup = await _storage.loadBackupData();
-    final jsonText = const JsonEncoder.withIndent(
-      '  ',
-    ).convert(backup.toJson());
-    _state = _state.copyWith(exportedBackupJson: jsonText);
-    notifyListeners();
-    return jsonText;
+    return const JsonEncoder.withIndent('  ').convert(backup.toJson());
   }
 
-  Future<void> importBackupJson(String rawJson) async {
+  /// 导出成功送达后记一笔，供「最近导出」卡展示。
+  void markBackupExported(String jsonText) {
+    _state = _state.copyWith(exportedBackupJson: jsonText);
+    notifyListeners();
+  }
+
+  /// 导入是**整体替换**，没有合并模式。
+  ///
+  /// 返回替换**之前**的快照，调用方据此在提示条上提供撤销 —— 这是一次会抹掉
+  /// 全部收藏与歌单的操作，只给一次机会而没有退路太狠了。
+  Future<LibraryBackupData> importBackupJson(String rawJson) async {
     final decoded = jsonDecode(rawJson);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('backup payload must be an object');
     }
 
     final backup = LibraryBackupData.fromJson(decoded);
+    final previous = await _storage.loadBackupData();
     await _storage.saveBackupData(backup);
     _state = _state.copyWith(
       favorites: backup.favorites,
@@ -185,6 +195,21 @@ final class LibraryController extends ChangeNotifier {
       exportedBackupJson: null,
       lastImportSummary:
           '已导入 ${backup.favorites.length} 首收藏和 ${backup.playlists.length} 个歌单',
+    );
+    await refreshDownloads();
+    notifyListeners();
+    return previous;
+  }
+
+  /// 撤销一次导入：把资料库还原成导入前的快照。
+  Future<void> restoreBackup(LibraryBackupData backup) async {
+    await _storage.saveBackupData(backup);
+    _state = _state.copyWith(
+      favorites: backup.favorites,
+      playlists: backup.playlists,
+      corsProxy: backup.corsProxy,
+      exportedBackupJson: null,
+      lastImportSummary: '已撤销导入',
     );
     await refreshDownloads();
     notifyListeners();
