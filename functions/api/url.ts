@@ -9,7 +9,11 @@ import { Buffer } from 'node:buffer';
  * - netease: EAPI AES-128-ECB 加密请求
  * - qq:      musicu.fcg CgiGetVkey，filename 必须是 "M500<mid><mid>.mp3" 形式
  * - kuwo:    mobi.s?f=web&type=convert_url_with_sign 明文接口，响应为 JSON；
- *            旧的 f=kuwo 块加密端点已被上游 nginx 无条件 403，仅作兜底保留
+ *            旧的 f=kuwo 块加密端点已被上游 nginx 无条件 403，仅作兜底保留。
+ *            注意：酷我对非大陆出口 IP 返回 code=407 地区版权封锁，Cloudflare
+ *            的出口 IP 一律命中，故本函数内的原生酷我解析实际无法成功，
+ *            线上依赖 GD Studio 解析（其解析结果可正常播放，因为酷我音频
+ *            CDN 不做地区封锁）。详见 parseKuwoResponse 的注释。
  *
  * 响应约定（客户端只关心 url 是否存在）：
  *   200 { url: "https://..." }                解析成功
@@ -25,7 +29,7 @@ interface Env {}
 /** 单个音源的解析结果：要么给出地址，要么说明为什么没有。 */
 type ResolveResult =
   | { url: string }
-  | { url: null; reason: "vip" | "unavailable" };
+  | { url: null; reason: "vip" | "unavailable" | "region" };
 
 /** 只接受 http(s) 绝对地址，避免把 file:// 之类的值交给媒体元素。 */
 const isPlayableUrl = (value: unknown): value is string => {
@@ -352,10 +356,21 @@ const kuwoBitrateCandidates = (quality: string): string[] => {
 };
 
 /**
- * convert_url_with_sign 的响应是 JSON。bitrate=1 是 VIP / 版权受限标记
- * （与桌面端 Rust provider 的 parse_kuwo_url 一致），此时即便带 url 字段也不可播放。
+ * convert_url_with_sign 的响应是 JSON。
+ *
+ * code=407 是酷我的地区版权封锁：对非中国大陆出口 IP，接口仍返回 200，
+ * 但 data 里全是字符串 "None"，msg 为 "not available in your region"。
+ * 实测 Cloudflare 的出口 IP（含 US 各 colo）一律命中该分支，因此在
+ * Pages Functions 里原生酷我解析无法成功——只能依赖 GD Studio 解析、
+ * 或由未被封锁的出口代为解析。酷我的音频 CDN 本身不封锁，地址一旦拿到
+ * 就能正常播放。
+ *
+ * bitrate=1 是 VIP / 版权受限标记（与桌面端 Rust provider 的
+ * parse_kuwo_url 一致），此时即便带 url 字段也不可播放。
  */
 const parseKuwoResponse = (data: any): ResolveResult => {
+    if (Number(data?.code) === 407) return { url: null, reason: "region" };
+
     const payload = data?.data;
     if (!payload) return { url: null, reason: "unavailable" };
     if (Number(payload.bitrate) === 1) return { url: null, reason: "vip" };
@@ -411,6 +426,9 @@ async function getKuwoUrlPrimary(songmid: string, quality: string): Promise<Reso
         const data = await resp.json().catch(() => null);
         const result = parseKuwoResponse(data);
 
+        // 地区封锁与候选码率无关，继续试只会白白多打几个必然失败的请求。
+        if (result.reason === "region") return result;
+
         if (result.url) {
             const format = String(data?.data?.format || "").toLowerCase();
             // mp3 / flac 是首选，直接采用；ogg / aac 先记下，继续试更低的候选码率。
@@ -462,11 +480,13 @@ async function getKuwoUrlEncrypted(songmid: string, quality: string): Promise<Re
 
 /**
  * 酷我解析入口：明文协议优先；只有它明确回答「没有可用地址」时才试一次
- * 旧加密端点。VIP 是权威结论，不必再试。
+ * 旧加密端点。VIP 与地区封锁都是权威结论，不必再试。
  */
 async function getKuwoUrl(songmid: string, quality: string): Promise<ResolveResult> {
     const primary = await getKuwoUrlPrimary(songmid, quality);
-    if (primary.url || primary.reason === "vip") return primary;
+    if (primary.url || primary.reason === "vip" || primary.reason === "region") {
+        return primary;
+    }
 
     try {
         const fallback = await getKuwoUrlEncrypted(songmid, quality);
