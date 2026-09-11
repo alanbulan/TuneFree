@@ -39,6 +39,8 @@ export const PLAYLISTS_KEY = 'tunefree_playlists';
 export const CORS_PROXY_KEY = 'tunefree_cors_proxy';
 export const LIBRARY_KEY = 'tunefree_library';
 export const LIBRARY_SAVE_ERROR = '曲库保存失败，请检查可用存储空间；本次更改未生效';
+/** 伪歌单「我喜欢」的固定 ID，addToPlaylist / removeFromPlaylist 会转发到收藏。 */
+export const FAVORITES_PLAYLIST_ID = 'favorites';
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;

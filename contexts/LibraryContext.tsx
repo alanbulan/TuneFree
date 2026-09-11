@@ -10,6 +10,7 @@ import { Song, Playlist, getSongKey } from '../types';
 import {
   CORS_PROXY_KEY,
   DEFAULT_PROXY,
+  FAVORITES_PLAYLIST_ID,
   LIBRARY_SAVE_ERROR,
   LibraryApplyImportResult,
   LibraryBackup,
@@ -177,9 +178,19 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
       const normalized = normalizeSong(song);
       if (!normalized) return;
       const current = snapshotRef.current;
-      const target = current.playlists.find((playlist) => playlist.id === playlistId);
-      if (!target) return;
       const key = getSongKey(normalized);
+
+      // 伪歌单「我喜欢」直接写进收藏，幂等。
+      if (playlistId === FAVORITES_PLAYLIST_ID) {
+        if (current.favorites.some((item) => getSongKey(item) === key)) return;
+        commit({ ...current, favorites: [normalized, ...current.favorites] });
+        return;
+      }
+
+      const target = current.playlists.find(
+        (playlist) => playlist.id === playlistId,
+      );
+      if (!target) return;
       if (target.songs.some((item) => getSongKey(item) === key)) return;
       commit({
         ...current,
@@ -196,6 +207,18 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
   const removeFromPlaylist = useCallback(
     (playlistId: string, songId: number | string, source?: string) => {
       const current = snapshotRef.current;
+      const matches = (song: Song) =>
+        String(song.id) === String(songId) &&
+        (!source || song.source === source);
+
+      if (playlistId === FAVORITES_PLAYLIST_ID) {
+        commit({
+          ...current,
+          favorites: current.favorites.filter((song) => !matches(song)),
+        });
+        return;
+      }
+
       commit({
         ...current,
         playlists: current.playlists.map((playlist) =>
@@ -203,13 +226,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({
             ? playlist
             : {
                 ...playlist,
-                songs: playlist.songs.filter(
-                  (song) =>
-                    !(
-                      String(song.id) === String(songId) &&
-                      (!source || song.source === source)
-                    ),
-                ),
+                songs: playlist.songs.filter((song) => !matches(song)),
               },
         ),
       });
