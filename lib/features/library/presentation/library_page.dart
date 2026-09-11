@@ -19,6 +19,7 @@ import '../../../core/source_clients/netease_client.dart';
 import '../../../core/source_clients/qq_client.dart';
 import '../../../core/update/app_update_service.dart';
 import '../../../shared/theme/tune_free_spacing.dart';
+import '../../../shared/widgets/tune_free_feedback.dart';
 import '../../player/application/player_controller.dart';
 import '../application/library_controller.dart';
 import '../application/library_state.dart';
@@ -360,7 +361,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       return;
     }
 
-    await ref.read(libraryControllerProvider).deletePlaylist(playlist.id);
+    final library = ref.read(libraryControllerProvider);
+    // 快照要在删除**之前**取：restorePlaylist 靠它把 id 和顺序原样放回去。
+    final snapshot = playlist;
+    final snapshotIndex = library.state.playlists.indexWhere(
+      (item) => item.id == playlist.id,
+    );
+    await library.deletePlaylist(playlist.id);
     if (!mounted) {
       return;
     }
@@ -368,21 +375,29 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       _selectedPlaylistId = null;
       _isEditMode = false;
     });
-    ScaffoldMessenger.of(
+    showUndoToast(
       context,
-    ).showSnackBar(const SnackBar(content: Text('歌单已删除')));
+      '已删除歌单「${snapshot.name}」',
+      tone: TuneFreeToastTone.warning,
+      onUndo: () => library.restorePlaylist(
+        snapshot,
+        index: snapshotIndex < 0 ? 0 : snapshotIndex,
+      ),
+    );
   }
 
   Future<void> _handleRemoveFromPlaylist(Playlist playlist, Song song) async {
-    await ref
-        .read(libraryControllerProvider)
-        .removeFromPlaylist(playlist.id, song);
+    final library = ref.read(libraryControllerProvider);
+    final snapshot = playlist;
+    await library.removeFromPlaylist(playlist.id, song);
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
+    showUndoToast(
       context,
-    ).showSnackBar(SnackBar(content: Text('已从歌单移除「${song.name}」')));
+      '已从歌单移除「${song.name}」',
+      onUndo: () => library.restorePlaylist(snapshot),
+    );
   }
 
   Future<void> _playSongQueue({

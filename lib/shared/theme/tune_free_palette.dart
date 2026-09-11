@@ -52,6 +52,7 @@ final class TuneFreeColors extends ThemeExtension<TuneFreeColors> {
     required this.fillPanel,
     required this.borderSubtle,
     required this.danger,
+    required this.success,
     required this.textStrong,
   });
 
@@ -110,6 +111,9 @@ final class TuneFreeColors extends ThemeExtension<TuneFreeColors> {
   /// 危险 / 错误色（原 0xFFDC2626）。
   final Color danger;
 
+  /// 成功色。取自音源徽标里已经在用的那支绿，免得再引入一个近似的绿。
+  final Color success;
+
   /// 强调文字（原 0xFF111111）。
   ///
   /// 与 [textPrimary] 分开：浅色下 textPrimary 是纯黑，而这个是 #111111，
@@ -155,6 +159,7 @@ final class TuneFreeColors extends ThemeExtension<TuneFreeColors> {
       fillPanel: const Color(0xFFF0F1F5),
       borderSubtle: const Color(0xFFE5E7EB),
       danger: const Color(0xFFDC2626),
+      success: const Color(0xFF16A34A),
       textStrong: const Color(0xFF111111),
     );
   }
@@ -188,6 +193,7 @@ final class TuneFreeColors extends ThemeExtension<TuneFreeColors> {
       fillPanel: const Color(0xFF27272A),
       borderSubtle: const Color(0xFF2E2E33),
       danger: const Color(0xFFF87171),
+      success: const Color(0xFF4ADE80),
       textStrong: const Color(0xFFF4F4F5),
     );
   }
@@ -227,6 +233,7 @@ final class TuneFreeColors extends ThemeExtension<TuneFreeColors> {
       fillPanel: Color.lerp(fillPanel, other.fillPanel, t)!,
       borderSubtle: Color.lerp(borderSubtle, other.borderSubtle, t)!,
       danger: Color.lerp(danger, other.danger, t)!,
+      success: Color.lerp(success, other.success, t)!,
       textStrong: Color.lerp(textStrong, other.textStrong, t)!,
     );
   }

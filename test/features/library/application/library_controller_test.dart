@@ -289,4 +289,91 @@ void main() {
     // 解析失败时不能动到资料库。
     expect(controller.state.favorites, isEmpty);
   });
+
+  group('restorePlaylist', () {
+    Playlist playlist(String id, String name, {List<String> songIds = const []}) {
+      return Playlist(
+        id: id,
+        name: name,
+        createTime: int.parse(id),
+        songs: <Song>[
+          for (final songId in songIds)
+            Song(id: songId, name: songId, artist: '歌手', source: MusicSource.netease),
+        ],
+      );
+    }
+
+    Future<LibraryController> loaded(InMemoryLibraryStorage storage) async {
+      final controller = LibraryController(
+        storage: storage,
+        downloadLibraryRepository: InMemoryDownloadLibraryRepository(),
+      );
+      await controller.load();
+      return controller;
+    }
+
+    test('撤销删除：歌单带着原 id 回到原来的位置', () async {
+      final storage = InMemoryLibraryStorage()
+        ..playlists = <Playlist>[
+          playlist('1000', '第一张'),
+          playlist('2000', '第二张'),
+          playlist('3000', '第三张'),
+        ];
+      final controller = await loaded(storage);
+
+      final removed = controller.state.playlists[1];
+      await controller.deletePlaylist(removed.id);
+      expect(controller.state.playlists.map((item) => item.id), <String>[
+        '1000',
+        '3000',
+      ]);
+
+      await controller.restorePlaylist(removed, index: 1);
+
+      // 顺序和 id 都要还原 —— 靠 createPlaylist 重建会铸一个新 id，
+      // 页面上的选中态和所有引用都会断掉。
+      expect(controller.state.playlists.map((item) => item.id), <String>[
+        '1000',
+        '2000',
+        '3000',
+      ]);
+      expect(storage.playlists[1].name, '第二张');
+    });
+
+    test('撤销移除歌曲：歌回到原来的下标', () async {
+      final storage = InMemoryLibraryStorage()
+        ..playlists = <Playlist>[
+          playlist('1000', '我的歌单', songIds: <String>['a', 'b', 'c']),
+        ];
+      final controller = await loaded(storage);
+
+      final snapshot = controller.state.playlists.single;
+      await controller.removeFromPlaylist('1000', snapshot.songs[1]);
+      expect(
+        controller.state.playlists.single.songs.map((song) => song.id),
+        <String>['a', 'c'],
+      );
+
+      await controller.restorePlaylist(snapshot);
+
+      expect(
+        controller.state.playlists.single.songs.map((song) => song.id),
+        <String>['a', 'b', 'c'],
+      );
+      expect(storage.playlists.single.songs, hasLength(3));
+    });
+
+    test('插回位置越界时夹到末尾，不抛异常', () async {
+      final storage = InMemoryLibraryStorage()
+        ..playlists = <Playlist>[playlist('1000', '仅此一张')];
+      final controller = await loaded(storage);
+
+      await controller.restorePlaylist(playlist('9000', '补回来的'), index: 99);
+
+      expect(controller.state.playlists.map((item) => item.id), <String>[
+        '1000',
+        '9000',
+      ]);
+    });
+  });
 }
