@@ -378,6 +378,12 @@ const Search: React.FC = () => {
           />
         </div>
 
+        {searchMode === "ai" && (
+          <p className="text-[11px] text-gray-400 mb-2 leading-tight">
+            输入意境或场景，AI 会推荐几首契合的歌，例如：雨天开车、深夜图书馆、健身房跑步
+          </p>
+        )}
+
         <div className="flex items-center space-x-2 overflow-x-auto no-scrollbar py-1">
           <button
             onClick={() => setSearchMode("aggregate")}

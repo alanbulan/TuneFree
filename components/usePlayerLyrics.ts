@@ -89,5 +89,6 @@ export const usePlayerLyrics = (
     activeLyricIndex,
     lyricClock,
     lyricDisplayMode,
+    rawLyrics,
   };
 };

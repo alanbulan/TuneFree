@@ -11,7 +11,7 @@ import { isSameSong } from "../types";
 import { usePlayerLyrics } from "./usePlayerLyrics";
 import { KaraokeLyricText } from "./KaraokeLyricText";
 import { SynchronizedTranslationText } from "./SynchronizedTranslationText";
-import { getLyricLineTime } from "../utils/lyrics";
+import { getLyricLineTime, analyzeLyricTimeline, LYRIC_VERSION_MISMATCH_MESSAGE } from "../utils/lyrics";
 import { getLyricExtensionLines } from "../utils/formatting";
 import {
   ChevronDownIcon,
@@ -68,7 +68,7 @@ const FullPlayer: React.FC<FullPlayerProps> = ({
   const [imgError, setImgError] = useState(false);
 
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
-  const { lyrics, activeLyricIndex, lyricClock, lyricDisplayMode } =
+  const { lyrics, activeLyricIndex, lyricClock, lyricDisplayMode, rawLyrics } =
     usePlayerLyrics(
       currentSong,
       isOpen,
@@ -77,6 +77,18 @@ const FullPlayer: React.FC<FullPlayerProps> = ({
       lyricsContainerRef,
       lyricOffsetSeconds,
     );
+
+  // 歌词时间轴明显超出音频时长（换源/换版本）时，每首歌只提示一次。
+  const lyricMismatchWarnedKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!currentSong || duration <= 0 || !rawLyrics) return;
+    const key = `${currentSong.source}:${currentSong.id}`;
+    if (lyricMismatchWarnedKeyRef.current === key) return;
+    if (analyzeLyricTimeline(rawLyrics, duration).status === "overrun") {
+      lyricMismatchWarnedKeyRef.current = key;
+      showToast(LYRIC_VERSION_MISMATCH_MESSAGE, "info");
+    }
+  }, [currentSong, duration, rawLyrics, showToast]);
 
   useEffect(() => {
     setImgError(false);
