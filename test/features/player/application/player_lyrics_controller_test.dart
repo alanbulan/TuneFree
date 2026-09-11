@@ -87,14 +87,63 @@ void main() {
     );
   });
 
-  test('findActiveIndex matches the legacy hook behavior', () {
-    final controller = PlayerLyricsController();
-    final lyrics = const [
-      ParsedLyric(time: 1.0, text: '第一句'),
-      ParsedLyric(time: 3.5, text: '第二句'),
-    ];
+  group('PlayerLyricsController.buildLyrics', () {
+    test('给真实歌词配上估算的逐字时间', () {
+      final controller = PlayerLyricsController();
+      final timeline = controller.buildLyrics(
+        '[00:05.00]第一句\n'
+        '[00:10.00]第二句',
+      );
 
-    expect(controller.findActiveIndex(lyrics, 0.5), 0);
-    expect(controller.findActiveIndex(lyrics, 3.6), 1);
+      expect(timeline.length, 2);
+      expect(timeline[0].words.map((word) => word.text), <String>[
+        '第',
+        '一',
+        '句',
+      ]);
+      expect(timeline[1].hasWords, isTrue);
+    });
+
+    test('解析不出歌词时不给哨兵行编逐字时间', () {
+      final controller = PlayerLyricsController();
+      final timeline = controller.buildLyrics('[ti:只有元数据]');
+
+      expect(timeline.length, 1);
+      expect(timeline[0].line.text, '暂无歌词');
+      expect(timeline[0].words, isEmpty);
+    });
+
+    test('空串同样是哨兵行', () {
+      final controller = PlayerLyricsController();
+      expect(controller.buildLyrics('').lines.single.words, isEmpty);
+    });
+
+    test('同一份歌词重复取用命中缓存，换歌即失效', () {
+      final controller = PlayerLyricsController();
+      const raw = '[00:05.00]第一句\n[00:10.00]第二句';
+
+      final first = controller.buildLyrics(raw);
+      expect(identical(controller.buildLyrics(raw), first), isTrue);
+
+      // 换歌：单条缓存作废，换回来是重新算的，但内容必须一致。
+      final other = controller.buildLyrics('[00:05.00]别的歌');
+      expect(other.lines.single.line.text, '别的歌');
+
+      final again = controller.buildLyrics(raw);
+      expect(identical(again, first), isFalse);
+      expect(again.length, first.length);
+      expect(again[0].line, first[0].line);
+      expect(again[0].words, first[0].words);
+    });
+
+    test('解析结果也按原始串记忆化', () {
+      final controller = PlayerLyricsController();
+      const raw = '[00:05.00]第一句';
+
+      expect(
+        identical(controller.parseRawLyrics(raw), controller.parseRawLyrics(raw)),
+        isTrue,
+      );
+    });
   });
 }

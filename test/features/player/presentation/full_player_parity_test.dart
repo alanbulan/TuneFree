@@ -1169,6 +1169,139 @@ void main() {
   );
 
   testWidgets(
+    'active lyric line fills as it is sung and turns the accent colour once done',
+    (tester) async {
+      const rawLyrics =
+          '[00:05.00]第一句\n'
+          '[00:05.20]First line\n'
+          '[00:10.00]第二句\n'
+          '[00:10.20]Second line';
+      final storage = TestPlayerLibraryStorage(
+        favorites: const <Song>[
+          Song(
+            id: 'lyrics-track',
+            name: '歌词曲目',
+            artist: '歌词歌手',
+            lrc: rawLyrics,
+            source: MusicSource.netease,
+          ),
+        ],
+      );
+      final engine = JustAudioPlayerEngine.test();
+      addTearDown(engine.dispose);
+
+      final container = ProviderContainer(
+        overrides: [
+          playerEngineProvider.overrideWithValue(engine),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
+          remoteTopListRepositoryProvider.overrideWithValue(
+            const _FakeTopListRepository(),
+          ),
+          libraryStorageProvider.overrideWithValue(storage),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            _noopDownloadLibraryRepository(),
+          ),
+          playerPreferencesStoreProvider.overrideWithValue(
+            TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            _noopLocalPlaybackResolver(),
+          ),
+          songResolutionRepositoryProvider.overrideWithValue(
+            SongResolutionRepository.test(
+              resolveSongValue: (song, quality) async => song.copyWith(
+                url: 'https://example.com/${song.id}-$quality.mp3',
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const TuneFreeApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final controller = container.read(playerControllerProvider.notifier);
+      await controller.openLegacySong(
+        id: 'lyrics-track',
+        source: 'netease',
+        title: '歌词曲目',
+        artist: '歌词歌手',
+        lyrics: rawLyrics,
+        queue: const <PlayerTrack>[
+          PlayerTrack(
+            id: 'lyrics-track',
+            source: 'netease',
+            title: '歌词曲目',
+            artist: '歌词歌手',
+          ),
+        ],
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('mini-player')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('player-lyrics-toggle-area')));
+      await tester.pumpAndSettle();
+
+      // 行首之前：还没开唱，就是普通文本，没有填充层。
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('player-lyric-fill-0')),
+          matching: find.byType(ShaderMask),
+        ),
+        findsNothing,
+      );
+
+      // 唱到第一行中间：填充层出现，字本身仍是「未唱」色。
+      // 这里只能 pump 不能 pumpAndSettle —— Ticker 会把位置外推到行尾。
+      await controller.seek(const Duration(seconds: 6));
+      await tester.pump();
+      await tester.pump();
+
+      final filling = find.byKey(const Key('player-lyric-fill-0'));
+      expect(filling, findsOneWidget);
+      expect(
+        find.descendant(of: filling, matching: find.byType(ShaderMask)),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('player-lyrics-line-active-0')))
+            .style
+            ?.color,
+        const Color(0xFF111111),
+      );
+
+      // 第二行唱完之后：整行换成强调色，填充层收起（不再需要合成层）。
+      await controller.seek(const Duration(seconds: 12));
+      await tester.pump();
+      await tester.pump();
+
+      final finished = find.byKey(const Key('player-lyric-fill-1'));
+      expect(finished, findsOneWidget);
+      expect(
+        find.descendant(of: finished, matching: find.byType(ShaderMask)),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('player-lyrics-line-active-1')))
+            .style
+            ?.color,
+        const Color(0xFFFA233B),
+      );
+    },
+  );
+
+  testWidgets(
     'full player cover prefers artwork and only falls back when artwork is missing',
     (tester) async {
       final storage = TestPlayerLibraryStorage();
