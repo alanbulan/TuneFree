@@ -6,8 +6,18 @@ const isHost = (hostname: string, domain: string): boolean =>
 /** 必须走自建代理的图床：不支持 HTTPS 或带防盗链，浏览器直连会被拦截。 */
 const PROXIED_IMAGE_HOSTS = ["hdslb.com", "biliimg.com"];
 
-/** 已知支持 HTTPS、可以就地升级的图床。 */
-const HTTPS_UPGRADE_HOSTS = ["music.126.net", "y.gtimg.cn", "qpic.cn"];
+/** 已知支持 HTTPS、可以就地升级的音频 / 图床 CDN。 */
+const HTTPS_UPGRADE_HOSTS = [
+  "music.126.net",
+  "y.gtimg.cn",
+  "qpic.cn",
+  // QQ 音乐流媒体：ws / sjy6 / isure / dl.stream.qqmusic.qq.com、aqqmusic.tc.qq.com。
+  // vkey 返回的 sip 一律是 http，而同一 purl 换成 https 实测同样 206 audio/mpeg。
+  "qqmusic.qq.com",
+  "tc.qq.com",
+  // JOOX 直接返回 https，列在这里是为了兜住历史缓存里的 http 地址。
+  "stream.music.joox.com",
+];
 
 /**
  * 解包历史本地代理地址，只保留上游地址。
@@ -85,8 +95,12 @@ export const normalizeMusicUrl = (value?: string): string => {
   }
 
   const target = parsed.toString();
-  return PROXIED_IMAGE_HOSTS.some((host) => isHost(parsed.hostname, host)) ||
-    (parsed.protocol === "http:" && isHost(parsed.hostname, "kuwo.cn"))
+  // 剩余仍是 http 的地址一律交给自建代理。PWA 跑在 https 源上，iOS 会直接拦截
+  // http 媒体请求（错误码 4 / NotSupportedError），由代理转发才能正常播。
+  const needsProxy =
+    PROXIED_IMAGE_HOSTS.some((host) => isHost(parsed.hostname, host)) ||
+    parsed.protocol === "http:";
+  return needsProxy
     ? `${SELF_HOSTED_PROXY}${encodeURIComponent(target)}`
     : target;
 };

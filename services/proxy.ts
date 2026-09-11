@@ -6,6 +6,33 @@ export const getProxies = (): string[] => {
   return [SELF_HOSTED_PROXY, stored];
 };
 
+/**
+ * 直连优先、代理兜底的 fetch。
+ *
+ * GD Studio 自带 CORS 头（`access-control-allow-origin: *`），浏览器可以直连；
+ * 而经 Pages 自建代理转发时，它拒绝来自 Cloudflare 出口 IP 的请求——三个 Pages
+ * 部署实测全部返回 520，同一份代理代码在本地 workerd 用普通出口访问却正常。
+ * 因此先直连（用用户自己的出口 IP），只有直连抛错（跨域被拦 / 网络不可达）
+ * 才退回代理。
+ */
+export const directFirstFetch = async (
+  url: string,
+  timeoutMs = 12000,
+): Promise<Response | null> => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const resp = await fetch(url, {
+      credentials: "omit",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return resp;
+  } catch {
+    return proxyFetch(url, {}, timeoutMs);
+  }
+};
+
 export const proxyFetchJson = async (
   url: string,
   timeoutMs = 8000,

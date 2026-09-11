@@ -11,10 +11,17 @@ const ALLOWED_HOSTS = [
     'music.163.com',
     'interface.music.163.com',
     'interface3.music.163.com',
+    // 网易云音频 CDN（m701/m801.music.126.net 等），http 地址需要代理转发
+    'music.126.net',
     'u.y.qq.com',
     'c.y.qq.com',
     'shc.y.qq.com',
     'y.gtimg.cn',
+    // QQ 音乐流媒体主机，vkey 解析出的 http 地址经此转发
+    'stream.qqmusic.qq.com',
+    'aqqmusic.tc.qq.com',
+    // JOOX 流媒体主机
+    'stream.music.joox.com',
     'search.kuwo.cn',
     'www.kuwo.cn',
     'kuwo.cn',

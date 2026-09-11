@@ -69,7 +69,15 @@ export const searchSongs = async (
   const source = normalizeMusicSource(platform);
 
   if (!isSearchableMusicSource(source)) return [];
-  if (source === "netease") return searchNetease(keyword, page, limit);
+  // 网易云优先走 GD Studio：直连网易云 cloudsearch 时，Cloudflare 出口 IP 会
+  // 触发风控验证墙（code -462「验证成功后，可进行下一步操作哦~」），实测约
+  // 一半请求会被拦；GD Studio 返回的是同一批网易云曲目 ID，可直接用于播放。
+  if (source === "netease") {
+    const gdResults = await searchGDStudio(keyword, source, page, limit).catch(
+      () => [] as Song[],
+    );
+    return gdResults.length > 0 ? gdResults : searchNetease(keyword, page, limit);
+  }
   if (source === "qq") return searchQQ(keyword, page, limit);
   if (source === "kuwo") {
     const gdResults = await searchGDStudio(keyword, source, page, limit).catch(
