@@ -20,7 +20,7 @@ export const usePlayerLyrics = (
   isOpen: boolean,
   currentTime: number,
   showLyrics: boolean,
-  lyricsContainerRef: RefObject<HTMLDivElement>,
+  lyricsContainerRef: RefObject<HTMLDivElement | null>,
   lyricOffsetSeconds: number,
 ) => {
   const [rawLyrics, setRawLyrics] = useState('');
