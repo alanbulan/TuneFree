@@ -46,7 +46,10 @@ String musicSourceFullLabel(String source) =>
 String musicSourceBadgeLabel(String source) =>
     _musicSourceBadgeLabels[source] ?? source.toUpperCase();
 
-/// 音源徽标配色。未知音源退回主题的中性色，而不是写死的灰。
+/// 音源徽标配色。未知音源退回中性色。
+///
+/// 浅色下的回退值刻意与改造前**逐位相同**（0xFFE5E7EB / 0xFF4B5563），
+/// 否则浅色外观会悄悄发生变化。
 MusicSourceBadgeColors musicSourceBadgeColors(
   String source,
   TuneFreeColors colors,
@@ -54,5 +57,5 @@ MusicSourceBadgeColors musicSourceBadgeColors(
   final isDark = colors.background.computeLuminance() < 0.5;
   final palette = isDark ? _darkBadgeColors : _lightBadgeColors;
   return palette[source] ??
-      (background: colors.fillSubtle, foreground: colors.textSecondary);
+      (background: colors.borderSubtle, foreground: colors.lyricTranslation);
 }
