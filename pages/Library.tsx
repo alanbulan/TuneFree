@@ -4,6 +4,7 @@ import { useLibrary, type LibraryImportMode, type LibraryImportPreview } from ".
 import { useTheme } from "../contexts/ThemeContext";
 import { PRESET_COLORS, type ThemeMode } from "../utils/theme";
 import { useToast } from "../components/ToastHost";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { getImgReferrerPolicy } from "../services/api";
 import {
   importPlaylist,
@@ -75,6 +76,13 @@ const Library: React.FC = () => {
   const [renameValue, setRenameValue] = useState("");
   const [isEditMode, setIsEditMode] = useState(false);
   const [pendingImport, setPendingImport] = useState<LibraryImportPreview | null>(null);
+  const [confirmState, setConfirmState] = useState<{
+    title: string;
+    message?: string;
+    confirmLabel?: string;
+    danger?: boolean;
+    onConfirm: () => void;
+  } | null>(null);
 
   const [showImportModal, setShowImportModal] = useState(false);
   const [importSource, setImportSource] = useState<string>(
@@ -187,9 +195,8 @@ const Library: React.FC = () => {
     reader.readAsText(file);
   };
 
-  const applyPendingImport = (mode: LibraryImportMode) => {
+  const doApplyPendingImport = (mode: LibraryImportMode) => {
     if (!pendingImport) return;
-    if (mode === "replace" && !window.confirm("覆盖导入会替换当前收藏和歌单，确定继续吗？")) return;
 
     const result = applyImportData(pendingImport, mode);
     if (!result.ok) {
@@ -201,6 +208,21 @@ const Library: React.FC = () => {
     showToast(mode === "merge" ? "已合并导入" : "已覆盖导入", "success", {
       label: "撤销",
       onClick: () => restoreData(result.backup),
+    });
+  };
+
+  const applyPendingImport = (mode: LibraryImportMode) => {
+    if (!pendingImport) return;
+    if (mode !== "replace") {
+      doApplyPendingImport(mode);
+      return;
+    }
+    setConfirmState({
+      title: "覆盖导入",
+      message: "覆盖导入会替换当前收藏和歌单，确定继续吗？",
+      confirmLabel: "覆盖导入",
+      danger: true,
+      onConfirm: () => doApplyPendingImport("replace"),
     });
   };
 
@@ -410,12 +432,18 @@ const Library: React.FC = () => {
                     重命名
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm("确定删除？")) {
-                        deletePlaylist(selectedPlaylist.id);
-                        setSelectedPlaylistId(null);
-                      }
-                    }}
+                    onClick={() =>
+                      setConfirmState({
+                        title: "删除歌单",
+                        message: `确定删除「${selectedPlaylist.name}」吗？删除后不可恢复。`,
+                        confirmLabel: "删除",
+                        danger: true,
+                        onConfirm: () => {
+                          deletePlaylist(selectedPlaylist.id);
+                          setSelectedPlaylistId(null);
+                        },
+                      })
+                    }
                     className="flex-1 py-2 bg-ios-red/5 text-ios-red rounded-lg text-xs font-medium"
                   >
                     删除歌单
@@ -967,6 +995,18 @@ const Library: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ====== 通用确认弹窗 ====== */}
+      {confirmState && (
+        <ConfirmDialog
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmLabel={confirmState.confirmLabel}
+          danger={confirmState.danger}
+          onConfirm={confirmState.onConfirm}
+          onCancel={() => setConfirmState(null)}
+        />
       )}
     </>
   );
