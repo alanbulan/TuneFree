@@ -91,6 +91,15 @@ const QueuePopupContent: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     });
   };
 
+  const handleRemoveFromQueue = (song: Song) => {
+    const previousQueue = queue;
+    removeFromQueue(song.id, song.source);
+    showToast('已从队列移除', 'success', {
+      label: '撤销',
+      onClick: () => restoreQueue(previousQueue),
+    });
+  };
+
   return (
     <>
       <div
@@ -136,9 +145,7 @@ const QueuePopupContent: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 song={song}
                 isCurrent={isSameSong(currentSong, song)}
                 onPlay={playSong}
-                onRemove={(targetSong) =>
-                  removeFromQueue(targetSong.id, targetSong.source)
-                }
+                onRemove={handleRemoveFromQueue}
               />
             ))
           )}

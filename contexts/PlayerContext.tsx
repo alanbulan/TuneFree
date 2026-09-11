@@ -465,6 +465,27 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     playbackIntentRef.current = isPlaying;
   }, [isPlaying]);
 
+  // 用 rAF 驱动进度状态（timeupdate 在 iOS 后台会被节流；rAF 前台更平滑）。
+  // 只同步 >=0.1s 的位移，避免每帧触发一次 React 渲染。
+  useEffect(() => {
+    if (!isPlaying) return;
+    let frame = 0;
+    let last = -1;
+    const tick = () => {
+      const audio = audioRef.current;
+      if (audio) {
+        const nextTime = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+        if (Math.abs(nextTime - last) >= 0.1) {
+          last = nextTime;
+          setCurrentTime(nextTime);
+        }
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [isPlaying]);
+
   // 统一的前后一步解析：预载与切歌走同一入口，随机顺序表在此持续对齐。
   // 只依赖 ref，引用保持稳定，可安全被空依赖的旧闭包调用。
   const getQueueStep = useCallback((song: Song | null, step: 1 | -1): number => {

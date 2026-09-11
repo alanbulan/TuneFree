@@ -23,5 +23,5 @@ export {
   supportsTranslatedLyricFallback,
   toLegacyParsedLyrics,
 } from './lyrics/publicApi';
-export { analyzeLyricTimeline } from './lyrics/timeline';
+export { analyzeLyricTimeline, LYRIC_VERSION_MISMATCH_MESSAGE } from './lyrics/timeline';
 export type { LyricTimelineAnalysis } from './lyrics/timeline';
