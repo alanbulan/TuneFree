@@ -18,22 +18,36 @@ import '../models/parsed_lyric.dart';
 /// 沿途每一处。Tauri 那边也是同一套做法（`trackMarkerPattern` + 别名表），
 /// 只是它的轨道种类更多。
 ///
-/// 轨道种类比 Tauri 少：那边还解析音译轨和逐字轨，但**现有音源提供不了**
+/// 轨道种类比 Tauri 少：那边还解析音译轨，但**现有音源提供不了**
 /// —— 已实测 GD Studio 的 `types=lyric` 在 netease / joox / kuwo 三个源上
 /// 都只返回 `lyric` + `tlyric`，罗马音得另外直连网易。提供不了的轨道不做。
+///
+/// [karaoke] 是唯一的例外：它不是给人读的歌词，而是网易 `yrc` 的**原文**，
+/// 由 `parseYrcDocument` 还原成字级时间。原样存着而不是先解析成结构化数据，
+/// 是因为这份文档全程以单个字符串流转（缓存、队列、落盘），塞进一个自定义
+/// 结构就得给沿途每一处加类型。代价是体积 —— 一份 yrc 约 8k 字符，是普通
+/// LRC 的四五倍，但它只出现在**确实带逐字轨**的网易歌上。
+///
+/// **有 [karaoke] 时 [main] 是空的，正文由逐字轨自带**。两者不是主从关系而是
+/// 二选一：yrc 是 v1 时间轴，GD Studio 的主轨是 legacy 时间轴，逐行差
+/// 20–570ms，同时留下就会有两个互相打架的真相。解析方（
+/// `PlayerLyricsController`）据此二选一。
 final class LyricDocument {
   const LyricDocument({
     required this.main,
     this.translation = '',
     this.romanization = '',
+    this.karaoke = '',
   });
 
   final String main;
   final String translation;
   final String romanization;
+  final String karaoke;
 
   static const String translationMarker = '[tunefree:translation]';
   static const String romanizationMarker = '[tunefree:romanization]';
+  static const String karaokeMarker = '[tunefree:karaoke]';
 
   /// 把文档切回各条轨道。没有标记时整段都是主轨。
   static LyricDocument parse(String raw) {
@@ -44,6 +58,7 @@ final class LyricDocument {
     var main = <String>[];
     var translation = <String>[];
     var romanization = <String>[];
+    var karaoke = <String>[];
     var current = main;
 
     for (final line in raw.split('\n')) {
@@ -52,6 +67,8 @@ final class LyricDocument {
           current = translation;
         case romanizationMarker:
           current = romanization;
+        case karaokeMarker:
+          current = karaoke;
         default:
           current.add(line);
       }
@@ -61,26 +78,35 @@ final class LyricDocument {
       main: main.join('\n'),
       translation: translation.join('\n'),
       romanization: romanization.join('\n'),
+      karaoke: karaoke.join('\n'),
     );
   }
 
   /// 拼回一个文档串。空轨道不写标记，免得留下没有内容的空段。
+  ///
+  /// [main] 允许为空 —— 有逐字轨时正文由 [karaoke] 自带，见类文档。
   String encode() {
-    final buffer = StringBuffer(main);
-    if (translation.trim().isNotEmpty) {
-      buffer
-        ..write('\n')
-        ..write(translationMarker)
-        ..write('\n')
-        ..write(translation);
+    final buffer = StringBuffer();
+
+    void write(String content, String marker) {
+      if (content.trim().isEmpty) {
+        return;
+      }
+      if (buffer.isNotEmpty) {
+        buffer.write('\n');
+      }
+      if (marker.isNotEmpty) {
+        buffer
+          ..write(marker)
+          ..write('\n');
+      }
+      buffer.write(content);
     }
-    if (romanization.trim().isNotEmpty) {
-      buffer
-        ..write('\n')
-        ..write(romanizationMarker)
-        ..write('\n')
-        ..write(romanization);
-    }
+
+    write(main, '');
+    write(translation, translationMarker);
+    write(romanization, romanizationMarker);
+    write(karaoke, karaokeMarker);
     return buffer.toString();
   }
 }

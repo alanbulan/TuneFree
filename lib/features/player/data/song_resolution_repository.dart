@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/song.dart';
 import '../../../core/network/tune_free_http_client.dart';
 import '../../../core/utils/lyric_document.dart';
+import '../../../core/utils/yrc_parser.dart';
 import 'netease_lyric_client.dart';
 
 typedef SongResolver = Future<Song> Function(Song song, String quality);
@@ -15,7 +16,7 @@ const defaultGdStudioApiBase = 'https://music-api.gdstudio.xyz/api.php';
 final songResolutionClientProvider = Provider<SongResolutionClient>((ref) {
   return GdStudioSongResolutionClient(
     httpClient: TuneFreeHttpClient(),
-    romanizationLoader: ref.watch(neteaseRomanizationLoaderProvider),
+    lyricLoader: ref.watch(neteaseLyricLoaderProvider),
   );
 });
 
@@ -61,17 +62,17 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
   GdStudioSongResolutionClient({
     required TuneFreeHttpClient httpClient,
     String apiBase = defaultGdStudioApiBase,
-    RomanizationLoader? romanizationLoader,
+    NeteaseLyricLoader? lyricLoader,
   }) : _dio = httpClient.dio,
        _apiBase = apiBase,
-       _romanizationLoader = romanizationLoader;
+       _lyricLoader = lyricLoader;
 
   static const _urlCacheTtl = Duration(minutes: 5);
   static const _maxCacheEntries = 80;
 
   final Dio _dio;
   final String _apiBase;
-  final RomanizationLoader? _romanizationLoader;
+  final NeteaseLyricLoader? _lyricLoader;
   final Map<String, _CachedResolution<String>> _urlCache =
       <String, _CachedResolution<String>>{};
   final Map<String, String> _lyricsCache = <String, String>{};
@@ -161,9 +162,9 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
     }
 
     try {
-      // 罗马音要和主歌词并行取：它是第二个 HTTP 往返，串行会白白拖慢
+      // 网易的扩展轨要和主歌词并行取：它是第二个 HTTP 往返，串行会白白拖慢
       // 每一次歌词加载，而中文歌那边多半是空的。
-      final romanizationFuture = _loadRomanization(source, id);
+      final tracksFuture = _loadNeteaseTracks(source, id);
 
       final payload = await _getGdStudioData(<String, String>{
         'types': 'lyric',
@@ -172,13 +173,13 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
       });
       final main = _readString(payload?['lyric']);
       final translated = _readString(payload?['tlyric']);
-      final romanization = await romanizationFuture;
+      final tracks = await tracksFuture;
 
-      final resolvedLyrics = LyricDocument(
-        main: main ?? '',
-        translation: translated ?? '',
-        romanization: romanization ?? '',
-      ).encode();
+      final resolvedLyrics = _composeLyrics(
+        main: main,
+        translation: translated,
+        tracks: tracks,
+      );
       if (resolvedLyrics.isNotEmpty) {
         _cacheString(_lyricsCache, cacheKey, resolvedLyrics);
         return resolvedLyrics;
@@ -197,12 +198,48 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
     return null;
   }
 
-  /// 取罗马音轨。只有网易源有这条路 —— 别的源拿的 id 是 GD Studio 自己的
+  /// 组装歌词文档。
+  ///
+  /// 分成两条互斥的路，判据是**有没有解析得出的逐字轨**：
+  ///
+  /// - 有：整份换用网易 v1 那一套（`yrc` 自带正文 + `ytlrc` 译文 +
+  ///   `yromalrc` 罗马音）。主轨留空，见 [LyricDocument] 的类文档。
+  /// - 没有：维持原样 —— GD Studio 的 legacy 主轨 + 译文，配上 `romalrc`
+  ///   罗马音（实测它与 legacy 主轨逐行精确对齐）。
+  ///
+  /// 逐字轨存在但一行都解析不出来时按「没有」处理：格式变了宁可退回老路，
+  /// 也不要因为主轨被留空而把整首歌的歌词变成空白。
+  String _composeLyrics({
+    required String? main,
+    required String? translation,
+    required NeteaseLyricTracks? tracks,
+  }) {
+    final karaoke = tracks?.karaoke;
+    if (karaoke != null && !parseYrcDocument(karaoke).isEmpty) {
+      return LyricDocument(
+        main: '',
+        translation: tracks?.karaokeTranslation ?? '',
+        romanization: tracks?.karaokeRomanization ?? '',
+        karaoke: karaoke,
+      ).encode();
+    }
+
+    return LyricDocument(
+      main: main ?? '',
+      translation: translation ?? '',
+      romanization: tracks?.romanization ?? '',
+    ).encode();
+  }
+
+  /// 取网易扩展轨。只有网易源有这条路 —— 别的源拿的 id 是 GD Studio 自己的
   /// id 空间，发去网易只会得到一个错误响应。
   ///
   /// 没配 loader（例如测试里直接构造的客户端）就整个跳过，等于关掉这个功能。
-  Future<String?> _loadRomanization(String source, String id) async {
-    final loader = _romanizationLoader;
+  Future<NeteaseLyricTracks?> _loadNeteaseTracks(
+    String source,
+    String id,
+  ) async {
+    final loader = _lyricLoader;
     if (loader == null || source != 'netease') {
       return null;
     }
@@ -213,7 +250,8 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
     }
   }
 
-  Future<String?> _loadKuwoUrl(String id) async {    final normalizedId = id.startsWith('MUSIC_') ? id : 'MUSIC_$id';
+  Future<String?> _loadKuwoUrl(String id) async {
+    final normalizedId = id.startsWith('MUSIC_') ? id : 'MUSIC_$id';
     try {
       final response = await _dio.getUri<dynamic>(
         Uri.https('antiserver.kuwo.cn', '/anti.s', <String, String>{

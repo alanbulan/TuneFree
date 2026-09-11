@@ -211,9 +211,88 @@ void main() {
       const raw = '[00:05.00]第一句';
 
       expect(
-        identical(controller.parseRawLyrics(raw), controller.parseRawLyrics(raw)),
+        identical(
+          controller.parseRawLyrics(raw),
+          controller.parseRawLyrics(raw),
+        ),
         isTrue,
       );
+    });
+
+    test('有逐字轨时用真·逐字时间，不再估算', () {
+      final controller = PlayerLyricsController();
+      final timeline = controller.buildLyrics(
+        '${LyricDocument.karaokeMarker}\n'
+        '[830,4980](830,380,0)夢(1210,330,0)な(1540,200,0)ら',
+      );
+
+      final line = timeline.lines.single;
+      expect(line.line.text, '夢なら');
+      expect(line.words.map((word) => word.text), <String>['夢', 'な', 'ら']);
+      // 真数据直接来自 yrc，而不是按版面权重摊出来的。
+      expect(line.words[0].start, closeTo(0.83, 1e-9));
+      expect(line.words[1].start, closeTo(1.21, 1e-9));
+      // 行尾也跟着真数据走。
+      expect(line.endTime, closeTo(1.74, 1e-9));
+    });
+
+    test('有逐字轨时丢掉 legacy 主轨，用逐字轨自带的行', () {
+      final controller = PlayerLyricsController();
+      final timeline = controller.buildLyrics(
+        '[00:00.85]夢ならばどれほどよかったでしょう\n'
+        '${LyricDocument.karaokeMarker}\n'
+        '[830,4980](830,380,0)夢(1210,330,0)な',
+      );
+
+      // 两套时间轴差 20ms 起步、最多 570ms，混着用会把字压到隔壁行上。
+      expect(timeline.lines.single.line.text, '夢な');
+      expect(timeline.lines.single.line.time, closeTo(0.83, 1e-9));
+    });
+
+    test('逐字轨里没有词的行退回估算，混排时互不影响', () {
+      final controller = PlayerLyricsController();
+      final timeline = controller.buildLyrics(
+        '${LyricDocument.karaokeMarker}\n'
+        '[830,4980](830,380,0)夢(1210,330,0)な\n'
+        '[6370,4890]纯文本行',
+      );
+
+      expect(timeline.length, 2);
+      expect(timeline[0].words.map((word) => word.text), <String>['夢', 'な']);
+      expect(timeline[1].words.map((word) => word.text), <String>[
+        '纯',
+        '文',
+        '本',
+        '行',
+      ]);
+    });
+
+    test('v1 的译文与罗马音贴在逐字轨的行上', () {
+      final controller = PlayerLyricsController();
+      final timeline = controller.buildLyrics(
+        '${LyricDocument.translationMarker}\n'
+        '[00:00.830]如果这一切都是梦境\n'
+        '${LyricDocument.romanizationMarker}\n'
+        '[00:00.830]yu me na ra ba\n'
+        '${LyricDocument.karaokeMarker}\n'
+        '[830,4980](830,380,0)夢(1210,330,0)な',
+      );
+
+      final line = timeline.lines.single.line;
+      expect(line.text, '夢な');
+      expect(line.translation, '如果这一切都是梦境');
+      expect(line.romanization, 'yu me na ra ba');
+    });
+
+    test('逐字轨解析不出内容时退回主轨', () {
+      final controller = PlayerLyricsController();
+      final timeline = controller.buildLyrics(
+        '[00:05.00]第一句\n'
+        '${LyricDocument.karaokeMarker}\n'
+        '# 既不是 JSON 也不是计时行',
+      );
+
+      expect(timeline.lines.single.line.text, '第一句');
     });
   });
 }

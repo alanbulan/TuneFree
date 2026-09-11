@@ -18,10 +18,12 @@ void main() {
         _lines({10.0: '你好，世界', 14.0: '下一句'}),
       );
 
-      expect(
-        timeline[0].words.map((word) => word.text),
-        <String>['你', '好，', '世', '界'],
-      );
+      expect(timeline[0].words.map((word) => word.text), <String>[
+        '你',
+        '好，',
+        '世',
+        '界',
+      ]);
     });
 
     test('拉丁按空白分词，空白留在前一个词上', () {
@@ -113,9 +115,7 @@ void main() {
     });
 
     test('唱完歇几拍的散行会被上限收住，而不是拖成慢动作', () {
-      final timeline = estimateLyricTimeline(
-        _lines({10.0: '哦', 15.0: '下一句'}),
-      );
+      final timeline = estimateLyricTimeline(_lines({10.0: '哦', 15.0: '下一句'}));
 
       final line = timeline[0];
       // 行跨度 5 秒，一个字；不设上限的话这里会是 4.3 秒。
@@ -154,9 +154,7 @@ void main() {
     });
 
     test('超过 8 秒的空档视为间奏，不合成', () {
-      final timeline = estimateLyricTimeline(
-        _lines({10.0: '哦', 30.0: '下一句'}),
-      );
+      final timeline = estimateLyricTimeline(_lines({10.0: '哦', 30.0: '下一句'}));
 
       expect(timeline[0].words, isEmpty);
       expect(timeline[0].endTime, closeTo(30.0, 1e-9));
@@ -176,10 +174,46 @@ void main() {
     });
   });
 
+  group('estimateLyricTimeline 真·逐字覆盖', () {
+    const real = <LyricWord>[
+      LyricWord(start: 10.0, duration: 0.4, text: '你'),
+      LyricWord(start: 10.4, duration: 0.6, text: '好'),
+    ];
+
+    test('命中的行直接用真数据，行尾也跟着它走', () {
+      final timeline = estimateLyricTimeline(
+        _lines({10.0: '你好', 14.0: '下一句'}),
+        realWords: const {10000: real},
+      );
+
+      expect(timeline[0].words, real);
+      // 估算会留 6% 前导余量、按权重摊时长，真数据不该被这些规则改写。
+      expect(timeline[0].words.first.start, 10.0);
+      expect(timeline[0].endTime, closeTo(11.0, 1e-9));
+    });
+
+    test('没命中的行照旧估算', () {
+      final timeline = estimateLyricTimeline(
+        _lines({10.0: '你好', 14.0: '下一句'}),
+        realWords: const {10000: real},
+      );
+
+      expect(timeline[1].hasWords, isTrue);
+      expect(timeline[1].words.first.text, '下');
+      expect(timeline[1].words.first.start, greaterThan(14.0));
+    });
+
+    test('不给真数据时与改造前完全一致', () {
+      final lines = _lines({10.0: '你好', 14.0: '下一句'});
+      final timeline = estimateLyricTimeline(lines);
+
+      expect(timeline[0].words.map((word) => word.text), <String>['你', '好']);
+      expect(timeline[0].words.first.start, closeTo(10.24, 1e-9));
+    });
+  });
+
   group('LyricTimeline.activeIndexAt', () {
-    final timeline = estimateLyricTimeline(
-      _lines({1.0: '第一句', 3.5: '第二句'}),
-    );
+    final timeline = estimateLyricTimeline(_lines({1.0: '第一句', 3.5: '第二句'}));
 
     test('当前时间之前取第一行', () {
       expect(timeline.activeIndexAt(0.5), 0);
@@ -196,9 +230,10 @@ void main() {
 
   group('lyricSeekTarget', () {
     test('没有偏移时就是行时间', () {
-      expect(lyricSeekTarget(12.5, Duration.zero), const Duration(
-        milliseconds: 12500,
-      ));
+      expect(
+        lyricSeekTarget(12.5, Duration.zero),
+        const Duration(milliseconds: 12500),
+      );
     });
 
     test('歌词推迟了 2 秒，就要早 2 秒开始放', () {
@@ -217,10 +252,7 @@ void main() {
     });
 
     test('算出来是负数时夹到 0，不产生负的播放位置', () {
-      expect(
-        lyricSeekTarget(1.0, const Duration(seconds: 5)),
-        Duration.zero,
-      );
+      expect(lyricSeekTarget(1.0, const Duration(seconds: 5)), Duration.zero);
     });
   });
 }

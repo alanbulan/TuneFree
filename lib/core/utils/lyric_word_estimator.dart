@@ -1,10 +1,13 @@
 /// 按行内权重把行跨度摊到每个字/词上，得到**估算**的逐字时间。
 ///
-/// **这不是真正的逐字歌词。** 本应用接到的歌词源（GD Studio 的
-/// `types=lyric`、酷我兜底）只提供整行时间轴，正文是纯 `[mm:ss.mmm]文本`，
-/// 没有任何字级标记；真·逐字需要另外直连网易 `yrc` / QQ `QRC`。
-/// 所以这里做的是「把这一行的时长按版面宽度分给每个字」，
-/// 用于卡拉OK 式的连续填充，不是逐字对齐。
+/// **这是兜底，不是主路径。** 只要有真·逐字数据（网易 `yrc`，见
+/// [parseYrcDocument]），那几行就用真数据，这里只补剩下的行。真正需要
+/// 估算的是两种情况：歌词源压根没有字级时间（GD Studio 的 `types=lyric`、
+/// 酷我兜底都只有整行时间轴），以及有逐字的歌里那些不唱的行
+/// （间奏、元数据）。
+///
+/// 所以这里做的是「把这一行的时长按版面宽度分给每个字」，用于卡拉OK 式的
+/// 连续填充，不是逐字对齐。
 ///
 /// 已知的取舍：
 /// - 一行唱到一半换气、拖腔，估算无法体现，填充会匀速走完全程；
@@ -17,6 +20,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/lyric_timeline.dart';
 import '../models/parsed_lyric.dart';
+import 'yrc_parser.dart';
 
 /// 行首余量。LRC 的行时间普遍略微**早于**真实起唱，不留余量会显得抢拍。
 const double _kHeadMargin = 0.06;
@@ -58,8 +62,15 @@ final RegExp _metadataPattern = RegExp(
 /// 「，」在中文歌词里是行内停顿，不是独立音节。
 final RegExp _punctuationPattern = RegExp(r'[\p{P}\p{S}]', unicode: true);
 
-/// 由纯文本歌词推出带逐字时间的完整时间轴。
-LyricTimeline estimateLyricTimeline(List<ParsedLyric> lines) {
+/// 由歌词行推出带逐字时间的完整时间轴。
+///
+/// [realWords] 是真·逐字数据，键为 [yrcTimeKey]。命中的行直接用真数据，
+/// 不再估算 —— 真数据连行尾都比估算准，所以 [TimedLyricLine.endTime] 也
+/// 跟着它走。没命中的行（以及整首歌都没有真数据时）照旧估算。
+LyricTimeline estimateLyricTimeline(
+  List<ParsedLyric> lines, {
+  Map<int, List<LyricWord>> realWords = const <int, List<LyricWord>>{},
+}) {
   if (lines.isEmpty) {
     return LyricTimeline.empty;
   }
@@ -67,6 +78,14 @@ LyricTimeline estimateLyricTimeline(List<ParsedLyric> lines) {
   final timed = <TimedLyricLine>[];
   for (var index = 0; index < lines.length; index += 1) {
     final line = lines[index];
+    final real = realWords[yrcTimeKey(line.time)];
+    if (real != null && real.isNotEmpty) {
+      timed.add(
+        TimedLyricLine(line: line, endTime: real.last.end, words: real),
+      );
+      continue;
+    }
+
     final next = index + 1 < lines.length ? lines[index + 1] : null;
     final span = next != null
         ? next.time - line.time
@@ -75,15 +94,8 @@ LyricTimeline estimateLyricTimeline(List<ParsedLyric> lines) {
 
     timed.add(
       words.isEmpty
-          ? TimedLyricLine.plain(
-              line,
-              endTime: line.time + math.max(span, 0),
-            )
-          : TimedLyricLine(
-              line: line,
-              endTime: words.last.end,
-              words: words,
-            ),
+          ? TimedLyricLine.plain(line, endTime: line.time + math.max(span, 0))
+          : TimedLyricLine(line: line, endTime: words.last.end, words: words),
     );
   }
 
@@ -103,7 +115,10 @@ List<LyricWord> _estimateWords(String text, double start, double span) {
     return const <LyricWord>[];
   }
 
-  final totalWeight = tokens.fold<double>(0, (sum, token) => sum + token.weight);
+  final totalWeight = tokens.fold<double>(
+    0,
+    (sum, token) => sum + token.weight,
+  );
   if (totalWeight <= 0) {
     return const <LyricWord>[];
   }

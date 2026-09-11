@@ -363,11 +363,17 @@ DownloadLibraryRepository _noopDownloadLibraryRepository() {
     recordStore: _NoopDownloadRecordStore(),
     fileExists: _noopFileExists,
     deleteFile: _noopDeleteFile,
+    trashDirectoryPath: _noopTrashDirectoryPath,
+    moveFile: _noopMoveFile,
+    listFiles: _noopListFiles,
   );
 }
 
 Future<bool> _noopFileExists(String path) async => false;
 Future<void> _noopDeleteFile(String path) async {}
+Future<String> _noopTrashDirectoryPath() async => '';
+Future<void> _noopMoveFile({required String from, required String to}) async {}
+Future<List<String>> _noopListFiles(String directory) async => const <String>[];
 
 final class _NoopDownloadRecordStore implements DownloadRecordStore {
   const _NoopDownloadRecordStore();
@@ -1320,8 +1326,7 @@ void main() {
   testWidgets(
     'lyric offset shifts which line is active and compensates the seek',
     (tester) async {
-      const rawLyrics =
-          '[00:05.00]第一句\n[00:05.20]First line\n[00:10.00]第二句';
+      const rawLyrics = '[00:05.00]第一句\n[00:05.20]First line\n[00:10.00]第二句';
       final storage = TestPlayerLibraryStorage(
         favorites: const <Song>[
           Song(

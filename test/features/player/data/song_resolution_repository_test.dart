@@ -8,6 +8,7 @@ import 'package:tunefree/core/models/music_source.dart';
 import 'package:tunefree/core/models/song.dart';
 import 'package:tunefree/core/network/tune_free_http_client.dart';
 import 'package:tunefree/core/utils/lyric_document.dart';
+import 'package:tunefree/features/player/data/netease_lyric_client.dart';
 import 'package:tunefree/features/player/data/song_resolution_repository.dart';
 
 final class _FakeGdStudioAdapter implements HttpClientAdapter {
@@ -70,6 +71,89 @@ final class _FakeGdStudioAdapter implements HttpClientAdapter {
 }
 
 void main() {
+  const neteaseSong = Song(
+    id: 'song-id',
+    name: 'Lemon',
+    artist: '米津玄師',
+    source: MusicSource.netease,
+    picId: 'pic-id',
+    urlId: 'url-id',
+    lyricId: '1466598056',
+  );
+
+  test('有逐字轨时整份换成网易 v1 那一套', () async {
+    final dio = Dio();
+    final adapter = _FakeGdStudioAdapter();
+    dio.httpClientAdapter = adapter;
+    final client = GdStudioSongResolutionClient(
+      httpClient: TuneFreeHttpClient(dio: dio),
+      lyricLoader: (id) async => NeteaseLyricTracks(
+        romanization: '[00:00.850]yu me na ra ba',
+        karaoke: '[830,4980](830,380,0)夢(1210,330,0)な',
+        karaokeTranslation: '[00:00.830]如果这一切都是梦境',
+        karaokeRomanization: '[00:00.830]yu me na ra ba',
+      ),
+    );
+
+    final resolvedSong = await client.resolveSong(neteaseSong, 'flac');
+
+    // 主轨留空：正文由逐字轨自带。GD Studio 的主轨是 legacy 时间轴
+    // （850 / 6650 …），与 v1 的 yrc（830 / 6370 …）逐行差 20–570ms，
+    // 两份同时留着就是两个互相打架的真相。
+    expect(
+      resolvedSong.lrc,
+      '${LyricDocument.translationMarker}\n'
+      '[00:00.830]如果这一切都是梦境\n'
+      '${LyricDocument.romanizationMarker}\n'
+      '[00:00.830]yu me na ra ba\n'
+      '${LyricDocument.karaokeMarker}\n'
+      '[830,4980](830,380,0)夢(1210,330,0)な',
+    );
+  });
+
+  test('没有逐字轨时维持 legacy 主轨 + romalrc 罗马音', () async {
+    final dio = Dio();
+    final adapter = _FakeGdStudioAdapter();
+    dio.httpClientAdapter = adapter;
+    final client = GdStudioSongResolutionClient(
+      httpClient: TuneFreeHttpClient(dio: dio),
+      lyricLoader: (id) async =>
+          const NeteaseLyricTracks(romanization: '[00:00.00]di yi ju'),
+    );
+
+    final resolvedSong = await client.resolveSong(neteaseSong, 'flac');
+
+    expect(
+      resolvedSong.lrc,
+      '[00:00.00]第一句\n'
+      '${LyricDocument.translationMarker}\n'
+      '[00:00.00]First line\n'
+      '${LyricDocument.romanizationMarker}\n'
+      '[00:00.00]di yi ju',
+    );
+  });
+
+  test('逐字轨解析不出任何一行时退回 legacy，不留空白歌词', () async {
+    final dio = Dio();
+    final adapter = _FakeGdStudioAdapter();
+    dio.httpClientAdapter = adapter;
+    final client = GdStudioSongResolutionClient(
+      httpClient: TuneFreeHttpClient(dio: dio),
+      // 接口改版会给回不能识别的格式。这时候如果照旧把主轨留空，
+      // 整首歌的歌词就没了 —— 宁可没有逐字。
+      lyricLoader: (id) async => const NeteaseLyricTracks(
+        karaoke: '<这不是 yrc>',
+        karaokeTranslation: '[00:00.830]如果这一切都是梦境',
+      ),
+    );
+
+    final resolvedSong = await client.resolveSong(neteaseSong, 'flac');
+
+    expect(resolvedSong.lrc, contains('[00:00.00]第一句'));
+    expect(resolvedSong.lrc, isNot(contains(LyricDocument.karaokeMarker)));
+    expect(resolvedSong.lrc, isNot(contains('如果这一切都是梦境')));
+  });
+
   test('GD Studio resolver uses the React api.php parse source only', () async {
     final dio = Dio();
     final adapter = _FakeGdStudioAdapter();
