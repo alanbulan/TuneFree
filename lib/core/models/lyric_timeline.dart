@@ -75,6 +75,16 @@ final class TimedLyricLine {
       '"${line.text}")';
 }
 
+/// 点某一行歌词时要跳到哪个播放位置。
+///
+/// 歌词偏移是**加在时间比较上**的（`position + offset` 才是歌词时钟），
+/// 所以要让某一行此刻开始唱，得反过来把偏移减掉。
+/// Tauri 这里用的是原始行时间，配上它自己的偏移会 seek 偏掉 —— 不跟。
+Duration lyricSeekTarget(double lineTime, Duration offset) {
+  final target = Duration(milliseconds: (lineTime * 1000).round()) - offset;
+  return target.isNegative ? Duration.zero : target;
+}
+
 /// 一首歌完整的歌词时间轴。
 ///
 /// 与 [ParsedLyric] 分开而不是把 `words` 挂到它上面，是因为逐字时间是

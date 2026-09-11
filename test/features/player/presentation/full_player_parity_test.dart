@@ -28,6 +28,8 @@ import 'package:tunefree/features/player/data/player_download_service.dart';
 import 'package:tunefree/features/player/data/player_preferences_store.dart';
 import 'package:tunefree/features/player/data/song_resolution_repository.dart';
 import 'package:tunefree/features/player/domain/play_mode.dart';
+import 'package:tunefree/shared/theme/appearance_controller.dart';
+import 'package:tunefree/shared/theme/appearance_store.dart';
 import 'package:tunefree/features/player/domain/player_track.dart';
 import 'package:tunefree/features/player/presentation/widgets/full_player_sheet.dart';
 import 'package:tunefree/features/player/presentation/widgets/player_queue_sheet.dart';
@@ -1297,6 +1299,121 @@ void main() {
             .style
             ?.color,
         const Color(0xFFFA233B),
+      );
+    },
+  );
+
+  testWidgets(
+    'lyric offset shifts which line is active and compensates the seek',
+    (tester) async {
+      const rawLyrics =
+          '[00:05.00]第一句\n[00:05.20]First line\n[00:10.00]第二句';
+      final storage = TestPlayerLibraryStorage(
+        favorites: const <Song>[
+          Song(
+            id: 'lyrics-track',
+            name: '歌词曲目',
+            artist: '歌词歌手',
+            lrc: rawLyrics,
+            source: MusicSource.netease,
+          ),
+        ],
+      );
+      final engine = JustAudioPlayerEngine.test();
+      addTearDown(engine.dispose);
+
+      final container = ProviderContainer(
+        overrides: [
+          // 外观偏好走内存实现：真实的 SharedPreferences 在 widget 测试里
+          // 拿不到平台实现，await 落盘会一直等不到结果。
+          appearanceStoreProvider.overrideWithValue(InMemoryAppearanceStore()),
+          playerEngineProvider.overrideWithValue(engine),
+          mediaSessionAdapterProvider.overrideWithValue(
+            NoopMediaSessionAdapter(),
+          ),
+          remoteTopListRepositoryProvider.overrideWithValue(
+            const _FakeTopListRepository(),
+          ),
+          libraryStorageProvider.overrideWithValue(storage),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            _noopDownloadLibraryRepository(),
+          ),
+          playerPreferencesStoreProvider.overrideWithValue(
+            TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            _noopLocalPlaybackResolver(),
+          ),
+          songResolutionRepositoryProvider.overrideWithValue(
+            SongResolutionRepository.test(
+              resolveSongValue: (song, quality) async => song.copyWith(
+                url: 'https://example.com/${song.id}-$quality.mp3',
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const TuneFreeApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final controller = container.read(playerControllerProvider.notifier);
+      await controller.openLegacySong(
+        id: 'lyrics-track',
+        source: 'netease',
+        title: '歌词曲目',
+        artist: '歌词歌手',
+        lyrics: rawLyrics,
+        queue: const <PlayerTrack>[
+          PlayerTrack(
+            id: 'lyrics-track',
+            source: 'netease',
+            title: '歌词曲目',
+            artist: '歌词歌手',
+          ),
+        ],
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('mini-player')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('player-lyrics-toggle-area')));
+      await tester.pumpAndSettle();
+
+      // 9 秒：不偏移时还停在第一句（10 秒才开始）。
+      await controller.seek(const Duration(seconds: 9));
+      await tester.pump();
+      expect(
+        find.byKey(const Key('player-lyrics-line-active-0')),
+        findsOneWidget,
+      );
+
+      // 歌词推迟 2 秒 → 等效时间 11 秒，已经进到第二句。
+      final appearance = container.read(appearanceControllerProvider.notifier);
+      await appearance.setLyricOffsetMs(2000);
+      await tester.pump();
+      expect(
+        find.byKey(const Key('player-lyrics-line-active-1')),
+        findsOneWidget,
+      );
+
+      // 点歌词行的换算由 lyricSeekTarget 的单元测试覆盖 —— 歌词行在 widget
+      // 测试里命不中（`tester.tap` 报 "would not hit test"），这是既有现象，
+      // 与本次改动无关，不在这一层重复验证。
+
+      // 提前 4 秒则相反：等效时间 9 + 2 - 4 = 7 秒，回到第一句。
+      await appearance.setLyricOffsetMs(-4000);
+      await tester.pump();
+      await tester.pump();
+      expect(
+        find.byKey(const Key('player-lyrics-line-active-0')),
+        findsOneWidget,
       );
     },
   );

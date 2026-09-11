@@ -58,6 +58,38 @@ void main() {
     expect(normalizeLyricFontId(null), kLyricFontOptions.first.id);
   });
 
+  test('clampLyricOffsetMs keeps the offset inside ±10s', () {
+    expect(clampLyricOffsetMs(0), 0);
+    expect(clampLyricOffsetMs(2500), 2500);
+    expect(clampLyricOffsetMs(-2500), -2500);
+    expect(clampLyricOffsetMs(999999), kMaxLyricOffsetMs);
+    expect(clampLyricOffsetMs(-999999), kMinLyricOffsetMs);
+    expect(clampLyricOffsetMs('-1000'), -1000);
+    expect(clampLyricOffsetMs('junk'), kDefaultLyricOffsetMs);
+    expect(clampLyricOffsetMs(null), kDefaultLyricOffsetMs);
+  });
+
+  test('formatLyricOffset always spells out the sign', () {
+    expect(formatLyricOffset(0), '0.0s');
+    expect(formatLyricOffset(1200), '+1.2s');
+    expect(formatLyricOffset(-500), '-0.5s');
+    expect(formatLyricOffset(-10000), '-10.0s');
+  });
+
+  test('the lyric offset survives a save and reload', () async {
+    final store = InMemoryAppearanceStore();
+    final controller = AppearanceController(store: store);
+    await controller.load();
+
+    await controller.setLyricOffsetMs(1800);
+    expect(controller.preferences.lyricOffsetMs, 1800);
+    expect(controller.preferences.lyricOffset, const Duration(milliseconds: 1800));
+
+    // 越界值也要先被夹住再落盘。
+    await controller.setLyricOffsetMs(60000);
+    expect((await store.load()).lyricOffsetMs, kMaxLyricOffsetMs);
+  });
+
   test('accentForDark lightens the accent so it stays legible on dark', () {
     const base = Color(0xFFFA233B);
     final lifted = accentForDark(base);
