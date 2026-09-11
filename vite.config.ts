@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { readBuildInfo } from './scripts/build-info.ts';
 
 const ALLOWED_PROXY_HOSTS = [
   'music.163.com',
@@ -268,6 +269,8 @@ const localCorsProxyPlugin = () => ({
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react(), localNativeUrlPlugin(), localCorsProxyPlugin()],
+  // 关于页的技术栈版本在构建时从锁文件注入，避免手写版本号过期。
+  define: { __TUNEFREE_BUILD_INFO__: JSON.stringify(readBuildInfo()) },
   optimizeDeps: {
     entries: ['index.html'],
   },
