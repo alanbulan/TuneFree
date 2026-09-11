@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'search_state.dart';
@@ -9,6 +9,7 @@ part of 'search_state.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
@@ -25,16 +26,21 @@ $SearchStateCopyWith<SearchState> get copyWith => _$SearchStateCopyWithImpl<Sear
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is SearchState&&(identical(other.query, query) || other.query == query)&&const DeepCollectionEquality().equals(other.results, results)&&(identical(other.isSearching, isSearching) || other.isSearching == isSearching)&&(identical(other.searchMode, searchMode) || other.searchMode == searchMode)&&(identical(other.selectedSource, selectedSource) || other.selectedSource == selectedSource)&&const DeepCollectionEquality().equals(other.history, history)&&(identical(other.page, page) || other.page == page)&&(identical(other.hasMore, hasMore) || other.hasMore == hasMore)&&(identical(other.searchError, searchError) || other.searchError == searchError));
+  final _this = this as SearchState;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SearchState&&(identical(other.query, _this.query) || other.query == _this.query)&&const DeepCollectionEquality().equals(other.results, _this.results)&&(identical(other.isSearching, _this.isSearching) || other.isSearching == _this.isSearching)&&(identical(other.searchMode, _this.searchMode) || other.searchMode == _this.searchMode)&&(identical(other.selectedSource, _this.selectedSource) || other.selectedSource == _this.selectedSource)&&const DeepCollectionEquality().equals(other.history, _this.history)&&(identical(other.page, _this.page) || other.page == _this.page)&&(identical(other.hasMore, _this.hasMore) || other.hasMore == _this.hasMore)&&(identical(other.searchError, _this.searchError) || other.searchError == _this.searchError));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,query,const DeepCollectionEquality().hash(results),isSearching,searchMode,selectedSource,const DeepCollectionEquality().hash(history),page,hasMore,searchError);
+int get hashCode {
+  final _this = this as SearchState;
+  return Object.hash(runtimeType,_this.query,const DeepCollectionEquality().hash(_this.results),_this.isSearching,_this.searchMode,_this.selectedSource,const DeepCollectionEquality().hash(_this.history),_this.page,_this.hasMore,_this.searchError);
+}
 
 @override
 String toString() {
-  return 'SearchState(query: $query, results: $results, isSearching: $isSearching, searchMode: $searchMode, selectedSource: $selectedSource, history: $history, page: $page, hasMore: $hasMore, searchError: $searchError)';
+  final _this = this as SearchState;
+  return 'SearchState(query: ${_this.query}, results: ${_this.results}, isSearching: ${_this.isSearching}, searchMode: ${_this.searchMode}, selectedSource: ${_this.selectedSource}, history: ${_this.history}, page: ${_this.page}, hasMore: ${_this.hasMore}, searchError: ${_this.searchError})';
 }
 
 
@@ -63,7 +69,7 @@ class _$SearchStateCopyWithImpl<$Res>
 /// Create a copy of SearchState
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? query = null,Object? results = null,Object? isSearching = null,Object? searchMode = null,Object? selectedSource = null,Object? history = null,Object? page = null,Object? hasMore = null,Object? searchError = null,}) {
-  return _then(_self.copyWith(
+  return _then(SearchState(
 query: null == query ? _self.query : query // ignore: cast_nullable_to_non_nullable
 as String,results: null == results ? _self.results : results // ignore: cast_nullable_to_non_nullable
 as List<Song>,isSearching: null == isSearching ? _self.isSearching : isSearching // ignore: cast_nullable_to_non_nullable
@@ -214,7 +220,7 @@ return $default(_that.query,_that.results,_that.isSearching,_that.searchMode,_th
 
 
 class _SearchState implements SearchState {
-  const _SearchState({this.query = '', final  List<Song> results = const <Song>[], this.isSearching = false, this.searchMode = 'aggregate', this.selectedSource = 'netease', final  List<String> history = const <String>[], this.page = 1, this.hasMore = true, this.searchError = ''}): _results = results,_history = history;
+  const _SearchState({this.query = '',  List<Song> results = const <Song>[], this.isSearching = false, this.searchMode = 'aggregate', this.selectedSource = 'netease',  List<String> history = const <String>[], this.page = 1, this.hasMore = true, this.searchError = ''}): _results = results,_history = history;
   
 
 @override@JsonKey() final  String query;
@@ -249,16 +255,18 @@ _$SearchStateCopyWith<_SearchState> get copyWith => __$SearchStateCopyWithImpl<_
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _SearchState&&(identical(other.query, query) || other.query == query)&&const DeepCollectionEquality().equals(other._results, _results)&&(identical(other.isSearching, isSearching) || other.isSearching == isSearching)&&(identical(other.searchMode, searchMode) || other.searchMode == searchMode)&&(identical(other.selectedSource, selectedSource) || other.selectedSource == selectedSource)&&const DeepCollectionEquality().equals(other._history, _history)&&(identical(other.page, page) || other.page == page)&&(identical(other.hasMore, hasMore) || other.hasMore == hasMore)&&(identical(other.searchError, searchError) || other.searchError == searchError));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _SearchState&&(identical(other.query, query) || other.query == query)&&const DeepCollectionEquality().equals(other.results, _results)&&(identical(other.isSearching, isSearching) || other.isSearching == isSearching)&&(identical(other.searchMode, searchMode) || other.searchMode == searchMode)&&(identical(other.selectedSource, selectedSource) || other.selectedSource == selectedSource)&&const DeepCollectionEquality().equals(other.history, _history)&&(identical(other.page, page) || other.page == page)&&(identical(other.hasMore, hasMore) || other.hasMore == hasMore)&&(identical(other.searchError, searchError) || other.searchError == searchError));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,query,const DeepCollectionEquality().hash(_results),isSearching,searchMode,selectedSource,const DeepCollectionEquality().hash(_history),page,hasMore,searchError);
+int get hashCode {
+    return Object.hash(runtimeType,query,const DeepCollectionEquality().hash(_results),isSearching,searchMode,selectedSource,const DeepCollectionEquality().hash(_history),page,hasMore,searchError);
+}
 
 @override
 String toString() {
-  return 'SearchState(query: $query, results: $results, isSearching: $isSearching, searchMode: $searchMode, selectedSource: $selectedSource, history: $history, page: $page, hasMore: $hasMore, searchError: $searchError)';
+    return 'SearchState(query: $query, results: $results, isSearching: $isSearching, searchMode: $searchMode, selectedSource: $selectedSource, history: $history, page: $page, hasMore: $hasMore, searchError: $searchError)';
 }
 
 

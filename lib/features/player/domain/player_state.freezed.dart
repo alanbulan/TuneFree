@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'player_state.dart';
@@ -9,6 +9,7 @@ part of 'player_state.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
@@ -25,16 +26,21 @@ $PlayerStateCopyWith<PlayerState> get copyWith => _$PlayerStateCopyWithImpl<Play
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlayerState&&(identical(other.currentSong, currentSong) || other.currentSong == currentSong)&&const DeepCollectionEquality().equals(other.queue, queue)&&(identical(other.isPlaying, isPlaying) || other.isPlaying == isPlaying)&&(identical(other.isLoading, isLoading) || other.isLoading == isLoading)&&(identical(other.position, position) || other.position == position)&&(identical(other.duration, duration) || other.duration == duration)&&(identical(other.playMode, playMode) || other.playMode == playMode)&&(identical(other.audioQuality, audioQuality) || other.audioQuality == audioQuality)&&(identical(other.downloadQuality, downloadQuality) || other.downloadQuality == downloadQuality)&&(identical(other.isExpanded, isExpanded) || other.isExpanded == isExpanded)&&(identical(other.showLyrics, showLyrics) || other.showLyrics == showLyrics)&&(identical(other.showQueue, showQueue) || other.showQueue == showQueue)&&(identical(other.showDownload, showDownload) || other.showDownload == showDownload)&&(identical(other.showMore, showMore) || other.showMore == showMore)&&(identical(other.playbackNotice, playbackNotice) || other.playbackNotice == playbackNotice));
+  final _this = this as PlayerState;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlayerState&&(identical(other.currentSong, _this.currentSong) || other.currentSong == _this.currentSong)&&const DeepCollectionEquality().equals(other.queue, _this.queue)&&(identical(other.isPlaying, _this.isPlaying) || other.isPlaying == _this.isPlaying)&&(identical(other.isLoading, _this.isLoading) || other.isLoading == _this.isLoading)&&(identical(other.position, _this.position) || other.position == _this.position)&&(identical(other.duration, _this.duration) || other.duration == _this.duration)&&(identical(other.playMode, _this.playMode) || other.playMode == _this.playMode)&&(identical(other.audioQuality, _this.audioQuality) || other.audioQuality == _this.audioQuality)&&(identical(other.downloadQuality, _this.downloadQuality) || other.downloadQuality == _this.downloadQuality)&&(identical(other.isExpanded, _this.isExpanded) || other.isExpanded == _this.isExpanded)&&(identical(other.showLyrics, _this.showLyrics) || other.showLyrics == _this.showLyrics)&&(identical(other.showQueue, _this.showQueue) || other.showQueue == _this.showQueue)&&(identical(other.showDownload, _this.showDownload) || other.showDownload == _this.showDownload)&&(identical(other.showMore, _this.showMore) || other.showMore == _this.showMore)&&(identical(other.playbackNotice, _this.playbackNotice) || other.playbackNotice == _this.playbackNotice));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,currentSong,const DeepCollectionEquality().hash(queue),isPlaying,isLoading,position,duration,playMode,audioQuality,downloadQuality,isExpanded,showLyrics,showQueue,showDownload,showMore,playbackNotice);
+int get hashCode {
+  final _this = this as PlayerState;
+  return Object.hash(runtimeType,_this.currentSong,const DeepCollectionEquality().hash(_this.queue),_this.isPlaying,_this.isLoading,_this.position,_this.duration,_this.playMode,_this.audioQuality,_this.downloadQuality,_this.isExpanded,_this.showLyrics,_this.showQueue,_this.showDownload,_this.showMore,_this.playbackNotice);
+}
 
 @override
 String toString() {
-  return 'PlayerState(currentSong: $currentSong, queue: $queue, isPlaying: $isPlaying, isLoading: $isLoading, position: $position, duration: $duration, playMode: $playMode, audioQuality: $audioQuality, downloadQuality: $downloadQuality, isExpanded: $isExpanded, showLyrics: $showLyrics, showQueue: $showQueue, showDownload: $showDownload, showMore: $showMore, playbackNotice: $playbackNotice)';
+  final _this = this as PlayerState;
+  return 'PlayerState(currentSong: ${_this.currentSong}, queue: ${_this.queue}, isPlaying: ${_this.isPlaying}, isLoading: ${_this.isLoading}, position: ${_this.position}, duration: ${_this.duration}, playMode: ${_this.playMode}, audioQuality: ${_this.audioQuality}, downloadQuality: ${_this.downloadQuality}, isExpanded: ${_this.isExpanded}, showLyrics: ${_this.showLyrics}, showQueue: ${_this.showQueue}, showDownload: ${_this.showDownload}, showMore: ${_this.showMore}, playbackNotice: ${_this.playbackNotice})';
 }
 
 
@@ -63,7 +69,7 @@ class _$PlayerStateCopyWithImpl<$Res>
 /// Create a copy of PlayerState
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? currentSong = freezed,Object? queue = null,Object? isPlaying = null,Object? isLoading = null,Object? position = null,Object? duration = null,Object? playMode = null,Object? audioQuality = null,Object? downloadQuality = null,Object? isExpanded = null,Object? showLyrics = null,Object? showQueue = null,Object? showDownload = null,Object? showMore = null,Object? playbackNotice = freezed,}) {
-  return _then(_self.copyWith(
+  return _then(PlayerState(
 currentSong: freezed == currentSong ? _self.currentSong : currentSong // ignore: cast_nullable_to_non_nullable
 as Song?,queue: null == queue ? _self.queue : queue // ignore: cast_nullable_to_non_nullable
 as List<Song>,isPlaying: null == isPlaying ? _self.isPlaying : isPlaying // ignore: cast_nullable_to_non_nullable
@@ -232,7 +238,7 @@ return $default(_that.currentSong,_that.queue,_that.isPlaying,_that.isLoading,_t
 
 
 class _PlayerState extends PlayerState {
-  const _PlayerState({this.currentSong, final  List<Song> queue = const <Song>[], this.isPlaying = false, this.isLoading = false, this.position = Duration.zero, this.duration = Duration.zero, this.playMode = 'sequence', this.audioQuality = AudioQuality.k320, this.downloadQuality = AudioQuality.k320, this.isExpanded = false, this.showLyrics = false, this.showQueue = false, this.showDownload = false, this.showMore = false, this.playbackNotice}): _queue = queue,super._();
+  const _PlayerState({this.currentSong,  List<Song> queue = const <Song>[], this.isPlaying = false, this.isLoading = false, this.position = Duration.zero, this.duration = Duration.zero, this.playMode = 'sequence', this.audioQuality = AudioQuality.k320, this.downloadQuality = AudioQuality.k320, this.isExpanded = false, this.showLyrics = false, this.showQueue = false, this.showDownload = false, this.showMore = false, this.playbackNotice}): _queue = queue,super._();
   
 
 @override final  Song? currentSong;
@@ -267,16 +273,18 @@ _$PlayerStateCopyWith<_PlayerState> get copyWith => __$PlayerStateCopyWithImpl<_
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlayerState&&(identical(other.currentSong, currentSong) || other.currentSong == currentSong)&&const DeepCollectionEquality().equals(other._queue, _queue)&&(identical(other.isPlaying, isPlaying) || other.isPlaying == isPlaying)&&(identical(other.isLoading, isLoading) || other.isLoading == isLoading)&&(identical(other.position, position) || other.position == position)&&(identical(other.duration, duration) || other.duration == duration)&&(identical(other.playMode, playMode) || other.playMode == playMode)&&(identical(other.audioQuality, audioQuality) || other.audioQuality == audioQuality)&&(identical(other.downloadQuality, downloadQuality) || other.downloadQuality == downloadQuality)&&(identical(other.isExpanded, isExpanded) || other.isExpanded == isExpanded)&&(identical(other.showLyrics, showLyrics) || other.showLyrics == showLyrics)&&(identical(other.showQueue, showQueue) || other.showQueue == showQueue)&&(identical(other.showDownload, showDownload) || other.showDownload == showDownload)&&(identical(other.showMore, showMore) || other.showMore == showMore)&&(identical(other.playbackNotice, playbackNotice) || other.playbackNotice == playbackNotice));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlayerState&&(identical(other.currentSong, currentSong) || other.currentSong == currentSong)&&const DeepCollectionEquality().equals(other.queue, _queue)&&(identical(other.isPlaying, isPlaying) || other.isPlaying == isPlaying)&&(identical(other.isLoading, isLoading) || other.isLoading == isLoading)&&(identical(other.position, position) || other.position == position)&&(identical(other.duration, duration) || other.duration == duration)&&(identical(other.playMode, playMode) || other.playMode == playMode)&&(identical(other.audioQuality, audioQuality) || other.audioQuality == audioQuality)&&(identical(other.downloadQuality, downloadQuality) || other.downloadQuality == downloadQuality)&&(identical(other.isExpanded, isExpanded) || other.isExpanded == isExpanded)&&(identical(other.showLyrics, showLyrics) || other.showLyrics == showLyrics)&&(identical(other.showQueue, showQueue) || other.showQueue == showQueue)&&(identical(other.showDownload, showDownload) || other.showDownload == showDownload)&&(identical(other.showMore, showMore) || other.showMore == showMore)&&(identical(other.playbackNotice, playbackNotice) || other.playbackNotice == playbackNotice));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,currentSong,const DeepCollectionEquality().hash(_queue),isPlaying,isLoading,position,duration,playMode,audioQuality,downloadQuality,isExpanded,showLyrics,showQueue,showDownload,showMore,playbackNotice);
+int get hashCode {
+    return Object.hash(runtimeType,currentSong,const DeepCollectionEquality().hash(_queue),isPlaying,isLoading,position,duration,playMode,audioQuality,downloadQuality,isExpanded,showLyrics,showQueue,showDownload,showMore,playbackNotice);
+}
 
 @override
 String toString() {
-  return 'PlayerState(currentSong: $currentSong, queue: $queue, isPlaying: $isPlaying, isLoading: $isLoading, position: $position, duration: $duration, playMode: $playMode, audioQuality: $audioQuality, downloadQuality: $downloadQuality, isExpanded: $isExpanded, showLyrics: $showLyrics, showQueue: $showQueue, showDownload: $showDownload, showMore: $showMore, playbackNotice: $playbackNotice)';
+    return 'PlayerState(currentSong: $currentSong, queue: $queue, isPlaying: $isPlaying, isLoading: $isLoading, position: $position, duration: $duration, playMode: $playMode, audioQuality: $audioQuality, downloadQuality: $downloadQuality, isExpanded: $isExpanded, showLyrics: $showLyrics, showQueue: $showQueue, showDownload: $showDownload, showMore: $showMore, playbackNotice: $playbackNotice)';
 }
 
 

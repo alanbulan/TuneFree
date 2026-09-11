@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'parsed_lyric.dart';
@@ -9,6 +9,7 @@ part of 'parsed_lyric.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 
@@ -28,16 +29,21 @@ $ParsedLyricCopyWith<ParsedLyric> get copyWith => _$ParsedLyricCopyWithImpl<Pars
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ParsedLyric&&(identical(other.time, time) || other.time == time)&&(identical(other.text, text) || other.text == text)&&(identical(other.translation, translation) || other.translation == translation));
+  final _this = this as ParsedLyric;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ParsedLyric&&(identical(other.time, _this.time) || other.time == _this.time)&&(identical(other.text, _this.text) || other.text == _this.text)&&(identical(other.translation, _this.translation) || other.translation == _this.translation));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,time,text,translation);
+int get hashCode {
+  final _this = this as ParsedLyric;
+  return Object.hash(runtimeType,_this.time,_this.text,_this.translation);
+}
 
 @override
 String toString() {
-  return 'ParsedLyric(time: $time, text: $text, translation: $translation)';
+  final _this = this as ParsedLyric;
+  return 'ParsedLyric(time: ${_this.time}, text: ${_this.text}, translation: ${_this.translation})';
 }
 
 
@@ -66,7 +72,7 @@ class _$ParsedLyricCopyWithImpl<$Res>
 /// Create a copy of ParsedLyric
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? time = null,Object? text = null,Object? translation = freezed,}) {
-  return _then(_self.copyWith(
+  return _then(ParsedLyric(
 time: null == time ? _self.time : time // ignore: cast_nullable_to_non_nullable
 as double,text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
 as String,translation: freezed == translation ? _self.translation : translation // ignore: cast_nullable_to_non_nullable
@@ -231,16 +237,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ParsedLyric&&(identical(other.time, time) || other.time == time)&&(identical(other.text, text) || other.text == text)&&(identical(other.translation, translation) || other.translation == translation));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ParsedLyric&&(identical(other.time, time) || other.time == time)&&(identical(other.text, text) || other.text == text)&&(identical(other.translation, translation) || other.translation == translation));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,time,text,translation);
+int get hashCode {
+    return Object.hash(runtimeType,time,text,translation);
+}
 
 @override
 String toString() {
-  return 'ParsedLyric(time: $time, text: $text, translation: $translation)';
+    return 'ParsedLyric(time: $time, text: $text, translation: $translation)';
 }
 
 

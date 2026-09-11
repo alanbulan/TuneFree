@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'player_track.dart';
@@ -9,6 +9,7 @@ part of 'player_track.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
@@ -25,16 +26,21 @@ $PlayerTrackCopyWith<PlayerTrack> get copyWith => _$PlayerTrackCopyWithImpl<Play
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlayerTrack&&(identical(other.id, id) || other.id == id)&&(identical(other.source, source) || other.source == source)&&(identical(other.title, title) || other.title == title)&&(identical(other.artist, artist) || other.artist == artist)&&(identical(other.artworkUrl, artworkUrl) || other.artworkUrl == artworkUrl)&&(identical(other.streamUrl, streamUrl) || other.streamUrl == streamUrl)&&(identical(other.lyrics, lyrics) || other.lyrics == lyrics));
+  final _this = this as PlayerTrack;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlayerTrack&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.source, _this.source) || other.source == _this.source)&&(identical(other.title, _this.title) || other.title == _this.title)&&(identical(other.artist, _this.artist) || other.artist == _this.artist)&&(identical(other.artworkUrl, _this.artworkUrl) || other.artworkUrl == _this.artworkUrl)&&(identical(other.streamUrl, _this.streamUrl) || other.streamUrl == _this.streamUrl)&&(identical(other.lyrics, _this.lyrics) || other.lyrics == _this.lyrics));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,source,title,artist,artworkUrl,streamUrl,lyrics);
+int get hashCode {
+  final _this = this as PlayerTrack;
+  return Object.hash(runtimeType,_this.id,_this.source,_this.title,_this.artist,_this.artworkUrl,_this.streamUrl,_this.lyrics);
+}
 
 @override
 String toString() {
-  return 'PlayerTrack(id: $id, source: $source, title: $title, artist: $artist, artworkUrl: $artworkUrl, streamUrl: $streamUrl, lyrics: $lyrics)';
+  final _this = this as PlayerTrack;
+  return 'PlayerTrack(id: ${_this.id}, source: ${_this.source}, title: ${_this.title}, artist: ${_this.artist}, artworkUrl: ${_this.artworkUrl}, streamUrl: ${_this.streamUrl}, lyrics: ${_this.lyrics})';
 }
 
 
@@ -63,7 +69,7 @@ class _$PlayerTrackCopyWithImpl<$Res>
 /// Create a copy of PlayerTrack
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? source = null,Object? title = null,Object? artist = null,Object? artworkUrl = freezed,Object? streamUrl = freezed,Object? lyrics = freezed,}) {
-  return _then(_self.copyWith(
+  return _then(PlayerTrack(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,source: null == source ? _self.source : source // ignore: cast_nullable_to_non_nullable
 as String,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
@@ -233,16 +239,18 @@ _$PlayerTrackCopyWith<_PlayerTrack> get copyWith => __$PlayerTrackCopyWithImpl<_
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlayerTrack&&(identical(other.id, id) || other.id == id)&&(identical(other.source, source) || other.source == source)&&(identical(other.title, title) || other.title == title)&&(identical(other.artist, artist) || other.artist == artist)&&(identical(other.artworkUrl, artworkUrl) || other.artworkUrl == artworkUrl)&&(identical(other.streamUrl, streamUrl) || other.streamUrl == streamUrl)&&(identical(other.lyrics, lyrics) || other.lyrics == lyrics));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlayerTrack&&(identical(other.id, id) || other.id == id)&&(identical(other.source, source) || other.source == source)&&(identical(other.title, title) || other.title == title)&&(identical(other.artist, artist) || other.artist == artist)&&(identical(other.artworkUrl, artworkUrl) || other.artworkUrl == artworkUrl)&&(identical(other.streamUrl, streamUrl) || other.streamUrl == streamUrl)&&(identical(other.lyrics, lyrics) || other.lyrics == lyrics));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,source,title,artist,artworkUrl,streamUrl,lyrics);
+int get hashCode {
+    return Object.hash(runtimeType,id,source,title,artist,artworkUrl,streamUrl,lyrics);
+}
 
 @override
 String toString() {
-  return 'PlayerTrack(id: $id, source: $source, title: $title, artist: $artist, artworkUrl: $artworkUrl, streamUrl: $streamUrl, lyrics: $lyrics)';
+    return 'PlayerTrack(id: $id, source: $source, title: $title, artist: $artist, artworkUrl: $artworkUrl, streamUrl: $streamUrl, lyrics: $lyrics)';
 }
 
 

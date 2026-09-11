@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'library_state.dart';
@@ -9,6 +9,7 @@ part of 'library_state.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
@@ -25,16 +26,21 @@ $LibraryStateCopyWith<LibraryState> get copyWith => _$LibraryStateCopyWithImpl<L
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryState&&const DeepCollectionEquality().equals(other.favorites, favorites)&&const DeepCollectionEquality().equals(other.playlists, playlists)&&(identical(other.corsProxy, corsProxy) || other.corsProxy == corsProxy)&&(identical(other.exportedBackupJson, exportedBackupJson) || other.exportedBackupJson == exportedBackupJson)&&(identical(other.lastImportSummary, lastImportSummary) || other.lastImportSummary == lastImportSummary)&&const DeepCollectionEquality().equals(other.downloads, downloads)&&(identical(other.downloadFilter, downloadFilter) || other.downloadFilter == downloadFilter)&&(identical(other.isLoaded, isLoaded) || other.isLoaded == isLoaded));
+  final _this = this as LibraryState;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryState&&const DeepCollectionEquality().equals(other.favorites, _this.favorites)&&const DeepCollectionEquality().equals(other.playlists, _this.playlists)&&(identical(other.corsProxy, _this.corsProxy) || other.corsProxy == _this.corsProxy)&&(identical(other.exportedBackupJson, _this.exportedBackupJson) || other.exportedBackupJson == _this.exportedBackupJson)&&(identical(other.lastImportSummary, _this.lastImportSummary) || other.lastImportSummary == _this.lastImportSummary)&&const DeepCollectionEquality().equals(other.downloads, _this.downloads)&&(identical(other.downloadFilter, _this.downloadFilter) || other.downloadFilter == _this.downloadFilter)&&(identical(other.isLoaded, _this.isLoaded) || other.isLoaded == _this.isLoaded));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(favorites),const DeepCollectionEquality().hash(playlists),corsProxy,exportedBackupJson,lastImportSummary,const DeepCollectionEquality().hash(downloads),downloadFilter,isLoaded);
+int get hashCode {
+  final _this = this as LibraryState;
+  return Object.hash(runtimeType,const DeepCollectionEquality().hash(_this.favorites),const DeepCollectionEquality().hash(_this.playlists),_this.corsProxy,_this.exportedBackupJson,_this.lastImportSummary,const DeepCollectionEquality().hash(_this.downloads),_this.downloadFilter,_this.isLoaded);
+}
 
 @override
 String toString() {
-  return 'LibraryState(favorites: $favorites, playlists: $playlists, corsProxy: $corsProxy, exportedBackupJson: $exportedBackupJson, lastImportSummary: $lastImportSummary, downloads: $downloads, downloadFilter: $downloadFilter, isLoaded: $isLoaded)';
+  final _this = this as LibraryState;
+  return 'LibraryState(favorites: ${_this.favorites}, playlists: ${_this.playlists}, corsProxy: ${_this.corsProxy}, exportedBackupJson: ${_this.exportedBackupJson}, lastImportSummary: ${_this.lastImportSummary}, downloads: ${_this.downloads}, downloadFilter: ${_this.downloadFilter}, isLoaded: ${_this.isLoaded})';
 }
 
 
@@ -63,7 +69,7 @@ class _$LibraryStateCopyWithImpl<$Res>
 /// Create a copy of LibraryState
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? favorites = null,Object? playlists = null,Object? corsProxy = null,Object? exportedBackupJson = freezed,Object? lastImportSummary = freezed,Object? downloads = null,Object? downloadFilter = null,Object? isLoaded = null,}) {
-  return _then(_self.copyWith(
+  return _then(LibraryState(
 favorites: null == favorites ? _self.favorites : favorites // ignore: cast_nullable_to_non_nullable
 as List<Song>,playlists: null == playlists ? _self.playlists : playlists // ignore: cast_nullable_to_non_nullable
 as List<Playlist>,corsProxy: null == corsProxy ? _self.corsProxy : corsProxy // ignore: cast_nullable_to_non_nullable
@@ -213,7 +219,7 @@ return $default(_that.favorites,_that.playlists,_that.corsProxy,_that.exportedBa
 
 
 class _LibraryState implements LibraryState {
-  const _LibraryState({final  List<Song> favorites = const <Song>[], final  List<Playlist> playlists = const <Playlist>[], this.corsProxy = '', this.exportedBackupJson, this.lastImportSummary, final  List<DownloadedTrackItem> downloads = const <DownloadedTrackItem>[], this.downloadFilter = 'all', this.isLoaded = false}): _favorites = favorites,_playlists = playlists,_downloads = downloads;
+  const _LibraryState({ List<Song> favorites = const <Song>[],  List<Playlist> playlists = const <Playlist>[], this.corsProxy = '', this.exportedBackupJson, this.lastImportSummary,  List<DownloadedTrackItem> downloads = const <DownloadedTrackItem>[], this.downloadFilter = 'all', this.isLoaded = false}): _favorites = favorites,_playlists = playlists,_downloads = downloads;
   
 
  final  List<Song> _favorites;
@@ -253,16 +259,18 @@ _$LibraryStateCopyWith<_LibraryState> get copyWith => __$LibraryStateCopyWithImp
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _LibraryState&&const DeepCollectionEquality().equals(other._favorites, _favorites)&&const DeepCollectionEquality().equals(other._playlists, _playlists)&&(identical(other.corsProxy, corsProxy) || other.corsProxy == corsProxy)&&(identical(other.exportedBackupJson, exportedBackupJson) || other.exportedBackupJson == exportedBackupJson)&&(identical(other.lastImportSummary, lastImportSummary) || other.lastImportSummary == lastImportSummary)&&const DeepCollectionEquality().equals(other._downloads, _downloads)&&(identical(other.downloadFilter, downloadFilter) || other.downloadFilter == downloadFilter)&&(identical(other.isLoaded, isLoaded) || other.isLoaded == isLoaded));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _LibraryState&&const DeepCollectionEquality().equals(other.favorites, _favorites)&&const DeepCollectionEquality().equals(other.playlists, _playlists)&&(identical(other.corsProxy, corsProxy) || other.corsProxy == corsProxy)&&(identical(other.exportedBackupJson, exportedBackupJson) || other.exportedBackupJson == exportedBackupJson)&&(identical(other.lastImportSummary, lastImportSummary) || other.lastImportSummary == lastImportSummary)&&const DeepCollectionEquality().equals(other.downloads, _downloads)&&(identical(other.downloadFilter, downloadFilter) || other.downloadFilter == downloadFilter)&&(identical(other.isLoaded, isLoaded) || other.isLoaded == isLoaded));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_favorites),const DeepCollectionEquality().hash(_playlists),corsProxy,exportedBackupJson,lastImportSummary,const DeepCollectionEquality().hash(_downloads),downloadFilter,isLoaded);
+int get hashCode {
+    return Object.hash(runtimeType,const DeepCollectionEquality().hash(_favorites),const DeepCollectionEquality().hash(_playlists),corsProxy,exportedBackupJson,lastImportSummary,const DeepCollectionEquality().hash(_downloads),downloadFilter,isLoaded);
+}
 
 @override
 String toString() {
-  return 'LibraryState(favorites: $favorites, playlists: $playlists, corsProxy: $corsProxy, exportedBackupJson: $exportedBackupJson, lastImportSummary: $lastImportSummary, downloads: $downloads, downloadFilter: $downloadFilter, isLoaded: $isLoaded)';
+    return 'LibraryState(favorites: $favorites, playlists: $playlists, corsProxy: $corsProxy, exportedBackupJson: $exportedBackupJson, lastImportSummary: $lastImportSummary, downloads: $downloads, downloadFilter: $downloadFilter, isLoaded: $isLoaded)';
 }
 
 
