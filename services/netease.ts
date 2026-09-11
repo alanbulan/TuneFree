@@ -114,18 +114,34 @@ const mergeNeteaseLyricPayload = (tracks: ReturnType<typeof extractNeteaseLyricT
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** 榜单接口偶发返回空结构，按指数退避重试几次再放弃。 */
+/**
+ * 网易云接口主机优先级。
+ *
+ * Cloudflare 出口 IP 在 music.163.com 上会被风控验证墙（code -462
+ * 「验证成功后，可进行下一步操作哦~」）拦掉大部分请求：实测榜单详情
+ * /api/v6/playlist/detail 只有 1/10 次成功，同一路径走 interface 子域名
+ * 10/10 成功，内容完全一致。按顺序尝试，任一成功即返回。
+ */
+export const NETEASE_API_HOSTS = [
+  "https://interface.music.163.com",
+  "https://interface3.music.163.com",
+  "https://music.163.com",
+] as const;
+
+/** 榜单接口偶发触发风控或返回空结构，按指数退避重试。 */
 const fetchNeteaseJsonWithRetry = async (
-  url: string,
+  path: string,
   isValid: (data: any) => boolean,
 ): Promise<any> => {
-  const retryDelays = [180, 360, 720];
+  const retryDelays = [180, 360];
 
-  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
-    const data = await proxyFetchJson(url);
-    if (isValid(data)) return data;
-    if (attempt < retryDelays.length) {
-      await wait(retryDelays[attempt]);
+  for (const host of NETEASE_API_HOSTS) {
+    for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+      const data = await proxyFetchJson(`${host}${path}`);
+      if (isValid(data)) return data;
+      if (attempt < retryDelays.length) {
+        await wait(retryDelays[attempt]);
+      }
     }
   }
 
@@ -175,7 +191,7 @@ export const searchNetease = async (
  */
 export const getNeteaseTopLists = async (): Promise<TopList[]> => {
   const data = await fetchNeteaseJsonWithRetry(
-    "https://music.163.com/api/toplist/detail",
+    "/api/toplist/detail",
     (value) => Array.isArray(value?.list),
   );
   const list = data?.list;
@@ -199,9 +215,8 @@ export const getNeteaseTopLists = async (): Promise<TopList[]> => {
 export const getNeteaseTopListDetail = async (
   id: string | number,
 ): Promise<Song[]> => {
-  const url = `https://music.163.com/api/v6/playlist/detail?id=${id}&n=30`;
   const data = await fetchNeteaseJsonWithRetry(
-    url,
+    `/api/v6/playlist/detail?id=${id}&n=30`,
     (value) => Array.isArray(value?.playlist?.tracks),
   );
   const tracks = data?.playlist?.tracks;
