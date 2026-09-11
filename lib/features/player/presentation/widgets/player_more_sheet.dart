@@ -13,6 +13,7 @@ import '../../../../shared/widgets/tune_free_feedback.dart';
 import '../../../library/application/library_controller.dart';
 import '../../../search/application/search_providers.dart';
 import '../../application/player_controller.dart';
+import '../../data/similar_radio_repository.dart';
 import '../../domain/player_track.dart';
 import 'player_bottom_sheet_transition.dart';
 
@@ -118,6 +119,47 @@ class PlayerMoreSheet extends ConsumerWidget {
       unawaited(searchController.submitSearch());
     }
 
+    /// 用当前歌曲当种子凑一批同歌手的歌，整个换进队列。
+    ///
+    /// 与 Tauri 的区别：那边是本地推荐器算出来的「相似」，而且是**换队列并
+    /// 立刻从第一首起播**（正在听的这首会停）。这里的语义是「同歌手」，
+    /// 换队列这一点跟 Tauri 保持一致 —— 做「追加到队列后面」需要给
+    /// PlayerController 加一个不重播当前曲目的改队列方法，那属于播放器的
+    /// 数据模型改动，不该顺手塞进这一个入口里。
+    Future<void> playSimilarRadio() async {
+      final song = currentSong;
+      if (song == null) {
+        return;
+      }
+
+      showToast(context, '正在为你找相似歌曲…');
+      final songs = await ref
+          .read(similarRadioRepositoryProvider)
+          .songsLike(song);
+      if (!context.mounted) {
+        return;
+      }
+
+      if (songs.isEmpty) {
+        showToast(context, '没找到能接着放的歌', tone: TuneFreeToastTone.warning);
+        return;
+      }
+
+      showToast(
+        context,
+        '已换台：${songs.first.name} 等 ${songs.length} 首',
+        tone: TuneFreeToastTone.success,
+      );
+
+      final player = ref.read(playerControllerProvider.notifier);
+      // 不 await：这个回调在面板收起的过程中跑，await 住整条换歌链路会让
+      // 面板的销毁和播放器的重建搅在一起。playSong 自己会消化解析失败，
+      // 落到 playbackNotice 上。
+      unawaited(player.playSong(songs.first, queue: songs));
+      onClose();
+      player.collapse();
+    }
+
     Future<void> shareCurrentTrack() async {
       final song = currentSong;
       if (song == null) {
@@ -126,7 +168,9 @@ class PlayerMoreSheet extends ConsumerWidget {
       final url = _songSourceUrl(song);
       final text = '${song.name} - ${song.artist}';
       final shareText = url != null ? '$text\n$url' : text;
-      await SharePlus.instance.share(ShareParams(text: shareText, subject: text));
+      await SharePlus.instance.share(
+        ShareParams(text: shareText, subject: text),
+      );
     }
 
     return PlayerBottomSheetTransition(
@@ -224,6 +268,14 @@ class PlayerMoreSheet extends ConsumerWidget {
                 ),
                 const SizedBox(height: 20),
                 const _SectionHeader(title: '快捷操作'),
+                const SizedBox(height: 8),
+                _ActionTile(
+                  actionKey: const Key('player-similar-radio-action'),
+                  icon: Icons.radio_outlined,
+                  title: '相似歌曲电台',
+                  subtitle: '以「${activeTrack?.artist ?? '—'}」为种子换一批歌播放',
+                  onTap: playSimilarRadio,
+                ),
                 const SizedBox(height: 8),
                 _ActionTile(
                   actionKey: const Key('player-create-playlist-action'),
@@ -343,9 +395,7 @@ class _QualityChip extends StatelessWidget {
         child: Ink(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: isSelected
-                ? colors.textStrong
-                : colors.fillSubtle,
+            color: isSelected ? colors.textStrong : colors.fillSubtle,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Text(
@@ -418,10 +468,7 @@ class _ActionTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: colors.textSubtle,
-                      ),
+                      style: TextStyle(fontSize: 12, color: colors.textSubtle),
                     ),
                   ],
                 ),
@@ -460,11 +507,7 @@ class _PlaylistTile extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Icon(
-                Icons.folder_outlined,
-                color: colors.accent,
-                size: 20,
-              ),
+              Icon(Icons.folder_outlined, color: colors.accent, size: 20),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -480,10 +523,7 @@ class _PlaylistTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: colors.textSubtle,
-                      ),
+                      style: TextStyle(fontSize: 12, color: colors.textSubtle),
                     ),
                   ],
                 ),
@@ -508,11 +548,7 @@ class _PlaylistTile extends StatelessWidget {
                   ),
                 )
               else
-                Icon(
-                  Icons.add_rounded,
-                  color: colors.textTertiary,
-                  size: 18,
-                ),
+                Icon(Icons.add_rounded, color: colors.textTertiary, size: 18),
             ],
           ),
         ),
