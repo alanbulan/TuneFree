@@ -24,19 +24,17 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
   flutter_riverpod: ^3.4.3
   go_router: ^18.0.1
   freezed_annotation: ^3.1.0
-  json_annotation: ^4.9.0
-  dio: ^5.9.0
-  collection: ^1.19.1
+  json_annotation: ^4.12.0
+  dio: ^5.11.1
   golden_toolkit: ^0.15.0
-  just_audio: ^0.10.5
-  audio_service: ^0.18.18
-  audio_session: ^0.2.2
+  just_audio: ^0.10.6
+  audio_service: ^0.18.19
+  audio_session: ^0.2.4
   shared_preferences: ^2.5.3
-  path_provider: ^2.1.5
+  path_provider: ^2.1.6
   package_info_plus: ^8.3.1
   url_launcher: ^6.3.2
   open_filex: ^4.7.0
