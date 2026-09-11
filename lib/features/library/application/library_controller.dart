@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+// Riverpod 3 把 ChangeNotifierProvider 移出了主流出口，只在 legacy.dart 里提供。
+import 'package:flutter_riverpod/legacy.dart';
 
 import '../../../core/models/playlist.dart';
 import '../../../core/models/song.dart';
