@@ -48,10 +48,16 @@ const DownloadLibraryRepository _emptyDownloadRepository =
       recordStore: _EmptyDownloadRecordStore(),
       fileExists: _neverExists,
       deleteFile: _noopDelete,
+      trashDirectoryPath: _noTrashDirectory,
+      moveFile: _noopMove,
+      listFiles: _noFiles,
     );
 
 Future<bool> _neverExists(String path) async => false;
 Future<void> _noopDelete(String path) async {}
+Future<String> _noTrashDirectory() async => '';
+Future<void> _noopMove({required String from, required String to}) async {}
+Future<List<String>> _noFiles(String directory) async => const <String>[];
 
 final class _EmptyDownloadRecordStore implements DownloadRecordStore {
   const _EmptyDownloadRecordStore();

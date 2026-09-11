@@ -25,6 +25,9 @@ final downloadLibraryRepositoryProvider = Provider<DownloadLibraryRepository>((
     recordStore: recordStore,
     fileExists: fileStore.fileExists,
     deleteFile: fileStore.deleteFinalFile,
+    trashDirectoryPath: fileStore.trashDirectoryPath,
+    moveFile: fileStore.moveFile,
+    listFiles: fileStore.listFiles,
   );
 });
 
@@ -247,12 +250,26 @@ final class LibraryController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> deleteDownload(DownloadedTrackItem item) async {
-    await _downloadLibraryRepository.deleteDownload(
+  /// 删除一首已下载的歌，返回撤销所需的快照。
+  ///
+  /// 文件是被挪进回收站的，不是真删 —— 所以这个操作是可逆的。
+  /// 文件本来就不在时返回 null。
+  Future<DeletedDownload?> deleteDownload(DownloadedTrackItem item) async {
+    final deleted = await _downloadLibraryRepository.deleteDownload(
       songKey: item.songKey,
       quality: item.quality,
       filePath: item.filePath,
     );
+    await refreshDownloads();
+    return deleted;
+  }
+
+  /// 撤销一批删除。下载页是多选删除，撤销也得整批回滚 —— 只恢复其中几首
+  /// 会让用户以为全回来了。
+  Future<void> restoreDownloads(List<DeletedDownload> deleted) async {
+    for (final entry in deleted) {
+      await _downloadLibraryRepository.restoreDownload(entry);
+    }
     await refreshDownloads();
   }
 }
