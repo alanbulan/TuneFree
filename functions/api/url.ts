@@ -8,7 +8,8 @@ import { Buffer } from 'node:buffer';
  * 协议与桌面端 Rust provider（src-tauri/src/api/{netease,qq,kuwo}.rs）保持一致：
  * - netease: EAPI AES-128-ECB 加密请求
  * - qq:      musicu.fcg CgiGetVkey，filename 必须是 "M500<mid><mid>.mp3" 形式
- * - kuwo:    mobi.s?f=kuwo&q=<base64(块加密参数)>，响应为 key=value 文本行
+ * - kuwo:    mobi.s?f=web&type=convert_url_with_sign 明文接口，响应为 JSON；
+ *            旧的 f=kuwo 块加密端点已被上游 nginx 无条件 403，仅作兜底保留
  *
  * 响应约定（客户端只关心 url 是否存在）：
  *   200 { url: "https://..." }                解析成功
@@ -317,9 +318,12 @@ const kuwoCryptoAlgorithm = (function() {
 // 酷我音乐
 // ==============================
 
-/** 移动端 convert_url 协议的固定请求密钥（客户端内置的协议常量，非应用密钥）。 */
+/** 移动端 convert_url_with_sign 明文接口；响应为 JSON。 */
+const KUWO_MOBI_ENDPOINT = "https://mobi.kuwo.cn/mobi.s";
+/** 块加密端点（f=kuwo&q=<base64>）。曾为主路径，现被酷我 nginx 层无条件 403。 */
+const KUWO_ENCRYPTED_ENDPOINT = "https://mobi.kuwo.cn/mobi.s?f=kuwo&q=";
+/** 块加密协议的固定请求密钥（客户端内置的协议常量，非应用密钥）。 */
 const KUWO_REQUEST_KEY = "ylzsxkwm";
-const KUWO_MOBI_ENDPOINT = "https://mobi.kuwo.cn/mobi.s?f=kuwo&q=";
 
 /**
  * 加密后的参数直接以 base64 明文拼在 q= 之后，不做百分号编码。
@@ -332,19 +336,37 @@ const buildKuwoQuery = (params: string): string => {
     return btoa(binary);
 };
 
-const kuwoBitrateFor = (quality: string): [string, string] => {
-    if (quality === "320k") return ["320kmp3", "mp3"];
-    if (quality === "192k") return ["192kmp3", "mp3"];
-    if (quality === "ape") return ["2000kape", "ape"];
-    if (quality === "flac" || quality === "flac24bit") return ["2000kflac", "flac"];
-    return ["128kmp3", "mp3"];
+/**
+ * 按音质从高到低排列候选码率，逐个尝试直到拿到可播地址。
+ *
+ * 不能只取第一个候选：请求 2000kflac 时上游会退回 100kbps 的 ogg，
+ * 直接采用反而远差于 320kmp3，所以必须按 format 判断后继续往下找。
+ */
+const kuwoBitrateCandidates = (quality: string): string[] => {
+    if (quality === "flac" || quality === "flac24bit" || quality === "ape") {
+        return ["2000kflac", "320kmp3", "192kmp3", "128kmp3", "48kaac"];
+    }
+    if (quality === "320k") return ["320kmp3", "192kmp3", "128kmp3", "48kaac"];
+    if (quality === "192k") return ["192kmp3", "128kmp3", "48kaac"];
+    return ["128kmp3", "48kaac"];
 };
 
 /**
- * 响应是 key=value 文本行。bitrate=1 表示 VIP / 版权受限，
- * 此时即使后面还有 url 行也不可播放。
+ * convert_url_with_sign 的响应是 JSON。bitrate=1 是 VIP / 版权受限标记
+ * （与桌面端 Rust provider 的 parse_kuwo_url 一致），此时即便带 url 字段也不可播放。
  */
-const parseKuwoResponse = (body: string): ResolveResult => {
+const parseKuwoResponse = (data: any): ResolveResult => {
+    const payload = data?.data;
+    if (!payload) return { url: null, reason: "unavailable" };
+    if (Number(payload.bitrate) === 1) return { url: null, reason: "vip" };
+
+    const candidate = typeof payload.url === "string" ? payload.url.trim() : "";
+    if (!isPlayableUrl(candidate)) return { url: null, reason: "unavailable" };
+    return { url: candidate };
+};
+
+/** 加密端点的响应是 key=value 文本行。 */
+const parseKuwoEncryptedResponse = (body: string): ResolveResult => {
     const lines = body.split(/\r?\n/).map((line) => line.trim());
 
     if (lines.includes("bitrate=1")) return { url: null, reason: "vip" };
@@ -359,16 +381,73 @@ const parseKuwoResponse = (body: string): ResolveResult => {
 };
 
 /**
- * 旧的 f=web&convert_url_with_sign 接口已失效，必须改用加密的移动端协议。
- * 仓库里原有的块加密实现此前从未被调用，这里才真正接上。
+ * 主路径：移动端 convert_url_with_sign 明文协议。
+ *
+ * 从前的实现走 f=kuwo&q=<块加密> 端点，该端点现已被酷我 nginx 层无条件
+ * 拒绝（HTTP 403）——换 UA、换主机、换 http/https、换请求体都无效，
+ * 客户端无解，只能弃用。这个明文接口仍然可用，且会返回真实的
+ * bitrate / format，便于按格式做质量判断。
  */
-async function getKuwoUrl(songmid: string, quality: string): Promise<ResolveResult> {
-    const [bitrate, format] = kuwoBitrateFor(quality);
+async function getKuwoUrlPrimary(songmid: string, quality: string): Promise<ResolveResult> {
+    /** 已拿到地址但不是首选格式（ogg/aac）时的降级结果。 */
+    let degradedUrl: string | null = null;
+    let sawVip = false;
+
+    for (const br of kuwoBitrateCandidates(quality)) {
+        const apiUrl =
+            `${KUWO_MOBI_ENDPOINT}?f=web&type=convert_url_with_sign&source=jiakong` +
+            `&rid=${encodeURIComponent(songmid)}&br=${br}`;
+
+        const resp = await fetch(apiUrl, {
+            method: "GET",
+            headers: {
+                'User-Agent': getRandomUserAgent(),
+                'Referer': "http://kuwo.cn/"
+            }
+        });
+
+        if (!resp.ok) continue;
+
+        const data = await resp.json().catch(() => null);
+        const result = parseKuwoResponse(data);
+
+        if (result.url) {
+            const format = String(data?.data?.format || "").toLowerCase();
+            // mp3 / flac 是首选，直接采用；ogg / aac 先记下，继续试更低的候选码率。
+            if (format === "mp3" || format === "flac") return result;
+            degradedUrl ??= result.url;
+            continue;
+        }
+
+        if (result.reason === "vip") sawVip = true;
+    }
+
+    if (degradedUrl) return { url: degradedUrl };
+    return { url: null, reason: sawVip ? "vip" : "unavailable" };
+}
+
+const kuwoEncryptedBitrateFor = (quality: string): [string, string] => {
+    if (quality === "320k") return ["320kmp3", "mp3"];
+    if (quality === "192k") return ["192kmp3", "mp3"];
+    if (quality === "ape") return ["2000kape", "ape"];
+    if (quality === "flac" || quality === "flac24bit") return ["2000kflac", "flac"];
+    return ["128kmp3", "mp3"];
+};
+
+/**
+ * 兜底：块加密端点。
+ *
+ * 当前被上游 nginx 层无条件 403，因此只在主路径拿到「上游没有可用地址」
+ * 时才会尝试一次。保留实现是为了在端点恢复、或换用别的 Kuwo 网关时
+ * 能直接切回来，不必再走一遍协议逆向。
+ */
+async function getKuwoUrlEncrypted(songmid: string, quality: string): Promise<ResolveResult> {
+    const [bitrate, format] = kuwoEncryptedBitrateFor(quality);
     const params =
         `type=convert_url&br=${bitrate}&format=${format}&sig=0&rid=${songmid}` +
         `&network=wifi&response=url&prod=kwplayer_ar_10.3.3.0`;
 
-    const resp = await fetch(`${KUWO_MOBI_ENDPOINT}${buildKuwoQuery(params)}`, {
+    const resp = await fetch(`${KUWO_ENCRYPTED_ENDPOINT}${buildKuwoQuery(params)}`, {
         method: "GET",
         headers: {
             'User-Agent': getRandomUserAgent(),
@@ -378,5 +457,21 @@ async function getKuwoUrl(songmid: string, quality: string): Promise<ResolveResu
 
     if (!resp.ok) throw new Error(`Kuwo responded HTTP ${resp.status}`);
 
-    return parseKuwoResponse(await resp.text());
+    return parseKuwoEncryptedResponse(await resp.text());
+}
+
+/**
+ * 酷我解析入口：明文协议优先；只有它明确回答「没有可用地址」时才试一次
+ * 旧加密端点。VIP 是权威结论，不必再试。
+ */
+async function getKuwoUrl(songmid: string, quality: string): Promise<ResolveResult> {
+    const primary = await getKuwoUrlPrimary(songmid, quality);
+    if (primary.url || primary.reason === "vip") return primary;
+
+    try {
+        const fallback = await getKuwoUrlEncrypted(songmid, quality);
+        return fallback.url ? fallback : primary;
+    } catch {
+        return primary;
+    }
 }
