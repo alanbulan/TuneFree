@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Smile } from 'lucide-react';
 import { usePlayerNowPlaying } from '../../core/contexts/PlayerContext';
 import type { StateId } from '../../../vendor/bloub/src/bot/states';
 import { useCompanionThinking } from '../hooks/useCompanionThinking';
@@ -29,7 +28,7 @@ export default function BloubCompanion({ aiBusy = false }: { aiBusy?: boolean })
   const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 860px)').matches);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selection, setSelection] = useState<BloubSelection | null>(null);
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const handleRef = useRef<HTMLDivElement>(null);
   const { currentSong, isPlaying, isLoading, isNearEnd } = usePlayerNowPlaying();
   const thinking = useCompanionThinking(aiBusy);
   const reducedMotion = useReducedMotion();
@@ -63,7 +62,7 @@ export default function BloubCompanion({ aiBusy = false }: { aiBusy?: boolean })
     const escape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       setMenuOpen(false);
-      menuButtonRef.current?.focus();
+      handleRef.current?.focus();
       event.stopPropagation();
     };
     document.addEventListener('pointerdown', outside);
@@ -102,12 +101,16 @@ export default function BloubCompanion({ aiBusy = false }: { aiBusy?: boolean })
     <motion.div ref={petRef} className={`bloub-companion is-${mood}${dragging ? ' is-dragging' : ''}`}
       style={petStyle} data-state={state} data-expression={expression}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
-      <div className="companion-handle" role="button" tabIndex={0}
+      <div ref={handleRef} className="companion-handle" role="button" tabIndex={0}
+        aria-expanded={menuOpen} aria-haspopup="dialog"
         aria-label={`Bloub 音乐伙伴，${statusText}。点击、Enter 或空格打招呼，方向键移动，Home 键复位，右键打开动作面板。`}
         title={`${statusText} · 点击打招呼，拖动调整位置`} onContextMenu={(event) => {
           event.preventDefault(); setMenuOpen(true);
         }}
-        onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
+        onPointerDown={(event) => {
+          if (event.pointerType !== 'mouse' || event.button === 0) setMenuOpen(false);
+          handlePointerDown(event);
+        }} onPointerMove={handlePointerMove}
         onPointerUp={finishDrag} onPointerCancel={finishDrag} onKeyDown={(event) => {
           if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
             event.preventDefault(); setMenuOpen(true);
@@ -124,12 +127,10 @@ export default function BloubCompanion({ aiBusy = false }: { aiBusy?: boolean })
       </div>
       <div className={`companion-bubble${bubbleLeft ? ' is-left' : ''}${bubbleBelow ? ' is-below' : ''}`}
         aria-hidden="true">{statusText}</div>
-      <button ref={menuButtonRef} type="button" className="companion-menu-trigger" aria-label="Bloub 动作与表情"
-        aria-expanded={menuOpen} aria-haspopup="dialog" onClick={() => setMenuOpen((open) => !open)}><Smile size={15} /></button>
-      <AnimatePresence>
+      {!dragging && <AnimatePresence>
         {menuOpen && pageVisible && <BloubMenu selection={selection} style={menuStyle}
-          onSelect={setSelection} onClose={() => { setMenuOpen(false); menuButtonRef.current?.focus(); }} />}
-      </AnimatePresence>
+          onSelect={setSelection} onClose={() => { setMenuOpen(false); handleRef.current?.focus(); }} />}
+      </AnimatePresence>}
     </motion.div>
   );
 }

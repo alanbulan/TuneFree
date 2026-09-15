@@ -65,6 +65,7 @@ export interface ResolvedLyricBinding {
   id?: string | number;
   lyricId?: string | number;
   picId?: string;
+  songMeta?: ParsedSongData['resolvedSongMeta'];
 }
 
 export interface AudioHandlers {

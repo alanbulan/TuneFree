@@ -2,12 +2,21 @@ import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LibraryProvider } from '../../../../core/contexts/LibraryContext';
 import { searchAggregate, searchSongs } from '../../../../core/services/api';
+import { BUILTIN_PROVIDERS } from '../../../../core/services/sources/builtin';
+import { registerBuiltinProviders } from '../../../../core/services/sources/registry';
+import type { MusicProvider } from '../../../../core/services/sources/types';
 import { deferred } from '../../../../core/__tests__/deferred';
 import type { Song } from '../../../../core/types';
 import DesktopSearch from '../DesktopSearch';
 import { useSearchHistory } from '../useSearchHistory';
 
-const mocks = vi.hoisted(() => ({ play: vi.fn(), toast: vi.fn() }));
+const mocks = vi.hoisted(() => ({ play: vi.fn(), toast: vi.fn(), sourceListeners: new Set<() => void>() }));
+vi.mock('../../../../core/services/sources/manager', () => ({
+  subscribeMusicSources: (listener: () => void) => {
+    mocks.sourceListeners.add(listener);
+    return () => mocks.sourceListeners.delete(listener);
+  },
+}));
 vi.mock('../../../../core/contexts/PlayerContext', () => ({ usePlayerActions: () => ({ playQueue: mocks.play }),
   usePlayerNowPlaying: () => ({ currentSong: null, isPlaying: false }) }));
 vi.mock('../../../../core/services/api', async (original) => ({ ...await original<typeof import('../../../../core/services/api')>(), searchAggregate: vi.fn(), searchSongs: vi.fn() }));
@@ -15,18 +24,59 @@ vi.mock('../../../../core/services/recommendation', async (original) => ({ ...aw
 vi.mock('../../../components/ToastHost', () => ({ useToast: () => ({ showToast: mocks.toast }) }));
 
 const song = (id: string): Song => ({ id, name: `歌曲 ${id}`, artist: '歌手', album: '专辑', source: 'netease' });
+
+/**
+ * GD 音乐台在应用里是内置脚本：单元测试用替身 provider 顶替，
+ * 让「指定音源」列表与频控提示保持和真实环境一致。
+ */
+const gdLikeProvider: MusicProvider = {
+  kind: 'gdstudio',
+  id: 'gd-like',
+  label: 'GD 替身',
+  platforms: ['netease', 'qq', 'kuwo', 'joox', 'bilibili'],
+  searchPlatforms: ['joox', 'bilibili'],
+  priority: 10,
+  lyricsPriority: 20,
+  searchTier: 'extended',
+  gdStudioQuota: true,
+  fallback: true,
+  search: vi.fn().mockResolvedValue([]),
+};
 const renderSearch = (commandQuery = '') => render(<DesktopSearch commandQuery={commandQuery} />, { wrapper: LibraryProvider });
 const input = () => screen.getByRole('textbox');
 const searchNow = async () => { fireEvent.keyDown(input(), { key: 'Enter' }); await act(async () => {}); };
 const debounce = async () => { await act(() => vi.advanceTimersByTimeAsync(300)); };
 beforeEach(() => {
   vi.useFakeTimers(); localStorage.clear(); vi.clearAllMocks();
+  registerBuiltinProviders([...BUILTIN_PROVIDERS, gdLikeProvider]);
   vi.mocked(searchAggregate).mockReset().mockResolvedValue([song('1')]);
   vi.mocked(searchSongs).mockReset().mockResolvedValue([song('single')]);
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => {
+  registerBuiltinProviders(BUILTIN_PROVIDERS);
+  cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers();
+});
 
 describe('搜索请求生命周期', () => {
+  it('内置脚本异步就绪后刷新平台选项与扩展源提示', () => {
+    registerBuiltinProviders(BUILTIN_PROVIDERS);
+    renderSearch();
+    fireEvent.click(screen.getByRole('button', { name: '扩展源 关' }));
+    expect(screen.getByText(/扩展聚合已启用/).textContent).not.toContain('JOOX');
+    act(() => {
+      registerBuiltinProviders([...BUILTIN_PROVIDERS, gdLikeProvider]);
+      mocks.sourceListeners.forEach((listener) => listener());
+    });
+    expect(screen.getByText(/扩展聚合已启用/).textContent).toContain('JOOX');
+    fireEvent.click(screen.getByRole('button', { name: '指定音源' }));
+    expect(screen.getByRole('radio', { name: /JOOX/ })).toBeTruthy();
+    act(() => {
+      registerBuiltinProviders(BUILTIN_PROVIDERS);
+      mocks.sourceListeners.forEach((listener) => listener());
+    });
+    expect(screen.queryByRole('radio', { name: /JOOX/ })).toBeNull();
+  });
+
   it('读取命令查询并防抖，播放完整结果、收藏和撤销，分页去重后结束', async () => {
     localStorage.setItem('tunefree_desktop_pending_query', '夜曲'); renderSearch();
     expect((input() as HTMLInputElement).value).toBe('夜曲'); expect(localStorage.getItem('tunefree_desktop_pending_query')).toBeNull();

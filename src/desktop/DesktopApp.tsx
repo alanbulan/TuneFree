@@ -13,6 +13,7 @@ import { DialogProvider } from './components/DialogHost';
 import DesktopShell from './components/DesktopShell';
 import { RecommendationSyncBridge } from './components/RecommendationSyncBridge';
 import { LibrarySaveNotice } from './components/LibrarySaveNotice';
+import { MusicSourceRuntime } from './components/MusicSourceRuntime';
 import { ToastProvider } from './components/ToastHost';
 import { DownloadProvider } from './hooks/useSongDownload';
 import type { DesktopView } from './types';
@@ -23,6 +24,7 @@ const viewPaths: Record<DesktopView, string> = {
   favorites: '/library',
   playlists: '/library/playlists',
   downloads: '/library/downloads',
+  sources: '/library/sources',
   settings: '/library/settings',
   about: '/library/about',
 };
@@ -33,6 +35,7 @@ const getViewFromPath = (fallback: DesktopView): DesktopView => {
   if (path.startsWith('/search')) return 'search';
   if (path.startsWith('/library/playlists')) return 'playlists';
   if (path.startsWith('/library/downloads')) return 'downloads';
+  if (path.startsWith('/library/sources')) return 'sources';
   if (path.startsWith('/library/settings')) return 'settings';
   if (path.startsWith('/library/about')) return 'about';
   if (path.startsWith('/library')) return 'favorites';
@@ -149,6 +152,7 @@ export default function DesktopApp({ initialView = 'home' }: { initialView?: Des
               <ToastProvider>
                 <DownloadProvider>
                   <RecommendationSyncBridge />
+                  <MusicSourceRuntime />
                   <LibrarySaveNotice />
                   <div className={`desktop-app app-root ${isReady ? 'is-ready' : ''}`}>
                     <DesktopShell view={view} onViewChange={handleViewChange} />

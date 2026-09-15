@@ -15,21 +15,44 @@ vi.mock('../kuwo', () => ({
   fetchKuwoLyrics: vi.fn(),
   batchFetchKuwoCovers: vi.fn(),
 }));
-vi.mock('../gdStudio', () => ({
-  getGDStudioLyrics: vi.fn(),
-  getGDStudioSongUrl: vi.fn(),
-  isGDStudioOnlySource: vi.fn().mockReturnValue(false),
-  isGDStudioSource: vi.fn().mockReturnValue(false),
-  parseGDStudioSongFull: vi.fn(),
+vi.mock('../gdStudioExtras', () => ({
   resolveAutosource: vi.fn(),
-  searchGDStudio: vi.fn(),
+  getAIRecommendedSongs: vi.fn(),
 }));
 
 import { fetchFallbackLyrics, fetchNativeUrl, getSongUrl, parseSongFull, getLyrics } from '../resolver';
 import { fetchNeteaseLyrics, searchNetease } from '../netease';
 import { searchQQ, fetchQQLyrics } from '../qq';
 import { searchKuwo, fetchKuwoLyrics } from '../kuwo';
-import { resolveAutosource, getGDStudioLyrics, getGDStudioSongUrl, isGDStudioOnlySource, isGDStudioSource, parseGDStudioSongFull, searchGDStudio } from '../gdStudio';
+import { resolveAutosource } from '../gdStudioExtras';
+import { BUILTIN_PROVIDERS } from '../sources/builtin';
+import { registerBuiltinProviders, setCustomProviders } from '../sources/registry';
+import type { MusicProvider } from '../sources/types';
+
+/**
+ * GD 音乐台已改写成内置脚本：单元测试用「GD 替身」provider 顶替它的位置，
+ * 断言的是解析编排（优先级与专属平台整曲解析），而不是脚本实现本身。
+ */
+const gdSpies = {
+  getUrl: vi.fn(),
+  getLyrics: vi.fn(),
+  resolveFull: vi.fn(),
+  search: vi.fn(),
+};
+const gdLikeProvider: MusicProvider = {
+  kind: 'gdstudio',
+  id: 'gd-like',
+  label: 'GD 替身',
+  platforms: ['netease', 'qq', 'kuwo', 'joox', 'bilibili'],
+  searchPlatforms: ['joox', 'bilibili'],
+  priority: 10,
+  lyricsPriority: 20,
+  fallback: true,
+  getUrl: (request) => gdSpies.getUrl(request),
+  getLyrics: (request) => gdSpies.getLyrics(request),
+  resolveFull: (request) => gdSpies.resolveFull(request),
+  search: (keyword, platform, page, limit, signal) => gdSpies.search(keyword, platform, page, limit, signal),
+};
 
 describe('Embeat playback resolution', () => {
   beforeEach(() => {
@@ -91,9 +114,13 @@ describe('Embeat playback resolution', () => {
 describe('音源分流与失败回退', () => {
   beforeEach(() => {
     vi.resetAllMocks(); vi.spyOn(console, 'warn').mockImplementation(() => {});
-    vi.mocked(isGDStudioSource).mockImplementation(((source: string) => ['qq', 'kuwo', 'joox', 'embeat', 'bilibili'].includes(source)) as typeof isGDStudioSource);
-    vi.mocked(isGDStudioOnlySource).mockImplementation(((source: string) => ['joox', 'embeat', 'bilibili'].includes(source)) as typeof isGDStudioOnlySource);
-    vi.mocked(searchNetease).mockResolvedValue([]); vi.mocked(searchQQ).mockResolvedValue([]); vi.mocked(searchKuwo).mockResolvedValue([]); vi.mocked(searchGDStudio).mockResolvedValue([]);
+    registerBuiltinProviders([...BUILTIN_PROVIDERS, gdLikeProvider]);
+    setCustomProviders([]);
+    gdSpies.getUrl.mockResolvedValue(null);
+    gdSpies.getLyrics.mockResolvedValue('');
+    gdSpies.resolveFull.mockResolvedValue(null);
+    gdSpies.search.mockResolvedValue([]);
+    vi.mocked(searchNetease).mockResolvedValue([]); vi.mocked(searchQQ).mockResolvedValue([]); vi.mocked(searchKuwo).mockResolvedValue([]);
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response('{}', { status: 404 })));
   });
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
@@ -101,18 +128,18 @@ describe('音源分流与失败回退', () => {
   it('原生歌词与 GD 专属歌词按来源解析，成功结果优先', async () => {
     vi.mocked(fetchQQLyrics).mockResolvedValueOnce('QQ歌词'); expect(await fetchFallbackLyrics('qq-branch', 'qq')).toBe('QQ歌词');
     vi.mocked(fetchKuwoLyrics).mockResolvedValueOnce('酷我歌词'); expect(await fetchFallbackLyrics('kuwo-branch', 'kuwo')).toBe('酷我歌词');
-    vi.mocked(getGDStudioLyrics).mockResolvedValueOnce('GD歌词'); expect(await getLyrics('joox-branch', 'joox')).toBe('GD歌词');
-    vi.mocked(isGDStudioOnlySource).mockReturnValue(false); vi.mocked(getGDStudioLyrics).mockResolvedValueOnce('通用歌词');
-    expect(await getLyrics('generic', 'bilibili')).toBe('通用歌词');
-    vi.mocked(getGDStudioLyrics).mockResolvedValueOnce('').mockResolvedValueOnce('后备歌词'); expect(await getLyrics('fallback', 'bilibili')).toBe('后备歌词');
+    gdSpies.getLyrics.mockResolvedValueOnce('GD歌词'); expect(await getLyrics('joox-branch', 'joox')).toBe('GD歌词');
+    gdSpies.getLyrics.mockResolvedValueOnce('通用歌词'); expect(await getLyrics('generic', 'bilibili')).toBe('通用歌词');
+    // 单一链路只尝试一次：GD 返回空即视为没有歌词（旧实现会重复请求一次）
+    gdSpies.getLyrics.mockResolvedValueOnce(''); expect(await getLyrics('fallback', 'bilibili')).toBe('');
     expect(await fetchFallbackLyrics('unknown', 'unknown')).toBe('');
   });
   it('GD 地址可直接使用，专属源不访问无关原生接口，无地址但有歌词保留元数据', async () => {
-    vi.mocked(getGDStudioSongUrl).mockResolvedValueOnce('https://audio.test/gd.mp3'); expect(await getSongUrl('gd', 'qq')).toBe('https://audio.test/gd.mp3');
-    vi.mocked(getGDStudioSongUrl).mockResolvedValueOnce(null); expect(await getSongUrl('empty', 'joox')).toBeNull();
-    vi.mocked(parseGDStudioSongFull).mockResolvedValueOnce({ url: 'https://audio.test/j.mp3', lrc: '歌词', pic: '' });
+    gdSpies.getUrl.mockResolvedValueOnce('https://audio.test/gd.mp3'); expect(await getSongUrl('gd', 'qq')).toBe('https://audio.test/gd.mp3');
+    gdSpies.getUrl.mockResolvedValueOnce(null); expect(await getSongUrl('empty', 'joox')).toBeNull();
+    gdSpies.resolveFull.mockResolvedValueOnce({ url: 'https://audio.test/j.mp3', lrc: '歌词', pic: '', resolvedSource: 'joox', resolvedId: 'j' });
     expect(await parseSongFull('j', 'joox')).toMatchObject({ resolvedSource: 'joox', resolvedId: 'j', url: 'https://audio.test/j.mp3' });
-    vi.mocked(parseGDStudioSongFull).mockResolvedValueOnce(null); expect(await parseSongFull('empty', 'joox')).toBeNull();
+    gdSpies.resolveFull.mockResolvedValueOnce(null); expect(await parseSongFull('empty', 'joox')).toBeNull();
     vi.mocked(fetchQQLyrics).mockResolvedValueOnce('仅歌词'); expect(await parseSongFull('metadata', 'qq')).toMatchObject({ url: null, lrc: '仅歌词' });
   });
   it('autosource 失败尝试候选，无法匹配返回空，主动取消保留原始原因', async () => {
@@ -344,6 +371,8 @@ describe('isLikelySameSong (indirect via getSongUrl)', () => {
       album: '',
       pic: '',
       lyricId: 'fallback-lyric-id',
+      urlId: 'fallback-url-id',
+      picId: 'fallback-pic-id',
       source: 'netease',
     }]);
     vi.mocked(fetchNeteaseLyrics).mockResolvedValue('[00:01.00]fallback lyric');
@@ -359,6 +388,9 @@ describe('isLikelySameSong (indirect via getSongUrl)', () => {
         resolvedSource: 'netease',
         resolvedId: 'fallback-id',
         resolvedLyricId: 'fallback-lyric-id',
+        resolvedSongMeta: expect.objectContaining({
+          urlId: 'fallback-url-id', lyricId: 'fallback-lyric-id', picId: 'fallback-pic-id',
+        }),
       });
   });
 

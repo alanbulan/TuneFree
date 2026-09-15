@@ -1,19 +1,5 @@
-import { BoundedCache } from '../utils/boundedCache';
-import { rememberTrackMeta } from './gdStudioModel';
-import { API_PREFIX, buildLocalServerHeaders } from "./config";
 import { normalizeMusicUrl } from "./utils";
-import { fetchNeteaseLyrics, searchNetease } from "./netease";
-import { fetchQQLyrics, searchQQ } from "./qq";
-import { fetchKuwoLyrics, searchKuwo } from "./kuwo";
-import {
-  getGDStudioLyrics,
-  getGDStudioSongUrl,
-  isGDStudioOnlySource,
-  isGDStudioSource,
-  parseGDStudioSongFull,
-  resolveAutosource,
-  searchGDStudio,
-} from "./gdStudio";
+import { resolveAutosource } from "./gdStudioExtras";
 import {
   abortReasonError,
   buildFallbackQuery,
@@ -22,7 +8,23 @@ import {
   isLikelySameSong,
   type SongMeta,
 } from "./resolverMatch";
-import type { Song } from "../types";
+import {
+  fallbackPlatformsFor,
+  getNameMatchCandidates,
+  resolveDirectUrl,
+  resolveFull,
+  resolveLyrics,
+  resolvePic,
+  searchSongs as searchPlatformSongs,
+} from "./sources/registry";
+import { toSourceResolveRequest, type SourceResolveRequest } from "./sources/types";
+
+/**
+ * 解析链路的编排层。
+ *
+ * 这里**不再判断任何具体平台**：谁是某个平台的解析器、歌词从哪来、兜底去搜哪些平台，
+ * 全部由 `sources/registry.ts` 依据各 provider 的声明派生。
+ */
 
 /**
  * 解析链路的公共可选项：
@@ -44,10 +46,9 @@ export type ParsedSongFull = {
   resolvedId?: string | number;
   resolvedLyricId?: string | number;
   resolvedPicId?: string;
+  /** 跨源匹配结果的元数据，供延后获取歌词和封面时使用。 */
+  resolvedSongMeta?: SongMeta;
 };
-
-const _lyricsCache = new BoundedCache<string, string>(200, 30 * 60_000);
-const _lyricsPending = new Map<string, Promise<string>>();
 
 // 跨音源 fallback（与 Flutter / 移动 PWA 对齐）：
 // 原源解析失败时，用「歌名 + 歌手」在其它音源搜索同曲并解析。
@@ -55,162 +56,42 @@ const FALLBACK_SEARCH_LIMIT = 6;
 const FALLBACK_CANDIDATE_LIMIT = 3;
 const FALLBACK_SOURCE_CONCURRENCY = 3;
 const FALLBACK_TOTAL_TIMEOUT_MS = 15_000;
-const NATIVE_URL_TIMEOUT_MS = 8_000;
-const FALLBACK_SOURCES = ["netease", "qq", "kuwo", "joox", "bilibili"] as const;
-type FallbackSource = typeof FALLBACK_SOURCES[number];
-const KUWO_FALLBACK_SOURCES = ["qq", "netease", "joox", "bilibili"] as const;
-const NATIVE_LYRIC_SOURCES = new Set(["netease", "qq", "kuwo"]);
+const NAME_MATCH_TOTAL_TIMEOUT_MS = 8_000;
 
-const readJsonBody = async (resp: Response): Promise<any> => {
-  try {
-    return await resp.json();
-  } catch {
-    return null;
-  }
-};
+// 内置平台的解析与歌词已抽到 sources/ 下，这里保留原导出名以便调用方无感。
+export { fetchNativeUrl } from "./sources/nativeUrl";
+export { fetchNativeLyrics, fetchNativeLyrics as fetchFallbackLyrics } from "./sources/nativeLyrics";
 
-export const fetchNativeUrl = async (
-  id: string,
-  platform: string,
-  quality: string,
-  signal?: AbortSignal,
-): Promise<string | null> => {
-  const controller = new AbortController();
-  const abortFromCaller = () => controller.abort(signal?.reason);
-  if (signal?.aborted) abortFromCaller();
-  signal?.addEventListener("abort", abortFromCaller, { once: true });
-  const timeoutId = setTimeout(() => controller.abort(), NATIVE_URL_TIMEOUT_MS);
-  try {
-    const resp = await fetch(
-      `${API_PREFIX}/api/url?platform=${encodeURIComponent(platform)}&id=${encodeURIComponent(id)}&quality=${encodeURIComponent(quality)}`,
-      { signal: controller.signal, headers: buildLocalServerHeaders() },
-    );
-    const data = await readJsonBody(resp);
-    if (signal?.aborted) throw abortReasonError(signal);
-    // 后端 /api/url 失败时会返回结构化 error 字段，必须落日志，
-    // 否则代理白名单 403 与"平台不可用"完全不可区分。
-    const detail = typeof data?.error === "string" ? `：${data.error}` : "";
-    if (resp.ok) {
-      if (data?.url) return data.url as string;
-      console.warn(`[Resolver] /api/url 未返回可用链接 (${platform}:${id})${detail}`);
-    } else {
-      console.warn(
-        `[Resolver] /api/url 请求失败 (${platform}:${id}) HTTP ${resp.status}${detail}`,
-      );
-    }
-  } catch {
-    if (signal?.aborted) throw abortReasonError(signal);
-    // native resolver unavailable
-  } finally {
-    clearTimeout(timeoutId);
-    signal?.removeEventListener("abort", abortFromCaller);
-  }
-  return null;
-};
-
-export const fetchFallbackLyrics = async (
+/** 统一的解析请求构造：歌曲元数据供 provider 使用（按歌名匹配、脚本内部缓存、GD 专属平台）。 */
+const toSourceRequest = (
   id: string | number,
   source: string,
+  quality: string,
+  songMeta?: SongMeta,
   options?: ResolveOptions,
-): Promise<string> => {
-  const cacheKey = `lrc:${source}:${id}`;
-  if (!options?.forceRefresh) {
-    const cached = _lyricsCache.get(cacheKey);
-    if (cached !== undefined) return cached;
+): SourceResolveRequest => toSourceResolveRequest({ ...songMeta, id, source }, quality, options);
 
-    // 可取消请求不共享 in-flight Promise，避免一次 abort 波及其它调用方。
-    const pending = _lyricsPending.get(cacheKey);
-    if (pending && !options?.signal) return pending;
-  }
-
-  const request = (async () => {
-    let lrc = "";
-
-    try {
-      if (source === "netease") {
-        lrc = await fetchNeteaseLyrics(id, options?.signal);
-      } else if (source === "qq") {
-        lrc = await fetchQQLyrics(id, options?.signal);
-      } else if (source === "kuwo") {
-        lrc = await fetchKuwoLyrics(id, options?.signal);
-      }
-
-      if (!lrc && isGDStudioSource(source)) {
-        lrc = await getGDStudioLyrics(id, source, options);
-      }
-    } catch (e) {
-      if (options?.signal?.aborted) throw abortReasonError(options.signal);
-      console.warn(`[Resolver] fetchFallbackLyrics failed (${source}:${id}):`, e);
-    } finally {
-      if (!options?.signal) _lyricsPending.delete(cacheKey);
-    }
-
-    if (lrc) _lyricsCache.set(cacheKey, lrc);
-    return lrc;
-  })();
-
-  if (!options?.signal) _lyricsPending.set(cacheKey, request);
-  return request;
-};
-
+/** 歌词：由注册表按 provider 声明的优先级接力（自定义源 → 原生 → GD）。 */
 export const getLyrics = async (
   id: string | number,
   source: string,
   songMeta?: SongMeta,
   options?: ResolveOptions,
 ): Promise<string> => {
-  const lyricId = songMeta?.lyricId || id;
-
-  if (isGDStudioOnlySource(source)) {
-    return getGDStudioLyrics(lyricId, source, options);
-  }
-
-  if (NATIVE_LYRIC_SOURCES.has(source)) {
-    return fetchFallbackLyrics(lyricId, source, options);
-  }
-
-  if (isGDStudioSource(source)) {
-    const gdLyrics = await getGDStudioLyrics(lyricId, source, options);
-    if (gdLyrics) return gdLyrics;
-  }
-
-  return fetchFallbackLyrics(lyricId, source, options);
+  return resolveLyrics(toSourceRequest(id, source, "320k", songMeta, options));
 };
 
 const getDirectSongUrl = async (
   id: string | number,
   source: string,
   quality: string = "320k",
+  songMeta?: SongMeta,
   options?: ResolveOptions,
 ): Promise<string | null> => {
   if (!hasPlayableId(id) || !source || source === "undefined") {
     return null;
   }
-
-  if (isGDStudioSource(source)) {
-    const gdUrl = await getGDStudioSongUrl(id, source, quality, options);
-    if (gdUrl) return gdUrl;
-  }
-
-  if (isGDStudioOnlySource(source)) {
-    return null;
-  }
-
-  const nativeUrl = await fetchNativeUrl(String(id), source, quality, options?.signal);
-  if (nativeUrl) return normalizeMusicUrl(nativeUrl) || null;
-
-  return null;
-};
-
-const searchFallbackSource = async (
-  keyword: string,
-  source: FallbackSource,
-  signal?: AbortSignal,
-): Promise<Song[]> => {
-  if (source === "netease") return searchNetease(keyword, 1, FALLBACK_SEARCH_LIMIT, signal);
-  if (source === "qq") return searchQQ(keyword, 1, FALLBACK_SEARCH_LIMIT, signal);
-  if (source === "kuwo") return searchKuwo(keyword, 1, FALLBACK_SEARCH_LIMIT, signal);
-  return searchGDStudio(keyword, source, 1, FALLBACK_SEARCH_LIMIT, signal);
+  return resolveDirectUrl(toSourceRequest(id, source, quality, songMeta, options));
 };
 
 const resolveDirectSongFull = async (
@@ -224,23 +105,26 @@ const resolveDirectSongFull = async (
     return null;
   }
 
-  if (isGDStudioOnlySource(platform)) {
-    const parsed = await parseGDStudioSongFull(id, platform, quality, songMeta, options);
-    return parsed ? {
-      ...parsed,
+  const request = toSourceRequest(id, platform, quality, songMeta, options);
+  // 专属平台（如 GD 的 joox / bilibili）由 provider 一次性拿 url + 歌词 + 封面。
+  const full = await resolveFull(request);
+  if (full) {
+    return {
+      ...full,
       resolvedSource: platform,
       resolvedId: id,
       resolvedLyricId: songMeta?.lyricId || id,
       resolvedPicId: songMeta?.picId,
-    } : null;
+    };
   }
 
-  rememberTrackMeta(id, platform, songMeta || {});
   const [url, lrc] = await Promise.all([
-    getDirectSongUrl(id, platform, quality, options),
+    getDirectSongUrl(id, platform, quality, songMeta, options),
     options?.deferMetadata ? Promise.resolve('') : getLyrics(id, platform, songMeta, options),
   ]);
-  const pic = songMeta?.pic ? normalizeMusicUrl(songMeta.pic) : "";
+  const declaredPic = songMeta?.pic ? normalizeMusicUrl(songMeta.pic) : "";
+  // 自定义音源常在 pic action 里给封面；只有缺封面时才多花一次请求。
+  const pic = declaredPic || (options?.deferMetadata ? '' : await resolvePic(request));
 
   if (!url && !lrc && !pic) return null;
 
@@ -255,13 +139,62 @@ const resolveDirectSongFull = async (
   };
 };
 
-const getFallbackSources = (originalSource: string): readonly FallbackSource[] => {
-  if (originalSource === "kuwo") return KUWO_FALLBACK_SOURCES;
-  return FALLBACK_SOURCES.filter((source) => source !== originalSource);
+/**
+ * 兜底末段：按歌名 + 歌手尝试开启了「按歌名匹配」的自定义音源。
+ *
+ * 这类调用只能拿到 URL、无法像
+ * 搜索结果那样校验候选，存在匹配到翻唱的风险，因此每个音源默认关闭。
+ */
+const resolveNameMatchFallback = async (
+  originalSource: string,
+  originalId: string | number,
+  quality: string,
+  songMeta?: SongMeta,
+  options?: ResolveOptions,
+): Promise<ParsedSongFull | null> => {
+  const candidates = getNameMatchCandidates();
+  if (candidates.length === 0 || !songMeta?.name) return null;
+
+  return firstSuccessfulWithConcurrency(
+    candidates,
+    2,
+    NAME_MATCH_TOTAL_TIMEOUT_MS,
+    async (candidate, signal) => {
+      try {
+        const url = await candidate.provider.getUrl?.({
+          platform: candidate.platform,
+          id: "",
+          quality,
+          name: songMeta.name,
+          artist: songMeta.artist,
+          album: songMeta.album,
+          signal,
+        });
+        if (!url) return null;
+        // 保持原平台与原 id 的元数据绑定，避免播放器把曲目认成另一首歌。
+        return {
+          url: normalizeMusicUrl(url) || url,
+          lrc: "",
+          pic: songMeta.pic ? normalizeMusicUrl(songMeta.pic) : "",
+          resolvedSource: originalSource,
+          resolvedId: originalId,
+          resolvedLyricId: songMeta.lyricId || originalId,
+          resolvedPicId: songMeta.picId,
+        };
+      } catch (error) {
+        if (!signal.aborted) {
+          console.warn("[Resolver] 按歌名匹配自定义音源失败：", error);
+        }
+        return null;
+      }
+    },
+    options?.signal,
+  );
 };
 
 const resolveFallbackSongFull = async (
   originalSource: string,
+  originalId: string | number,
   quality: string,
   songMeta?: SongMeta,
   options?: ResolveOptions,
@@ -269,15 +202,19 @@ const resolveFallbackSongFull = async (
   const query = buildFallbackQuery(songMeta);
   if (!query) return null;
 
-  const fallbackSources = getFallbackSources(originalSource);
+  // 候选平台由注册表按 provider 声明派生（含「仅在存在自定义音源时参与」的 kg / mg）。
+  const fallbackSources = fallbackPlatformsFor(originalSource);
+  if (fallbackSources.length === 0) {
+    return resolveNameMatchFallback(originalSource, originalId, quality, songMeta, options);
+  }
 
-  return firstSuccessfulWithConcurrency(
+  const matched = await firstSuccessfulWithConcurrency(
     fallbackSources,
     FALLBACK_SOURCE_CONCURRENCY,
     FALLBACK_TOTAL_TIMEOUT_MS,
     async (source, signal) => {
       try {
-        const results = await searchFallbackSource(query, source, signal);
+        const results = await searchPlatformSongs(query, source, 1, FALLBACK_SEARCH_LIMIT, signal);
         if (signal.aborted || !Array.isArray(results)) return null;
 
         const candidates = results
@@ -309,6 +246,7 @@ const resolveFallbackSongFull = async (
               resolvedId: parsed.resolvedId,
               resolvedLyricId: parsed.resolvedLyricId,
               resolvedPicId: parsed.resolvedPicId,
+              resolvedSongMeta: candidate,
             };
           }
         }
@@ -321,6 +259,9 @@ const resolveFallbackSongFull = async (
     },
     options?.signal,
   );
+
+  if (matched) return matched;
+  return resolveNameMatchFallback(originalSource, originalId, quality, songMeta, options);
 };
 
 export const getSongUrl = async (
@@ -330,7 +271,6 @@ export const getSongUrl = async (
   songMeta?: SongMeta,
   options?: ResolveOptions,
 ): Promise<string | null> => {
-  rememberTrackMeta(id, source, songMeta || {});
   options = { ...options, deferMetadata: true };
   // embeat 源：走 autosource 跨源匹配
   if (source === "embeat" && songMeta) {
@@ -347,14 +287,14 @@ export const getSongUrl = async (
       console.warn("[Resolver] resolveAutosource failed in getSongUrl, falling back:", e);
     }
     // autosource 失败走常规 fallback
-    const fallback = await resolveFallbackSongFull(source, quality, songMeta, options);
+    const fallback = await resolveFallbackSongFull(source, id, quality, songMeta, options);
     return fallback?.url || null;
   }
 
-  const directUrl = await getDirectSongUrl(id, source, quality, options);
+  const directUrl = await getDirectSongUrl(id, source, quality, songMeta, options);
   if (directUrl) return directUrl;
 
-  const fallback = await resolveFallbackSongFull(source, quality, songMeta, options);
+  const fallback = await resolveFallbackSongFull(source, id, quality, songMeta, options);
   return fallback?.url || null;
 };
 
@@ -389,7 +329,7 @@ export const parseSongFull = async (
       console.warn("[Resolver] resolveAutosource failed in parseSongFull, falling back:", e);
     }
     // autosource 失败时走常规 fallback
-    const fallback = await resolveFallbackSongFull(platform, quality, songMeta, options);
+    const fallback = await resolveFallbackSongFull(platform, id, quality, songMeta, options);
     if (fallback?.url) return fallback;
     return null;
   }
@@ -397,7 +337,7 @@ export const parseSongFull = async (
   const direct = await resolveDirectSongFull(id, platform, quality, songMeta, options);
   if (direct?.url) return direct;
 
-  const fallback = await resolveFallbackSongFull(platform, quality, songMeta, options);
+  const fallback = await resolveFallbackSongFull(platform, id, quality, songMeta, options);
   if (fallback?.url) return fallback;
 
   return direct;

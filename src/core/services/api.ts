@@ -1,9 +1,18 @@
 import { throwIfAborted } from './proxy';
 import { Song, TopList } from "../types";
-import { searchNetease, getNeteaseTopLists, getNeteaseTopListDetail } from "./netease";
-import { searchQQ, getQQTopLists, getQQTopListDetail } from "./qq";
-import { searchKuwo, getKuwoTopLists, getKuwoTopListDetail } from "./kuwo";
-import { searchGDStudio } from "./gdStudio";
+import {
+  aggregatePlatforms,
+  getTopListDetail as getRegistryTopListDetail,
+  getTopLists as getRegistryTopLists,
+  searchSongs as searchRegistrySongs,
+} from './sources/registry';
+
+/**
+ * 对外统一的音乐接口门面。
+ *
+ * 平台搜索、榜单、聚合等分发都从 `sources/registry.ts` 的 provider 声明派生，
+ * 这里只做参数归一化与结果拼接，不再维护任何平台清单。
+ */
 
 export {
   normalizeMusicUrl,
@@ -38,15 +47,18 @@ export {
   fetchKuwoLyrics,
   batchFetchKuwoCovers,
 } from "./kuwo";
+export { searchKugou } from "./kugou";
+export { searchMigu } from "./migu";
+export { resolveAutosource, getAIRecommendedSongs } from "./gdStudioExtras";
 export {
-  searchGDStudio,
-  getGDStudioSongUrl,
-  getGDStudioLyrics,
-  getGDStudioPic,
-  isGDStudioSource,
-  isGDStudioOnlySource,
-} from "./gdStudio";
+  aggregatePlatforms,
+  searchablePlatforms,
+  usesGDStudioQuota,
+} from "./sources/registry";
 
+const SEARCH_PAGE_LIMIT = 30;
+
+/** 单平台搜索：由注册表决定哪个 provider 负责该平台。 */
 export const searchSongs = async (
   keyword: string,
   platform: string,
@@ -54,14 +66,7 @@ export const searchSongs = async (
   signal?: AbortSignal,
 ): Promise<Song[]> => {
   throwIfAborted(signal);
-  const limit = 30;
-
-  if (platform === "netease") return searchNetease(keyword, page, limit, signal);
-  if (platform === "qq") return searchQQ(keyword, page, limit, signal);
-  if (platform === "kuwo") return searchKuwo(keyword, page, limit, signal);
-  if (platform === "joox") return searchGDStudio(keyword, platform, page, limit, signal);
-
-  return [];
+  return searchRegistrySongs(keyword, platform, page, SEARCH_PAGE_LIMIT, signal);
 };
 
 export interface AggregateSearchOptions {
@@ -79,12 +84,12 @@ const interleaveSearchResults = (results: Song[][]): Song[] => {
   return merged;
 };
 
+/** 聚合搜索：参与的平台来自注册表（core 常开，extended 由开关控制）。 */
 export const searchAggregate = async (
   keyword: string, page: number = 1, options: AggregateSearchOptions = {},
 ): Promise<Song[]> => {
   throwIfAborted(options.signal);
-  const platforms = options.includeExtendedSources
-    ? ['netease', 'qq', 'kuwo', 'joox'] : ['netease', 'qq', 'kuwo'];
+  const platforms = aggregatePlatforms(options.includeExtendedSources === true);
   const results: Song[][] = platforms.map(() => []);
   const failedSources: string[] = [];
   let succeeded = 0;
@@ -105,22 +110,13 @@ export const searchAggregate = async (
   return interleaveSearchResults(results);
 };
 
-export const getTopLists = async (platform: string): Promise<TopList[]> => {
-  if (platform === "netease") return getNeteaseTopLists();
-  if (platform === "qq") return getQQTopLists();
-  if (platform === "kuwo") return getKuwoTopLists();
-  return [];
-};
+export const getTopLists = async (platform: string): Promise<TopList[]> =>
+  getRegistryTopLists(platform);
 
 export const getTopListDetail = async (
   id: string | number,
   platform: string,
-): Promise<Song[]> => {
-  if (platform === "netease") return getNeteaseTopListDetail(id);
-  if (platform === "qq") return getQQTopListDetail(id);
-  if (platform === "kuwo") return getKuwoTopListDetail(id);
-  return [];
-};
+): Promise<Song[]> => getRegistryTopListDetail(id, platform);
 
 export const triggerDownload = (url: string, filename: string): void => {
   if (!url) return;

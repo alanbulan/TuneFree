@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { invokeCommand, isTauri } from '../../../core/ipc';
 import { usePlayerActions } from '../../../core/contexts/PlayerContext';
+import { getMusicSourceLabel } from '../../../core/utils/musicSource';
 import { useToast } from '../../components/ToastHost';
 import MotionPanel from '../../components/MotionPanel';
 import {
@@ -14,12 +15,6 @@ import { readCachedDownloadDir, writeCachedDownloadDir } from '../../utils/downl
 import { describeIpcFailure } from './ipcErrorFeedback';
 
 const itemsPerPage = 10;
-
-const sourceLabels: Record<string, string> = {
-  netease: '网易云',
-  qq: 'QQ',
-  kuwo: '酷我',
-};
 
 const losslessQualities = new Set(['flac', 'flac24bit']);
 const isLosslessQuality = (quality: string) => losslessQualities.has(quality);
@@ -159,7 +154,7 @@ export default function DownloadsView() {
                     <tr key={item.filename} className="offline-download-row">
                       <td>
                         <div className="offline-download-title">
-                          <span className="source-badge">{sourceLabels[item.song.source] ?? item.song.source}</span>
+                          <span className="source-badge">{getMusicSourceLabel(item.song.source)}</span>
                           <strong>{item.song.name}</strong>
                         </div>
                       </td>

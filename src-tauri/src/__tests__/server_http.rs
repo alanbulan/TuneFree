@@ -17,6 +17,7 @@ async fn authenticated_url_resolution_reports_verified_urls_and_sanitizes_networ
     let state = ServerState {
         api_client: upstream.client.clone(),
         proxy_client: upstream.client.clone(),
+        source_proxy_client: upstream.client.clone(),
         token: "http-boundary-test".into(),
         port,
     };

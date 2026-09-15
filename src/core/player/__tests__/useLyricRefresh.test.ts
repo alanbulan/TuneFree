@@ -1,9 +1,9 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../services/api', () => ({ getLyrics: vi.fn() }));
-vi.mock('../../services/gdStudio', () => ({ isGDStudioSource: () => true, resolveGDStudioPic: vi.fn() }));
+vi.mock('../../services/sources/registry', () => ({ resolvePic: vi.fn() }));
 import { getLyrics } from '../../services/api';
-import { resolveGDStudioPic } from '../../services/gdStudio';
+import { resolvePic } from '../../services/sources/registry';
 import { useLyricRefresh } from '../useLyricRefresh';
 import { createRuntimeDouble, song } from './playerTestDoubles';
 import { LYRIC_DISPLAY_MODE_STORAGE_KEY } from '../../utils/lyricDisplayMode';
@@ -11,7 +11,7 @@ import { LYRIC_DISPLAY_MODE_STORAGE_KEY } from '../../utils/lyricDisplayMode';
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(getLyrics).mockResolvedValue('');
-  vi.mocked(resolveGDStudioPic).mockResolvedValue('');
+  vi.mocked(resolvePic).mockResolvedValue('');
 });
 afterEach(cleanup);
 
@@ -33,7 +33,7 @@ describe('播放后的歌词和封面补充', () => {
     const { runtime } = createRuntimeDouble({ currentSong: song('1') });
     renderHook(() => useLyricRefresh(runtime));
     expect(getLyrics).not.toHaveBeenCalled();
-    expect(resolveGDStudioPic).not.toHaveBeenCalled();
+    expect(resolvePic).not.toHaveBeenCalled();
   });
 
   it('跨源解析后使用实际音源身份并保持曲库原始身份', async () => {
@@ -43,13 +43,15 @@ describe('播放后的歌词和封面补充', () => {
       source: 'qq', id: 'actual-song', lyricId: 'actual-lyric', picId: 'actual-pic',
     });
     vi.mocked(getLyrics).mockResolvedValue('[00:01.00]歌词');
-    vi.mocked(resolveGDStudioPic).mockResolvedValue('https://example.com/cover.jpg');
+    vi.mocked(resolvePic).mockResolvedValue('https://example.com/cover.jpg');
     renderHook(() => useLyricRefresh(runtime));
     await waitFor(() => expect(refs.currentSong.current?.pic).toContain('cover.jpg'));
     expect(getLyrics).toHaveBeenCalledWith('actual-song', 'qq', expect.objectContaining({
       lyricId: 'actual-lyric', picId: 'actual-pic',
     }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
-    expect(resolveGDStudioPic).toHaveBeenCalledWith('actual-song', 'qq', expect.objectContaining({ picId: 'actual-pic' }), expect.any(AbortSignal));
+    expect(resolvePic).toHaveBeenCalledWith(
+      expect.objectContaining({ platform: 'qq', id: 'actual-song', picId: 'actual-pic' }),
+    );
     expect(refs.currentSong.current).toMatchObject({ id: 'original', source: 'netease', lrc: '[00:01.00]歌词' });
   });
 
@@ -57,7 +59,7 @@ describe('播放后的歌词和封面补充', () => {
     let finishLyrics: (value: string) => void = () => {};
     let finishCover: (value: string) => void = () => {};
     vi.mocked(getLyrics).mockImplementationOnce(() => new Promise((resolve) => { finishLyrics = resolve; }));
-    vi.mocked(resolveGDStudioPic).mockImplementationOnce(() => new Promise((resolve) => { finishCover = resolve; }));
+    vi.mocked(resolvePic).mockImplementationOnce(() => new Promise((resolve) => { finishCover = resolve; }));
     const original = song('old', { url: 'https://example.com/old.mp3' });
     const { runtime, refs, commitCurrentSong } = createRuntimeDouble({ currentSong: original });
     const view = renderHook(({ value }) => useLyricRefresh(value), { initialProps: { value: runtime } });

@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import { SearchIcon } from '../../../core/components/Icons';
-import { SEARCH_SOURCE_OPTIONS, getMusicSourceLabel } from '../../../core/utils/musicSource';
+import { searchablePlatforms } from '../../../core/services/sources/registry';
+import { getMusicSourceLabel } from '../../../core/utils/musicSource';
 import MotionChoice from '../../components/MotionChoice';
 import MotionPanel from '../../components/MotionPanel';
 
@@ -44,7 +45,7 @@ export default function SearchControls({ query, mode, source, extended, onQuery,
             onClick={() => onExtended(!extended)}>扩展源 {extended ? '开' : '关'}</MotionChoice>
         ) : (
           <div className="source-option-row" role="radiogroup" aria-label="选择搜索音源">
-            {SEARCH_SOURCE_OPTIONS.map((option) => (
+            {searchablePlatforms().map((option) => (
               <MotionChoice key={option} role="radio" aria-checked={source === option} aria-pressed={undefined}
                 className="source-option" selected={source === option} indicatorId={`${indicatorId}-source`}
                 onClick={() => onSource(option)}>{getMusicSourceLabel(option, 'full')}</MotionChoice>

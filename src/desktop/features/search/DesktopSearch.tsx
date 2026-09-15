@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { MusicIcon } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
-import { isGDStudioOnlySource, searchAggregate, searchSongs } from '../../../core/services/api';
+import { searchAggregate, searchSongs } from '../../../core/services/api';
+import { aggregatePlatforms, getSourceGeneration, searchUsesGDStudioQuota } from '../../../core/services/sources/registry';
+import { subscribeMusicSources } from '../../../core/services/sources/manager';
 import type { Song } from '../../../core/types';
 import {
-  EXTENDED_AGGREGATE_SOURCES,
   GD_STUDIO_ATTRIBUTION,
   GD_STUDIO_RATE_LIMIT_HINT,
   getMusicSourceLabel,
@@ -20,12 +21,29 @@ import MotionPanel from '../../components/MotionPanel';
 
 const extendedKey = 'tunefree_aggregate_extended_sources';
 
+const getSearchHint = (searchMode: 'aggregate' | 'single', selectedSource: string, includeExtendedSources: boolean): string => {
+  if (searchMode === 'aggregate' && includeExtendedSources) {
+    const core = aggregatePlatforms(false);
+    const extended = aggregatePlatforms(true).filter((platform) => !core.includes(platform));
+    const labels = extended.map((platform) => getMusicSourceLabel(platform)).join(' / ');
+    const gdLabels = extended.filter((platform) => searchUsesGDStudioQuota(platform))
+      .map((platform) => getMusicSourceLabel(platform)).join(' / ');
+    const quotaNote = gdLabels ? `；其中 ${gdLabels} 会占用 ${GD_STUDIO_ATTRIBUTION} 的公开接口频次` : '';
+    return `扩展聚合已启用：${labels}${quotaNote}。`;
+  }
+  if (searchMode === 'single' && searchUsesGDStudioQuota(selectedSource)) {
+    return `${getMusicSourceLabel(selectedSource, 'full')} 使用 ${GD_STUDIO_ATTRIBUTION} 公开接口，建议控制频率：${GD_STUDIO_RATE_LIMIT_HINT}。`;
+  }
+  return '聚合搜索会交叉合并网易云、QQ、酷我结果，适合桌面端快速试播。';
+};
+
 interface DesktopSearchProps {
   commandQuery?: string;
   commandNonce?: number;
 }
 
 export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: DesktopSearchProps) {
+  useSyncExternalStore(subscribeMusicSources, getSourceGeneration, getSourceGeneration);
   const [query, setQuery] = useState(() => commandQuery.trim() ? commandQuery
     : localStorage.getItem('tunefree_desktop_pending_query') || '');
   const commandKey = `${commandNonce}:${commandQuery}`;
@@ -125,7 +143,7 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
     } catch {
       if (controller.signal.aborted || requestId !== searchRequestIdRef.current) return;
       setSearchError(
-        searchMode === 'single' && isGDStudioOnlySource(selectedSource)
+        searchMode === 'single' && searchUsesGDStudioQuota(selectedSource)
           ? `${getMusicSourceLabel(selectedSource, 'full')} 当前不可用，或可能触发了公开接口频控（${GD_STUDIO_RATE_LIMIT_HINT}）。`
           : '搜索失败，请稍后重试。',
       );
@@ -162,16 +180,7 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
     setPage((current) => current + 1);
   }, [hasMore, isSearching, results.length]);
 
-  const hint = useMemo(() => {
-    if (searchMode === 'aggregate' && includeExtendedSources) {
-      const labels = EXTENDED_AGGREGATE_SOURCES.map((source) => getMusicSourceLabel(source)).join(' / ');
-      return `扩展聚合已启用：${labels}，会占用 ${GD_STUDIO_ATTRIBUTION} 的公开接口频次。`;
-    }
-    if (searchMode === 'single' && isGDStudioOnlySource(selectedSource)) {
-      return `${getMusicSourceLabel(selectedSource, 'full')} 使用 ${GD_STUDIO_ATTRIBUTION} 公开接口，建议控制频率：${GD_STUDIO_RATE_LIMIT_HINT}。`;
-    }
-    return '聚合搜索会交叉合并网易云、QQ、酷我结果，适合桌面端快速试播。';
-  }, [includeExtendedSources, searchMode, selectedSource]);
+  const hint = getSearchHint(searchMode, selectedSource, includeExtendedSources);
 
   const handlePlay = (song: Song) => {
     void playQueue(results, song);

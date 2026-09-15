@@ -48,26 +48,6 @@
   border-radius: 50%;
   background: var(--surface-2);
 }
-.companion-menu-trigger {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  display: grid;
-  place-items: center;
-  width: 27px;
-  height: 27px;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  color: var(--muted);
-  background: var(--card-solid);
-  opacity: 0;
-  transition: opacity .18s ease, transform .18s ease;
-  cursor: pointer;
-}
-.bloub-companion:hover .companion-menu-trigger,
-.bloub-companion:focus-within .companion-menu-trigger { opacity: 1; }
-.companion-menu-trigger:hover { color: var(--accent); transform: scale(1.08); }
 .companion-menu {
   position: fixed;
   width: 296px;

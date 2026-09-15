@@ -37,7 +37,7 @@ describe('启动屏障和路由', () => {
     await act(async () => vi.advanceTimersByTimeAsync(32)); expect(mocks.invoke).toHaveBeenCalledWith('mark_frontend_ready');
     fireEvent.click(screen.getByRole('button', { name: '设置' })); expect(window.location.pathname).toBe('/library/settings');
     const push = vi.spyOn(window.history, 'pushState'); fireEvent.click(screen.getByRole('button', { name: '设置' })); expect(push).not.toHaveBeenCalled();
-    for (const [path, name] of [['/', 'home'], ['/search', 'search'], ['/library', 'favorites'], ['/library/playlists', 'playlists'], ['/library/downloads', 'downloads'], ['/library/settings', 'settings'], ['/library/about', 'about']]) {
+    for (const [path, name] of [['/', 'home'], ['/search', 'search'], ['/library', 'favorites'], ['/library/playlists', 'playlists'], ['/library/downloads', 'downloads'], ['/library/sources', 'sources'], ['/library/settings', 'settings'], ['/library/about', 'about']]) {
       window.history.replaceState({}, '', path); fireEvent.popState(window); expect(screen.getByText(`页面：${name}`)).toBeTruthy();
     }
     const menu = new MouseEvent('contextmenu', { cancelable: true }); document.dispatchEvent(menu); expect(menu.defaultPrevented).toBe(true);

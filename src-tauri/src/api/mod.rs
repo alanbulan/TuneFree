@@ -2,6 +2,7 @@ pub mod kuwo;
 pub mod netease;
 pub mod proxy;
 pub mod qq;
+pub mod source_proxy;
 
 use async_trait::async_trait;
 

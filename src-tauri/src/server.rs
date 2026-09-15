@@ -3,7 +3,7 @@ use axum::{
     http::{header::HOST, HeaderMap, HeaderName, Method, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{any, get},
+    routing::{any, get, post},
     Json, Router,
 };
 use reqwest::Client;
@@ -26,6 +26,9 @@ pub const LOCAL_TOKEN_HEADER: &str = "x-tunefree-token";
 pub struct ServerState {
     pub api_client: Client,
     pub proxy_client: Client,
+    /// 自定义音源专用的转发客户端：目标为任意公网主机，
+    /// 因此使用自己的重定向策略（逐跳复检公网性）而不是代理白名单。
+    pub source_proxy_client: Client,
     /// Per-launch random token required by all `/api/*` routes.
     pub token: String,
     /// Actual loopback port the listener is bound to (used for Host checks).
@@ -292,6 +295,10 @@ fn build_router(state: ServerState) -> Router {
     let protected = Router::new()
         .route("/api/url", get(handle_url))
         .route("/api/cors-proxy", any(crate::api::proxy::handle_cors_proxy))
+        .route(
+            "/api/source-proxy",
+            post(crate::api::source_proxy::handle_source_proxy),
+        )
         .route("/api/allowed-hosts", get(handle_allowed_hosts))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
