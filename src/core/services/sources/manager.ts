@@ -1,7 +1,6 @@
 import { BUILTIN_SCRIPTS, type BuiltinScriptDefinition } from './builtin/builtinScripts';
 import { createLxProvider } from './lxProvider';
 import { declarationPlatform } from './platformMap';
-import type { LxUpdateAlert } from './protocol';
 import { relaySourceRequest } from './relay';
 import { setBuiltinScriptProviders, setCustomProviders, type RegisteredProvider } from './registry';
 import { parseScriptMeta } from './scriptMeta';
@@ -14,7 +13,10 @@ import {
   TOTAL_SCRIPT_BYTES_LIMIT,
   type MusicSourceRecord,
 } from './store';
-import { LxSandbox, type SandboxStatus } from './workerHost';
+import { LxSandbox } from './workerHost';
+import { buildSourceEntry, type MusicSourceEntry } from './sourceEntry';
+import { prepareSourceUpdate, sourceUpdateUrl, type SourceUpdateState } from './sourceUpdates';
+export type { MusicSourceEntry, MusicSourcePlatform } from './sourceEntry';
 
 
 /**
@@ -23,23 +25,6 @@ import { LxSandbox, type SandboxStatus } from './workerHost';
  * 这是 core 层模块，不依赖 react；界面通过 `subscribe` + `getSnapshot`
  * （配合 useSyncExternalStore）订阅。
  */
-
-export interface MusicSourcePlatform {
-  appPlatform: string;
-  lxPlatform: string;
-  actions: string[];
-  qualitys?: string[];
-}
-
-export interface MusicSourceEntry {
-  record: MusicSourceRecord;
-  status: SandboxStatus;
-  error: string;
-  platforms: MusicSourcePlatform[];
-  updateAlert: LxUpdateAlert | null;
-  hosts: string[];
-  logs: string[];
-}
 
 export interface MusicSourcesSnapshot {
   entries: MusicSourceEntry[];
@@ -62,6 +47,7 @@ const builtinSandboxes = new Map<string, LxSandbox>();
 const builtinMetas = new Map<string, ReturnType<typeof parseScriptMeta>>();
 /** 无法启动的脚本（例如内容损坏无法解压）的原因。 */
 const startErrors = new Map<string, string>();
+const updates = new Map<string, SourceUpdateState>();
 const listeners = new Set<() => void>();
 let cachedSnapshot: MusicSourcesSnapshot | null = null;
 let initialization: Promise<void> | null = null;
@@ -81,32 +67,13 @@ export const subscribeMusicSources = (listener: () => void): (() => void) => {
   };
 };
 
-/** 把某个脚本沙箱声明的平台收成条目字段（用户脚本与内置脚本共用）。 */
-const collectPlatforms = (
-  sources: Record<string, { actions?: string[]; qualitys?: string[] }>,
-): MusicSourcePlatform[] => {
-  const platforms: MusicSourcePlatform[] = [];
-  for (const [lxPlatform, declaration] of Object.entries(sources)) {
-    const mapped = declarationPlatform(lxPlatform, declaration);
-    if (!mapped) continue;
-    platforms.push({
-      appPlatform: mapped.appPlatform,
-      lxPlatform,
-      actions: mapped.actions,
-      qualitys: mapped.qualitys,
-    });
-  }
-  return platforms;
-};
-
 /** 内置脚本在音源页上的只读条目（同样展示状态、平台与日志）。 */
 const buildBuiltinEntries = (): MusicSourceEntry[] =>
   BUILTIN_SCRIPTS.filter((definition) => builtinSandboxes.has(definition.id)).map<MusicSourceEntry>((definition) => {
     const sandbox = builtinSandboxes.get(definition.id);
     const snapshot = sandbox?.getSnapshot();
     const meta = builtinMetas.get(definition.id) ?? parseScriptMeta(definition.code, definition.id);
-    return {
-      record: {
+    return buildSourceEntry({
         id: definition.id,
         name: meta.name,
         version: meta.version,
@@ -120,14 +87,7 @@ const buildBuiltinEntries = (): MusicSourceEntry[] =>
         importedAt: 0,
         bytes: 0,
         builtin: true,
-      },
-      status: snapshot?.status ?? 'idle',
-      error: snapshot?.error ?? '',
-      platforms: collectPlatforms(snapshot?.sources ?? {}),
-      updateAlert: snapshot?.updateAlert ?? null,
-      hosts: snapshot?.hosts ?? [],
-      logs: snapshot?.logs ?? [],
-    };
+      }, snapshot);
   });
 
 const buildSnapshot = (): MusicSourcesSnapshot => {
@@ -135,16 +95,7 @@ const buildSnapshot = (): MusicSourcesSnapshot => {
     const sandbox = sandboxes.get(record.id);
     const snapshot = sandbox?.getSnapshot();
     const failed = startErrors.get(record.id);
-    const status: SandboxStatus = failed ? 'failed' : snapshot?.status ?? 'idle';
-    return {
-      record,
-      status,
-      error: failed ?? snapshot?.error ?? '',
-      platforms: collectPlatforms(snapshot?.sources ?? {}),
-      updateAlert: snapshot?.updateAlert ?? null,
-      hosts: snapshot?.hosts ?? [],
-      logs: snapshot?.logs ?? [],
-    };
+    return buildSourceEntry(record, snapshot, failed, updates.get(record.id));
   })];
   return {
     entries,
@@ -237,7 +188,7 @@ const rebuildBuiltinScriptProviders = (): void => {
   setBuiltinScriptProviders(entries);
 };
 
-const startSandbox = async (record: MusicSourceRecord): Promise<void> => {
+const startSandbox = async (record: MusicSourceRecord, prepared?: LxSandbox): Promise<void> => {
   if (sandboxes.has(record.id) || startErrors.has(record.id)) return;
   if (!records.some((item) => item.id === record.id && item.enabled)) return;
   let code: string;
@@ -248,7 +199,7 @@ const startSandbox = async (record: MusicSourceRecord): Promise<void> => {
     notify();
     return;
   }
-  const sandbox = new LxSandbox(
+  const sandbox = prepared ?? new LxSandbox(
     {
       code,
       meta: {
@@ -308,6 +259,7 @@ export const ensureMusicSourcesInitialized = (): Promise<void> => {
       ],
       START_CONCURRENCY,
     );
+    void checkMusicSourceUpdates(true);
   })();
   return initialization;
 };
@@ -326,7 +278,7 @@ const applyRecords = (next: MusicSourceRecord[]): string | null => {
  * 导入若干脚本文本：校验 → 去重（同内容按 md5 覆盖，保留启用状态）→ 落盘 → 启动沙箱。
  */
 export const importMusicSourceFiles = async (
-  inputs: Array<{ fileName: string; text: string }>,
+  inputs: Array<{ fileName: string; text: string; sourceUrl?: string }>,
 ): Promise<ImportOutcome[]> => {
   const outcomes: ImportOutcome[] = [];
   const importedIds: string[] = [];
@@ -341,6 +293,7 @@ export const importMusicSourceFiles = async (
       outcomes.push({ fileName: input.fileName, ok: false, message: created.reason });
       continue;
     }
+    if (input.sourceUrl) created.record.sourceUrl = input.sourceUrl;
     const duplicateIndex = next.findIndex((record) => record.id === created.record.id);
     const record =
       duplicateIndex >= 0
@@ -349,6 +302,7 @@ export const importMusicSourceFiles = async (
             enabled: next[duplicateIndex].enabled,
             nameMatchFallback: next[duplicateIndex].nameMatchFallback,
             importedAt: next[duplicateIndex].importedAt,
+            sourceUrl: created.record.sourceUrl ?? next[duplicateIndex].sourceUrl,
           }
         : created.record;
     if (duplicateIndex >= 0) {
@@ -409,7 +363,7 @@ export const importMusicSourceFromUrl = async (url: string): Promise<ImportOutco
   const text = new TextDecoder('utf-8').decode(
     Uint8Array.from(atob(result.envelope.bodyBase64), (character) => character.charCodeAt(0)),
   );
-  const [outcome] = await importMusicSourceFiles([{ fileName, text }]);
+  const [outcome] = await importMusicSourceFiles([{ fileName, text, sourceUrl: url }]);
   return outcome ?? { fileName, ok: false, message: '导入失败' };
 };
 
@@ -419,6 +373,7 @@ export const removeMusicSource = (id: string): string | null => {
   if (error) return error;
   stopSandbox(id);
   startErrors.delete(id);
+  updates.delete(id);
   return null;
 };
 
@@ -427,6 +382,7 @@ export const setMusicSourceEnabled = (id: string, enabled: boolean): string | nu
   if (!target || target.enabled === enabled) return null;
   const error = applyRecords(records.map((record) => (record.id === id ? { ...record, enabled } : record)));
   if (error) return error;
+  updates.delete(id);
   if (enabled) {
     startErrors.delete(id);
     void startSandbox(target);
@@ -445,6 +401,45 @@ export const setMusicSourceNameMatchFallback = (id: string, value: boolean): str
   );
 };
 
+/** 更新完成并通过初始化验证后才替换；下载失败、旧版本和并发删除均保留原状态。 */
+export const checkMusicSourceUpdates = async (automatic = false): Promise<SourceUpdateState[]> => {
+  const started = lifecycle;
+  const results: SourceUpdateState[] = [];
+  const entries = getMusicSourcesSnapshot().entries.filter((entry) => !entry.record.builtin && entry.record.enabled);
+  await runWithConcurrency(entries.map((entry) => async () => {
+    const id = entry.record.id;
+    if (updates.get(id)?.status === 'checking') return;
+    const url = sourceUpdateUrl(entry.record, entry.updateAlert?.updateUrl);
+    if (!url && automatic) return;
+    if (!url) {
+      const result: SourceUpdateState = { status: 'unsupported', message: '作者未提供可用的更新链接' };
+      updates.set(id, result); results.push(result); notify(); return;
+    }
+    const checking: SourceUpdateState = { status: 'checking', message: '正在检查更新…' };
+    updates.set(id, checking); notify();
+    const prepared = await prepareSourceUpdate(entry.record, url, appVersion());
+    const current = records.find((record) => record.id === id);
+    if (started !== lifecycle || !current || !current.enabled || updates.get(id) !== checking) { prepared.sandbox?.dispose(); return; }
+    let result: SourceUpdateState = { status: prepared.status, message: prepared.message };
+    if (prepared.record && prepared.sandbox) {
+      const replacement = { ...prepared.record, enabled: current.enabled, nameMatchFallback: current.nameMatchFallback, importedAt: current.importedAt };
+      const next = records.map((record) => record.id === id ? replacement : record);
+      const error = next.some((record) => record.id === replacement.id && record !== replacement)
+        ? '列表中已存在该新版音源'
+        : totalScriptBytes(next) > TOTAL_SCRIPT_BYTES_LIMIT ? '更新后音源总量超过存储上限' : applyRecords(next);
+      if (error) { prepared.sandbox.dispose(); result = { status: 'failed', message: error }; }
+      else {
+        stopSandbox(id); startErrors.delete(id); updates.delete(id);
+        await startSandbox(replacement, prepared.sandbox);
+        rebuildProviders(); updates.set(replacement.id, result);
+      }
+    }
+    if (records.some((record) => record.id === id)) updates.set(id, result);
+    results.push(result); notify();
+  }), START_CONCURRENCY);
+  return results;
+};
+
 /** 重新加载全部已启用音源（脚本升级或排查时使用）。 */
 export const reloadMusicSources = async (): Promise<void> => {
   lifecycle += 1;
@@ -454,6 +449,7 @@ export const reloadMusicSources = async (): Promise<void> => {
   builtinSandboxes.clear();
   for (const sandbox of previousBuiltins) sandbox.dispose();
   startErrors.clear();
+  for (const [id, update] of updates) if (update.status === 'checking') updates.delete(id);
   rebuildProviders();
   rebuildBuiltinScriptProviders();
   notify();
@@ -474,6 +470,7 @@ export const disposeMusicSources = (): void => {
   builtinSandboxes.clear();
   for (const sandbox of previousBuiltins) sandbox.dispose();
   builtinMetas.clear();
+  updates.clear();
   startErrors.clear();
   records = [];
   initialization = null;

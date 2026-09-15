@@ -71,7 +71,9 @@ export const buildMusicInfo = (request: SourceResolveRequest): Record<string, un
   const album = request.album || '';
   return {
     id,
+    source: toLxPlatform(request.platform) ?? request.platform,
     songmid: id,
+    ...(request.strMediaMid ? { strMediaMid: request.strMediaMid } : {}),
     songid: id,
     hash: request.hash || id,
     copyrightId: id,
@@ -96,9 +98,13 @@ export const declarationPlatform = (
 ): { appPlatform: string; actions: string[]; qualitys?: string[] } | null => {
   const appPlatform = toAppPlatform(lxPlatform);
   if (!appPlatform) return null;
+  const actions = (declaration.actions ?? ['musicUrl'])
+    .filter((action) => ['musicUrl', 'lyric', 'pic', 'search'].includes(action))
+    .filter((action) => action !== 'musicUrl' || declaration.qualitys?.length !== 0);
+  if (actions.length === 0) return null;
   return {
     appPlatform,
-    actions: declaration.actions ?? ['musicUrl'],
+    actions,
     qualitys: declaration.qualitys,
   };
 };

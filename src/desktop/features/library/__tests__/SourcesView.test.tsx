@@ -4,6 +4,7 @@ import SourcesView from '../SourcesView';
 import { useMusicSourcesViewModel } from '../sources/useMusicSourcesViewModel';
 import { MusicSourceRuntime } from '../../../components/MusicSourceRuntime';
 import type { MusicSourceEntry } from '../../../../core/services/sources/manager';
+import type { SourceUpdateState } from '../../../../core/services/sources/sourceUpdates';
 
 const mocks = vi.hoisted(() => ({
   isTauri: vi.fn(() => false),
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   setEnabled: vi.fn(),
   setNameMatch: vi.fn(),
   reload: vi.fn(),
+  checkUpdates: vi.fn(async (): Promise<SourceUpdateState[]> => []),
   ensureInitialized: vi.fn(async () => undefined),
 }));
 
@@ -54,6 +56,7 @@ vi.mock('../../../../core/services/sources/manager', () => ({
   setMusicSourceEnabled: mocks.setEnabled,
   setMusicSourceNameMatchFallback: mocks.setNameMatch,
   reloadMusicSources: mocks.reload,
+  checkMusicSourceUpdates: mocks.checkUpdates,
   ensureMusicSourcesInitialized: mocks.ensureInitialized,
 }));
 
@@ -88,6 +91,8 @@ const entry = (overrides: Partial<MusicSourceEntry> = {}): MusicSourceEntry => (
   updateAlert: null,
   hosts: ['yy.zddyr.top'],
   logs: ['[就绪] 声明平台：wy'],
+  calls: [],
+  update: null,
   ...overrides,
 });
 
@@ -232,7 +237,11 @@ describe('SourcesView', () => {
     render(<SourcesView />);
 
     expect(screen.getByText('星海音乐源')).toBeTruthy();
-    expect(screen.getByText('已就绪')).toBeTruthy();
+    expect(screen.getAllByText('已加载 · 待验证').length).toBeGreaterThan(0);
+    expect(screen.queryByText('已就绪')).toBeNull();
+    expect(screen.getByRole('region', { name: '星海音乐源 诊断信息' })).toBeTruthy();
+    expect(screen.getByText(/声明平台：wy/)).toBeTruthy();
+    expect(document.querySelector('.source-diagnostics details')).toBeNull();
     expect(screen.getByText('v3.2.11')).toBeTruthy();
     expect(screen.getByText('网易云')).toBeTruthy();
     expect(screen.getByText('酷狗音乐')).toBeTruthy();
@@ -240,13 +249,15 @@ describe('SourcesView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /展开.*的详情/ }));
     expect(screen.getByText('聚合音源')).toBeTruthy();
-    expect(screen.getByText(/网易云（320k \/ flac）、酷狗音乐（由脚本决定）/)).toBeTruthy();
+    expect(screen.getByText('320k / flac')).toBeTruthy();
+    expect(screen.getByText('由脚本决定')).toBeTruthy();
     expect(screen.getByText(/yy.zddyr.top/)).toBeTruthy();
     expect(screen.getByText(/发现新版本/)).toBeTruthy();
     expect(screen.getByText(/声明平台：wy/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /收起.*的详情/ }));
     expect(screen.queryByText('聚合音源')).toBeNull();
+    expect(screen.getByText(/声明平台：wy/)).toBeTruthy();
 
     // 升级提示里的链接按钮同样走主页打开逻辑。
     const openSpy = vi.fn();
@@ -257,6 +268,24 @@ describe('SourcesView', () => {
       expect(openSpy).toHaveBeenCalledWith('https://example.test/update', '_blank', 'noopener,noreferrer'),
     );
     vi.unstubAllGlobals();
+  });
+
+  it('解析失败在主卡片直接展示，并且不会宣称音源已就绪', () => {
+    setEntries(entry({ calls: [{ source: 'wy', action: 'musicUrl', quality: '320k', ok: false,
+      message: '解析结果格式错误', durationMs: 500, checkedAt: 1 }] }));
+    render(<SourcesView />);
+    expect(screen.getByText('最近解析失败')).toBeTruthy();
+    expect(screen.getByText('解析结果格式错误')).toBeTruthy();
+    expect(screen.queryByText('已就绪')).toBeNull();
+    expect(screen.getByRole('button', { name: /展开.*的详情/ }).getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('已初始化的脚本崩溃时展示运行异常，区分初始化失败', () => {
+    setEntries(entry({ status: 'failed', error: 'Cannot read properties of null' }));
+    render(<SourcesView />);
+    expect(screen.getByText('运行异常')).toBeTruthy();
+    expect(screen.getByText('运行已中止')).toBeTruthy();
+    expect(screen.queryByText('初始化失败')).toBeNull();
   });
 
   it('启停、按歌名匹配开关与删除都调用管理器', async () => {
@@ -373,7 +402,7 @@ describe('SourcesView', () => {
     setEntries(entry({ status: 'failed', error: '脚本加载失败：语法错误', platforms: [] }));
     render(<SourcesView />);
 
-    expect(screen.getByText('加载失败')).toBeTruthy();
+    expect(screen.getByText('初始化失败')).toBeTruthy();
     expect(screen.getByText('脚本加载失败：语法错误')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /重新加载/ }));
     expect(mocks.reload).toHaveBeenCalled();
@@ -382,7 +411,43 @@ describe('SourcesView', () => {
     cleanup();
     render(<SourcesView />);
     fireEvent.click(screen.getByRole('button', { name: /展开.*的详情/ }));
-    expect(screen.getByText('未声明可用平台')).toBeTruthy();
+    expect(screen.getByText('尚无可用平台声明')).toBeTruthy();
+  });
+
+  it('检查更新展示汇总，只有真实解析成功才显示成功状态', async () => {
+    mocks.checkUpdates.mockResolvedValueOnce([
+      { status: 'updated', message: '已更新至 2.0.0' },
+      { status: 'failed', message: '上游不可达' },
+      { status: 'unsupported', message: '作者未提供更新链接' },
+    ]);
+    setEntries(entry({ calls: [{ source: 'wy', action: 'musicUrl', quality: '128k', ok: true,
+      message: '返回合法播放地址', durationMs: 100, checkedAt: 1 }] }));
+    render(<SourcesView />);
+    expect(screen.getAllByText('最近解析成功').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: '检查并更新' }));
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith('更新检查完成：1 个已更新，1 个失败，1 个未提供更新链接', 'warning'));
+  });
+
+  it('更新和重载失败释放忙碌状态，更新期间重复操作只执行一次', async () => {
+    let finish!: (value: SourceUpdateState[]) => void;
+    mocks.checkUpdates.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const { result } = renderHook(() => useMusicSourcesViewModel());
+    let pending!: Promise<void>;
+    act(() => { pending = result.current.checkUpdates(); });
+    expect(result.current.checkingUpdates).toBe(true);
+    await act(() => result.current.checkUpdates());
+    expect(mocks.checkUpdates).toHaveBeenCalledTimes(1);
+    await act(async () => { finish([]); await pending; });
+    expect(result.current.checkingUpdates).toBe(false);
+    expect(mocks.toast).toHaveBeenLastCalledWith('更新检查完成：0 个已更新', 'success');
+    mocks.checkUpdates.mockRejectedValueOnce(new Error('检查服务失败'));
+    await act(() => result.current.checkUpdates());
+    expect(result.current.checkingUpdates).toBe(false);
+    expect(mocks.toast).toHaveBeenLastCalledWith('检查服务失败', 'error');
+    mocks.reload.mockRejectedValueOnce(new Error('重载失败'));
+    await act(() => result.current.reload());
+    expect(result.current.reloading).toBe(false);
+    expect(mocks.toast).toHaveBeenLastCalledWith('重载失败', 'error');
   });
 
   it('内置脚本条目只读：显示内置标记，没有启停、删除与按歌名匹配开关', () => {
@@ -405,7 +470,7 @@ describe('SourcesView', () => {
     expect(screen.getByText('内置脚本')).toBeTruthy();
     expect(screen.getByText('接口作者')).toBeTruthy();
     expect(screen.getByText('GD Studio')).toBeTruthy();
-    expect(screen.getByText('平台与请求音质')).toBeTruthy();
+    expect(screen.getByText('平台与声明音质')).toBeTruthy();
     expect(screen.getByTitle('实际音质以接口返回为准')).toBeTruthy();
   });
 

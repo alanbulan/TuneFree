@@ -6,6 +6,7 @@ import { buildMusicInfo, pickQuality } from './platformMap';
 import type { LxSourceDeclaration } from './protocol';
 import type { MusicProvider, SourceResolveRequest } from './types';
 import type { LxSandbox } from './workerHost';
+import { readSourceUrl } from './diagnostics';
 
 /** 解析结果缓存时长（与 GD 的 urlCache 对齐）。 */
 const URL_CACHE_TTL_MS = 5 * 60_000;
@@ -31,15 +32,6 @@ export interface LxProviderInput {
   /** GD 等内置脚本可独立查询歌词和封面，无需先消耗一次 URL 请求。 */
   metadataRequiresUrl?: boolean;
 }
-
-const extractUrl = (result: unknown): string | null => {
-  if (typeof result === 'string' && result) return result;
-  if (result && typeof result === 'object') {
-    const candidate = (result as { url?: unknown }).url;
-    if (typeof candidate === 'string' && candidate) return candidate;
-  }
-  return null;
-};
 
 /**
  * 把脚本返回的歌词还原成应用使用的单条 LRC。
@@ -145,7 +137,8 @@ export const createLxProvider = (input: LxProviderInput): MusicProvider => {
       throwIfAborted(request.signal);
       urlRequested.set(key, true);
       if (!outcome.ok) throw new Error(outcome.error || '音源解析失败');
-      const url = extractUrl(outcome.result);
+      const url = readSourceUrl(outcome.result);
+      if (!url) throw new Error('解析结果格式错误：未返回有效的 HTTP(S) 播放地址');
       if (url) urlCache.set(key, { url, expiresAt: Date.now() + URL_CACHE_TTL_MS });
       return url;
     })();
@@ -208,7 +201,7 @@ export const createLxProvider = (input: LxProviderInput): MusicProvider => {
     },
     getLyrics: async (request) =>
       extractLyric(await callWithFallbackGate('lyric', request), input.appPlatform),
-    getPic: async (request) => extractUrl(await callWithFallbackGate('pic', request)) ?? '',
+    getPic: async (request) => readSourceUrl(await callWithFallbackGate('pic', request)) ?? '',
     ...(supportsSearch
       ? {
           search: async (keyword: string, _platform: string, page: number, limit: number, signal?: AbortSignal) => {

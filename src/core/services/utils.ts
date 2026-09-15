@@ -309,11 +309,15 @@ export const normalizeSongs = (list: Record<string, unknown>[], platform: string
         id !== undefined ? id : `temp_${Math.random().toString(36).slice(2)}`;
 
       const name = String(actualItem.name || actualItem.title || actualItem.songname || "Unknown Song");
+      const file = actualItem.file;
+      const mediaMid = actualItem.strMediaMid ?? (typeof file === 'object' && file !== null
+        ? (file as Record<string, unknown>).media_mid : undefined);
 
       return {
         ...actualItem,
         source: platform,
         id: finalId,
+        ...(platform === 'qq' && typeof mediaMid === 'string' && mediaMid ? { strMediaMid: mediaMid } : {}),
         name,
         artist: String(artist || "Unknown Artist"),
         album: String(album || ""),

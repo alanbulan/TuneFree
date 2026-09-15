@@ -10,6 +10,22 @@ use super::{LlmConfig, OpenAiCompatibleProvider};
 
 type Reply = (u16, &'static str, u64);
 
+#[test]
+fn completion_finishing_reason_is_not_reported_as_bad_recommendation_json() {
+    use super::ChatRequestOutcome;
+    for (reason, text) in [("length", "截断"), ("content_filter", "拒绝")] {
+        let result = OpenAiCompatibleProvider::completion_content(&json!({
+            "choices": [{"finish_reason": reason, "message": {"content": "{\"items\":["}}]
+        }));
+        assert!(matches!(result, ChatRequestOutcome::Failed(message) if message.contains(text)));
+    }
+    assert!(
+        matches!(OpenAiCompatibleProvider::completion_content(&json!({
+        "choices": [{"finish_reason": "stop", "message": {"content": "  "}}]
+    })), ChatRequestOutcome::Failed(message) if message.contains("空正文"))
+    );
+}
+
 #[derive(Clone)]
 struct MockState {
     calls: Arc<Mutex<Vec<Value>>>,
@@ -61,7 +77,7 @@ async fn server(replies: Vec<Reply>) -> MockServer {
     }
 }
 
-fn config(base_url: &str, timeout_ms: u64) -> LlmConfig {
+pub(super) fn config(base_url: &str, timeout_ms: u64) -> LlmConfig {
     LlmConfig {
         enabled: true,
         base_url: base_url.to_string(),

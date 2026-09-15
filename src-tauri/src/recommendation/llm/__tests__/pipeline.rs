@@ -33,6 +33,27 @@ fn query() -> RecommendationQuery {
 const VALID_RANK: &str = r#"{"items":[{"track_key":"qq:2","rank":1,"reason":"适合夜晚"}]}"#;
 
 #[tokio::test]
+async fn requested_result_count_never_exceeds_the_candidates_sent_to_the_model() {
+    let _credentials = Credentials::new().await;
+    let server = LlmServer::contents(&[r#"{"items":[{"track_key":"qq:1"}]}"#]).await;
+    let conn = database(&server.base_url);
+    conn.lock()
+        .execute("UPDATE llm_config SET max_candidates=1, max_results=30", [])
+        .unwrap();
+    let provider = OpenAiCompatibleProvider::new(reqwest::Client::new());
+    let result =
+        enhance_recommendations(conn, &provider, &query(), items(), "bounded-candidates").await;
+    assert!(result.error.is_none());
+    let calls = server.calls.lock();
+    let payload: serde_json::Value =
+        serde_json::from_str(calls[0]["messages"][1]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(payload["limit"], 1);
+    assert_eq!(payload["candidates"].as_array().unwrap().len(), 1);
+    assert!(calls[0].get("max_tokens").is_none());
+    assert_eq!(result.items.len(), 2);
+}
+
+#[tokio::test]
 async fn successful_rerank_is_cached_and_rebound_to_the_current_request() {
     let _credentials = Credentials::new().await;
     let server = LlmServer::contents(&[VALID_RANK]).await;

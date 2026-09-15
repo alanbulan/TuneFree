@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../ipc/commands', () => ({ invokeCommand: vi.fn() }));
 vi.mock('../../ipc/env', () => ({ isTauri: () => true }));
 import { invokeCommand } from '../../ipc/commands';
-import { getLlmConfig, saveLlmConfig, syncRecommendationLibrary, attachRecommendationMeta } from '../recommendation';
+import { getLlmConfig, listLlmModels, saveLlmConfig, syncRecommendationLibrary, attachRecommendationMeta } from '../recommendation';
 import type { LlmConfigView } from '../../ipc/types';
 
 const key = 'tunefree_local_recommendation_enabled';
@@ -10,6 +10,13 @@ beforeEach(() => { vi.resetAllMocks(); localStorage.clear(); });
 afterEach(() => { localStorage.clear(); vi.restoreAllMocks(); });
 
 describe('推荐配置和稳定数据边界', () => {
+  it('模型目录通过 IPC 传递当前配置草稿', async () => {
+    const draft = { enabled: true, baseUrl: 'https://model.test/v1', model: '', apiKey: 'draft-key' };
+    vi.mocked(invokeCommand).mockResolvedValueOnce(['model-a', 'model-b']);
+    await expect(listLlmModels(draft)).resolves.toEqual(['model-a', 'model-b']);
+    expect(invokeCommand).toHaveBeenCalledWith('list_llm_models', { config: draft });
+  });
+
   it('晚到的旧配置不能覆盖刚保存的启用状态', async () => {
     let finish: (config: LlmConfigView) => void = () => {};
     vi.mocked(invokeCommand).mockImplementationOnce(() => new Promise<LlmConfigView>((resolve) => { finish = resolve; }));

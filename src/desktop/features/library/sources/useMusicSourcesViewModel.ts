@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, useSyncExternalStore } from 'react';
 import { isTauri, invokeCommand } from '../../../../core/ipc';
 import {
   getMusicSourcesSnapshot,
+  checkMusicSourceUpdates,
   importMusicSourceFiles,
   importMusicSourceFromUrl,
   reloadMusicSources,
@@ -15,6 +16,7 @@ import {
 import { getMusicSourceLabel } from '../../../../core/utils/musicSource';
 import { useDesktopDialog } from '../../../components/DialogHost';
 import { useToast } from '../../../components/ToastHost';
+import { sourceStatus } from './sourceStatus';
 
 /** 单次最多导入的脚本数，避免一次拖进几百个文件把主线程占满。 */
 const MAX_IMPORT_FILES = 50;
@@ -56,6 +58,10 @@ export const useMusicSourcesViewModel = () => {
   const [urlInput, setUrlInput] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [dropActive, setDropActive] = useState(false);
+  const [reloading, setReloading] = useState(false);
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const reloadingRef = useRef(false);
+  const updatingRef = useRef(false);
 
   const importFiles = useCallback(
     async (files: File[]) => {
@@ -137,9 +143,25 @@ export const useMusicSourcesViewModel = () => {
     if (error) showToast(error, 'error');
   }, [showToast]);
 
-  const reload = useCallback(() => {
-    reloadMusicSources();
-    showToast('正在重新加载全部音源', 'info');
+  const reload = useCallback(async () => {
+    if (reloadingRef.current) return;
+    reloadingRef.current = true; setReloading(true);
+    try { await reloadMusicSources(); showToast('已重新加载音源，解析状态将在播放时更新', 'info'); }
+    catch (error) { showToast(error instanceof Error ? error.message : '重新加载失败', 'error'); }
+    finally { reloadingRef.current = false; setReloading(false); }
+  }, [showToast]);
+
+  const checkUpdates = useCallback(async () => {
+    if (updatingRef.current) return;
+    updatingRef.current = true; setCheckingUpdates(true);
+    try {
+      const results = await checkMusicSourceUpdates();
+      const updated = results.filter((result) => result.status === 'updated').length;
+      const failed = results.filter((result) => result.status === 'failed').length;
+      const unsupported = results.filter((result) => result.status === 'unsupported').length;
+      showToast(`更新检查完成：${updated} 个已更新${failed ? `，${failed} 个失败` : ''}${unsupported ? `，${unsupported} 个未提供更新链接` : ''}`, failed ? 'warning' : 'success');
+    } catch (error) { showToast(error instanceof Error ? error.message : '检查更新失败', 'error'); }
+    finally { updatingRef.current = false; setCheckingUpdates(false); }
   }, [showToast]);
 
   const toggleExpanded = useCallback((id: string) => {
@@ -171,6 +193,11 @@ export const useMusicSourcesViewModel = () => {
   return {
     entries: snapshot.entries,
     readyCount: snapshot.readyCount,
+    healthCounts: {
+      unverified: snapshot.entries.filter((entry) => sourceStatus(entry).tone === 'unverified').length,
+      success: snapshot.entries.filter((entry) => sourceStatus(entry).tone === 'success').length,
+      failed: snapshot.entries.filter((entry) => sourceStatus(entry).tone === 'failed').length,
+    },
     importing,
     urlInput,
     setUrlInput,
@@ -184,6 +211,9 @@ export const useMusicSourcesViewModel = () => {
     toggleEnabled,
     toggleNameMatch,
     reload,
+    reloading,
+    checkingUpdates: checkingUpdates || snapshot.entries.some((entry) => entry.update?.status === 'checking'),
+    checkUpdates,
     openHomepage,
     platformLabel,
   };

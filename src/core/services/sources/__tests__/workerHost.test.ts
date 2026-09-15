@@ -536,13 +536,22 @@ describe('LxSandbox', () => {
     expect(sandbox.getSnapshot().error).toBe('');
   });
 
-  it('初始化：Worker 迟迟不回握手会超时失败；已执行但没发 inited 则按就绪处理', async () => {
+  it('初始化：未收到握手或 inited 均应失败，执行过脚本不代表完成初始化', async () => {
     const silentControls = createFakeWorker();
     const silent = new LxSandbox({ code: 'x', meta: META }, buildDeps(silentControls));
     const silentInit = silent.initialize();
     await vi.advanceTimersByTimeAsync(10_000);
     await silentInit;
     expect(silent.getSnapshot().status).toBe('failed');
+    expect(silent.getSnapshot().error).toContain('Worker 未回握手');
+
+    const loadingControls = createFakeWorker();
+    const loading = new LxSandbox({ code: 'x', meta: META }, buildDeps(loadingControls));
+    const loadingInit = loading.initialize();
+    loadingControls.emit({ kind: 'ready', version: '1' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await loadingInit;
+    expect(loading.getSnapshot()).toMatchObject({ status: 'failed', error: '脚本执行超时（尚未完成加载）' });
 
     const lateControls = createFakeWorker();
     const late = new LxSandbox({ code: 'x', meta: META }, buildDeps(lateControls));
@@ -551,7 +560,9 @@ describe('LxSandbox', () => {
     lateControls.emit({ kind: 'loaded' });
     await vi.advanceTimersByTimeAsync(10_000);
     await lateInit;
-    expect(late.getSnapshot().status).toBe('ready');
+    expect(late.getSnapshot().status).toBe('failed');
+    expect(late.getSnapshot().error).toContain('未收到 inited');
+    expect(lateControls.terminated()).toBe(true);
   });
 
   it('创建 Worker 抛错（例如 CSP 拒绝）时记录失败原因', async () => {
@@ -570,10 +581,11 @@ describe('LxSandbox', () => {
   it('call：回执成功与失败', async () => {
     const { sandbox } = await mountSandbox((message, controls) => {
       if (message.kind === 'invoke') {
-        controls.emit({ kind: 'invoke-result', callId: message.callId, result: 'url://x' });
+        controls.emit({ kind: 'invoke-result', callId: message.callId, result: 'https://cdn.test/x.mp3' });
       }
     });
-    await expect(sandbox.call('wy', 'musicUrl', {})).resolves.toEqual({ ok: true, result: 'url://x', error: '' });
+    await expect(sandbox.call('wy', 'musicUrl', {})).resolves.toEqual({ ok: true, result: 'https://cdn.test/x.mp3', error: '' });
+    expect(sandbox.getSnapshot().calls).toMatchObject([{ source: 'wy', action: 'musicUrl', ok: true }]);
 
     const { sandbox: failing } = await mountSandbox((message, controls) => {
       if (message.kind === 'invoke') {
@@ -585,6 +597,35 @@ describe('LxSandbox', () => {
       result: null,
       error: '源接口 500',
     });
+    expect(failing.getSnapshot().calls).toMatchObject([{ ok: false, message: '源接口 500' }]);
+    expect(failing.getSnapshot().logs.some((line) => line.includes('[调用失败]'))).toBe(true);
+  });
+
+  it('畸形平台声明与空能力不能宣告就绪', async () => {
+    for (const sources of [{}, { unknown: { actions: ['musicUrl'] } }, { kw: { actions: [] } },
+      { kw: { qualitys: [] } }, { kw: { actions: 'musicUrl' } }, { kw: { qualitys: [1] } }]) {
+      const controls = createFakeWorker();
+      const sandbox = new LxSandbox({ code: 'code', meta: META }, buildDeps(controls));
+      const initialized = sandbox.initialize();
+      controls.emit({ kind: 'send', event: 'inited', data: { sources } });
+      await initialized;
+      expect(sandbox.getSnapshot().status).toBe('failed');
+      expect(sandbox.getSnapshot().error).toContain('没有声明可用');
+    }
+  });
+
+  it('调用返回错误文案记为失败，后续成功可以恢复该平台的最近结果', async () => {
+    let result: unknown = '接口正在维护';
+    const { sandbox } = await mountSandbox((message, controls) => {
+      if (message.kind === 'invoke') controls.emit({ kind: 'invoke-result', callId: message.callId, result });
+    });
+    expect((await sandbox.call('wy', 'musicUrl', { type: '320k' })).ok).toBe(false);
+    expect(sandbox.getSnapshot().calls[0]).toMatchObject({ ok: false, quality: '320k' });
+    expect(sandbox.getSnapshot().status).toBe('ready');
+    result = { url: 'https://cdn.test/recovered.mp3' };
+    expect((await sandbox.call('wy', 'musicUrl', { type: '320k' })).ok).toBe(true);
+    expect(sandbox.getSnapshot().calls).toHaveLength(1);
+    expect(sandbox.getSnapshot().calls[0].ok).toBe(true);
   });
 
   it('call：超时与取消', async () => {
@@ -824,14 +865,21 @@ describe('LxSandbox', () => {
     }).not.toThrow();
   });
 
-  it('就绪之后到达的运行期错误只记日志，不改状态', async () => {
+  it('Worker 运行期异常会停止沙箱并撤销就绪状态', async () => {
     const { sandbox, controls } = await mountSandbox();
+    const pending = sandbox.call('wy', 'musicUrl', { type: '320k' });
     controls.emitError('晚到的错误');
-    expect(sandbox.getSnapshot().status).toBe('ready');
+    await expect(pending).resolves.toMatchObject({ ok: false, error: '晚到的错误' });
+    expect(sandbox.getSnapshot().status).toBe('failed');
+    expect(sandbox.getSnapshot().calls).toEqual([expect.objectContaining({
+      source: 'wy', action: 'musicUrl', ok: false, message: '晚到的错误',
+    })]);
+    expect(controls.terminated()).toBe(true);
     expect(sandbox.getSnapshot().logs.some((line) => line.includes('晚到的错误'))).toBe(true);
 
-    controls.emitError('');
-    expect(sandbox.getSnapshot().logs.some((line) => line.includes('沙箱运行期错误'))).toBe(true);
+    const emptyError = await mountSandbox();
+    emptyError.controls.emitError('');
+    expect(emptyError.sandbox.getSnapshot().error).toBe('沙箱运行期错误');
   });
 
   it('默认依赖不可用（环境不支持 Worker 或 blob）时失败而不是抛出', async () => {

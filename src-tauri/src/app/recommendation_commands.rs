@@ -117,6 +117,14 @@ pub(crate) async fn save_llm_config(
 }
 
 #[tauri::command]
+pub(crate) async fn list_llm_models(
+    state: State<'_, Arc<RecommendationService>>,
+    config: Option<LlmConfigInput>,
+) -> CommandResult<Vec<String>> {
+    state.list_llm_models(config).await
+}
+
+#[tauri::command]
 pub(crate) async fn test_llm_provider(
     state: State<'_, Arc<RecommendationService>>,
     config: Option<LlmConfigInput>,

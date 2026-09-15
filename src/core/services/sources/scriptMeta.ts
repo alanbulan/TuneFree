@@ -20,7 +20,7 @@ const readHeaderComment = (code: string): string => {
 };
 
 const readField = (header: string, key: string): string => {
-  const match = new RegExp(`@${key}\\s+([^\\n\\r]*)`, 'i').exec(header);
+  const match = new RegExp(`@${key}[\\t ]+([^\\n\\r]*)`, 'i').exec(header);
   if (!match) return '';
   return match[1].replace(/[\s*]+$/, '').trim();
 };

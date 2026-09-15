@@ -4,6 +4,7 @@ import {
   getLatestRecommendationJob,
   getSimilarSongs,
   logRecommendationEvent,
+  listLlmModels,
   recommendationFeedbackFromSong,
 } from '../recommendation';
 import type { RecommendationItem } from '../recommendation';
@@ -18,6 +19,7 @@ describe('recommendation service', () => {
     ).resolves.toEqual([]);
     await expect(getLatestRecommendationJob()).resolves.toBeNull();
     await expect(logRecommendationEvent({ eventType: 'play_start' })).resolves.toBeUndefined();
+    await expect(listLlmModels()).rejects.toThrow('请在桌面应用中获取模型列表');
   });
 
   it('attaches recommendation metadata to songs', () => {

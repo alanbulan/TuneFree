@@ -22,6 +22,8 @@ export interface SourceResolveRequest {
   hash?: string;
   /** 平台侧专辑 id。 */
   albumId?: string;
+  /** QQ 媒体文件 MID，不能用歌曲 MID 代替。 */
+  strMediaMid?: string;
   /** 歌曲在平台侧的封面 / 播放 / 歌词标识（GD 专属平台需要）。 */
   picId?: string | number;
   urlId?: string | number;
@@ -108,6 +110,7 @@ export const toSourceResolveRequest = (
   album: song.album,
   hash: song.hash,
   albumId: song.albumId,
+  strMediaMid: song.strMediaMid,
   qualityHashes: song.qualityHashes,
   picId: song.picId,
   urlId: song.urlId,

@@ -40,10 +40,11 @@ describe('QQ musicu 协议', () => {
 
   it('搜索映射歌曲 MID、歌词 ID、多个歌手及空字段', async () => {
     fetchMock.mockResolvedValueOnce(response({ body: { song: { list: [
-      { id: 12, mid: 'mid', name: '夜曲', singer: [{ name: '甲' }, { name: '乙' }], album: { name: '专辑', mid: 'album' } }, { id: 13 },
+      { id: 12, mid: 'mid', file: { media_mid: 'file-mid' }, name: '夜曲', singer: [{ name: '甲' }, { name: '乙' }], album: { name: '专辑', mid: 'album' } }, { id: 13 },
     ] } } }));
     const songs = await searchQQ('夜曲', 2, 20);
-    expect(songs[0]).toMatchObject({ id: 'mid', lyricId: '12', artist: '甲, 乙', album: '专辑', source: 'qq' });
+    expect(songs[0]).toMatchObject({ id: 'mid', lyricId: '12', strMediaMid: 'file-mid', artist: '甲, 乙', album: '专辑', source: 'qq' });
+    expect(songs[1].strMediaMid).toBeUndefined();
     expect(songs[0].pic).toContain('album.jpg');
     expect(songs[1]).toMatchObject({ id: '13', name: '', artist: '', album: '', pic: '' });
     fetchMock.mockResolvedValueOnce(response({ body: { song: { totalnum: 0 } } }));
@@ -63,8 +64,8 @@ describe('QQ musicu 协议', () => {
   });
 
   it('榜单详情支持嵌套和扁平歌曲列表', async () => {
-    fetchMock.mockResolvedValueOnce(response({ data: { songInfoList: [{ id: 1, mid: 'mid', title: '标题', singer: [{ name: '歌手' }], album: { title: '专辑', mid: 'album' } }] } }));
-    expect((await getQQTopListDetail('1'))[0]).toMatchObject({ name: '标题', artist: '歌手', album: '专辑' });
+    fetchMock.mockResolvedValueOnce(response({ data: { songInfoList: [{ id: 1, mid: 'mid', file: { media_mid: 'file-mid' }, title: '标题', singer: [{ name: '歌手' }], album: { title: '专辑', mid: 'album' } }] } }));
+    expect((await getQQTopListDetail('1'))[0]).toMatchObject({ name: '标题', artist: '歌手', album: '专辑', strMediaMid: 'file-mid' });
     fetchMock.mockResolvedValueOnce(response({ songInfoList: [{ id: 2, name: '歌名', album: { name: '专辑名' } }, {}] }));
     expect(await getQQTopListDetail('2')).toHaveLength(2);
     fetchMock.mockResolvedValueOnce(response({})); expect(await getQQTopListDetail('3')).toEqual([]);

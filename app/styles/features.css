@@ -297,6 +297,9 @@
 }
 .settings-note.is-loose { margin-top: 8px; }
 .settings-error-text { margin: 0 0 12px; color: var(--danger); font-size: 12px; }
+.settings-model-picker { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.settings-model-picker .panel-input { flex: 1; min-width: 0; text-overflow: ellipsis; }
+.settings-model-picker .soft-button { flex-shrink: 0; min-height: 36px; padding-inline: 12px; }
 .settings-option-row { display: flex; gap: 8px; margin-top: 6px; }
 .settings-option-row.is-wrap { flex-wrap: wrap; }
 .settings-toggle-button {

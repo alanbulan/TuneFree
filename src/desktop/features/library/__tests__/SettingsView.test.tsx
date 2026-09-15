@@ -5,7 +5,7 @@ import { LibraryProvider } from '../../../../core/contexts/LibraryContext';
 import { DesktopPreferencesProvider } from '../../../../core/contexts/DesktopPreferencesContext';
 import { ThemeProvider } from '../../../../core/contexts/ThemeContext';
 import { IpcError } from '../../../../core/ipc';
-import { getLlmConfig, saveLlmConfig, testLlmProvider, clearRecommendationData, rebuildRecommendationIndex, type LlmConfigView } from '../../../../core/services/recommendation';
+import { getLlmConfig, listLlmModels, saveLlmConfig, testLlmProvider, clearRecommendationData, rebuildRecommendationIndex, type LlmConfigView } from '../../../../core/services/recommendation';
 import { useSettingsViewModel } from '../settings/useSettingsViewModel';
 import { formatBytes } from '../settings/useStorageOverview';
 import SettingsView from '../SettingsView';
@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({ invoke: vi.fn(), toast: vi.fn(), confirm: vi.f
 vi.mock('../../../../core/ipc', async (original) => ({ ...await original<typeof import('../../../../core/ipc')>(),
   isTauri: () => mocks.tauri, invokeCommand: mocks.invoke, emitEventTo: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../../../../core/services/recommendation', async (original) => ({ ...await original<typeof import('../../../../core/services/recommendation')>(),
-  getLlmConfig: vi.fn(), saveLlmConfig: vi.fn(), testLlmProvider: vi.fn(), rebuildRecommendationIndex: vi.fn(), clearRecommendationData: vi.fn() }));
+  getLlmConfig: vi.fn(), listLlmModels: vi.fn(), saveLlmConfig: vi.fn(), testLlmProvider: vi.fn(), rebuildRecommendationIndex: vi.fn(), clearRecommendationData: vi.fn() }));
 vi.mock('../../../../core/services/offlineDownloads', () => ({ listOfflineDownloads: mocks.list,
   subscribeOfflineDownloads: (callback: () => void) => { mocks.offlineChanged = callback; return mocks.unsubscribe; } }));
 vi.mock('../../../components/ToastHost', () => ({ useToast: () => ({ showToast: mocks.toast }) }));
@@ -44,6 +44,7 @@ beforeEach(() => {
   mocks.invoke.mockReset().mockImplementation((command: string) => Promise.resolve(command.endsWith('download_dir') ? 'C:/Music' : undefined));
   mocks.list.mockReset().mockResolvedValue([]); mocks.confirm.mockReset().mockResolvedValue(true);
   vi.mocked(getLlmConfig).mockReset().mockResolvedValue({ ...config });
+  vi.mocked(listLlmModels).mockReset().mockResolvedValue(['test-model', 'another-model']);
   vi.mocked(saveLlmConfig).mockReset().mockResolvedValue(undefined);
   vi.mocked(testLlmProvider).mockReset().mockResolvedValue({ ok: true, latencyMs: 35, status: 'ok', supportsJsonObject: true });
   vi.mocked(clearRecommendationData).mockReset().mockResolvedValue({ databaseSizeBytes: 0, llmCacheEntries: 0 });
@@ -212,6 +213,44 @@ describe('推荐配置与统计', () => {
 });
 
 describe('设置页面真实控件', () => {
+  it('模型目录请求失败显示原因，重新获取后清除错误', async () => {
+    vi.mocked(getLlmConfig).mockResolvedValue({ ...config, baseUrl: 'https://model.test/v1', hasApiKey: true });
+    vi.mocked(listLlmModels).mockRejectedValueOnce(new Error('目录服务暂不可用'));
+    render(<SettingsView />, { wrapper: Wrapper });
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', '目录服务暂不可用');
+    fireEvent.click(screen.getByRole('button', { name: '获取列表' }));
+    await screen.findByRole('option', { name: 'test-model' });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('保存过密钥时自动获取目录，连接测试保留尚未保存的模型选择', async () => {
+    vi.mocked(getLlmConfig).mockResolvedValue({ ...config, baseUrl: 'https://model.test/v1', hasApiKey: true, model: 'old-model' });
+    render(<SettingsView />, { wrapper: Wrapper });
+    await screen.findByRole('option', { name: 'test-model' });
+    expect(listLlmModels).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'https://model.test/v1', apiKey: undefined }));
+    fireEvent.change(screen.getByLabelText('模型'), { target: { value: 'test-model' } });
+    fireEvent.click(screen.getByRole('button', { name: '测试连接' }));
+    await waitFor(() => expect(testLlmProvider).toHaveBeenCalled());
+    expect((screen.getByLabelText('模型') as HTMLSelectElement).value).toBe('test-model');
+  });
+
+  it('更换服务地址后迟到的模型列表不能覆盖当前目录', async () => {
+    let finishModels!: (models: string[]) => void;
+    vi.mocked(listLlmModels).mockReturnValueOnce(new Promise((resolve) => { finishModels = resolve; }));
+    const { result } = mountModel(); await ready();
+    act(() => {
+      result.current.recommendation.setLlmConfig((previous) => ({ ...previous, baseUrl: 'https://old.test/v1' }));
+      result.current.recommendation.setApiKey('test-key');
+    });
+    let request!: Promise<void>;
+    act(() => { request = result.current.recommendation.modelList.fetchModels(); });
+    act(() => result.current.recommendation.setLlmConfig((previous) => ({ ...previous, baseUrl: 'https://new.test/v1' })));
+    await act(async () => { finishModels(['stale-model']); await request; });
+    expect(result.current.recommendation.modelList.models).toEqual([]);
+    await act(() => result.current.recommendation.modelList.fetchModels());
+    expect(result.current.recommendation.modelList.models).toEqual(['test-model', 'another-model']);
+  });
+
   it('主题、歌词、行为、推荐输入和备份操作均与视图模型连接', async () => {
     render(<SettingsView />, { wrapper: Wrapper }); await ready();
     for (const name of ['深色模式', '浅色模式', '跟随系统', '逐字动态', '逐行显示', '最小化到托盘', '退出应用', '每次询问']) {
@@ -227,8 +266,10 @@ describe('设置页面真实控件', () => {
     }
     fireEvent.change(screen.getByPlaceholderText('留空使用内置代理（推荐）'), { target: { value: 'https://proxy.test/' } });
     fireEvent.change(screen.getByPlaceholderText('https://api.openai.com/v1'), { target: { value: 'https://model.test/v1' } });
-    fireEvent.change(screen.getByPlaceholderText('例如 gpt-4.1-mini'), { target: { value: 'test-model' } });
     fireEvent.change(screen.getByPlaceholderText('输入服务商提供的 API Key'), { target: { value: 'test-key' } });
+    fireEvent.click(screen.getByRole('button', { name: '获取列表' }));
+    await screen.findByRole('option', { name: 'test-model' });
+    fireEvent.change(screen.getByLabelText('模型'), { target: { value: 'test-model' } });
     fireEvent.click(screen.getByRole('button', { name: '高级参数' }));
     for (const input of screen.getAllByRole('spinbutton')) fireEvent.change(input, { target: { value: '1000' } });
     fireEvent.click(screen.getByRole('button', { name: '更改目录' })); fireEvent.click(screen.getByRole('button', { name: '恢复默认' }));

@@ -1,4 +1,4 @@
-import { AudioLines, RefreshCw, Upload } from 'lucide-react';
+import { AudioLines, Download, RefreshCw, Upload } from 'lucide-react';
 import SourceImportPanel from './sources/SourceImportPanel';
 import SourceRow from './sources/SourceRow';
 import { useMusicSourcesViewModel } from './sources/useMusicSourcesViewModel';
@@ -32,12 +32,22 @@ export default function SourcesView() {
     >
       <SourceImportPanel model={model} />
 
+      {model.entries.length > 0 && <div className="sources-health-overview" aria-label="音源状态概览">
+        <div className="is-unverified"><strong>{model.healthCounts.unverified}</strong><span>已加载 · 待验证</span></div>
+        <div className="is-success"><strong>{model.healthCounts.success}</strong><span>最近解析成功</span></div>
+        <div className="is-failed"><strong>{model.healthCounts.failed}</strong><span>需要关注</span></div>
+        <p>状态随实际解析更新。<br />有更新链接的音源会在启动时自动检查更新。</p>
+      </div>}
+
       <div className="sources-list-heading">
         <h2>全部音源 <span>{model.entries.length}</span></h2>
         <div className="sources-list-tools">
-          {model.readyCount > 0 && <span className="sources-ready-count">{model.readyCount} 个就绪</span>}
-          <button type="button" className="soft-button sources-reload" disabled={model.importing} onClick={model.reload}>
-            <RefreshCw size={14} aria-hidden="true" /> 重新加载
+          <button type="button" className="soft-button sources-reload" disabled={model.importing || model.reloading || model.checkingUpdates}
+            onClick={() => void model.checkUpdates()}>
+            <Download size={14} aria-hidden="true" /> {model.checkingUpdates ? '检查更新中…' : '检查并更新'}
+          </button>
+          <button type="button" className="soft-button sources-reload" disabled={model.importing || model.reloading || model.checkingUpdates} onClick={() => void model.reload()}>
+            <RefreshCw size={14} aria-hidden="true" /> {model.reloading ? '加载中…' : '重新加载'}
           </button>
         </div>
       </div>

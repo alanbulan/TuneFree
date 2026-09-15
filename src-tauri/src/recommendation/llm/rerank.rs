@@ -112,7 +112,7 @@ fn prepare_enhancement(
         query,
         &context.profile_tokens,
         &candidates,
-        max_results,
+        max_results.min(candidates.len()),
         context
             .config
             .upload_recent_events
@@ -175,7 +175,7 @@ fn cached_enhancement(
             return None;
         }
     };
-    let Some(items) = apply_llm_response(&content, local_items.to_vec(), max_results, request_id)
+    let Ok(items) = apply_llm_response(&content, local_items.to_vec(), max_results, request_id)
     else {
         log::warn!("模型推荐缓存内容无效，继续请求模型刷新缓存");
         return None;
@@ -216,7 +216,7 @@ fn finish_enhancement(
         max_results,
         completion.request_id,
     ) {
-        Some(items) => {
+        Ok(items) => {
             let guard = completion.conn;
             if let Err(error) = save_cache(guard, completion.cache_key, completion.config, content)
             {
@@ -236,9 +236,9 @@ fn finish_enhancement(
             );
             LlmEnhancementResult::ok(items)
         }
-        None => {
+        Err(error) => {
             let sample = response_sample(content);
-            log::warn!("模型重排响应无法解析为推荐 JSON，响应样本: {}", sample);
+            log::warn!("模型重排失败: {}，响应样本: {}", error, sample);
             log_rerank_failure(
                 completion.conn,
                 completion.request_id,
@@ -246,9 +246,9 @@ fn finish_enhancement(
                 "invalid_json",
                 completion.candidate_count,
                 completion.latency_ms,
-                &sample,
+                &error,
             );
-            LlmEnhancementResult::failed(local_items, "模型响应 JSON 不符合推荐格式".to_string())
+            LlmEnhancementResult::failed(local_items, error)
         }
     }
 }

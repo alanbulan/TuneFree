@@ -171,6 +171,7 @@ describe('normalizeSongs', () => {
     const list = [
       {
         songmid: 'qq123',
+        file: { media_mid: 'qq-file-123' },
         name: 'QQ Song',
         singer: [{ name: 'QQ Artist' }],
         albummid: 'album123',
@@ -179,6 +180,7 @@ describe('normalizeSongs', () => {
     const result = normalizeSongs(list, 'qq');
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('qq123');
+    expect(result[0].strMediaMid).toBe('qq-file-123');
     expect(result[0].name).toBe('QQ Song');
     expect(result[0].artist).toBe('QQ Artist');
     expect(result[0].pic).toContain('500x500');

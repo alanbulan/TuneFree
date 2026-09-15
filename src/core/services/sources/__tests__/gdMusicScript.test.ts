@@ -198,5 +198,9 @@ describe('GD 内置脚本与真实 LX 运行时', () => {
     await expect(httpFailure.invoke('wy', 'musicUrl', { musicInfo: { id: '123' } })).rejects.toThrow('HTTP 503');
     const apiFailure = createHarness(timedUpstream({ error: 'rate limit' }));
     await expect(apiFailure.invoke('wy', 'musicUrl', { musicInfo: { id: '123' } })).rejects.toThrow('rate limit');
+    const unsupported = createHarness((payload) => payload.url.endsWith('/time')
+      ? envelope('1789380000') : envelope({ detail: 'Value of `source` is not supported.' }, 400));
+    await expect(unsupported.invoke('tx', 'musicUrl', { musicInfo: { id: '123' } }))
+      .rejects.toThrow('GD 公开接口目前不支持该平台（tencent）');
   });
 });

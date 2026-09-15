@@ -35,7 +35,7 @@ describe('sources/types', () => {
   it('从 Song 构造解析请求', () => {
     expect(
       toSourceResolveRequest({ id: 7, source: 'qq', name: '歌名', artist: '歌手', album: '专辑',
-        urlId: 'url', lyricId: 'lyric', picId: 'pic', hash: 'hash', albumId: 'album',
+        urlId: 'url', lyricId: 'lyric', picId: 'pic', hash: 'hash', albumId: 'album', strMediaMid: 'media-mid',
         qualityHashes: { flac: { hash: 'flac-hash' } } }, 'flac', {
         forceRefresh: true,
       }),
@@ -46,7 +46,7 @@ describe('sources/types', () => {
       name: '歌名',
       artist: '歌手',
       album: '专辑',
-      urlId: 'url', lyricId: 'lyric', picId: 'pic', hash: 'hash', albumId: 'album',
+      urlId: 'url', lyricId: 'lyric', picId: 'pic', hash: 'hash', albumId: 'album', strMediaMid: 'media-mid',
       qualityHashes: { flac: { hash: 'flac-hash' } },
       forceRefresh: true,
       signal: undefined,

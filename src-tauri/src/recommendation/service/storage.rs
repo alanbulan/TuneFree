@@ -34,8 +34,29 @@ impl RecommendationService {
         if crate::app::is_smoke_test() {
             return Err(CommandError::cancelled("冒烟测试不调用云端模型"));
         }
+        let (config, api_key) = self.provider_config(input).await?;
+        let result = self.provider.test(&config, &api_key).await;
+        *self.last_llm_error.lock() = result.error.clone();
+        Ok(result)
+    }
+
+    pub async fn list_llm_models(
+        &self,
+        input: Option<LlmConfigInput>,
+    ) -> CommandResult<Vec<String>> {
+        let (config, api_key) = self.provider_config(input).await?;
+        self.provider
+            .list_models(&config, &api_key)
+            .await
+            .map_err(CommandError::network)
+    }
+
+    async fn provider_config(
+        &self,
+        input: Option<LlmConfigInput>,
+    ) -> CommandResult<(crate::recommendation::model::LlmConfig, String)> {
         let conn_handle = self.conn_handle()?;
-        let (config, api_key) = run_recommendation_blocking(move || {
+        run_recommendation_blocking(move || {
             let input_ref = input.as_ref();
             let config = if let Some(input) = input.clone() {
                 llm_config::config_from_input(&input)
@@ -69,10 +90,7 @@ impl RecommendationService {
             };
             Ok((config, api_key))
         })
-        .await?;
-        let result = self.provider.test(&config, &api_key).await;
-        *self.last_llm_error.lock() = result.error.clone();
-        Ok(result)
+        .await
     }
 
     pub fn clear_data(&self) -> CommandResult<RecommendationMaintenanceStats> {
