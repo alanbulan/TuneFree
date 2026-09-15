@@ -838,7 +838,7 @@ describe('LxSandbox', () => {
     controls.emit({ kind: 'send', event: 'updateAlert', data: { log: '' } });
     controls.emit({ kind: 'send', event: 'updateAlert', data: { log: '升级到 2.0', updateUrl: 'https://u' } });
     controls.emit({ kind: 'console', level: 'warn', message: '警告' });
-    controls.emit({ kind: 'error', message: '崩了' });
+    controls.emit({ kind: 'console', level: 'error', message: '脚本自己的错误日志' });
     controls.emit({ kind: 'pong' });
     for (let index = 0; index < 60; index += 1) {
       controls.emit({ kind: 'console', level: 'log', message: `第 ${index} 条` });
@@ -880,6 +880,16 @@ describe('LxSandbox', () => {
     const emptyError = await mountSandbox();
     emptyError.controls.emitError('');
     expect(emptyError.sandbox.getSnapshot().error).toBe('沙箱运行期错误');
+  });
+
+  it('脚本未处理的 Promise 异常会中止已初始化沙箱，并结算在途调用', async () => {
+    const { sandbox, controls } = await mountSandbox();
+    const pending = sandbox.call('wy', 'musicUrl', { type: '128k' });
+    controls.emit({ kind: 'error', message: 'unhandledrejection: 音源上游请求失败' });
+    await expect(pending).resolves.toMatchObject({ ok: false, error: 'unhandledrejection: 音源上游请求失败' });
+    expect(sandbox.getSnapshot()).toMatchObject({ status: 'failed', error: 'unhandledrejection: 音源上游请求失败' });
+    expect(controls.terminated()).toBe(true);
+    await expect(sandbox.call('wy', 'musicUrl', {})).resolves.toMatchObject({ ok: false });
   });
 
   it('默认依赖不可用（环境不支持 Worker 或 blob）时失败而不是抛出', async () => {

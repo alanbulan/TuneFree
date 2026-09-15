@@ -219,6 +219,8 @@ describe('设置页面真实控件', () => {
     render(<SettingsView />, { wrapper: Wrapper });
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', '目录服务暂不可用');
     fireEvent.click(screen.getByRole('button', { name: '获取列表' }));
+    await screen.findByText('已从服务商获取 2 个模型');
+    fireEvent.click(screen.getByLabelText('模型'));
     await screen.findByRole('option', { name: 'test-model' });
     expect(screen.queryByRole('alert')).toBeNull();
   });
@@ -226,12 +228,14 @@ describe('设置页面真实控件', () => {
   it('保存过密钥时自动获取目录，连接测试保留尚未保存的模型选择', async () => {
     vi.mocked(getLlmConfig).mockResolvedValue({ ...config, baseUrl: 'https://model.test/v1', hasApiKey: true, model: 'old-model' });
     render(<SettingsView />, { wrapper: Wrapper });
+    await screen.findByText('已从服务商获取 2 个模型');
+    fireEvent.click(screen.getByLabelText('模型'));
     await screen.findByRole('option', { name: 'test-model' });
     expect(listLlmModels).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'https://model.test/v1', apiKey: undefined }));
-    fireEvent.change(screen.getByLabelText('模型'), { target: { value: 'test-model' } });
+    fireEvent.click(screen.getByRole('option', { name: 'test-model' }));
     fireEvent.click(screen.getByRole('button', { name: '测试连接' }));
     await waitFor(() => expect(testLlmProvider).toHaveBeenCalled());
-    expect((screen.getByLabelText('模型') as HTMLSelectElement).value).toBe('test-model');
+    expect(screen.getByLabelText('模型').textContent).toBe('test-model');
   });
 
   it('更换服务地址后迟到的模型列表不能覆盖当前目录', async () => {
@@ -268,8 +272,10 @@ describe('设置页面真实控件', () => {
     fireEvent.change(screen.getByPlaceholderText('https://api.openai.com/v1'), { target: { value: 'https://model.test/v1' } });
     fireEvent.change(screen.getByPlaceholderText('输入服务商提供的 API Key'), { target: { value: 'test-key' } });
     fireEvent.click(screen.getByRole('button', { name: '获取列表' }));
+    await screen.findByText('已从服务商获取 2 个模型');
+    fireEvent.click(screen.getByLabelText('模型'));
     await screen.findByRole('option', { name: 'test-model' });
-    fireEvent.change(screen.getByLabelText('模型'), { target: { value: 'test-model' } });
+    fireEvent.click(screen.getByRole('option', { name: 'test-model' }));
     fireEvent.click(screen.getByRole('button', { name: '高级参数' }));
     for (const input of screen.getAllByRole('spinbutton')) fireEvent.change(input, { target: { value: '1000' } });
     fireEvent.click(screen.getByRole('button', { name: '更改目录' })); fireEvent.click(screen.getByRole('button', { name: '恢复默认' }));

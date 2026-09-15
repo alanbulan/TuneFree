@@ -1,6 +1,7 @@
 import { BrainCircuit, RefreshCw } from 'lucide-react';
 import type { SettingsViewModel } from './useSettingsViewModel';
 import MotionDisclosure from '../../../components/MotionDisclosure';
+import CustomSelect from '../components/CustomSelect';
 
 export default function RecommendationSettingsCard({ model }: { model: SettingsViewModel['recommendation'] }) {
   const updateConfig = (values: Partial<typeof model.llmConfig>) => {
@@ -70,14 +71,15 @@ export default function RecommendationSettingsCard({ model }: { model: SettingsV
       <div className="panel-field">
         <label htmlFor="llm-model">模型</label>
         <div className="settings-model-picker">
-          <select id="llm-model" className="panel-input" value={model.llmConfig.model}
-            onChange={(event) => updateConfig({ model: event.target.value })}>
-            <option value="" disabled>{model.modelList.models.length ? '选择模型' : '先获取模型列表'}</option>
-            {model.llmConfig.model && !model.modelList.models.includes(model.llmConfig.model) && (
-              <option value={model.llmConfig.model}>{model.llmConfig.model}（当前配置）</option>
-            )}
-            {model.modelList.models.map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
+          <CustomSelect id="llm-model" value={model.llmConfig.model}
+            disabled={!model.llmConfig.model && model.modelList.models.length === 0}
+            onChange={(value) => updateConfig({ model: value })}
+            options={[
+              { value: '', label: model.modelList.models.length ? '选择模型' : '先获取模型列表', disabled: true },
+              ...(model.llmConfig.model && !model.modelList.models.includes(model.llmConfig.model)
+                ? [{ value: model.llmConfig.model, label: `${model.llmConfig.model}（当前配置）` }] : []),
+              ...model.modelList.models.map((name) => ({ label: name, value: name })),
+            ]} />
           <button type="button" className="soft-button" onClick={() => void model.modelList.fetchModels()}
             disabled={model.modelList.loading || !model.llmConfig.baseUrl.trim()
               || (!model.apiKey.trim() && (!model.llmConfig.hasApiKey || model.clearApiKey))}>
