@@ -89,13 +89,15 @@ git push origin v1.1.32
 
 ## 为当前版本补发 Mac 包
 
-`workflow_dispatch` 只补充已有 Release 的 Mac 资产，跳过 Windows 重新打包与公开步骤，不修改版本号或移动原标签：
+`workflow_dispatch` 只补充已有 Release 的 Mac 资产，跳过 Windows 重新打包与公开步骤，不修改版本号或移动原标签。目标可以是正式版本，也可以是 Windows 已成功上传、Mac 阶段尚未完成的草稿：
 
 ```sh
 gh workflow run release.yml --ref tauri -f tag=v1.1.31
 ```
 
-构建源码来自指定的 `--ref`，其应用版本必须与 `tag` 一致。补包所需的平台适配提交可以晚于原标签，具体源码由 Actions 的 `head_sha` 追溯。目标 Release 必须已存在且为正式版本，已有 Mac 资产时默认拒绝覆盖。补发仍执行共享门禁和 Mac 验证，保留原 Windows 安装包；Tauri Action 合并更新清单中的 Mac 平台条目。
+构建源码来自指定的 `--ref`，其应用版本必须与 `tag` 一致。补包所需的平台适配提交可以晚于原标签，具体源码由 Actions 的 `head_sha` 追溯。目标 Release 必须已存在且不是预发布版本，已有 Mac 资产时默认拒绝覆盖。补发仍执行共享门禁和 Mac 验证，保留原 Windows 安装包；Tauri Action 合并更新清单中的 Mac 平台条目。
+
+恢复草稿发布时，先确认原发布 run 的共享门禁和 Windows job、补发 run 的共享门禁和 Mac job 全部成功，再设置 `GITHUB_REPOSITORY`、`RELEASE_TAG` 并执行 `node scripts/publish-release.mjs --publish`。脚本会校验两平台资产和更新清单后公开，不能提前公开只有 Windows 资产的草稿。
 
 修复同版本 Mac 包时，先备份现有 Mac 资产和更新清单，再显式添加 `-f replace_macos=true`。只有共享门禁、Mac 启动和真实系统凭据测试全部通过后，才重新构建并替换 Mac 资产，随后合并和检查更新清单；Windows 安装包不重建。同版本修订不会触发客户端自动升级，已安装该版本的 Mac 用户需要重新下载 DMG 安装。
 

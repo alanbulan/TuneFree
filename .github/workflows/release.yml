@@ -160,8 +160,10 @@ jobs:
           const version = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8')).version;
           const tag = process.env.RELEASE_TAG;
           if (tag !== `v${version}`) throw new Error('Release tag does not match the app version');
-          const release = JSON.parse(execFileSync('gh', ['api',
-            `repos/${process.env.GITHUB_REPOSITORY}/releases/tags/${tag}`], { encoding: 'utf8' }));
+          const releases = JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp',
+            `repos/${process.env.GITHUB_REPOSITORY}/releases?per_page=100`], { encoding: 'utf8' })).flat();
+          const release = releases.find(item => item.tag_name === tag);
+          if (!release) throw new Error(`Release ${tag} was not found`);
           if (release.prerelease) throw new Error('Expected a stable release');
           if (process.env.REPLACE_MACOS !== 'true' &&
               release.assets.some(asset => /\.(dmg|app\.tar\.gz)(\.sig)?$/.test(asset.name))) {
