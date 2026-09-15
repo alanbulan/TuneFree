@@ -3,7 +3,7 @@ import { ErrorIcon, MusicIcon } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { getImgReferrerPolicy, getTopListDetail, getTopLists } from '../../../core/services/api';
-import { getAIRecommendedSongs } from '../../../core/services/gdStudio';
+import { getAIRecommendedSongs } from '../../../core/services/gdStudioExtras';
 import { recommendationFeedbackFromSong, saveRecommendationFeedback } from '../../../core/services/recommendation';
 import type { Song, TopList } from '../../../core/types';
 import { getMusicSourceLabel } from '../../../core/utils/musicSource';

@@ -87,7 +87,7 @@ describe('MiraPet 订阅面与情绪', () => {
 
   it('面板可触发全部官方动作、表情和外形，再恢复音乐状态', () => {
     render(<MiraPet />);
-    fireEvent.click(screen.getByRole('button', { name: 'Bloub 动作与表情' }));
+    fireEvent.contextMenu(petHandle());
     const root = petHandle().closest('.bloub-companion')!;
     for (const choice of bloubStates) {
       fireEvent.click(screen.getByRole('button', { name: choice.label }));
@@ -112,15 +112,17 @@ describe('MiraPet 订阅面与情绪', () => {
 
   it('右键和键盘可开关面板，关闭后归还焦点', async () => {
     render(<MiraPet />);
+    expect(screen.queryByRole('button', { name: 'Bloub 动作与表情' })).toBeNull();
     fireEvent.contextMenu(petHandle());
     fireEvent.keyDown(document, { key: 'a' });
     expect(screen.getByRole('dialog')).toBeTruthy();
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Bloub 动作与表情' }));
+    expect(document.activeElement).toBe(petHandle());
     fireEvent.keyDown(petHandle(), { key: 'F10', shiftKey: true });
     fireEvent.click(screen.getByRole('button', { name: '关闭动作面板' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.activeElement).toBe(petHandle());
     fireEvent.keyDown(petHandle(), { key: 'ContextMenu' });
     fireEvent.pointerDown(screen.getByRole('dialog'));
     expect(screen.getByRole('dialog')).toBeTruthy();
@@ -131,7 +133,7 @@ describe('MiraPet 订阅面与情绪', () => {
   it('一次性动作结束后回到音乐状态，打招呼优先于预览', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     render(<MiraPet />);
-    fireEvent.click(screen.getByRole('button', { name: 'Bloub 动作与表情' }));
+    fireEvent.contextMenu(petHandle());
     fireEvent.click(screen.getByRole('button', { name: '彗星' }));
     act(() => vi.advanceTimersByTime(4200));
     expect(petHandle().closest('.bloub-companion')!.getAttribute('data-state')).toBe('orbit');
@@ -141,6 +143,24 @@ describe('MiraPet 订阅面与情绪', () => {
     expect(petHandle().title).toContain('把好心情送给你');
     act(() => vi.advanceTimersByTime(1800));
     expect(petHandle().title).toContain('好音乐');
+  });
+
+  it('左键开始移动桌宠时立即收起菜单，拖动结束后不会再次弹出', () => {
+    render(<MiraPet />);
+    const handle = petHandle();
+    handle.setPointerCapture = vi.fn();
+    handle.hasPointerCapture = vi.fn(() => false);
+    fireEvent.contextMenu(handle);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    fireEvent.pointerDown(handle, { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 50, clientY: 50 });
+    expect(handle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 90, clientY: 80 });
+    expect(petClassName()).toContain('is-dragging');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 90, clientY: 80 });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.contextMenu(handle);
+    expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
   it('AI 工作状态、设置开关与页面可见性实时生效', async () => {

@@ -30,7 +30,7 @@ interface DesktopShellProps {
   onViewChange: (view: DesktopView) => void;
 }
 
-const libraryViews: LibraryView[] = ['favorites', 'playlists', 'downloads', 'settings', 'about'];
+const libraryViews: LibraryView[] = ['favorites', 'playlists', 'downloads', 'sources', 'settings', 'about'];
 
 /**
  * Remembers each view's scroll offset on the shared scroll container.

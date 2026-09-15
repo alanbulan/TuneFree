@@ -19,6 +19,12 @@ export interface Song {
   };
   lyricId?: string;
   source: 'netease' | 'qq' | 'kuwo' | string;
+  /** 平台侧文件 hash（酷狗搜索得到，洛雪 kg 音源读 `musicInfo.hash`）。 */
+  hash?: string;
+  /** 平台侧专辑 id（部分音源接口按 albumId 取链接）。 */
+  albumId?: string;
+  /** 音质 → hash 映射（洛雪 kg 音源读 `musicInfo._types`）。 */
+  qualityHashes?: Record<string, { hash?: string; size?: number }>;
   types?: string[];
   recommendationReasons?: string[];
   recommendationSource?: 'local' | 'llm' | 'hybrid' | string;

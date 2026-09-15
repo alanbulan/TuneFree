@@ -1,5 +1,6 @@
 import { getSongKey, isSameSong } from "../types";
 import type { Song } from "../types";
+import type { SongMeta } from "../services/resolverMatch";
 import {
   analyzeLyricTimeline,
   LYRIC_VERSION_MISMATCH_MESSAGE,
@@ -69,16 +70,20 @@ export const updateLyrics = (
 export const getLyricRequest = (
   song: Song,
   binding: ResolvedLyricBinding | undefined,
-): { id: string | number; source: string; songMeta: Song } | null => {
+): { id: string | number; source: string; songMeta: SongMeta } | null => {
   if (!binding) return { id: song.id, source: song.source, songMeta: song };
   if (binding.id === undefined || binding.id === null) return null;
+  const sameIdentity = binding.source === song.source && String(binding.id) === String(song.id);
+  const songMeta = binding.songMeta ?? (sameIdentity ? song : {
+    name: song.name, artist: song.artist, album: song.album,
+  });
   return {
     id: binding.id,
     source: binding.source,
     songMeta: {
-      ...song,
-      lyricId: binding.lyricId === undefined ? undefined : String(binding.lyricId),
-      picId: binding.picId ?? (binding.source === song.source ? song.picId : undefined),
+      ...songMeta,
+      lyricId: binding.lyricId === undefined ? songMeta.lyricId : String(binding.lyricId),
+      picId: binding.picId ?? songMeta.picId,
     },
   };
 };
@@ -95,6 +100,7 @@ export const applyParsedMetadata = (
     id: parsed.resolvedId,
     lyricId: parsed.resolvedLyricId,
     ...(parsed.resolvedPicId ? { picId: parsed.resolvedPicId } : {}),
+    ...(parsed.resolvedSongMeta ? { songMeta: parsed.resolvedSongMeta } : {}),
   };
   runtime.refs.lyricBindings.current.set(getSongKey(song), lyricBinding);
   const patch: Partial<Song> = {};

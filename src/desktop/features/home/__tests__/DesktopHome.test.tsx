@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LibraryProvider } from '../../../../core/contexts/LibraryContext';
 import { getTopListDetail, getTopLists } from '../../../../core/services/api';
-import { getAIRecommendedSongs } from '../../../../core/services/gdStudio';
+import { getAIRecommendedSongs } from '../../../../core/services/gdStudioExtras';
 import { saveRecommendationFeedback } from '../../../../core/services/recommendation';
 import { IpcError } from '../../../../core/ipc';
 import { deferred } from '../../../../core/__tests__/deferred';
@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({ play: vi.fn(), toast: vi.fn(), remove: vi.fn()
 vi.mock('../../../../core/contexts/PlayerContext', () => ({ usePlayerActions: () => ({ playQueue: mocks.play }),
   usePlayerNowPlaying: () => ({ currentSong: { id: 'playing', name: '灵感', artist: '歌手', album: '', source: 'qq' }, isPlaying: true }) }));
 vi.mock('../../../../core/services/api', async (original) => ({ ...await original<typeof import('../../../../core/services/api')>(), getTopLists: vi.fn(), getTopListDetail: vi.fn() }));
-vi.mock('../../../../core/services/gdStudio', () => ({ getAIRecommendedSongs: vi.fn() }));
+vi.mock('../../../../core/services/gdStudioExtras', () => ({ getAIRecommendedSongs: vi.fn() }));
 vi.mock('../../../../core/services/recommendation', async (original) => ({ ...await original<typeof import('../../../../core/services/recommendation')>(),
   saveRecommendationFeedback: vi.fn(), logRecommendationEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../../../components/ToastHost', () => ({ useToast: () => ({ showToast: mocks.toast }) }));

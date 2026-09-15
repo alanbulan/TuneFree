@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { parseSongFull } from "../services/api";
+import { getSourceGeneration } from "../services/sources/registry";
 import { pruneExpiredEntries } from "../utils/boundedCache";
 import { throwIfAborted } from "../services/proxy";
 import type { ResolveOptions } from "../services/resolver";
@@ -17,9 +18,11 @@ export const useSongResolver = (runtime: PlayerRuntime) => {
     parsedSongCache: parsedSongCacheRef, queue: queueRef, audioQuality: audioQualityRef,
     preloadedResolutionKey: preloadedResolutionKeyRef, preloadAbort: preloadAbortRef,
   } = refs;
+  // 缓存键带上音源配置代数：导入 / 启停 / 删除自定义音源后立即失效，
+  // 而不是等 TTL 到期（否则表现为「导入音源后仍然解析失败」）。
   const getParsedSongCacheKey = useCallback(
     (song: Pick<Song, "id" | "source">, quality: AudioQuality) =>
-      `${getSongKey(song)}:${quality}`,
+      `${getSongKey(song)}:${quality}:${getSourceGeneration()}`,
     [],
   );
 

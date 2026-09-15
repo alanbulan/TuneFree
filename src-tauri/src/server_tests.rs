@@ -212,6 +212,7 @@ impl TestServer {
         let state = ServerState {
             api_client: client.clone(),
             proxy_client: client.clone(),
+            source_proxy_client: client.clone(),
             token: token.clone(),
             port,
         };

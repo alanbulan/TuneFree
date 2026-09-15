@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getLyrics } from "../services/api";
-import { isGDStudioSource, resolveGDStudioPic } from "../services/gdStudio";
+import { resolvePic } from "../services/sources/registry";
 import { getSongKey } from "../types";
 import {
   LYRIC_DISPLAY_MODE_CHANGE_EVENT,
@@ -40,7 +40,8 @@ export const useLyricRefresh = (runtime: PlayerRuntime): void => {
     const lyricRequest = getLyricRequest(currentSong, binding);
     if (!lyricRequest) return;
     const needsLyrics = shouldFetchBetterLyrics({ source: lyricRequest.source }, currentSong.lrc);
-    const needsCover = !currentSong.pic && isGDStudioSource(lyricRequest.source);
+    // 封面交给注册表：哪个 provider 能出封面由声明决定，不再判断具体平台。
+    const needsCover = !currentSong.pic;
     if (!needsLyrics && !needsCover) return;
     const requestId = playRequestIdRef.current;
     const refreshKey = [
@@ -61,8 +62,14 @@ export const useLyricRefresh = (runtime: PlayerRuntime): void => {
     if (playbackSignal?.aborted) abort();
     const lyrics = needsLyrics ? getLyrics(lyricRequest.id, lyricRequest.source,
       lyricRequest.songMeta, { signal: controller.signal, forceRefresh: refreshNonce > 0 }) : Promise.resolve('');
-    const cover = needsCover && isGDStudioSource(lyricRequest.source)
-      ? resolveGDStudioPic(lyricRequest.id, lyricRequest.source, lyricRequest.songMeta, controller.signal)
+    const cover = needsCover
+      ? resolvePic({
+          ...lyricRequest.songMeta,
+          platform: lyricRequest.source,
+          id: lyricRequest.id,
+          quality: '320k',
+          signal: controller.signal,
+        })
       : Promise.resolve('');
     void Promise.allSettled([lyrics, cover]).then(([lyricResult, coverResult]) => {
       if (controller.signal.aborted || requestId !== playRequestIdRef.current) return;

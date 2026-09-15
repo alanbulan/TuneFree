@@ -114,6 +114,33 @@ describe("resolved lyric binding", () => {
     })).toBeNull();
   });
 
+  it('延后获取歌词使用跨源候选的 URL、专辑和音质标识', () => {
+    const song = { ...originalSong, urlId: 'old-url', hash: 'old-hash', albumId: 'old-album',
+      qualityHashes: { flac: { hash: 'old-flac' } } };
+    const matched = { name: song.name, artist: song.artist, album: '匹配专辑',
+      urlId: 'new-url', lyricId: 'new-lyric', picId: 'new-pic', hash: 'new-hash',
+      albumId: 'new-album', qualityHashes: { flac: { hash: 'new-flac' } } };
+    const runtime = createRuntime(song);
+    applyParsedMetadata(runtime, song, song, {
+      url: 'https://example.com/fallback.mp3', lrc: '', pic: '',
+      resolvedSource: 'kugou', resolvedId: 'new-id', resolvedLyricId: 'new-lyric',
+      resolvedSongMeta: matched,
+    });
+    expect(getLyricRequest(song, runtime.refs.lyricBindings.current.get('kuwo:original-id'))).toEqual({
+      id: 'new-id', source: 'kugou', songMeta: matched,
+    });
+  });
+
+  it('没有候选元数据时不把原平台专属标识交给新平台', () => {
+    const song = { ...originalSong, urlId: 'old-url', lyricId: 'old-lyric', picId: 'old-pic',
+      hash: 'old-hash', albumId: 'old-album', qualityHashes: { flac: { hash: 'old-flac' } } };
+    const request = getLyricRequest(song, { source: 'qq', id: 'new-id' })!;
+    expect(request.songMeta).toEqual({
+      name: song.name, artist: song.artist, album: song.album, lyricId: undefined, picId: undefined,
+    });
+    expect(getLyricRequest(song, { source: song.source, id: song.id })!.songMeta).toEqual(song);
+  });
+
   it("uses the original identity when no parsed binding exists", () => {
     expect(getLyricRequest(originalSong, undefined)).toEqual({
       id: "original-id",

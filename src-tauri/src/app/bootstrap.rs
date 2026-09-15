@@ -35,6 +35,7 @@ struct BootstrapContext {
     api_client: reqwest::Client,
     download_client: reqwest::Client,
     proxy_client: reqwest::Client,
+    source_proxy_client: reqwest::Client,
     lifecycle: AppLifecycleState,
     /// The bound listener, or the bind failure to report from `setup`.
     server_listener: std::io::Result<std::net::TcpListener>,
@@ -45,6 +46,7 @@ struct BootstrapContext {
 struct SetupContext {
     api_client: reqwest::Client,
     proxy_client: reqwest::Client,
+    source_proxy_client: reqwest::Client,
     shutdown_rx: tokio::sync::watch::Receiver<bool>,
     server_listener: std::io::Result<std::net::TcpListener>,
     local_server_port: u16,
@@ -76,6 +78,35 @@ fn build_proxy_client() -> reqwest::Client {
         .pool_max_idle_per_host(20)
         .build()
         .expect("Failed to build streaming proxy HTTP client")
+}
+
+/// 自定义音源专用客户端。
+///
+/// 目标主机不受 `/api/cors-proxy` 白名单限制（脚本要访问任意公网地址），
+/// 因此重定向必须由「仍属公网目标」这一条件把关，防止把用户引到内网服务。
+fn build_source_proxy_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        // 源代理自行解析并连接目标，避免系统代理绕过公网 DNS 校验。
+        .no_proxy()
+        .dns_resolver(Arc::new(crate::api::source_proxy::PublicDnsResolver))
+        .connect_timeout(Duration::from_secs(10))
+        .read_timeout(Duration::from_secs(30))
+        .redirect(source_proxy_redirect_policy())
+        .pool_max_idle_per_host(20)
+        .build()
+        .expect("Failed to build source proxy HTTP client")
+}
+
+fn source_proxy_redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if !crate::api::source_proxy::is_public_target(attempt.url()) {
+            return attempt.error("source proxy redirect target is not public");
+        }
+        if attempt.previous().len() >= 5 {
+            return attempt.error("too many source proxy redirects");
+        }
+        attempt.follow()
+    })
 }
 
 fn proxy_redirect_policy() -> reqwest::redirect::Policy {
@@ -115,6 +146,7 @@ fn create_bootstrap_context() -> super::error::CommandResult<BootstrapContext> {
         api_client: build_api_client(),
         download_client: build_download_client(),
         proxy_client: build_proxy_client(),
+        source_proxy_client: build_source_proxy_client(),
         lifecycle: AppLifecycleState {
             is_quitting: Arc::new(AtomicBool::new(false)),
             shutdown_tx,
@@ -242,6 +274,7 @@ fn setup_application(
         server::ServerState {
             api_client: context.api_client,
             proxy_client: context.proxy_client,
+            source_proxy_client: context.source_proxy_client,
             token: context.local_server_token,
             port: context.local_server_port,
         },
@@ -280,6 +313,7 @@ fn build_application(context: BootstrapContext) -> tauri::App {
     let setup_context = SetupContext {
         api_client: context.api_client.clone(),
         proxy_client: context.proxy_client,
+        source_proxy_client: context.source_proxy_client,
         shutdown_rx: context.shutdown_rx,
         server_listener: context.server_listener,
         local_server_port: context.local_server_port,

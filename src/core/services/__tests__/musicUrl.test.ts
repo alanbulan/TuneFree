@@ -32,6 +32,19 @@ describe('音乐资源地址', () => {
     expect(song).not.toHaveProperty('lrc');
   });
 
+  it('酷狗/咪咕的解析元数据随歌单一起持久化', () => {
+    const song = stripRuntimeSongFields({
+      id: 'FILE_HASH', source: 'kugou', name: '晴天', artist: '周杰伦', album: '叶惠美',
+      hash: 'FILE_HASH', albumId: '966846',
+      qualityHashes: { '128k': { hash: 'FILE_HASH' }, flac: { hash: 'SQ_HASH' } },
+    });
+    expect(song).toMatchObject({
+      hash: 'FILE_HASH',
+      albumId: '966846',
+      qualityHashes: { '128k': { hash: 'FILE_HASH' }, flac: { hash: 'SQ_HASH' } },
+    });
+  });
+
   it('保留 Tauri 文件资源地址，持久化时移除失效的会话端点', () => {
     expect(normalizeMusicUrl('http://asset.localhost/C%3A/music/cover.jpg')).toBe('http://asset.localhost/C%3A/music/cover.jpg');
     expect(normalizeMusicUrl('asset://localhost/cover.jpg')).toBe('asset://localhost/cover.jpg');

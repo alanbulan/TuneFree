@@ -23,6 +23,8 @@ export const PROXY_REQUIRED_HOSTS: readonly string[] = [
   'm.kuwo.cn',               // kuwo.ts 歌词降级
   'nplserver.kuwo.cn',       // playlistImport.ts 酷我歌单
   'music-api.gdstudio.xyz',  // gdStudioClient.ts
+  'complexsearch.kugou.com', // kugou.ts 酷狗搜索（签名接口）
+  'c.musicapp.migu.cn',      // migu.ts 咪咕搜索
   'tunehub.sayqz.com',       // playlistImport.ts TuneHub 兜底
   'hdslb.com',               // utils.ts normalizeMusicUrl 代理 B 站封面图
 ];

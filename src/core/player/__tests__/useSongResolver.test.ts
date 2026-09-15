@@ -60,7 +60,7 @@ describe("useSongResolver 解析缓存", () => {
 
     const first = await resolver.current.resolveParsedSong(target, "320k");
     expect(first.parsed?.url).toBe("https://cdn.example.com/a.mp3");
-    expect(first.cacheKey).toBe("netease:a:320k");
+    expect(first.cacheKey).toMatch(/^netease:a:320k:\d+$/);
 
     await resolver.current.resolveParsedSong(target, "320k");
     expect(api.parseSongFull).toHaveBeenCalledTimes(1);
@@ -93,7 +93,7 @@ describe("useSongResolver 解析缓存", () => {
     await resolver.current.resolveParsedSong(target, "320k");
     const flac = await resolver.current.resolveParsedSong(target, "flac");
     expect(api.parseSongFull).toHaveBeenCalledTimes(2);
-    expect(flac.cacheKey).toBe("netease:a:flac");
+    expect(flac.cacheKey).toMatch(/^netease:a:flac:\d+$/);
   });
 
   it("没有播放地址的结果不进缓存", async () => {

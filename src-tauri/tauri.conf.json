@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "TuneFree",
-  "version": "1.1.31",
+  "version": "1.1.32",
   "identifier": "com.alanbulan.tunefree",
   "build": {
     "frontendDist": "../out",
@@ -20,7 +20,8 @@
         "minHeight": 640,
         "resizable": true,
         "fullscreen": false,
-        "decorations": false
+        "decorations": false,
+        "dragDropEnabled": false
       },
       {
         "label": "desktop-lyric",
@@ -42,7 +43,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' http://127.0.0.1:* https: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* https:; media-src 'self' http: https: data: blob: http://asset.localhost",
+      "csp": "default-src 'self'; script-src 'self' blob:; worker-src 'self' blob:; img-src 'self' http://127.0.0.1:* https: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* https:; media-src 'self' http: https: data: blob: http://asset.localhost",
       "assetProtocol": {
         "enable": true,
         "scope": []

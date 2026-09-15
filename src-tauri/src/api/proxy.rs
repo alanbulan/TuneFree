@@ -65,7 +65,7 @@ fn should_forward_response_header(name: &HeaderName, connection_tokens: &HashSet
 ///
 /// Only requests to these hosts (or their subdomains) are permitted.
 /// This prevents the proxy from being used as an open relay.
-const ALLOWED_HOSTS: [&str; 22] = [
+const ALLOWED_HOSTS: [&str; 24] = [
     "music.163.com",
     "interface.music.163.com",
     "interface3.music.163.com",
@@ -87,6 +87,8 @@ const ALLOWED_HOSTS: [&str; 22] = [
     "music.gdstudio.org",
     "music-api.gdstudio.org",
     "tunehub.sayqz.com",
+    "complexsearch.kugou.com",
+    "c.musicapp.migu.cn",
     "hdslb.com",
 ];
 

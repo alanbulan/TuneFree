@@ -5,7 +5,6 @@ import {
   getTrackKey,
   joinArtists,
   normalizeGDStudioSource,
-  rememberTrackMeta,
 } from './gdStudioModel';
 import { fixUrl } from './utils';
 
@@ -276,7 +275,6 @@ export const mapAIRecommendationTracks = (tracks: GdStudioTrack[]): Song[] => {
     const lyricId = String(item.lyric_id).trim();
     const urlId = String(item.url_id).trim();
     const pic = picId.startsWith('http') || picId.startsWith('//') ? fixUrl(picId) : '';
-    rememberTrackMeta(id, source, { pic, picId, lyricId, urlId });
     songs.push({
       id,
       name: String(item.name).trim(),

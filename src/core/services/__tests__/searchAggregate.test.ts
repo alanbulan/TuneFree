@@ -4,12 +4,14 @@ import type { Song } from '../../types';
 vi.mock('../netease', () => ({ searchNetease: vi.fn(), getNeteaseTopLists: vi.fn(), getNeteaseTopListDetail: vi.fn() }));
 vi.mock('../qq', () => ({ searchQQ: vi.fn(), getQQTopLists: vi.fn(), getQQTopListDetail: vi.fn() }));
 vi.mock('../kuwo', () => ({ searchKuwo: vi.fn(), getKuwoTopLists: vi.fn(), getKuwoTopListDetail: vi.fn() }));
-vi.mock('../gdStudio', () => ({ searchGDStudio: vi.fn() }));
+vi.mock('../kugou', () => ({ searchKugou: vi.fn() }));
+vi.mock('../migu', () => ({ searchMigu: vi.fn() }));
 import { searchAggregate, searchSongs, getTopLists, getTopListDetail } from '../api';
 import { searchNetease, getNeteaseTopLists, getNeteaseTopListDetail } from '../netease';
 import { searchQQ, getQQTopLists, getQQTopListDetail } from '../qq';
 import { searchKuwo, getKuwoTopLists, getKuwoTopListDetail } from '../kuwo';
-import { searchGDStudio } from '../gdStudio';
+import { searchKugou } from '../kugou';
+import { searchMigu } from '../migu';
 
 const song: Song = { id: '1', source: 'netease', name: '歌曲', artist: '歌手', album: '' };
 beforeEach(() => {
@@ -17,6 +19,8 @@ beforeEach(() => {
   vi.mocked(searchNetease).mockResolvedValue([]);
   vi.mocked(searchQQ).mockResolvedValue([]);
   vi.mocked(searchKuwo).mockResolvedValue([]);
+  vi.mocked(searchKugou).mockResolvedValue([]);
+  vi.mocked(searchMigu).mockResolvedValue([]);
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
@@ -26,7 +30,17 @@ it('榜单和详情分发至所选平台，Joox 搜索沿用 GD 接口', async (
     expect(await getTopLists(source)).toEqual([{ id: '榜单', name: source }]); expect(await getTopListDetail('榜单', source)).toEqual([song]); expect(detail).toHaveBeenCalledWith('榜单');
   }
   expect(await getTopLists('unknown')).toEqual([]); expect(await getTopListDetail('x', 'unknown')).toEqual([]);
-  vi.mocked(searchGDStudio).mockResolvedValue([song]); expect(await searchSongs('关键词', 'joox', 1)).toEqual([song]);
+  // JOOX / B 站由内置 GD 脚本提供搜索；单元测试里没有沙箱，因此没有归属该平台的 provider。
+  expect(await searchSongs('关键词', 'joox', 1)).toEqual([]);
+  // 酷狗 / 咪咕各自走独立搜索实现（不占用 GD 接口）。
+  const kugouSong: Song = { ...song, source: 'kugou' };
+  vi.mocked(searchKugou).mockResolvedValue([kugouSong]);
+  expect(await searchSongs('关键词', 'kugou', 2)).toEqual([kugouSong]);
+  expect(searchKugou).toHaveBeenCalledWith('关键词', 2, 30, undefined);
+  const miguSong: Song = { ...song, source: 'migu' };
+  vi.mocked(searchMigu).mockResolvedValue([miguSong]);
+  expect(await searchSongs('关键词', 'migu', 1)).toEqual([miguSong]);
+  expect(searchMigu).toHaveBeenCalledWith('关键词', 1, 30, undefined);
   expect(await searchSongs('关键词', 'unknown', 1)).toEqual([]);
 });
 afterEach(() => vi.restoreAllMocks());

@@ -3,6 +3,7 @@ import type { LibraryView } from '../../types';
 import FavoritesView from './FavoritesView';
 import PlaylistsView from './PlaylistsView';
 import DownloadsView from './DownloadsView';
+import SourcesView from './SourcesView';
 import SettingsView from './SettingsView';
 import AboutView from './AboutView';
 
@@ -10,6 +11,7 @@ const viewMeta: Record<LibraryView, { description: string; title: string }> = {
   favorites: { description: '把喜欢的旋律留在身边。', title: '我的收藏' },
   playlists: { description: '为不同的心情，收藏不同的声音。', title: '我的歌单' },
   downloads: { description: '保存到本地，随时都能听。', title: '下载' },
+  sources: { description: '管理你的音乐来源。', title: '音源' },
   settings: { description: '让 TuneFree 更合你的习惯。', title: '设置' },
   about: { description: '版本信息、技术栈与开源致谢。', title: '关于' },
 };
@@ -38,6 +40,7 @@ export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
       {activeView === 'favorites' && <FavoritesView />}
       {activeView === 'playlists' && <PlaylistsView />}
       {activeView === 'downloads' && <DownloadsView />}
+      {activeView === 'sources' && <SourcesView />}
       {activeView === 'settings' && <SettingsView />}
       {activeView === 'about' && <AboutView />}
     </div>

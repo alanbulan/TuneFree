@@ -3,7 +3,7 @@ import type { Song } from "../types";
 // 跨音源 fallback 的候选匹配与并发调度工具（resolver.ts 专用）。
 
 export type SongMeta = Pick<Song, "pic" | "picId" | "urlId" | "lyricId"> &
-  Partial<Pick<Song, "name" | "artist" | "album">>;
+  Partial<Pick<Song, "name" | "artist" | "album" | "hash" | "albumId" | "qualityHashes">>;
 
 export const abortReasonError = (signal: AbortSignal): Error =>
   signal.reason instanceof Error
