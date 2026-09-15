@@ -9,7 +9,8 @@ use super::{
     privacy,
 };
 
-const CHAT_COMPLETION_MAX_TOKENS: u64 = 2_000;
+#[path = "provider_models.rs"]
+mod models;
 
 #[cfg(test)]
 #[path = "provider_tests.rs"]
@@ -82,7 +83,6 @@ impl OpenAiCompatibleProvider {
             "model": model,
             "messages": messages,
             "temperature": 0.2,
-            "max_tokens": CHAT_COMPLETION_MAX_TOKENS,
         });
         if use_json_object {
             body["response_format"] = json!({ "type": "json_object" });
@@ -176,13 +176,31 @@ impl OpenAiCompatibleProvider {
             }
         };
 
-        match value
-            .get("choices")
-            .and_then(|choices| choices.get(0))
-            .and_then(|choice| choice.get("message"))
+        Self::completion_content(&value)
+    }
+
+    fn completion_content(value: &serde_json::Value) -> ChatRequestOutcome {
+        let choice = &value["choices"][0];
+        if choice["finish_reason"] == "length" {
+            return ChatRequestOutcome::Failed(
+                "模型响应被服务端截断（finish_reason=length），请检查服务商的输出限制".to_string(),
+            );
+        }
+        if choice["finish_reason"] == "content_filter"
+            || choice["message"]["refusal"]
+                .as_str()
+                .is_some_and(|text| !text.is_empty())
+        {
+            return ChatRequestOutcome::Failed("模型服务拒绝生成推荐内容".to_string());
+        }
+        match choice
+            .get("message")
             .and_then(|message| message.get("content"))
             .and_then(|content| content.as_str())
         {
+            Some(content) if content.trim().is_empty() => {
+                ChatRequestOutcome::Failed("模型服务返回了空正文，无法读取推荐结果".to_string())
+            }
             Some(content) => ChatRequestOutcome::Success(content.to_string()),
             None => ChatRequestOutcome::Failed(
                 "模型服务响应缺少 choices[0].message.content".to_string(),
@@ -365,14 +383,15 @@ mod tests {
     }
 
     #[test]
-    fn chat_request_body_includes_positive_max_tokens() {
+    fn chat_request_body_leaves_output_budget_to_the_provider() {
         let body = OpenAiCompatibleProvider::chat_request_body(
             "grok-4.5",
             &[json!({ "role": "user", "content": "test" })],
             true,
         );
 
-        assert_eq!(body["max_tokens"].as_u64(), Some(2_000));
+        assert!(body.get("max_tokens").is_none());
+        assert!(body.get("max_completion_tokens").is_none());
         assert_eq!(body["response_format"]["type"], "json_object");
     }
 

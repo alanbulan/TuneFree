@@ -8,7 +8,7 @@ use super::{
 pub const SYSTEM_PROMPT: &str = "你是 TuneFree Desktop 的音乐推荐重排器。你只能基于用户提供的候选歌曲重新排序，不能编造候选之外的歌曲。你需要兼顾相关性、多样性、用户最近偏好、新歌探索和听歌场景。输出必须是合法 JSON，不要输出 Markdown，不要解释你的推理过程。";
 
 pub const DISCOVERY_SYSTEM_PROMPT: &str = "你是 TuneFree Desktop 的音乐发现规划器。你不能输出最终歌曲列表，也不能编造歌曲 ID。你只能根据用户画像、本地候选和场景生成可用于真实音乐平台搜索的关键词。输出必须是合法 JSON，不要输出 Markdown，不要解释你的推理过程。";
-pub const PROMPT_SCHEMA_VERSION: u32 = 2;
+pub const PROMPT_SCHEMA_VERSION: u32 = 3;
 
 pub fn build_messages(
     query: &RecommendationQuery,
@@ -35,8 +35,9 @@ pub fn build_messages(
         "rules": [
             "只能返回 candidates 中存在的 track_key",
             "不能编造歌曲、歌手、专辑",
+            "items 数量不能超过 limit，候选不足时可以少返回，不要重复 track_key",
             "reason 必须是 24 个中文字符以内的短句",
-            "输出 JSON: {\"intent_tags\": string[], \"items\": [{\"track_key\": string, \"rank\": number, \"score\": number, \"reason\": string}], \"dropped\": []}"
+            "按推荐顺序输出 JSON: {\"items\": [{\"track_key\": \"从 candidates 原样复制\", \"score\": 0.9, \"reason\": \"简短推荐理由\"}]}"
         ]
     });
     if let Some(recent_events) = recent_events {

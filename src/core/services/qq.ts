@@ -143,6 +143,7 @@ export const searchQQ = async (
   return songs.map((s: any) => ({
     id: s.mid || String(s.id),
     lyricId: s.id ? String(s.id) : undefined,
+    strMediaMid: typeof s.file?.media_mid === 'string' ? s.file.media_mid : undefined,
     name: s.name || "",
     artist: s.singer?.map((si: any) => si.name).join(", ") || "",
     album: s.album?.name || "",
@@ -219,6 +220,7 @@ export const getQQTopListDetail = async (
   return songs.map((s: any) => ({
     id: s.mid || String(s.id || ""),
     lyricId: s.id ? String(s.id) : undefined,
+    strMediaMid: typeof s.file?.media_mid === 'string' ? s.file.media_mid : undefined,
     name: s.title || s.name || "",
     artist: s.singer?.map((si: any) => si.name).join(", ") || "",
     album: s.album?.title || s.album?.name || "",

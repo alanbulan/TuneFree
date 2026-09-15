@@ -23,6 +23,8 @@ export interface Song {
   hash?: string;
   /** 平台侧专辑 id（部分音源接口按 albumId 取链接）。 */
   albumId?: string;
+  /** QQ 媒体文件 MID，与歌曲 MID 不同，部分洛雪音源按它构造文件名。 */
+  strMediaMid?: string;
   /** 音质 → hash 映射（洛雪 kg 音源读 `musicInfo._types`）。 */
   qualityHashes?: Record<string, { hash?: string; size?: number }>;
   types?: string[];

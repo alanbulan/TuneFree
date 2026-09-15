@@ -25,6 +25,8 @@ export interface MusicSourceRecord {
   description: string;
   homepage: string;
   fileName: string;
+  /** 已确认可下载此脚本的原始链接，用于后续检查更新。 */
+  sourceUrl?: string;
   /** deflate + base64 后的脚本原文。 */
   content: string;
   enabled: boolean;
@@ -87,6 +89,7 @@ const normalizeRecord = (value: unknown): MusicSourceRecord | null => {
     description: typeof value.description === 'string' ? value.description : '',
     homepage: typeof value.homepage === 'string' ? value.homepage : '',
     fileName: value.fileName,
+    ...(typeof value.sourceUrl === 'string' ? { sourceUrl: value.sourceUrl } : {}),
     content: value.content,
     enabled: value.enabled !== false,
     nameMatchFallback: value.nameMatchFallback === true,

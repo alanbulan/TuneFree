@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   disposeMusicSources,
+  checkMusicSourceUpdates,
   ensureMusicSourcesInitialized,
   getMusicSourcesSnapshot,
   importMusicSourceFiles,
@@ -14,6 +15,7 @@ import {
 import { getCustomProviders, getSourceGeneration, providersFor, setCustomProviders } from '../registry';
 import { loadSourceRecords, persistSourceRecords } from '../store';
 import type { LxSourceDeclaration } from '../protocol';
+import { compareScriptVersions, sourceUpdateUrl } from '../sourceUpdates';
 
 /** 可控的沙箱替身：记录实例、模拟 inited 声明与失败。 */
 const sandboxState = vi.hoisted(() => ({
@@ -161,6 +163,41 @@ describe('manager', () => {
     const before = findSandbox().length;
     await ensureMusicSourcesInitialized();
     expect(findSandbox()).toHaveLength(before);
+  });
+
+  it('只为身份匹配的脚本采用已核实的作者直链', async () => {
+    await importMusicSourceFiles([{ fileName: 'a.js', text: scriptOf('音源 A') }]);
+    const record = loadSourceRecords()[0];
+    expect(sourceUpdateUrl({ ...record, name: 'HYWmusic_beta_公益测试', author: 'Ryn' })).toContain('/Macrohard0001/HYWmusic_source/');
+    expect(sourceUpdateUrl({ ...record, name: 'HYWmusic_公益版', author: 'Ryn' }, 'https://example.test/new-release.js')).toBe('https://example.test/new-release.js');
+    expect(sourceUpdateUrl({ ...record, name: '星海音乐源', author: '万去了了' }, 'https://example.test/download-page')).toContain('/cdyUuu/lx-music-xinghai-source/');
+    expect(sourceUpdateUrl({ ...record, name: '星海音乐源', author: '其他作者' })).toBeUndefined();
+    expect(sourceUpdateUrl({ ...record, sourceUrl: 'https://example.test/original.js' })).toBe('https://example.test/original.js');
+    expect(sourceUpdateUrl(record, 'https://example.test/declared.js')).toBe('https://example.test/declared.js');
+  });
+
+  it('区分正式版、预发布版与无法识别的版本，不降级到旧脚本', () => {
+    expect(compareScriptVersions('v1.2.0', 'v1.2.0_beta5')).toBeGreaterThan(0);
+    expect(compareScriptVersions('v1.2.0_beta5', 'v1.2.0')).toBeLessThan(0);
+    expect(compareScriptVersions('v1.2.0_beta10', 'v1.2.0_beta5')).toBeGreaterThan(0);
+    expect(compareScriptVersions('v1.2', '1.2.0')).toBe(0);
+    expect(compareScriptVersions('新版', '1.2')).toBeNull();
+  });
+
+  it('缺少更新地址与下载 HTTP 错误如实反馈，原音源保持不变', async () => {
+    await importMusicSourceFiles([{ fileName: 'a.js', text: scriptOf('音源 A') }]);
+    await flush();
+    expect((await checkMusicSourceUpdates())[0]).toMatchObject({ status: 'unsupported' });
+    expect(relayMock).not.toHaveBeenCalled();
+    await importMusicSourceFiles([{ fileName: 'a.js', text: scriptOf('音源 A'), sourceUrl: 'https://example.test/a.js' }]);
+    const original = loadSourceRecords()[0];
+    relayMock.mockResolvedValueOnce({ envelope: { status: 404, statusText: 'Not Found', headers: {}, bodyBase64: '' } });
+    expect((await checkMusicSourceUpdates())[0]).toEqual({ status: 'failed', message: '下载更新失败（HTTP 404）' });
+    expect(loadSourceRecords()[0]).toEqual(original);
+    relayMock.mockResolvedValueOnce({ envelope: { status: 403, statusText: 'Forbidden', headers: {},
+      bodyBase64: Buffer.from(JSON.stringify({ code: 1, msg: '更新方式为手动链接，禁止直接下载脚本' })).toString('base64') } });
+    expect((await checkMusicSourceUpdates())[0]).toEqual({ status: 'failed', message: '下载更新失败（HTTP 403）：更新方式为手动链接，禁止直接下载脚本' });
+    expect(loadSourceRecords()[0]).toEqual(original);
   });
 
   it('导入去重：同内容保留启用状态并提示更新', async () => {
@@ -340,6 +377,7 @@ describe('manager', () => {
     const imported = await importMusicSourceFromUrl('https://example.test/source.js');
     expect(imported).toMatchObject({ fileName: 'source.js', ok: true });
     expect(loadSourceRecords()[0].name).toBe('在线音源');
+    expect(loadSourceRecords()[0].sourceUrl).toBe('https://example.test/source.js');
 
     relayMock.mockResolvedValueOnce({ error: '源代理请求失败（HTTP 404）' });
     const failed = await importMusicSourceFromUrl('https://example.test/missing.js');
@@ -361,6 +399,70 @@ describe('manager', () => {
     relayMock.mockResolvedValueOnce({ error: '失败' });
     const fallbackName = await importMusicSourceFromUrl('not a url');
     expect(fallbackName.fileName).toMatch(/^在线音源-\d+\.js$/);
+  });
+
+  it('下载新版并验证初始化后原位替换，保留用户偏好', async () => {
+    await importMusicSourceFiles([{ fileName: 'a.js', text: scriptOf('音源 A'), sourceUrl: 'https://example.test/a.js' }]);
+    await flush();
+    const original = loadSourceRecords()[0];
+    const oldSandbox = findSandbox()[0];
+    setMusicSourceNameMatchFallback(original.id, true);
+    relayMock.mockResolvedValueOnce({ envelope: { status: 200, statusText: 'OK', headers: {},
+      bodyBase64: Buffer.from(scriptOf('音源 A').replace('1.0.0', '2.0.0')).toString('base64') } });
+    const results = await checkMusicSourceUpdates();
+    expect(results).toEqual([{ status: 'updated', message: '已更新至 2.0.0' }]);
+    expect(loadSourceRecords()).toHaveLength(1);
+    expect(loadSourceRecords()[0]).toMatchObject({ version: '2.0.0', nameMatchFallback: true, importedAt: original.importedAt });
+    expect(loadSourceRecords()[0].id).not.toBe(original.id);
+    expect(oldSandbox.disposed).toBe(true);
+    expect(getCustomProviders('kuwo')).toHaveLength(1);
+    expect(userEntries()[0].update?.status).toBe('updated');
+  });
+
+  it('作者通过更新链接改名后，仍可原位更新并保留用户偏好', async () => {
+    const code = scriptOf('音源 A').replace(' * @version', ' * @author 作者 A\n * @version');
+    await importMusicSourceFiles([{ fileName: 'a.js', text: code, sourceUrl: 'https://example.test/a.js' }]);
+    await flush();
+    const original = loadSourceRecords()[0];
+    relayMock.mockResolvedValueOnce({ envelope: { status: 200, statusText: 'OK', headers: {},
+      bodyBase64: Buffer.from(code.replace('@name 音源 A', '@name 音源 A-Pro').replace('1.0.0', '1.2.5')).toString('base64') } });
+    expect((await checkMusicSourceUpdates())[0].status).toBe('updated');
+    expect(loadSourceRecords()).toHaveLength(1);
+    expect(loadSourceRecords()[0]).toMatchObject({ name: '音源 A-Pro', version: '1.2.5', importedAt: original.importedAt });
+  });
+
+  it('错误下载、无法确认同一作者的改名或新版初始化失败，都保留原记录和沙箱', async () => {
+    await importMusicSourceFiles([{ fileName: 'a.js', text: scriptOf('音源 A'), sourceUrl: 'https://example.test/a.js' }]);
+    await flush();
+    const original = loadSourceRecords()[0];
+    const oldSandbox = findSandbox()[0];
+    for (const code of ['<html>下载页</html>', scriptOf('其他音源').replace('1.0.0', '2.0.0'),
+      scriptOf('音源 A', 'BOOM').replace('1.0.0', '2.0.0')]) {
+      relayMock.mockResolvedValueOnce({ envelope: { status: 200, statusText: 'OK', headers: {}, bodyBase64: Buffer.from(code).toString('base64') } });
+      expect((await checkMusicSourceUpdates())[0].status).toBe('failed');
+      expect(loadSourceRecords()[0]).toEqual(original);
+      expect(oldSandbox.disposed).toBe(false);
+    }
+  });
+
+  it('更新保存失败或检查期间停用时，不会覆盖原音源或残留更新中状态', async () => {
+    await importMusicSourceFiles([{ fileName: 'a.js', text: scriptOf('音源 A'), sourceUrl: 'https://example.test/a.js' }]);
+    await flush();
+    const original = loadSourceRecords()[0];
+    const response = { envelope: { status: 200, statusText: 'OK', headers: {},
+      bodyBase64: Buffer.from(scriptOf('音源 A').replace('1.0.0', '2.0.0')).toString('base64') } };
+    relayMock.mockResolvedValueOnce(response);
+    storageMock.failWrites.value = true;
+    try { expect((await checkMusicSourceUpdates())[0].status).toBe('failed'); }
+    finally { storageMock.failWrites.value = false; }
+    expect(loadSourceRecords()[0]).toEqual(original);
+    let finish!: (value: typeof response) => void;
+    relayMock.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const pending = checkMusicSourceUpdates();
+    setMusicSourceEnabled(original.id, false);
+    finish(response); await pending;
+    expect(loadSourceRecords()[0]).toMatchObject({ id: original.id, enabled: false, version: '1.0.0' });
+    expect(userEntries()[0].update).toBeNull();
   });
 
   it('订阅者能收到状态变化，取消后不再收到', async () => {

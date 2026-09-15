@@ -49,6 +49,7 @@ describe('platformMap', () => {
     const info = buildMusicInfo(request({ name: '歌名', artist: '歌手', album: '专辑' }));
     expect(info).toMatchObject({
       id: '42',
+      source: 'wy',
       songmid: '42',
       name: '歌名',
       singer: '歌手',
@@ -68,6 +69,9 @@ describe('platformMap', () => {
     ).toMatchObject({ hash: 'FILE_HASH', albumId: '966846', _types: { flac: { hash: 'SQ' } } });
     // 未提供 hash 时退回主键
     expect(buildMusicInfo(request({ id: 7 })).hash).toBe('7');
+    expect(buildMusicInfo(request({ platform: 'qq', id: 'song-mid', strMediaMid: 'media-mid' })))
+      .toMatchObject({ songmid: 'song-mid', strMediaMid: 'media-mid' });
+    expect(buildMusicInfo(request({ platform: 'qq', id: 'song-mid' })).strMediaMid).toBeUndefined();
     expect(buildMusicInfo({ platform: 'kugou', id: 1, quality: '320k' })).toMatchObject({
       name: '',
       singer: '',
@@ -83,10 +87,13 @@ describe('platformMap', () => {
     });
     expect(declarationPlatform('wy', { actions: ['musicUrl', 'lyric'], qualitys: [] })).toEqual({
       appPlatform: 'netease',
-      actions: ['musicUrl', 'lyric'],
+      actions: ['lyric'],
       qualitys: [],
     });
     expect(declarationPlatform('local', {})).toBeNull();
+    expect(declarationPlatform('kw', { actions: [] })).toBeNull();
+    expect(declarationPlatform('kw', { actions: ['unsupported'] })).toBeNull();
+    expect(declarationPlatform('kw', { qualitys: [] })).toBeNull();
     expect(declarationPlatform('mg', {})).toEqual({
       appPlatform: 'migu',
       actions: ['musicUrl'],

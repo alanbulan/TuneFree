@@ -84,7 +84,7 @@ describe('lxProvider', () => {
   });
 
   it('请求音质不在声明内时按降级顺序挑选', async () => {
-    const sandbox = createSandboxStub(() => urlOutcome('u'));
+    const sandbox = createSandboxStub(() => urlOutcome('https://cdn.test/song.mp3'));
     const provider = createProvider(sandbox, { qualitys: ['128k', '320k'] });
     await provider.getUrl!(request({ quality: 'flac24bit' }));
     expect(sandbox.calls[0].info.type).toBe('320k');
@@ -100,12 +100,16 @@ describe('lxProvider', () => {
     expect(noAction.calls).toHaveLength(0);
   });
 
-  it('结果为空时返回 null，脚本报错时抛出', async () => {
+  it('空值和畸形地址不能成为解析成功，脚本报错保持原原因', async () => {
     const emptyResult = createSandboxStub(() => urlOutcome(null));
-    expect(await createProvider(emptyResult, {}).getUrl!(request())).toBeNull();
+    await expect(createProvider(emptyResult, {}).getUrl!(request())).rejects.toThrow('解析结果格式错误');
 
     const objectWithoutUrl = createSandboxStub(() => urlOutcome({ lyric: 'x' }));
-    expect(await createProvider(objectWithoutUrl, {}).getUrl!(request())).toBeNull();
+    await expect(createProvider(objectWithoutUrl, {}).getUrl!(request())).rejects.toThrow('解析结果格式错误');
+    for (const value of ['接口维护中', 'ftp://cdn.test/song.mp3', { url: '/relative.mp3' }]) {
+      await expect(createProvider(createSandboxStub(() => urlOutcome(value)), {}).getUrl!(request()))
+        .rejects.toThrow('解析结果格式错误');
+    }
 
     const failing = createSandboxStub(() => ({ ok: false, result: null, error: '源接口 500' }));
     await expect(createProvider(failing, {}).getUrl!(request())).rejects.toThrow('源接口 500');
@@ -115,13 +119,13 @@ describe('lxProvider', () => {
   });
 
   it('缺少 id 时只有开启按歌名匹配才继续', async () => {
-    const sandbox = createSandboxStub(() => urlOutcome('u'));
+    const sandbox = createSandboxStub(() => urlOutcome('https://cdn.test/song.mp3'));
     const strict = createProvider(sandbox, {});
     expect(await strict.getUrl!(request({ id: '' }))).toBeNull();
     expect(sandbox.calls).toHaveLength(0);
 
     const loose = createProvider(sandbox, {}, { nameMatchFallback: true });
-    await expect(loose.getUrl!(request({ id: '' }))).resolves.toBe('u');
+    await expect(loose.getUrl!(request({ id: '' }))).resolves.toBe('https://cdn.test/song.mp3');
     expect(loose.nameMatch).toBe(true);
   });
 

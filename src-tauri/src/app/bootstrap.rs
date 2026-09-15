@@ -88,7 +88,9 @@ fn build_source_proxy_client() -> reqwest::Client {
     reqwest::Client::builder()
         // 源代理自行解析并连接目标，避免系统代理绕过公网 DNS 校验。
         .no_proxy()
-        .dns_resolver(Arc::new(crate::api::source_proxy::PublicDnsResolver))
+        .dns_resolver(Arc::new(
+            crate::api::source_proxy::PublicDnsResolver::default(),
+        ))
         .connect_timeout(Duration::from_secs(10))
         .read_timeout(Duration::from_secs(30))
         .redirect(source_proxy_redirect_policy())
@@ -380,6 +382,7 @@ fn build_application(context: BootstrapContext) -> tauri::App {
             recommendation_commands::get_llm_config,
             recommendation_commands::save_llm_config,
             recommendation_commands::test_llm_provider,
+            recommendation_commands::list_llm_models,
             recommendation_commands::clear_recommendation_data,
             system_commands::quit_app,
             desktop_lyric_render::mark_desktop_lyric_ready,

@@ -83,6 +83,7 @@ export interface CommandMap {
   rebuild_recommendation_index: { args: void; result: void };
   get_llm_config: { args: void; result: LlmConfigView };
   save_llm_config: { args: { config: LlmConfigInput }; result: void };
+  list_llm_models: { args: { config?: LlmConfigInput }; result: string[] };
   test_llm_provider: {
     args: { config?: LlmConfigInput };
     result: LlmProviderTestResult;

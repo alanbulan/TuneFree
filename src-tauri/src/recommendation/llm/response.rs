@@ -27,10 +27,13 @@ pub(super) fn apply_llm_response(
     mut local_items: Vec<RecommendationItem>,
     limit: usize,
     request_id: &str,
-) -> Option<Vec<RecommendationItem>> {
-    let parsed: LlmResponse = super::json::extract_json(content)?;
+) -> Result<Vec<RecommendationItem>, String> {
+    let value: serde_json::Value = super::json::extract_json(content)
+        .ok_or_else(|| "模型返回的正文不是完整 JSON，可能被服务端截断".to_string())?;
+    let parsed: LlmResponse = serde_json::from_value(value)
+        .map_err(|error| format!("模型推荐字段格式错误: {}", error))?;
     if parsed.items.is_empty() {
-        return None;
+        return Err("模型没有返回推荐条目（items 为空或缺失）".to_string());
     }
 
     normalize_item_scores(&mut local_items);
@@ -45,7 +48,11 @@ pub(super) fn apply_llm_response(
         .filter(|item| !valid_keys.contains(&item.track_key))
         .count();
     if unknown_count > 0 && (unknown_count as f64 / parsed.items.len() as f64) > 0.2 {
-        return None;
+        return Err(format!(
+            "模型返回了候选范围之外的歌曲（{} / {}），已保留本地推荐",
+            unknown_count,
+            parsed.items.len(),
+        ));
     }
 
     let mut selected = Vec::new();
@@ -84,7 +91,7 @@ pub(super) fn apply_llm_response(
     });
     let remaining = rest.into_iter().map(candidate_from_item).collect();
     let candidates = rerank_selected_then_remaining(selected, remaining, limit);
-    Some(rerank::to_items(candidates, request_id, "hybrid"))
+    Ok(rerank::to_items(candidates, request_id, "hybrid"))
 }
 
 fn normalize_item_scores(items: &mut [RecommendationItem]) {
@@ -195,13 +202,13 @@ mod tests {
     #[test]
     fn rejects_truncated_response() {
         let content = "```json\n{\"items\":[{\"track_key\":\"netease:a\"";
-        assert!(apply_llm_response(content, vec![item("a", 0.9)], 1, "request").is_none());
+        assert!(apply_llm_response(content, vec![item("a", 0.9)], 1, "request").is_err());
     }
 
     #[test]
     fn invalid_model_selections_preserve_local_fallback_and_duplicate_keys_are_not_repeated() {
         for content in [r#"{"items":[]}"#, r#"{"items":[{"track_key":"unknown"}]}"#] {
-            assert!(apply_llm_response(content, vec![item("a", 1.0)], 1, "request").is_none());
+            assert!(apply_llm_response(content, vec![item("a", 1.0)], 1, "request").is_err());
         }
         let selected = apply_llm_response(
             r#"{"items":[{"track_key":"netease:a"},{"track_key":"netease:a"}]}"#,

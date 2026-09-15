@@ -1,4 +1,4 @@
-import { BrainCircuit } from 'lucide-react';
+import { BrainCircuit, RefreshCw } from 'lucide-react';
 import type { SettingsViewModel } from './useSettingsViewModel';
 import MotionDisclosure from '../../../components/MotionDisclosure';
 
@@ -41,16 +41,13 @@ export default function RecommendationSettingsCard({ model }: { model: SettingsV
         </div>
       </div>
       <div className="panel-field">
-        <label>API 根地址</label>
-        <input className="panel-input" placeholder="https://api.openai.com/v1" value={model.llmConfig.baseUrl} onChange={(event) => updateConfig({ baseUrl: event.target.value })} />
+        <label htmlFor="llm-base-url">API 根地址</label>
+        <input id="llm-base-url" className="panel-input" placeholder="https://api.openai.com/v1" value={model.llmConfig.baseUrl} onChange={(event) => updateConfig({ baseUrl: event.target.value })} />
       </div>
       <div className="panel-field">
-        <label>模型名</label>
-        <input className="panel-input" placeholder="例如 gpt-4.1-mini" value={model.llmConfig.model} onChange={(event) => updateConfig({ model: event.target.value })} />
-      </div>
-      <div className="panel-field">
-        <label>API Key</label>
+        <label htmlFor="llm-api-key">API Key</label>
         <input
+          id="llm-api-key"
           className="panel-input"
           type="password"
           placeholder={model.llmConfig.hasApiKey ? '已保存，留空保持不变' : '输入服务商提供的 API Key'}
@@ -69,6 +66,31 @@ export default function RecommendationSettingsCard({ model }: { model: SettingsV
             清除已保存密钥
           </label>
         </div>
+      </div>
+      <div className="panel-field">
+        <label htmlFor="llm-model">模型</label>
+        <div className="settings-model-picker">
+          <select id="llm-model" className="panel-input" value={model.llmConfig.model}
+            onChange={(event) => updateConfig({ model: event.target.value })}>
+            <option value="" disabled>{model.modelList.models.length ? '选择模型' : '先获取模型列表'}</option>
+            {model.llmConfig.model && !model.modelList.models.includes(model.llmConfig.model) && (
+              <option value={model.llmConfig.model}>{model.llmConfig.model}（当前配置）</option>
+            )}
+            {model.modelList.models.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+          <button type="button" className="soft-button" onClick={() => void model.modelList.fetchModels()}
+            disabled={model.modelList.loading || !model.llmConfig.baseUrl.trim()
+              || (!model.apiKey.trim() && (!model.llmConfig.hasApiKey || model.clearApiKey))}>
+            <RefreshCw size={14} aria-hidden="true" />
+            {model.modelList.loading ? '获取中…' : model.modelList.models.length ? '刷新列表' : '获取列表'}
+          </button>
+        </div>
+        <p className="settings-note" role="status">
+          {model.modelList.models.length
+            ? `已从服务商获取 ${model.modelList.models.length} 个模型`
+            : '填写服务地址和密钥后，从服务商的模型列表中选择。'}
+        </p>
+        {model.modelList.error && <p className="settings-error-text" role="alert">{model.modelList.error}</p>}
       </div>
       <MotionDisclosure label="高级参数">
         <div className="settings-number-grid">

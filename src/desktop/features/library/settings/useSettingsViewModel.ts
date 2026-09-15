@@ -17,6 +17,7 @@ import { useDesktopDialog } from '../../../components/DialogHost';
 import { useToast } from '../../../components/ToastHost';
 import { describeIpcFailure, retryWhileBusy } from '../ipcErrorFeedback';
 import { useStorageOverview } from './useStorageOverview';
+import { useLlmModelList } from './useLlmModelList';
 
 const defaultLlmConfig: LlmConfigView = {
   localRecommendationEnabled: true,
@@ -53,6 +54,7 @@ export function useSettingsViewModel() {
   const [savingLlm, setSavingLlm] = useState(false);
   const [maintainingRecommendation, setMaintainingRecommendation] = useState(false);
   const [recommendationInitializing, setRecommendationInitializing] = useState(false);
+  const modelList = useLlmModelList(llmConfig, apiKey, clearApiKey);
 
   // 推荐服务在后台线程初始化，未就绪时命令返回 BUSY，这里统一退避重试（契约 §7.7）。
   const runRecommendationCommand = useCallback(
@@ -215,7 +217,7 @@ export function useSettingsViewModel() {
         ? `模型连接成功${result.latencyMs ? `，${result.latencyMs}ms` : ''}`
         : result.error || '模型连接失败';
       showToast(message, result.ok ? 'success' : 'error');
-      await refreshLlmConfig();
+      setLlmConfig((previous) => ({ ...previous, lastError: result.error ?? null }));
     } catch (error: unknown) {
       reportFailure(error, '模型连接失败');
     } finally {
@@ -252,7 +254,7 @@ export function useSettingsViewModel() {
   return {
     core: { tempProxy, setTempProxy, tempShowPet, setTempShowPet, downloadPath, selectDownloadDir, resetDownloadDir, saveCoreSettings, ...preferences, showToast },
     appearance: { ...theme, lyricDisplayMode, changeLyricDisplayMode, showToast },
-    recommendation: { localRecommendationEnabled, setLocalRecommendationEnabled, llmConfig, setLlmConfig, apiKey, setApiKey, clearApiKey, setClearApiKey, testingLlm, savingLlm, maintainingRecommendation, initializing: recommendationInitializing, saveRecommendationSettings, testProvider, maintainRecommendation },
+    recommendation: { localRecommendationEnabled, setLocalRecommendationEnabled, llmConfig, setLlmConfig, apiKey, setApiKey, clearApiKey, setClearApiKey, modelList, testingLlm, savingLlm, maintainingRecommendation, initializing: recommendationInitializing, saveRecommendationSettings, testProvider, maintainRecommendation },
     backup: { pendingImport, setPendingImport, favorites: library.favorites, playlists: library.playlists, exportLibrary, importFile, applyPendingImport, storageOverview },
   };
 }

@@ -131,7 +131,11 @@ const callApi = async (params) => {
   const response = await httpForm(API_URL, form);
   const data = decodeBody(response);
   if (response.statusCode >= 400) {
-    throw new Error('GD 接口 HTTP ' + response.statusCode);
+    const detail = data && typeof data === 'object' && (data.detail || data.error);
+    if (typeof detail === 'string' && /source.+not supported/i.test(detail)) {
+      throw new Error('GD 公开接口目前不支持该平台（' + params.source + '）');
+    }
+    throw new Error('GD 接口 HTTP ' + response.statusCode + (typeof detail === 'string' ? '：' + detail : ''));
   }
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     if (typeof data.error === 'string' && data.error) throw new Error(data.error);

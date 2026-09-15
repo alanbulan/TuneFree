@@ -1,5 +1,7 @@
 import { abortReasonError } from '../resolverMatch';
 import { CookieJar } from './cookieJar';
+import { normalizeSources, normalizeUpdateAlert, readSourceUrl, type SourceCallDiagnostic } from './diagnostics';
+import { declarationPlatform } from './platformMap';
 import {
   LX_INITED_EVENT,
   LX_REQUEST_EVENT,
@@ -29,6 +31,7 @@ export interface SandboxSnapshot {
   /** 脚本实际访问过的主机，用于提示用户这个音源在跟谁通信。 */
   hosts: string[];
   logs: string[];
+  calls: SourceCallDiagnostic[];
 }
 
 export interface SandboxCallOutcome {
@@ -78,35 +81,6 @@ const isSourceProxyPayload = (value: unknown): value is SourceProxyPayload => {
     && Object.values(payload.headers).every((header) => typeof header === 'string');
 };
 
-/** 只接受结构正确的声明，避免畸形 `inited` 污染注册表。 */
-const normalizeSources = (raw: unknown): Record<string, LxSourceDeclaration> => {
-  if (!raw || typeof raw !== 'object') return {};
-  const result: Record<string, LxSourceDeclaration> = {};
-  for (const [platform, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (!value || typeof value !== 'object') continue;
-    const declaration = value as Record<string, unknown>;
-    const pickStrings = (input: unknown): string[] | undefined =>
-      Array.isArray(input) ? input.filter((item): item is string => typeof item === 'string') : undefined;
-    result[platform] = {
-      name: typeof declaration.name === 'string' ? declaration.name : undefined,
-      type: typeof declaration.type === 'string' ? declaration.type : undefined,
-      actions: pickStrings(declaration.actions),
-      qualitys: pickStrings(declaration.qualitys),
-    };
-  }
-  return result;
-};
-
-const normalizeUpdateAlert = (raw: unknown): LxUpdateAlert | null => {
-  if (!raw || typeof raw !== 'object') return null;
-  const candidate = raw as Record<string, unknown>;
-  if (typeof candidate.log !== 'string' || !candidate.log) return null;
-  return {
-    log: candidate.log,
-    updateUrl: typeof candidate.updateUrl === 'string' ? candidate.updateUrl : undefined,
-  };
-};
-
 /**
  * 单个音源脚本的沙箱：一个 Worker + 一份运行时 + 一条 RPC 通道。
  *
@@ -125,16 +99,19 @@ export class LxSandbox {
   private updateAlert: LxUpdateAlert | null = null;
   private readonly hosts = new Set<string>();
   private logs: string[] = [];
+  private readonly callDiagnostics = new Map<string, SourceCallDiagnostic>();
   private readonly listeners = new Set<() => void>();
   private readonly pendingCalls = new Map<
     string,
-    { settle: (outcome: SandboxCallOutcome) => void; timer: ReturnType<typeof setTimeout> }
+    { settle: (outcome: SandboxCallOutcome) => void; timer: ReturnType<typeof setTimeout>;
+      source: string; action: string; quality: string; startedAt: number }
   >();
   private readonly pendingRelays = new Map<string, AbortController>();
   private queue: Array<() => void> = [];
   private activeRequests = 0;
   private invokeSeq = 0;
   private initedSeen = false;
+  private workerReadySeen = false;
   private loadedSeen = false;
   private initialization: Promise<void> | null = null;
   private finishInit: (() => void) | null = null;
@@ -158,6 +135,7 @@ export class LxSandbox {
       updateAlert: this.updateAlert,
       hosts: [...this.hosts],
       logs: [...this.logs],
+      calls: [...this.callDiagnostics.values()],
     };
   }
 
@@ -189,7 +167,7 @@ export class LxSandbox {
     info: Record<string, unknown>,
     options: SandboxCallOptions = {},
   ): Promise<SandboxCallOutcome> {
-    if (!this.worker || this.status === 'failed') {
+    if (!this.worker || this.status !== 'ready') {
       return { ok: false, result: null, error: this.error || '沙箱不可用' };
     }
     if (options.signal?.aborted) throw abortReasonError(options.signal);
@@ -208,6 +186,7 @@ export class LxSandbox {
       };
       options.signal?.addEventListener('abort', onAbort, { once: true });
       this.pendingCalls.set(callId, {
+        source, action, quality: typeof info.type === 'string' ? info.type : '', startedAt: Date.now(),
         settle: (outcome) => {
           options.signal?.removeEventListener('abort', onAbort);
           resolve(outcome);
@@ -262,6 +241,9 @@ export class LxSandbox {
   private fail(message: string): void {
     this.status = 'failed';
     this.error = message;
+    for (const callId of this.pendingCalls.keys()) {
+      this.settleCall(callId, { ok: false, result: null, error: message });
+    }
     this.dispose();
     this.appendLog(`[失败] ${message}`);
   }
@@ -304,13 +286,10 @@ export class LxSandbox {
         if (this.initedSeen || this.status === 'failed') finish();
       });
       const timer = setTimeout(() => {
-        if (this.loadedSeen) {
-          // 已执行但没发 inited：不判失败，脚本可能把它放在异步初始化之后。
-          this.status = 'ready';
-          this.appendLog('[提示] 脚本未在预期时间内发送 inited，已按就绪处理');
-        } else {
-          this.fail('沙箱初始化超时（Worker 未回握手）');
-        }
+        this.fail(this.loadedSeen
+          ? '脚本未完成初始化（未收到 inited），请检查更新或诊断信息'
+          : this.workerReadySeen ? '脚本执行超时（尚未完成加载）'
+            : '沙箱初始化超时（Worker 未回握手）');
         finish();
       }, SANDBOX_INIT_TIMEOUT_MS);
       this.finishInit = finish;
@@ -322,6 +301,15 @@ export class LxSandbox {
     if (!entry) return;
     this.pendingCalls.delete(callId);
     clearTimeout(entry.timer);
+    if (outcome.ok && entry.action === 'musicUrl' && !readSourceUrl(outcome.result)) {
+      outcome = { ok: false, result: null, error: '解析结果格式错误：未返回有效的 HTTP(S) 播放地址' };
+    }
+    const message = outcome.ok ? '返回结果有效' : outcome.error || '音源调用失败';
+    this.callDiagnostics.set(`${entry.source}:${entry.action}`, {
+      source: entry.source, action: entry.action, quality: entry.quality, ok: outcome.ok,
+      message, durationMs: Date.now() - entry.startedAt, checkedAt: Date.now(),
+    });
+    this.appendLog(`[${outcome.ok ? '调用成功' : '调用失败'}] ${entry.source} · ${entry.action}${entry.quality ? ` · ${entry.quality}` : ''}：${message}`);
     entry.settle(outcome);
   }
 
@@ -333,11 +321,15 @@ export class LxSandbox {
         return;
       }
       this.sources = normalizeSources(payload.sources);
+      if (!Object.entries(this.sources).some(([platform, declaration]) => declarationPlatform(platform, declaration))) {
+        this.fail('脚本没有声明可用的平台与操作，请检查声明格式或更新音源');
+        return;
+      }
       this.initedSeen = true;
       this.status = 'ready';
       this.error = '';
       this.appendLog(
-        `[就绪] 声明平台：${Object.keys(this.sources).join(' / ') || '无'}`,
+        `[已加载] 声明平台：${Object.keys(this.sources).join(' / ')}；尚未验证解析`,
       );
       return;
     }
@@ -368,9 +360,11 @@ export class LxSandbox {
       try {
         const result = await this.deps.relay(outgoing, controller.signal);
         if ('envelope' in result) {
+          if (result.envelope.status >= 400) this.appendLog(`[请求失败] ${host} · HTTP ${result.envelope.status}`);
           this.cookieJar.store(outgoing.url, result.envelope.cookies ?? []);
           this.post({ kind: 'reply', callId, envelope: result.envelope });
         } else {
+          this.appendLog(`[请求失败] ${host}：${result.error}`);
           this.post({ kind: 'reply', callId, error: result.error });
         }
       } catch (error) {
@@ -416,6 +410,7 @@ export class LxSandbox {
     if (!message || typeof message !== 'object') return;
     switch (message.kind) {
       case 'ready':
+        this.workerReadySeen = true;
         this.post({ kind: 'load', code: this.code, meta: this.meta });
         return;
       case 'loaded':
@@ -450,11 +445,7 @@ export class LxSandbox {
 
   private handleWorkerError = (event: ErrorEvent): void => {
     const message = event.message || '沙箱运行期错误';
-    if (this.status === 'loading' && !this.initedSeen) {
-      this.fail(message);
-    } else {
-      this.appendLog(`[错误] ${message}`);
-    }
+    this.fail(message);
     this.notify();
   };
 }

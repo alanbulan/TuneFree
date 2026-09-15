@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { MAX_SCRIPT_BYTES, parseScriptMeta, validateScriptContent } from '../scriptMeta';
 
 describe('scriptMeta', () => {
+  it('空元数据字段不会读入下一行的标签', () => {
+    expect(parseScriptMeta('/**\n * @name 示例音源\n * @author\n * @repository https://example.test/repo\n */', 'a.js').author).toBe('');
+  });
   it('解析块注释里的身份字段', () => {
     const code = `/*!
  * @name 星海音乐源
