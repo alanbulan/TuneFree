@@ -436,7 +436,7 @@ export class LxSandbox {
         this.appendLog(`[${message.level}] ${message.message}`);
         return;
       case 'error':
-        this.appendLog(`[错误] ${message.message}`);
+        this.fail(message.message);
         return;
       default:
         return;
