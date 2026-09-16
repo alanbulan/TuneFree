@@ -5,6 +5,7 @@ import { useMusicSourcesViewModel } from '../sources/useMusicSourcesViewModel';
 import { MusicSourceRuntime } from '../../../components/MusicSourceRuntime';
 import type { MusicSourceEntry } from '../../../../core/services/sources/manager';
 import type { SourceUpdateState } from '../../../../core/services/sources/sourceUpdates';
+import { recordFailure, resetCircuits } from '../../../../core/services/sources/circuitBreaker';
 
 const mocks = vi.hoisted(() => ({
   isTauri: vi.fn(() => false),
@@ -379,20 +380,43 @@ describe('SourcesView', () => {
     expect(selected()).toContain('第三音源');
   });
 
+  it('熔断的通道单独列出，说明跳过原因与冷却时间', () => {
+    for (let index = 0; index < 3; index += 1) {
+      recordFailure('gdstudio', 'joox', 'search', new Error('GD 接口 HTTP 503'));
+    }
+    setEntries(entry());
+    render(<SourcesView />);
+
+    const panel = screen.getByLabelText('已熔断的通道');
+    expect(panel.textContent).toContain('JOOX');
+    expect(panel.textContent).toContain('搜索');
+    expect(panel.textContent).toContain('连续失败 3 次');
+    expect(panel.textContent).toContain('分钟后重试');
+    resetCircuits();
+  });
+
   it('标签溢出时给出左右滚动按钮', () => {
-    const scroller = document.createElement('div');
     vi.spyOn(HTMLElement.prototype, 'scrollBy').mockImplementation(() => {});
     // happy-dom 没有真实布局，直接给滚动容器伪造溢出尺寸
     Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, get: () => 900 });
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 300 });
     setEntries(entry(), entry({ record: { ...entry().record, id: 'source-2', name: '第二音源' } }));
     render(<SourcesView />);
-    void scroller;
 
     const right = screen.getByRole('button', { name: '向右滚动音源标签' });
     expect(screen.queryByRole('button', { name: '向左滚动音源标签' })).toBeNull();
     fireEvent.click(right);
     expect(HTMLElement.prototype.scrollBy).toHaveBeenCalled();
+
+    // 已经滚到中间时两个方向都应出现
+    const scroller = document.querySelector('.source-tabs') as HTMLElement;
+    Object.defineProperty(scroller, 'scrollLeft', { configurable: true, value: 120 });
+    fireEvent.scroll(scroller);
+    const left = screen.getByRole('button', { name: '向左滚动音源标签' });
+    fireEvent.click(left);
+    expect(HTMLElement.prototype.scrollBy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ left: -220 }),
+    );
   });
 
   it('音源以标签栏呈现，点击标签切换详情面板', () => {
