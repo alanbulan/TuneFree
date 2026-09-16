@@ -29,6 +29,27 @@ const ready = async () => { await act(async () => {}); };
 const renderPlaylists = () => render(<DesktopLibrary activeView="playlists" />, { wrapper: LibraryProvider });
 const setLibrary = () => localStorage.setItem(LIBRARY_KEY, JSON.stringify({ favorites: [song],
   playlists: [{ id: 'p1', name: '夜晚', createTime: 1, songs: [song] }, { id: 'p2', name: '', createTime: 2, songs: [] }] }));
+const second: Song = { ...song, id: '2', name: '告白气球' };
+/** 两首收藏 + 含两首的歌单，用于验证拖拽排序确实改动了曲库顺序。 */
+const setSortableLibrary = () => localStorage.setItem(LIBRARY_KEY, JSON.stringify({
+  favorites: [song, second],
+  playlists: [{ id: 'p1', name: '夜晚', createTime: 1, songs: [song, second] }],
+}));
+const songNames = (scope: ParentNode = document) =>
+  [...scope.querySelectorAll('.song-row .song-title')].map((node) => node.textContent);
+/** 模拟一次从第 from 行拖到第 to 行的完整手势。 */
+const dragRow = (from: number, to: number) => {
+  const rows = [...document.querySelectorAll('.song-row')];
+  const data = new Map<string, string>();
+  const dataTransfer = {
+    effectAllowed: '', dropEffect: '',
+    setData: (key: string, value: string) => data.set(key, value),
+    getData: (key: string) => data.get(key) ?? '',
+  };
+  fireEvent.dragStart(rows[from], { dataTransfer });
+  fireEvent.dragOver(rows[to], { dataTransfer });
+  fireEvent.drop(rows[to], { dataTransfer });
+};
 const failWrites = () => {
   const storage = localStorage; vi.stubGlobal('localStorage', { getItem: storage.getItem.bind(storage),
     setItem: () => { throw new DOMException('quota', 'QuotaExceededError'); } });
@@ -116,6 +137,29 @@ describe('歌单与收藏页面', () => {
     act(() => mocks.toast.mock.lastCall![2].onClick()); expect(screen.getByText('夜曲')).toBeTruthy();
     mocks.toast.mockClear(); failWrites(); fireEvent.click(screen.getByRole('button', { name: '取消收藏 夜曲' }));
     expect(mocks.toast).not.toHaveBeenCalled(); expect(screen.getByText('夜曲')).toBeTruthy();
+  });
+
+  it('收藏列表可拖拽调整顺序，改完的顺序会落盘', () => {
+    setSortableLibrary(); render(<FavoritesView />, { wrapper: LibraryProvider });
+    expect(songNames()).toEqual(['夜曲', '告白气球']);
+
+    dragRow(0, 1);
+
+    expect(songNames()).toEqual(['告白气球', '夜曲']);
+    expect(JSON.parse(localStorage.getItem(LIBRARY_KEY)!).favorites.map((item: Song) => item.name))
+      .toEqual(['告白气球', '夜曲']);
+  });
+
+  it('歌单详情同样可拖拽排序', () => {
+    setSortableLibrary(); renderPlaylists();
+    fireEvent.click(screen.getByText('夜晚'));
+    expect(songNames()).toEqual(['夜曲', '告白气球']);
+
+    dragRow(1, 0);
+
+    expect(songNames()).toEqual(['告白气球', '夜曲']);
+    expect(JSON.parse(localStorage.getItem(LIBRARY_KEY)!).playlists[0].songs.map((item: Song) => item.name))
+      .toEqual(['告白气球', '夜曲']);
   });
 });
 

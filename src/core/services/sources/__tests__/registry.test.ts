@@ -9,6 +9,7 @@ import {
   getTopListDetail,
   getTopLists,
   liveSearchPlatforms,
+  topListPlatforms,
   providersFor,
   registerBuiltinProviders,
   resolveDirectUrl,
@@ -390,6 +391,22 @@ describe('registry', () => {
     setCustomProviders([{ provider: provider({ platforms: ['kugou'] }), platform: 'kugou' }]);
     expect(fallbackPlatformsFor('netease')).toContain('kugou');
     expect(fallbackPlatformsFor('kugou')).not.toContain('kugou');
+  });
+
+  it('首页榜单标签只在有榜单能力时列出平台，自定义源也算', () => {
+    registerBuiltinProviders(fakeBuiltins);
+    setBuiltinScriptProviders([]);
+    setCustomProviders([]);
+    expect(topListPlatforms()).toEqual(['netease']);
+
+    setCustomProviders([
+      { platform: 'kugou', provider: provider({ id: 'custom-top', platforms: ['kugou'],
+        topLists: async () => [], topListPlatforms: ['kugou'] }) },
+      // 只有榜单详情、没有榜单列表的 provider 不算
+      { platform: 'migu', provider: provider({ id: 'detail-only', platforms: ['migu'],
+        topListDetail: async () => [] }) },
+    ]);
+    expect(topListPlatforms()).toEqual(['netease', 'kugou']);
   });
 
   it('按歌名匹配候选只包含显式开启的 provider', () => {

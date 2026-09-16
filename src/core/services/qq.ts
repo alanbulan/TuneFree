@@ -129,6 +129,11 @@ const qqSearchFetch = async (
   ).toString();
   const target = `${SEARCH_URL}?${query}`;
 
+  // 上游用业务码表达拒绝（例如 2001 表示匿名请求不被接受）。换代理不会改变这个
+  // 结果，但代理本身也可能回一个带 code 的错误体，所以不立刻中断轮询，
+  // 而是记下来，等所有代理都试完再带着码报错。
+  let businessError: Error | null = null;
+
   for (const proxy of getProxies()) {
     const linked = createLinkedAbort(signal, 8000);
     try {
@@ -148,6 +153,9 @@ const qqSearchFetch = async (
       if (!resp.ok) { await resp.body?.cancel(); continue; }
       const data = await resp.json();
       if (data?.code === 0 && data?.data) return data.data;
+      if (typeof data?.code === "number" && data.code !== 0) {
+        businessError = new Error(`QQ 音乐搜索失败（业务码 ${data.code}）`);
+      }
     } catch {
       throwIfAborted(signal);
       /* 继续下一个代理 */
@@ -156,6 +164,7 @@ const qqSearchFetch = async (
     }
   }
 
+  if (businessError) throw businessError;
   return null;
 };
 
