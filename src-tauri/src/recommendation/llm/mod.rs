@@ -1,4 +1,5 @@
 mod cache;
+mod context_search;
 mod discovery_plan;
 mod json;
 mod rerank;
@@ -8,6 +9,7 @@ mod response;
 #[path = "__tests__/pipeline.rs"]
 mod pipeline_tests;
 
+pub use context_search::{build_context_songs, ContextSearchResult, ContextSongSuggestion};
 pub use discovery_plan::build_discovery_plan;
 pub use json::{extract_json, response_sample};
 pub use rerank::enhance_recommendations;

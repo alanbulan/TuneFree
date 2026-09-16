@@ -38,18 +38,30 @@ describe('QQ musicu 协议', () => {
     await expect(qqMusicuFetch({}, controller.signal)).rejects.toThrow('cancel');
   });
 
-  it('搜索映射歌曲 MID、歌词 ID、多个歌手及空字段', async () => {
-    fetchMock.mockResolvedValueOnce(response({ body: { song: { list: [
-      { id: 12, mid: 'mid', file: { media_mid: 'file-mid' }, name: '夜曲', singer: [{ name: '甲' }, { name: '乙' }], album: { name: '专辑', mid: 'album' } }, { id: 13 },
-    ] } } }));
+  it('搜索经经典桌面接口映射 MID、歌词 ID、多歌手与空字段', async () => {
+    const searchResponse = (song: unknown) => new Response(JSON.stringify({ code: 0, data: { song } }));
+    fetchMock.mockResolvedValueOnce(searchResponse({ list: [
+      { songid: 12, songmid: 'mid', strMediaMid: 'file-mid', songname: '夜曲', singer: [{ name: '甲' }, { name: '乙' }], albumname: '专辑', albummid: 'album' }, { songid: 13 },
+    ] }));
     const songs = await searchQQ('夜曲', 2, 20);
     expect(songs[0]).toMatchObject({ id: 'mid', lyricId: '12', strMediaMid: 'file-mid', artist: '甲, 乙', album: '专辑', source: 'qq' });
     expect(songs[1].strMediaMid).toBeUndefined();
     expect(songs[0].pic).toContain('album.jpg');
     expect(songs[1]).toMatchObject({ id: '13', name: '', artist: '', album: '', pic: '' });
-    fetchMock.mockResolvedValueOnce(response({ body: { song: { totalnum: 0 } } }));
+
+    // 搜索必须走 GET 经典接口：musicu 的搜索端点已对未登录请求返回空列表
+    const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    // 目标 URL 会被整体 encodeURIComponent 交给代理，所以这里解两层。
+    const decoded = decodeURIComponent(decodeURIComponent(url));
+    expect(decoded).toContain('c.y.qq.com/soso/fcgi-bin/client_search_cp');
+    expect(decoded).toContain('w=夜曲');
+    expect(decoded).toContain('p=2');
+    expect(decoded).toContain('n=20');
+    expect(options.method).toBe('GET');
+
+    fetchMock.mockResolvedValueOnce(searchResponse({ totalnum: 0, list: [] }));
     expect(await searchQQ('空', 1, 10)).toEqual([]);
-    fetchMock.mockResolvedValueOnce(response({ body: {} }));
+    fetchMock.mockResolvedValueOnce(searchResponse({}));
     await expect(searchQQ('错误', 1, 10)).rejects.toThrow('QQ 音乐搜索响应不可用');
   });
 

@@ -27,6 +27,7 @@ import { useToast } from './ToastHost';
 import ConnectedProgressSlider from './ConnectedProgressSlider';
 import { useSongDownload } from '../hooks/useSongDownload';
 import QualitySelector from './QualitySelector';
+import Tooltip from './Tooltip';
 import {
   attachRecommendationMeta,
   getSimilarSongs,
@@ -143,20 +144,21 @@ export default function DesktopTransport({ onExpand, suspended = false }: Deskto
 
       <div className="transport-tools">
         {currentSong && (
-          <button
-            type="button"
-            className="ai-radar-btn-mini"
-            title="根据当前歌曲播放相似音乐"
-            aria-label="播放相似音乐"
-            onClick={handleStartSimilarFlow}
-            disabled={loadingSimilar}
-          >
-            {loadingSimilar ? (
-              <span className="ai-radar-btn-pending">…</span>
-            ) : (
-              <Sparkles size={11} />
-            )}
-          </button>
+          <Tooltip label="根据当前歌曲播放相似音乐">
+            <button
+              type="button"
+              className="ai-radar-btn-mini"
+              aria-label="播放相似音乐"
+              onClick={handleStartSimilarFlow}
+              disabled={loadingSimilar}
+            >
+              {loadingSimilar ? (
+                <span className="ai-radar-btn-pending">…</span>
+              ) : (
+                <Sparkles size={11} />
+              )}
+            </button>
+          </Tooltip>
         )}
         <button
           type="button"
@@ -167,17 +169,17 @@ export default function DesktopTransport({ onExpand, suspended = false }: Deskto
         >
           {favoriteActive ? <HeartFillIcon size={16} /> : <HeartIcon size={16} />}
         </button>
-        <button
-          type="button"
-          className="icon-button transport-download-button"
-          aria-label={isDownloading ? '取消下载' : '下载当前歌曲'}
-          title={isDownloading ? '取消当前下载' : '下载当前歌曲'}
-          disabled={isCancelling || (!currentSong && !isDownloading)}
-          onClick={() => {
-            if (isDownloading) void cancelDownload();
-            else if (currentSong) void handleDownload(currentSong, audioQuality);
-          }}
-        >
+        <Tooltip label={isDownloading ? '取消当前下载' : '下载当前歌曲'}>
+          <button
+            type="button"
+            className="icon-button transport-download-button"
+            aria-label={isDownloading ? '取消下载' : '下载当前歌曲'}
+            disabled={isCancelling || (!currentSong && !isDownloading)}
+            onClick={() => {
+              if (isDownloading) void cancelDownload();
+              else if (currentSong) void handleDownload(currentSong, audioQuality);
+            }}
+          >
           {isDownloading ? (
             <span className="transport-download-progress">
               {isCancelling ? '…' : downloadProgress !== null ? `${downloadProgress}%` : <CloseIcon size={14} />}
@@ -185,7 +187,8 @@ export default function DesktopTransport({ onExpand, suspended = false }: Deskto
           ) : (
             <DownloadIcon size={16} />
           )}
-        </button>
+          </button>
+        </Tooltip>
         <button type="button" className="icon-button" aria-label="切换播放模式" onClick={togglePlayMode}>
           {modeIcon}
         </button>

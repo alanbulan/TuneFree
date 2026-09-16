@@ -5,8 +5,8 @@ import SongTable from '../../components/SongTable';
 import type { Song } from '../../../core/types';
 
 export default function FavoritesView() {
-  const { favorites, toggleFavorite, isFavorite } = useLibrary();
-  const { playSong } = usePlayerActions();
+  const { favorites, toggleFavorite, isFavorite, reorderPlaylistSongs } = useLibrary();
+  const { playQueue } = usePlayerActions();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
   const { showToast } = useToast();
 
@@ -26,9 +26,12 @@ export default function FavoritesView() {
         currentSong={currentSong}
         isPlaying={isPlaying}
         emptyText="暂无收藏歌曲"
-        onPlay={playSong}
+        // 与歌单详情一致：点一首歌是「把这份列表放进播放队列，并从这首开始」，
+        // 而不是只播这一首、让队列停在上一个列表。
+        onPlay={(song: Song) => void playQueue(favorites, song)}
         onFavorite={handleFavorite}
         isFavorite={(song: Song) => isFavorite(song.id, song.source)}
+        onReorder={(from, to) => { reorderPlaylistSongs('favorites', from, to); }}
       />
     </section>
   );

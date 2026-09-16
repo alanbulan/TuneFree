@@ -19,6 +19,11 @@ import {
 import { relaySourceRequest } from './relay';
 import { buildRuntimeSource } from './runtime/runtimeSource';
 
+/** 日志行首时间戳：`[HH:MM:SS]`，供诊断列表按时间阅读。 */
+export const formatLogTime = (date: Date): string => [date.getHours(), date.getMinutes(), date.getSeconds()]
+  .map((part) => String(part).padStart(2, '0'))
+  .join(':');
+
 export type SandboxStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
 /** 音源管理页展示的沙箱状态快照。 */
@@ -233,7 +238,8 @@ export class LxSandbox {
   }
 
   private appendLog(message: string): void {
-    this.logs.push(message);
+    // 时间戳放在行首：音源日志是排查工具，没有时间就无法判断「什么时候开始坏的」。
+    this.logs.push(`[${formatLogTime(new Date())}] ${message}`);
     if (this.logs.length > SANDBOX_LOG_LIMIT) this.logs.splice(0, this.logs.length - SANDBOX_LOG_LIMIT);
     this.notify();
   }

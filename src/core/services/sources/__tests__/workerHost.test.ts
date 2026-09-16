@@ -847,7 +847,7 @@ describe('LxSandbox', () => {
     const snapshot = sandbox.getSnapshot();
     expect(snapshot.updateAlert).toEqual({ log: '升级到 2.0', updateUrl: 'https://u' });
     expect(snapshot.logs).toHaveLength(50);
-    expect(lastOf(snapshot.logs)).toBe('[log] 第 59 条');
+    expect(lastOf(snapshot.logs)).toContain('[log] 第 59 条');
     expect(listener).toHaveBeenCalled();
 
     unsubscribe();

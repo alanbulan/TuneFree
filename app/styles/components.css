@@ -397,7 +397,12 @@
   transform-origin: top;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* 仍可滚动，但不画滚动条：菜单本身很窄，一条滚动条会明显割裂浮层观感。 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+
+.custom-select-options::-webkit-scrollbar { width: 0; height: 0; }
 
 .custom-select-options.opens-upwards { top: auto; bottom: calc(100% + 6px); transform-origin: bottom; }
 

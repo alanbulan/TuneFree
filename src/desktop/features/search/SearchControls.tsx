@@ -9,15 +9,13 @@ interface SearchControlsProps {
   query: string;
   mode: 'aggregate' | 'single';
   source: string;
-  extended: boolean;
   onQuery: (value: string) => void;
   onMode: (value: 'aggregate' | 'single') => void;
   onSource: (value: string) => void;
-  onExtended: (value: boolean) => void;
   onSearch: () => void;
 }
 
-export default function SearchControls({ query, mode, source, extended, onQuery, onMode, onSource, onExtended, onSearch }: SearchControlsProps) {
+export default function SearchControls({ query, mode, source, onQuery, onMode, onSource, onSearch }: SearchControlsProps) {
   const indicatorId = useId();
   return (
     <>
@@ -39,11 +37,8 @@ export default function SearchControls({ query, mode, source, extended, onQuery,
             }
           }} placeholder={mode === 'aggregate' ? '输入歌名、歌手或歌词片段…' : `搜索 ${getMusicSourceLabel(source, 'full')}…`} />
       </div>
-      <MotionPanel className="segment-row search-source-row" transitionKey={mode}>
-        {mode === 'aggregate' ? (
-          <MotionChoice className="source-chip" selected={extended} indicatorId={`${indicatorId}-extended`}
-            onClick={() => onExtended(!extended)}>扩展源 {extended ? '开' : '关'}</MotionChoice>
-        ) : (
+      {mode === 'single' && (
+        <MotionPanel className="segment-row search-source-row" transitionKey={mode}>
           <div className="source-option-row" role="radiogroup" aria-label="选择搜索音源">
             {searchablePlatforms().map((option) => (
               <MotionChoice key={option} role="radio" aria-checked={source === option} aria-pressed={undefined}
@@ -51,8 +46,8 @@ export default function SearchControls({ query, mode, source, extended, onQuery,
                 onClick={() => onSource(option)}>{getMusicSourceLabel(option, 'full')}</MotionChoice>
             ))}
           </div>
-        )}
-      </MotionPanel>
+        </MotionPanel>
+      )}
     </>
   );
 }

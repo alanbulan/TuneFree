@@ -1,5 +1,6 @@
 /* 歌词窗口不加载 globals.css，这里是它唯一的文档级重置与透明化声明。
    没有任何规则给 html/body 上背景，所以无需强制优先级对抗。 */
+@import "../styles/tooltip.css";
 * { box-sizing: border-box; }
 
 html,

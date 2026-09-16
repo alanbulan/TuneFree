@@ -32,12 +32,34 @@ const REQUEST_TIMEOUT = 12000;
 const BITRATE = { '128k': '128', '320k': '320', flac: '740', flac24bit: '999' };
 // 这里声明可发送的音质参数，实际音质由 GD 接口返回，不代表所有平台都提供无损。
 const QUALITYS = ['128k', '320k', 'flac', 'flac24bit'];
-// 与 v1.1.31 的 GD 链路保持一致；酷狗、咪咕不属于该接口的既有支持范围。
+/**
+ * 平台声明按**上游实测存活情况**给出（2026-09 核验）：
+ *
+ * | source   | search | url   | lyric | pic |
+ * |----------|--------|-------|-------|-----|
+ * | netease  | ✓      | ✓     | ✓     | ✓   |
+ * | kuwo     | ✓      | 返空  | ✓     | ✓   |
+ * | joox     | ✓      | 返空  | ✓     | ✓   |
+ *
+ * - QQ（API 参数名 tencent）整条线已被上游下掉，六种写法都返回
+ *   Value of source is not supported。QQ 在本应用走原生链路（搜索 qq.ts、
+ *   播放 Rust /api/url、歌词原生），这里声明它只会让每首 QQ 歌白打一次
+ *   注定失败的请求、白占频次，故移除。
+ * - 哔哩哔哩是视频平台，不作为音乐源，移除。
+ * - kuwo / joox 保留歌词与封面：这两条通道确认可用；播放地址交给原生解析
+ *   （kuwo）或跨源兜底（joox）。
+ */
 const PLATFORM_NAMES = {
-  wy: '网易云音乐', tx: 'QQ音乐', kw: '酷我音乐', joox: 'JOOX', bilibili: '哔哩哔哩',
+  wy: '网易云音乐', kw: '酷我音乐', joox: 'JOOX',
 };
 const API_SOURCE = {
-  wy: 'netease', tx: 'tencent', kw: 'kuwo', joox: 'joox', bilibili: 'bilibili',
+  wy: 'netease', kw: 'kuwo', joox: 'joox',
+};
+/** 各平台实际开放的能力，缺省即「该通道上游已失效，不要浪费请求」。 */
+const PLATFORM_ACTIONS = {
+  wy: ['musicUrl', 'lyric', 'pic'],
+  kw: ['lyric', 'pic'],
+  joox: ['lyric', 'pic', 'search'],
 };
 
 let timeDiff = 0;
@@ -256,7 +278,6 @@ const fetchPic = async (lxSource, info) => {
       if (response.statusCode < 400 && typeof pic === 'string' && pic.trim()) return pic.trim();
     } catch (error) { /* 原生封面失败后继续 GD 查询 */ }
   }
-  if (lxSource === 'tx') return 'https://y.gtimg.cn/music/photo_new/T002R300x300M000' + picId + '.jpg';
   if (lxSource === 'joox') return 'https://image.joox.com/JOOXcover/0/' + picId + '/500';
   try {
     const data = await callApi({ types: 'pic', source: API_SOURCE[lxSource], id: picId, size: 500 });
@@ -291,15 +312,15 @@ on(EVENT_NAMES.request, function (payload) {
   return Promise.reject(new Error('不支持的操作：' + action));
 });
 
-const SEARCHABLE = { joox: true, bilibili: true };
 const sources = {};
 Object.keys(PLATFORM_NAMES).forEach((key) => {
   sources[key] = {
     name: PLATFORM_NAMES[key],
     type: 'music',
-    // 只有 GD 独占平台提供搜索：其余平台的搜索由原生实现负责，避免白占 GD 频次
-    actions: SEARCHABLE[key] ? ['musicUrl', 'lyric', 'pic', 'search'] : ['musicUrl', 'lyric', 'pic'],
-    qualitys: QUALITYS,
+    // 能力按平台实测存活情况声明，见 PLATFORM_ACTIONS 上方的表格。
+    actions: PLATFORM_ACTIONS[key],
+    // 没有 musicUrl 能力的平台不声明音质，避免调用方误以为能出播放地址。
+    qualitys: PLATFORM_ACTIONS[key].indexOf('musicUrl') >= 0 ? QUALITYS : [],
   };
 });
 

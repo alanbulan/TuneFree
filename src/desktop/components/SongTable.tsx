@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MusicIcon } from '../../core/components/Icons';
 import { Song, isSameSong } from '../../core/types';
-import SongTableRow, { type SongRowHandlers, type SongRowSlots } from './SongTableRow';
+import SongTableRow, { type SongRowDragHandlers, type SongRowHandlers, type SongRowSlots } from './SongTableRow';
 import VirtualList from './VirtualList';
 
 interface SongTableProps {
@@ -20,6 +20,8 @@ interface SongTableProps {
   onDelete?: (song: Song) => void;
   deleteLabel?: string;
   onEndReached?: () => void;
+  /** 传入即开启拖拽排序（收藏与歌单详情用）。索引相对当前 `songs` 数组。 */
+  onReorder?: (fromIndex: number, toIndex: number) => void;
 }
 
 export default function SongTable({
@@ -38,13 +40,18 @@ export default function SongTable({
   onDelete,
   deleteLabel = '删除歌曲',
   onEndReached,
+  onReorder,
 }: SongTableProps) {
   // 调用方几乎都是就地箭头函数，直接下发会让行组件的 memo 永远失效；
   // 这里把最新实现存进 ref，对外只暴露一组永不变的转发函数。
-  const latestRef = useRef({ onPlay, onFavorite, onMore, onDismiss, onDelete });
+  const latestRef = useRef({ onPlay, onFavorite, onMore, onDismiss, onDelete, onReorder });
   useEffect(() => {
-    latestRef.current = { onPlay, onFavorite, onMore, onDismiss, onDelete };
+    latestRef.current = { onPlay, onFavorite, onMore, onDismiss, onDelete, onReorder };
   });
+
+  // 拖拽过程中的源行与落点行。只在松手时提交一次重排，途中不动真实数据，
+  // 避免每次 dragover 都写一遍 localStorage。
+  const [dragState, setDragState] = useState<{ from: number; over: number } | null>(null);
 
   const handlers = useMemo<SongRowHandlers>(() => ({
     play: (song) => latestRef.current.onPlay(song),
@@ -52,6 +59,18 @@ export default function SongTable({
     more: (song) => latestRef.current.onMore?.(song),
     dismiss: (song) => latestRef.current.onDismiss?.(song),
     remove: (song) => latestRef.current.onDelete?.(song),
+  }), []);
+
+  const dragHandlers = useMemo<SongRowDragHandlers>(() => ({
+    start: (index) => setDragState({ from: index, over: index }),
+    over: (index) => setDragState((current) =>
+      !current || current.over === index ? current : { ...current, over: index }),
+    drop: (from, to) => {
+      setDragState(null);
+      if (from !== to) latestRef.current.onReorder?.(from, to);
+    },
+    end: () => setDragState(null),
+    move: (index, offset) => latestRef.current.onReorder?.(index, index + offset),
   }), []);
 
   const hasFavorite = !!onFavorite;
@@ -135,6 +154,9 @@ export default function SongTable({
             favoriteActive={Boolean(isFavorite?.(song))}
             handlers={handlers}
             slots={slots}
+            drag={onReorder ? dragHandlers : undefined}
+            dragging={dragState?.from === index}
+            dropTarget={!!dragState && dragState.over === index && dragState.from !== index}
           />
         )}
       />

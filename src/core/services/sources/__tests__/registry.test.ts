@@ -8,6 +8,7 @@ import {
   getSourceGeneration,
   getTopListDetail,
   getTopLists,
+  liveSearchPlatforms,
   providersFor,
   registerBuiltinProviders,
   resolveDirectUrl,
@@ -21,6 +22,7 @@ import {
   setCustomProviders,
   usesGDStudioQuota,
 } from '../registry';
+import { CircuitOpenError, getOpenCircuits, resetCircuits } from '../circuitBreaker';
 import type { MusicProvider, SourceResolveRequest } from '../types';
 
 /**
@@ -398,5 +400,74 @@ describe('registry', () => {
     const candidates = getNameMatchCandidates();
     expect(candidates).toHaveLength(1);
     expect(candidates[0].platform).toBe('kugou');
+  });
+});
+
+describe('熔断接入注册表', () => {
+  beforeEach(() => {
+    setBuiltinScriptProviders([]);
+    setCustomProviders([]);
+  });
+  afterEach(() => resetCircuits());
+
+  it('搜索连续失败后不再发请求，也不再出现在聚合平台里', async () => {
+    let attempts = 0;
+    registerBuiltinProviders([
+      provider({
+        id: 'flaky-search', label: '会挂的搜索源', platforms: [],
+        searchPlatforms: ['kugou'], searchTier: 'extended', priority: 30,
+        search: async () => { attempts += 1; throw new Error('上游挂了'); },
+      }),
+    ]);
+    expect(aggregatePlatforms(true)).toEqual(['kugou']);
+
+    for (let index = 0; index < 3; index += 1) {
+      await expect(searchSongs('歌', 'kugou', 1, 10)).rejects.toThrow('上游挂了');
+    }
+    expect(attempts).toBe(3);
+    // 熔断打开：聚合搜索不再把它列为参与平台，直接搜索也被拒绝且不发请求
+    expect(aggregatePlatforms(true)).toEqual([]);
+    expect(liveSearchPlatforms()).toEqual([]);
+    await expect(searchSongs('歌', 'kugou', 1, 10)).rejects.toBeInstanceOf(CircuitOpenError);
+    expect(attempts).toBe(3);
+  });
+
+  it('解析连续失败后跳过该 provider，交给下一个', async () => {
+    let attempts = 0;
+    registerBuiltinProviders([
+      provider({
+        id: 'broken', label: '坏源', platforms: ['kuwo'], priority: 1,
+        getUrl: async () => { attempts += 1; throw new Error('上游 500'); },
+      }),
+      provider({
+        id: 'good', label: '好源', platforms: ['kuwo'], priority: 2,
+        getUrl: async () => 'https://good.test/a.mp3',
+      }),
+    ]);
+    const urlRequest = request({ platform: 'kuwo', id: 1, quality: '320k' });
+
+    // 前三次都会退回到好源，但坏源仍被尝试
+    for (let index = 0; index < 3; index += 1) {
+      expect(await resolveDirectUrl(urlRequest)).toBe('https://good.test/a.mp3');
+    }
+    expect(attempts).toBe(3);
+    // 熔断后坏源被跳过，尝试次数不再增长
+    expect(await resolveDirectUrl(urlRequest)).toBe('https://good.test/a.mp3');
+    expect(attempts).toBe(3);
+  });
+
+  it('返回空结果不算失败，不会误伤没有歌词的歌', async () => {
+    registerBuiltinProviders([
+      provider({ id: 'no-lyrics', label: '无歌词源', platforms: ['kuwo'], priority: 1,
+        getLyrics: async () => '' }),
+      provider({ id: 'has-lyrics', label: '有歌词源', platforms: ['kuwo'], priority: 2,
+        getLyrics: async () => '歌词' }),
+    ]);
+    for (let index = 0; index < 5; index += 1) {
+      expect(await resolveLyrics(request({ platform: 'kuwo', id: index, quality: '320k' })))
+        .toBe('歌词');
+    }
+    // 空结果只是「这首没有」，该 provider 依然参与后续解析
+    expect(getOpenCircuits()).toEqual([]);
   });
 });

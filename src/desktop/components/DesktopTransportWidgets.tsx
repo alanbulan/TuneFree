@@ -6,6 +6,7 @@ import { useTheme } from '../../core/contexts/ThemeContext';
 import { useLyricDisplayMode } from '../../core/hooks/useLyricDisplayMode';
 import { findActiveLyricIndex, parseLyrics, type ParsedLyric } from '../../core/utils/lyrics';
 import { useToast } from './ToastHost';
+import Tooltip from './Tooltip';
 
 const getSecondary = (row: ParsedLyric | null): string =>
   row?.romanization || row?.pronunciation || row?.translation || row?.extra?.[0]?.text || '';
@@ -60,8 +61,9 @@ function LyricToggle() {
     showToast('桌面歌词已关闭', 'success');
   };
   return (
+    <Tooltip label={`${title}；右击可单独${lockDesktopLyric ? '解锁' : '锁定'}`}>
     <button type="button" className={`lyric-toggle-btn ${showDesktopLyric ? 'active' : ''} ${lockDesktopLyric ? 'locked' : ''}`}
-      title={`${title}；右击可单独${lockDesktopLyric ? '解锁' : '锁定'}`} aria-label={ariaLabel} onClick={cycle}
+      aria-label={ariaLabel} onClick={cycle}
       onContextMenu={(event) => {
         event.preventDefault();
         if (!showDesktopLyric) {
@@ -74,6 +76,7 @@ function LyricToggle() {
       {showDesktopLyric && lockDesktopLyric && <Lock size={10} />}
       <span>{label}</span>
     </button>
+    </Tooltip>
   );
 }
 

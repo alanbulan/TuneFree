@@ -49,18 +49,18 @@ describe('桌面歌词窗口', () => {
 
   it('焦点、悬停显示工具栏，七个按钮与八个缩放方向连接原生接口', async () => {
     render(<DesktopLyricPage />); await ready(); const root = screen.getByRole('region');
-    expect(screen.queryByTitle('上一首')).toBeNull(); fireEvent.mouseEnter(root);
-    for (const title of ['上一首', '播放', '下一首', '字号放大', '字号缩小', '关闭桌面歌词']) fireEvent.click(screen.getByTitle(title));
+    expect(screen.queryByRole('button', { name: '上一首' })).toBeNull(); fireEvent.mouseEnter(root);
+    for (const name of ['上一首', '播放', '下一首', '字号放大', '字号缩小', '关闭桌面歌词']) fireEvent.click(screen.getByRole('button', { name }));
     expect(mocks.invoke.mock.calls.map((call) => call[1].action)).toEqual(['prev', 'play-pause', 'next', 'adjust-lyric-size', 'adjust-lyric-size', 'close-lyric']);
     for (const handle of root.querySelectorAll('.desktop-lyric-resize-handle')) fireEvent.mouseDown(handle);
     expect(mocks.resize.mock.calls.map((call) => call[0])).toEqual(['North', 'South', 'West', 'East', 'NorthWest', 'NorthEast', 'SouthWest', 'SouthEast']);
     mocks.resize.mockRejectedValueOnce(new Error('resize')); vi.spyOn(console, 'warn').mockImplementation(() => {});
-    fireEvent.mouseDown(screen.getByTitle('向上调整歌词边界')); await ready(); expect(console.warn).toHaveBeenCalled();
-    fireEvent.mouseLeave(root); expect(screen.queryByTitle('上一首')).toBeNull(); fireEvent.focus(root);
-    fireEvent.blur(root, { relatedTarget: screen.getByTitle('上一首') }); expect(screen.getByTitle('上一首')).toBeTruthy();
-    fireEvent.blur(root, { relatedTarget: document.body }); expect(screen.queryByTitle('上一首')).toBeNull();
-    fireEvent.mouseEnter(root); emit('lyric-tick', { trackKey: '', currentTime: 0, isPlaying: true }); expect(screen.getByTitle('暂停')).toBeTruthy();
-    fireEvent.click(screen.getByTitle('锁定歌词（锁定后鼠标可直接穿透）')); expect(screen.queryByTitle('上一首')).toBeNull(); expect(root.tabIndex).toBe(-1);
+    fireEvent.mouseDown(screen.getByLabelText('向上调整歌词边界')); await ready(); expect(console.warn).toHaveBeenCalled();
+    fireEvent.mouseLeave(root); expect(screen.queryByRole('button', { name: '上一首' })).toBeNull(); fireEvent.focus(root);
+    fireEvent.blur(root, { relatedTarget: screen.getByRole('button', { name: '上一首' }) }); expect(screen.getByRole('button', { name: '上一首' })).toBeTruthy();
+    fireEvent.blur(root, { relatedTarget: document.body }); expect(screen.queryByRole('button', { name: '上一首' })).toBeNull();
+    fireEvent.mouseEnter(root); emit('lyric-tick', { trackKey: '', currentTime: 0, isPlaying: true }); expect(screen.getByRole('button', { name: '暂停' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '锁定歌词（锁定后鼠标可直接穿透）' })); expect(screen.queryByRole('button', { name: '上一首' })).toBeNull(); expect(root.tabIndex).toBe(-1);
     emit('lock-change', false); expect(root.tabIndex).toBe(0);
   });
 
@@ -97,7 +97,7 @@ describe('桌面歌词窗口', () => {
 
   it('无原生宿主时控件保持本地预览，主题读取在无窗口环境有默认值', async () => {
     mocks.tauri = false; const view = render(<DesktopLyricPage />); fireEvent.mouseEnter(screen.getByRole('region'));
-    fireEvent.click(screen.getByTitle('播放')); fireEvent.mouseDown(screen.getByTitle('向上调整歌词边界'));
+    fireEvent.click(screen.getByRole('button', { name: '播放' })); fireEvent.mouseDown(screen.getByLabelText('向上调整歌词边界'));
     expect(mocks.invoke).not.toHaveBeenCalled(); expect(mocks.resize).not.toHaveBeenCalled(); view.unmount();
     vi.stubGlobal('window', undefined); expect(readAndApplyDesktopLyricTheme()).toEqual({ size: 22, font: 'system-ui', lock: false }); vi.unstubAllGlobals();
   });

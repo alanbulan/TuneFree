@@ -236,12 +236,13 @@ describe('SourcesView', () => {
     );
     render(<SourcesView />);
 
-    expect(screen.getByText('星海音乐源')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /星海音乐源/ })).toBeTruthy();
     expect(screen.getAllByText('已加载 · 待验证').length).toBeGreaterThan(0);
     expect(screen.queryByText('已就绪')).toBeNull();
     expect(screen.getByRole('region', { name: '星海音乐源 诊断信息' })).toBeTruthy();
     expect(screen.getByText(/声明平台：wy/)).toBeTruthy();
-    expect(document.querySelector('.source-diagnostics details')).toBeNull();
+    // 诊断卡片里只有「运行日志」这个折叠块；补充资料的详情此时还没展开。
+    expect(document.querySelector('.source-detail')).toBeNull();
     expect(screen.getByText('v3.2.11')).toBeTruthy();
     expect(screen.getByText('网易云')).toBeTruthy();
     expect(screen.getByText('酷狗音乐')).toBeTruthy();
@@ -286,6 +287,97 @@ describe('SourcesView', () => {
     expect(screen.getByText('运行异常')).toBeTruthy();
     expect(screen.getByText('运行已中止')).toBeTruthy();
     expect(screen.queryByText('初始化失败')).toBeNull();
+  });
+
+  it('运行日志默认收起，展开后按级别着色、归并重复项并分页', () => {
+    setEntries(entry({ logs: [
+      '[09:12:01] [已加载] 声明平台：wy / kw',
+      '[09:12:05] [请求失败] api.test：上游 500',
+      '[09:12:05] [log] 上游 500',
+      '[09:12:05] [调用失败] kw · musicUrl：上游 500',
+      '[09:12:07] [请求失败] api.test：上游 500',
+      '[09:12:07] [log] 上游 500',
+    ] }));
+    render(<SourcesView />);
+
+    const toggle = screen.getByText('运行日志').closest('summary')!;
+    // 默认收起：日志内容不该被当作常驻信息展示
+    expect(document.querySelector('.source-log')!.hasAttribute('open')).toBe(false);
+
+    fireEvent.click(toggle);
+    const rows = document.querySelectorAll('.source-log-rows li');
+    // 6 行原始日志归并成 4 类：重复的「请求失败 / log」合并并计数
+    expect(rows).toHaveLength(4);
+    // 失败与调用失败算异常；[log] 是脚本自己的 console 输出，保持中性不误报
+    expect(document.querySelectorAll('.source-log-rows .is-danger')).toHaveLength(2);
+    expect(screen.getAllByText('×2')).toHaveLength(2);
+    // 时间列来自日志行首的时间戳
+    expect(screen.getByText('09:12:01')).toBeTruthy();
+    // 每类都在一页内时不出翻页控件
+    expect(document.querySelector('.source-log-pager')).toBeNull();
+  });
+
+  it('日志超过一页时出现翻页，且不再渲染滚动条容器', () => {
+    setEntries(entry({ logs: Array.from({ length: 9 }, (_, index) =>
+      `[09:2${index}:00] [事件] 第 ${index} 条`) }));
+    render(<SourcesView />);
+    fireEvent.click(screen.getByText('运行日志').closest('summary')!);
+
+    expect(document.querySelectorAll('.source-log-rows li')).toHaveLength(4);
+    expect(screen.getByText('第 1 / 3 页')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '下一页日志' }));
+    expect(screen.getByText('第 2 / 3 页')).toBeTruthy();
+    expect(screen.getByText('第 4 条')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '下一页日志' }));
+    expect(screen.getByText('第 8 条')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下一页日志' })).toHaveProperty('disabled', true);
+  });
+
+  it('音源以标签栏呈现，点击标签切换详情面板', () => {
+    setEntries(
+      entry(),
+      entry({ record: { ...entry().record, id: 'source-2', name: '第二音源' } }),
+    );
+    render(<SourcesView />);
+
+    // 默认展开第一个；第二个的详情不渲染，页面高度与音源数量无关
+    expect(screen.getByRole('tab', { name: /星海音乐源/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: /第二音源/ }).getAttribute('aria-selected')).toBe('false');
+    expect(screen.getByRole('region', { name: '星海音乐源 诊断信息' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: '第二音源 诊断信息' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: /第二音源/ }));
+    expect(screen.getByRole('tab', { name: /第二音源/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('region', { name: '第二音源 诊断信息' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: '星海音乐源 诊断信息' })).toBeNull();
+    // tabpanel 通过 aria-labelledby 指回对应的 tab
+    const panel = screen.getByRole('tabpanel');
+    expect(panel.id).toBe('source-panel-source-2');
+    expect(panel.getAttribute('aria-labelledby')).toBe('source-tab-source-2');
+  });
+
+  it('方向键在标签之间切换，选中项被删除后回落到第一项', () => {
+    setEntries(
+      entry(),
+      entry({ record: { ...entry().record, id: 'source-2', name: '第二音源' } }),
+    );
+    const view = render(<SourcesView />);
+
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: /第二音源/ }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'ArrowRight' });
+    // 循环回到第一个
+    expect(screen.getByRole('tab', { name: /星海音乐源/ }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'End' });
+    expect(screen.getByRole('tab', { name: /第二音源/ }).getAttribute('aria-selected')).toBe('true');
+
+    // 选中的音源被移除后不能停在空白面板上
+    setEntries(entry());
+    view.rerender(<SourcesView />);
+    expect(screen.getByRole('tab', { name: /星海音乐源/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('region', { name: '星海音乐源 诊断信息' })).toBeTruthy();
   });
 
   it('启停、按歌名匹配开关与删除都调用管理器', async () => {
@@ -459,7 +551,7 @@ describe('SourcesView', () => {
     render(<SourcesView />);
 
     expect(screen.getByText('内置')).toBeTruthy();
-    expect(screen.getByText('GD音乐台')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /GD音乐台/ })).toBeTruthy();
     expect(screen.getByText('适配 v1.0.0')).toBeTruthy();
     expect(screen.queryByLabelText('启用 GD音乐台')).toBeNull();
     expect(screen.queryByRole('button', { name: /删除/ })).toBeNull();
@@ -471,7 +563,9 @@ describe('SourcesView', () => {
     expect(screen.getByText('接口作者')).toBeTruthy();
     expect(screen.getByText('GD Studio')).toBeTruthy();
     expect(screen.getByText('平台与声明音质')).toBeTruthy();
-    expect(screen.getByTitle('实际音质以接口返回为准')).toBeTruthy();
+    // 音质说明改由 Tooltip 承载；提示气泡的行为在 Tooltip.test.tsx 里单独覆盖，
+    // 这里只确认带说明的锚点已经渲染出来（测试环境没有真实布局，气泡不会展开）。
+    expect(document.querySelector('.source-quality-list')?.closest('.tooltip-anchor')).toBeTruthy();
   });
 
   it('内置条目的启停与删除在视图模型层被忽略', async () => {

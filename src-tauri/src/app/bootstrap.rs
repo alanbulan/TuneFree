@@ -383,6 +383,7 @@ fn build_application(context: BootstrapContext) -> tauri::App {
             recommendation_commands::save_llm_config,
             recommendation_commands::test_llm_provider,
             recommendation_commands::list_llm_models,
+            recommendation_commands::search_songs_by_context,
             recommendation_commands::clear_recommendation_data,
             system_commands::quit_app,
             desktop_lyric_render::mark_desktop_lyric_ready,

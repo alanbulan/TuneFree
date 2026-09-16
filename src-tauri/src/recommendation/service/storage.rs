@@ -51,6 +51,30 @@ impl RecommendationService {
             .map_err(CommandError::network)
     }
 
+    /// 语境搜歌：用用户自己配置的 OpenAI 兼容模型给出歌名 + 歌手。
+    ///
+    /// 只返回「推荐哪几首」，具体歌曲数据由前端拿这些名字去各音乐平台搜索，
+    /// 因此封面、id、播放地址全部来自真实平台，不依赖模型编造。
+    pub async fn search_songs_by_context(
+        &self,
+        keyword: String,
+        limit: Option<usize>,
+    ) -> CommandResult<Vec<llm::ContextSongSuggestion>> {
+        if crate::app::is_smoke_test() {
+            return Err(CommandError::cancelled("冒烟测试不调用云端模型"));
+        }
+        let conn = self.conn_handle()?;
+        let request_id = format!("context-{}", catalog::now_ms());
+        let limit = limit.unwrap_or(12).clamp(1, 30);
+        let result =
+            llm::build_context_songs(conn, &self.provider, &keyword, limit, &request_id).await;
+        *self.last_llm_error.lock() = result.error.clone();
+        match result.error {
+            Some(error) if result.songs.is_empty() => Err(CommandError::network(error)),
+            _ => Ok(result.songs),
+        }
+    }
+
     async fn provider_config(
         &self,
         input: Option<LlmConfigInput>,

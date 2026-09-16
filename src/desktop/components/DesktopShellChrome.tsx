@@ -7,6 +7,7 @@ import { useTheme } from '../../core/contexts/ThemeContext';
 import { getCurrentWindow, isTauri } from '../../core/ipc';
 import type { DesktopView } from '../types';
 import MotionChoice from './MotionChoice';
+import Tooltip from './Tooltip';
 
 const navItems: { view: DesktopView; label: string; icon: React.ReactNode }[] = [
   { view: 'home', label: '首页', icon: <HomeIcon size={17} /> },
@@ -56,18 +57,19 @@ export function WindowBar({ view, commandQuery, onCommandQueryChange, onCommandS
           <img className="brand-mark" src="/icon.svg" alt="" aria-hidden="true" data-tauri-drag-region />
           <span data-tauri-drag-region>TuneFree</span>
         </div>
-        <button type="button" className="theme-toggle-btn brand-theme-toggle"
-          title={`当前主题：${themeLabel}\n点击切换到${nextThemeLabel}`}
-          aria-label={`当前主题：${themeLabel}，点击切换到${nextThemeLabel}`}
-          onClick={() => setThemeMode(nextThemeMode)}>
-          <AnimatePresence initial={false} mode="wait">
-            <motion.span key={themeMode} className="theme-mode-icon"
-              initial={{ opacity: 0, rotate: -35, scale: 0.8 }} animate={{ opacity: 1, rotate: 0, scale: 1 }}
-              exit={{ opacity: 0, rotate: 35, scale: 0.8 }} transition={{ duration: 0.14 }}>
-              {themeMode === 'light' ? <Sun size={14} /> : themeMode === 'dark' ? <Moon size={14} /> : <Laptop size={14} />}
-            </motion.span>
-          </AnimatePresence>
-        </button>
+        <Tooltip label={`当前主题：${themeLabel}\n点击切换到${nextThemeLabel}`}>
+          <button type="button" className="theme-toggle-btn brand-theme-toggle"
+            aria-label={`当前主题：${themeLabel}，点击切换到${nextThemeLabel}`}
+            onClick={() => setThemeMode(nextThemeMode)}>
+            <AnimatePresence initial={false} mode="wait">
+              <motion.span key={themeMode} className="theme-mode-icon"
+                initial={{ opacity: 0, rotate: -35, scale: 0.8 }} animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                exit={{ opacity: 0, rotate: 35, scale: 0.8 }} transition={{ duration: 0.14 }}>
+                {themeMode === 'light' ? <Sun size={14} /> : themeMode === 'dark' ? <Moon size={14} /> : <Laptop size={14} />}
+              </motion.span>
+            </AnimatePresence>
+          </button>
+        </Tooltip>
       </div>
       <div className="window-bar-search-zone" data-tauri-drag-region>
         {view !== 'search' && (
@@ -81,9 +83,15 @@ export function WindowBar({ view, commandQuery, onCommandQueryChange, onCommandS
       </div>
       {isTauri() ? (
         <div className="window-controls">
-          <button className="win-btn minimize" onClick={() => void handleWindowControl('minimize')} data-tooltip="最小化" aria-label="最小化" />
-          <button className="win-btn maximize" onClick={() => void handleWindowControl('maximize')} data-tooltip="最大化" aria-label="最大化" />
-          <button className="win-btn close" onClick={() => void handleWindowControl('close')} data-tooltip="关闭" aria-label="关闭" />
+          <Tooltip label="最小化" side="bottom">
+            <button className="win-btn minimize" onClick={() => void handleWindowControl('minimize')} aria-label="最小化" />
+          </Tooltip>
+          <Tooltip label="最大化" side="bottom">
+            <button className="win-btn maximize" onClick={() => void handleWindowControl('maximize')} aria-label="最大化" />
+          </Tooltip>
+          <Tooltip label="关闭" side="bottom">
+            <button className="win-btn close" onClick={() => void handleWindowControl('close')} aria-label="关闭" />
+          </Tooltip>
         </div>
       ) : <div />}
     </header>
@@ -103,11 +111,12 @@ export function DesktopSidebar({ view, collapsed, onToggle, onViewChange }: Side
     <aside className="sidebar">
       <div className="sidebar-topline">
         <span className="sidebar-title">音乐空间</span>
-        <button type="button" className="sidebar-toggle"
-          aria-label={collapsed ? '展开侧边菜单' : '收起侧边菜单'}
-          title={collapsed ? '展开侧边菜单' : '收起侧边菜单'} onClick={onToggle}>
-          {collapsed ? <SidebarExpandIcon size={16} /> : <SidebarCollapseIcon size={16} />}
-        </button>
+        <Tooltip label={collapsed ? '展开侧边菜单' : '收起侧边菜单'}>
+          <button type="button" className="sidebar-toggle"
+            aria-label={collapsed ? '展开侧边菜单' : '收起侧边菜单'} onClick={onToggle}>
+            {collapsed ? <SidebarExpandIcon size={16} /> : <SidebarCollapseIcon size={16} />}
+          </button>
+        </Tooltip>
       </div>
       <nav className="sidebar-navigation" aria-label="主导航">
         {navGroups.map((group, index) => (
@@ -115,12 +124,14 @@ export function DesktopSidebar({ view, collapsed, onToggle, onViewChange }: Side
             {group.label && <p className="sidebar-section-title">{group.label}</p>}
             <div className={`nav-group${index === 2 ? ' nav-group-secondary' : ''}`}>
               {group.items.map((item) => (
-                <MotionChoice key={item.view} selected={view === item.view} indicatorId={indicatorId}
-                  className="nav-button" aria-pressed={undefined}
-                  aria-current={view === item.view ? 'page' : undefined} title={item.label}
-                  onClick={() => onViewChange(item.view)}>
-                  {item.icon}<span>{item.label}</span>
-                </MotionChoice>
+                <Tooltip key={item.view} label={item.label}>
+                  <MotionChoice selected={view === item.view} indicatorId={indicatorId}
+                    className="nav-button" aria-pressed={undefined}
+                    aria-current={view === item.view ? 'page' : undefined}
+                    onClick={() => onViewChange(item.view)}>
+                    {item.icon}<span>{item.label}</span>
+                  </MotionChoice>
+                </Tooltip>
               ))}
             </div>
           </div>

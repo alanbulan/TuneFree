@@ -41,9 +41,9 @@ const aboutDataSources = [
   { name: '网易云音乐', scope: '歌曲搜索、榜单与歌词' },
   { name: 'QQ 音乐', scope: '歌曲搜索、榜单与双语歌词' },
   { name: '酷我音乐', scope: '歌曲搜索、榜单与歌词' },
-  { name: 'GD 音乐台', scope: 'JOOX 扩展音源与 AI 搜歌', detail: GD_STUDIO_RATE_LIMIT_HINT },
-  { name: 'OpenAI 兼容模型', scope: '使用你配置的服务发现和精选音乐' },
-  { name: 'Pollinations AI', scope: 'AI 搜歌的备用服务' },
+  { name: '酷狗 / 咪咕', scope: '扩展来源的歌曲搜索' },
+  { name: 'GD 音乐台', scope: 'JOOX 扩展来源与歌词、封面补充', detail: GD_STUDIO_RATE_LIMIT_HINT },
+  { name: 'OpenAI 兼容模型', scope: '为你推荐与 AI 搜歌（使用你配置的服务）' },
 ];
 
 const aboutLinks = [

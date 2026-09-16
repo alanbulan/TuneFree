@@ -107,9 +107,11 @@ describe('歌单与收藏页面', () => {
     expect(screen.getByRole('heading', { name: '夜晚' })).toBeTruthy();
   });
 
-  it('收藏页播放和撤销可用，存储失败保留当前收藏', () => {
+  it('收藏页点歌把整份收藏放进队列，撤销可用，存储失败保留当前收藏', () => {
     setLibrary(); render(<FavoritesView />, { wrapper: LibraryProvider });
-    fireEvent.click(screen.getByRole('button', { name: '立即播放 夜曲' })); expect(mocks.play).toHaveBeenCalledWith(song);
+    // 与歌单详情一致：点一首歌 = 以整份列表为队列，并从这首开始播。
+    fireEvent.click(screen.getByRole('button', { name: '立即播放 夜曲' }));
+    expect(mocks.play).toHaveBeenCalledWith([expect.objectContaining({ name: '夜曲' })], song);
     fireEvent.click(screen.getByRole('button', { name: '取消收藏 夜曲' })); expect(screen.getByText('暂无收藏歌曲')).toBeTruthy();
     act(() => mocks.toast.mock.lastCall![2].onClick()); expect(screen.getByText('夜曲')).toBeTruthy();
     mocks.toast.mockClear(); failWrites(); fireEvent.click(screen.getByRole('button', { name: '取消收藏 夜曲' }));

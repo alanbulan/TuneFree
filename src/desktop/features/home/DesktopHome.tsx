@@ -3,7 +3,7 @@ import { ErrorIcon, MusicIcon } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { getImgReferrerPolicy, getTopListDetail, getTopLists } from '../../../core/services/api';
-import { getAIRecommendedSongs } from '../../../core/services/gdStudioExtras';
+import { searchSongsByContext } from '../../../core/services/contextSearch';
 import { recommendationFeedbackFromSong, saveRecommendationFeedback } from '../../../core/services/recommendation';
 import type { Song, TopList } from '../../../core/types';
 import { getMusicSourceLabel } from '../../../core/utils/musicSource';
@@ -13,7 +13,7 @@ import VirtualRail from '../../components/VirtualRail';
 import MotionPanel from '../../components/MotionPanel';
 import type { DesktopView } from '../../types';
 import { ContextSearchPanel, HomeHero, HomeSourceTabs } from './HomePanels';
-import { attachContextSearchMeta, isCurrentContextSearch } from './contextSearch';
+import { attachContextSearchMeta, describeContextSearchError, isCurrentContextSearch } from './contextSearch';
 import { isBusyError } from './recommendationJobWatcher';
 import { useRecommendationJob } from './useRecommendationJob';
 
@@ -35,6 +35,8 @@ export default function DesktopHome({ onViewChange, onAiBusyChange }: DesktopHom
   const [loadingLists, setLoadingLists] = useState(true);
   const [loadingBrowseSongs, setLoadingBrowseSongs] = useState(false);
   const [browseError, setBrowseError] = useState('');
+  /** 语境搜歌因为「模型没配好」失败时，错误卡片要给一个去设置页的入口。 */
+  const [aiNeedsSetup, setAiNeedsSetup] = useState(false);
   const [aiQuery, setAiQuery] = useState('');
   const [lastAiSearch, setLastAiSearch] = useState('');
   const requestIdRef = useRef(0);
@@ -83,8 +85,9 @@ export default function DesktopHome({ onViewChange, onAiBusyChange }: DesktopHom
     const recommendationRequestId = `embeat:${Date.now()}:${requestId}`;
     setLoadingBrowseSongs(true);
     setBrowseError('');
+    setAiNeedsSetup(false);
     try {
-      const songs = await getAIRecommendedSongs(cleanQuery, 'netease', 20, controller.signal);
+      const songs = await searchSongsByContext(cleanQuery, 12, controller.signal);
       if (!isCurrentContextSearch(requestId, aiRequestIdRef.current, activeSourceRef.current)) return;
       const contextSongs = attachContextSearchMeta(songs, recommendationRequestId);
       setBrowseSongs(contextSongs);
@@ -93,10 +96,9 @@ export default function DesktopHome({ onViewChange, onAiBusyChange }: DesktopHom
     } catch (cause) {
       if (!isCurrentContextSearch(requestId, aiRequestIdRef.current, activeSourceRef.current)) return;
       console.error(cause);
-      const message = cause instanceof Error && cause.message.includes('RATE_LIMIT')
-        ? '语境搜歌请求过于频繁，请稍后再试。'
-        : '语境搜歌服务当前不可用，请稍后再试。';
-      setBrowseError(message);
+      const failure = describeContextSearchError(cause);
+      setBrowseError(failure.message);
+      setAiNeedsSetup(failure.needsSetup);
     } finally {
       if (requestId === aiRequestIdRef.current) {
         aiAbortRef.current = null;
@@ -122,6 +124,7 @@ export default function DesktopHome({ onViewChange, onAiBusyChange }: DesktopHom
     setBrowseSongs([]);
     setTopLists([]);
     setBrowseError('');
+    setAiNeedsSetup(false);
     setSelectedTopListId(null);
     setSelectedTopListName(source === 'recommendation' ? '智能推荐' : '');
     setLastAiSearch('');
@@ -226,7 +229,7 @@ export default function DesktopHome({ onViewChange, onAiBusyChange }: DesktopHom
       {error && (
         <div className="content-card home-status-card">
           <span className="home-status-text"><ErrorIcon size={18} /> {error}</span>
-          {isRecommendationSource && <button type="button" className="soft-button" onClick={() => onViewChange('settings')}>打开设置</button>}
+          {(isRecommendationSource || aiNeedsSetup) && <button type="button" className="soft-button" onClick={() => onViewChange('settings')}>打开设置</button>}
         </div>
       )}
       {!isRecommendationSource && activeSource === 'embeat' ? (

@@ -5,6 +5,7 @@ import {
   type RecommendationTaskProgress,
   type RecommendationWorkerStatus,
 } from '../../../../core/services/recommendationTaskProgress';
+import Tooltip from '../../../components/Tooltip';
 
 const statusText: Record<RecommendationWorkerStatus, string> = {
   idle: '空闲',
@@ -39,7 +40,7 @@ export default function RecommendationTaskProgressCard() {
             <span className="task-progress-dot" />
             <div>
               <strong>{index === 0 ? '本地推荐' : 'AI 精选'}</strong>
-              <p title={worker.detail}>{worker.detail}</p>
+              <Tooltip label={worker.detail}><p>{worker.detail}</p></Tooltip>
             </div>
             <em>{statusText[worker.status]}</em>
             <small>{formatUpdatedAt(worker.updatedAt)}</small>

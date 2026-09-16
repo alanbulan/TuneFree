@@ -10,6 +10,14 @@ import {
 } from './types';
 import type { ParsedSongFull } from '../resolver';
 import { BUILTIN_PROVIDERS } from './builtin';
+import {
+  CircuitOpenError,
+  isCircuitOpen,
+  recordFailure,
+  recordSuccess,
+  resetCircuits,
+  type SourceCapability,
+} from './circuitBreaker';
 
 /**
  * 通用解析器：**平台能力的唯一来源**。
@@ -45,12 +53,15 @@ export const registerBuiltinProviders = (providers: MusicProvider[]): void => {
 export const setCustomProviders = (entries: RegisteredProvider[]): void => {
   customProviders = entries;
   generation += 1;
+  // 音源集变了，旧的熔断计数不再代表当前配置，清空让用户的操作立刻生效。
+  resetCircuits();
 };
 
 /** 注册内置脚本产出的 provider（启动时一次、脚本重载时更新）。 */
 export const setBuiltinScriptProviders = (entries: RegisteredProvider[]): void => {
   builtinScriptProviders = entries;
   generation += 1;
+  resetCircuits();
 };
 
 /** 内置 provider 全集（含内置脚本），按注册来源排序，优先级由调用方按需比较。 */
@@ -104,49 +115,74 @@ export const providersFor = (
 
 const finalize = (url: string): string => normalizeMusicUrl(url) || url;
 
+/**
+ * 按熔断状态过滤 provider：连续失败到阈值的通道直接跳过，
+ * 把机会让给下一个 provider 或跨源兜底，而不是每次都白跑一遍。
+ */
+const liveProviders = (
+  platform: string,
+  capability: 'url' | 'metadata',
+  breakerCapability: SourceCapability,
+): MusicProvider[] =>
+  providersFor(platform, capability)
+    .filter((provider) => !isCircuitOpen(provider.id, platform, breakerCapability));
+
+/**
+ * 跑一个 provider 能力并把结果登记进熔断器。
+ *
+ * 只有**抛错**算失败：返回 null / 空字符串通常表示「这首歌没有这项内容」
+ * （大量歌曲本来就没歌词），算进失败会误伤正常通道。
+ */
+const runProvider = async <T>(
+  provider: MusicProvider,
+  platform: string,
+  capability: SourceCapability,
+  request: Pick<SourceResolveRequest, 'signal'>,
+  operation: () => Promise<T>,
+): Promise<T | null> => {
+  try {
+    const result = await operation();
+    recordSuccess(provider.id, platform, capability);
+    return result;
+  } catch (error) {
+    if (request.signal?.aborted) throw abortReasonError(request.signal);
+    recordFailure(provider.id, platform, capability, error);
+    console.warn(`[Sources] ${capability} 失败（${provider.label} / ${platform}）：`, error);
+    return null;
+  }
+};
+
 /** 解析播放地址：自定义源独占，否则按优先级依次尝试（GD → 原生）。 */
 export const resolveDirectUrl = async (
   request: SourceResolveRequest,
 ): Promise<string | null> => {
-  for (const provider of providersFor(request.platform, 'url')) {
+  for (const provider of liveProviders(request.platform, 'url', 'url')) {
     if (!provider.getUrl) continue;
-    try {
-      const url = await provider.getUrl(request);
-      if (url) return finalize(url);
-    } catch (error) {
-      if (request.signal?.aborted) throw abortReasonError(request.signal);
-      console.warn(`[Sources] 音源解析失败（${provider.label} / ${request.platform}）：`, error);
-    }
+    const url = await runProvider(provider, request.platform, 'url', request,
+      () => provider.getUrl!(request));
+    if (url) return finalize(url);
   }
   return null;
 };
 
 /** 歌词：自定义源优先，失败回落内置；取第一个非空结果。 */
 export const resolveLyrics = async (request: SourceResolveRequest): Promise<string> => {
-  for (const provider of providersFor(request.platform, 'metadata')) {
+  for (const provider of liveProviders(request.platform, 'metadata', 'lyrics')) {
     if (!provider.getLyrics) continue;
-    try {
-      const lyrics = await provider.getLyrics(request);
-      if (lyrics) return lyrics;
-    } catch (error) {
-      if (request.signal?.aborted) throw abortReasonError(request.signal);
-      console.warn(`[Sources] 音源歌词失败（${provider.label}）：`, error);
-    }
+    const lyrics = await runProvider(provider, request.platform, 'lyrics', request,
+      () => provider.getLyrics!(request));
+    if (lyrics) return lyrics;
   }
   return '';
 };
 
 /** 封面：同样「自定义优先、内置兜底」（自定义源常把封面放在 pic action 里）。 */
 export const resolvePic = async (request: SourceResolveRequest): Promise<string> => {
-  for (const provider of providersFor(request.platform, 'metadata')) {
+  for (const provider of liveProviders(request.platform, 'metadata', 'pic')) {
     if (!provider.getPic) continue;
-    try {
-      const pic = await provider.getPic(request);
-      if (pic) return finalize(pic);
-    } catch (error) {
-      if (request.signal?.aborted) throw abortReasonError(request.signal);
-      console.warn(`[Sources] 音源封面失败（${provider.label}）：`, error);
-    }
+    const pic = await runProvider(provider, request.platform, 'pic', request,
+      () => provider.getPic!(request));
+    if (pic) return finalize(pic);
   }
   return '';
 };
@@ -158,15 +194,11 @@ export const resolvePic = async (request: SourceResolveRequest): Promise<string>
 export const resolveFull = async (
   request: SourceResolveRequest,
 ): Promise<ParsedSongFull | null> => {
-  for (const provider of providersFor(request.platform, 'url')) {
+  for (const provider of liveProviders(request.platform, 'url', 'full')) {
     if (!provider.resolveFull) continue;
-    try {
-      const parsed = await provider.resolveFull(request);
-      if (parsed) return parsed;
-    } catch (error) {
-      if (request.signal?.aborted) throw abortReasonError(request.signal);
-      console.warn(`[Sources] 整曲解析失败（${provider.label}）：`, error);
-    }
+    const parsed = await runProvider(provider, request.platform, 'full', request,
+      () => provider.resolveFull!(request));
+    if (parsed) return parsed;
   }
   return null;
 };
@@ -191,7 +223,22 @@ export const searchSongs = async (
 ): Promise<Song[]> => {
   const provider = searchProviderFor(platform);
   if (!provider?.search) return [];
-  return provider.search(keyword, platform, page, limit, signal);
+  // 熔断打开的平台直接拒绝：单源搜索要明确告诉用户为什么没结果，
+  // 而不是发一个注定失败的请求再报「搜索失败」。
+  if (isCircuitOpen(provider.id, platform, 'search')) {
+    throw new CircuitOpenError(platform, 'search');
+  }
+  // 搜索失败会抛给调用方（聚合搜索要据此标记「部分音源不可用」），
+  // 所以这里手动登记熔断，不能走 runProvider 的吞错路径。
+  try {
+    const songs = await provider.search(keyword, platform, page, limit, signal);
+    recordSuccess(provider.id, platform, 'search');
+    return songs;
+  } catch (error) {
+    if (signal?.aborted) throw abortReasonError(signal);
+    recordFailure(provider.id, platform, 'search', error);
+    throw error;
+  }
 };
 
 /** 搜索页可选的平台列表（顺序即展示顺序，全部来自 provider 声明）。 */
@@ -209,9 +256,40 @@ export const searchablePlatforms = (): string[] => {
   return [...seen];
 };
 
-/** 聚合搜索的平台分组：core 一直参与，extended 由「扩展源」开关控制。 */
-export const aggregatePlatforms = (includeExtended: boolean): string[] =>
+/**
+ * 还没被熔断的搜索平台。
+ *
+ * 熔断打开的平台**不发请求**：既省掉必然失败的往返，也不再往日志里刷失败。
+ * 聚合搜索若因此一个平台都不剩，会照常抛「所有搜索音源均暂不可用」，
+ * 用户看到的是明确错误而不是无声的空结果。
+ */
+export const liveSearchPlatforms = (): string[] =>
   searchablePlatforms().filter((platform) => {
+    const provider = searchProviderFor(platform);
+    return !provider || !isCircuitOpen(provider.id, platform, 'search');
+  });
+
+/**
+ * 提供榜单的平台列表（首页「发现音乐」的音源标签由此派生）。
+ *
+ * 首页标签过去是写死的三个平台，和搜索页的来源清单各说各话；改成同样从
+ * 注册表派生后，导入自定义音源或内置脚本能力变化时两边会一起变。
+ */
+export const topListPlatforms = (): string[] => {
+  const seen = new Set<string>();
+  for (const provider of [...builtinProviders, ...builtinScriptProviders.map((entry) => entry.provider)]) {
+    if (!provider.topLists) continue;
+    for (const platform of provider.topListPlatforms ?? []) seen.add(platform);
+  }
+  for (const entry of customProviders) {
+    if (providerLists(entry.provider, entry.platform)) seen.add(entry.platform);
+  }
+  return [...seen];
+};
+
+/** 聚合搜索的平台分组：core 一直参与，extended 恒定参与（不再有开关）。 */
+export const aggregatePlatforms = (includeExtended: boolean): string[] =>
+  liveSearchPlatforms().filter((platform) => {
     const provider = searchProviderFor(platform);
     const tier = provider?.searchTier ?? 'core';
     return tier === 'core' || (tier === 'extended' && includeExtended);

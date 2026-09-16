@@ -254,6 +254,18 @@ export interface LlmProviderTestResult {
   error?: string | null;
 }
 
+/**
+ * 语境搜歌的一条模型建议。
+ *
+ * 刻意只有歌名 / 歌手 / 理由：模型不返回任何平台 id 或封面地址，
+ * 真实歌曲数据由前端拿这三个字段去各音乐平台搜索匹配。
+ */
+export interface ContextSongSuggestion {
+  name: string;
+  artist: string;
+  reason: string;
+}
+
 export interface RecommendationMaintenanceStats {
   databaseSizeBytes: number;
   llmCacheEntries: number;

@@ -159,7 +159,6 @@ function FullPlayerActions({
               if (downloadQuality !== null) void cancelDownload();
               else void handleOfflineCache();
             }}
-            title={downloadQuality !== null ? '取消当前下载' : '下载当前音质到本地目录'}
           >
             {downloadQuality !== null ? <CloseIcon size={16} /> : <DownloadIcon size={16} />}
             {downloadQuality !== null ? (isCancelling ? '取消中' : '取消下载') : '离线缓存'}

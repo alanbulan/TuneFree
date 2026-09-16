@@ -33,8 +33,8 @@ const gdLikeProvider: MusicProvider = {
   kind: 'gdstudio',
   id: 'gd-like',
   label: 'GD 替身',
-  platforms: ['netease', 'qq', 'kuwo', 'joox', 'bilibili'],
-  searchPlatforms: ['joox', 'bilibili'],
+  platforms: ['netease', 'kuwo', 'joox'],
+  searchPlatforms: ['joox'],
   priority: 10,
   lyricsPriority: 20,
   searchTier: 'extended',
@@ -58,23 +58,23 @@ afterEach(() => {
 });
 
 describe('搜索请求生命周期', () => {
-  it('内置脚本异步就绪后刷新平台选项与扩展源提示', () => {
+  it('内置脚本异步就绪后刷新平台选项，且不再有静态说明文案', () => {
     registerBuiltinProviders(BUILTIN_PROVIDERS);
     renderSearch();
-    fireEvent.click(screen.getByRole('button', { name: '扩展源 关' }));
-    expect(screen.getByText(/扩展聚合已启用/).textContent).not.toContain('JOOX');
+    // 搜索页只保留实际状态（错误提示），不显示任何静态来源说明
+    expect(screen.queryByText(/聚合搜索会交叉合并/)).toBeNull();
+    expect(screen.queryByText(/中搜索/)).toBeNull();
     act(() => {
       registerBuiltinProviders([...BUILTIN_PROVIDERS, gdLikeProvider]);
       mocks.sourceListeners.forEach((listener) => listener());
     });
-    expect(screen.getByText(/扩展聚合已启用/).textContent).toContain('JOOX');
     fireEvent.click(screen.getByRole('button', { name: '指定音源' }));
     expect(screen.getByRole('radio', { name: /JOOX/ })).toBeTruthy();
     act(() => {
-      registerBuiltinProviders(BUILTIN_PROVIDERS);
+      registerBuiltinProviders([...BUILTIN_PROVIDERS, gdLikeProvider]);
       mocks.sourceListeners.forEach((listener) => listener());
     });
-    expect(screen.queryByRole('radio', { name: /JOOX/ })).toBeNull();
+    expect(screen.queryByText(/聚合搜索会交叉合并/)).toBeNull();
   });
 
   it('读取命令查询并防抖，播放完整结果、收藏和撤销，分页去重后结束', async () => {
@@ -82,7 +82,7 @@ describe('搜索请求生命周期', () => {
     expect((input() as HTMLInputElement).value).toBe('夜曲'); expect(localStorage.getItem('tunefree_desktop_pending_query')).toBeNull();
     await act(() => vi.advanceTimersByTimeAsync(299)); expect(searchAggregate).not.toHaveBeenCalled();
     await act(() => vi.advanceTimersByTimeAsync(1));
-    expect(searchAggregate).toHaveBeenCalledWith('夜曲', 1, expect.objectContaining({ includeExtendedSources: false }));
+    expect(searchAggregate).toHaveBeenCalledWith('夜曲', 1, expect.objectContaining({ includeExtendedSources: true }));
     fireEvent.click(screen.getByRole('button', { name: '立即播放 歌曲 1' })); expect(mocks.play).toHaveBeenCalledWith([song('1')], song('1'));
     fireEvent.click(screen.getByRole('button', { name: '收藏歌曲 歌曲 1' }));
     expect(screen.getByRole('button', { name: '取消收藏 歌曲 1' })).toBeTruthy();
@@ -128,11 +128,9 @@ describe('搜索请求生命周期', () => {
     expect(JSON.parse(localStorage.getItem('tunefree_search_history')!)).toEqual(['首歌']);
   });
 
-  it('扩展源提示随模式更新，指定音源失败提示公开接口频控，重试成功', async () => {
+  it('指定音源失败提示公开接口频控，重试成功；无静态说明文案', async () => {
     renderSearch('雨天'); await debounce();
-    fireEvent.click(screen.getByRole('button', { name: '扩展源 关' })); await debounce();
-    expect(localStorage.getItem('tunefree_aggregate_extended_sources')).toBe('1');
-    expect(screen.getByText(/扩展聚合已启用/)).toBeTruthy();
+    expect(screen.queryByText(/聚合搜索会交叉合并/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '指定音源' }));
     vi.mocked(searchSongs).mockRejectedValueOnce(new Error('RATE_LIMIT'));
     fireEvent.click(screen.getByRole('radio', { name: /JOOX/ })); await debounce();

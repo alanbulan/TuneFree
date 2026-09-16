@@ -129,6 +129,27 @@ export const useLibraryStore = (): LibraryStore => {
         ? playlist : { ...playlist, songs: playlist.songs.filter((song) => !matchesSong(song, songId, source)) }) });
   }, [commit]);
 
+  const reorderPlaylistSongs = useCallback((
+    playlistId: string, fromIndex: number, toIndex: number,
+  ) => {
+    const current = snapshotRef.current;
+    const songs = playlistId === FAVORITES_PLAYLIST_ID
+      ? current.favorites
+      : current.playlists.find((playlist) => playlist.id === playlistId)?.songs;
+    if (!songs) return false;
+    // 越界或原地不动都不落盘：拖拽会高频触发，无谓写入会刷掉撤销体验。
+    if (fromIndex === toIndex) return false;
+    if (fromIndex < 0 || fromIndex >= songs.length) return false;
+    if (toIndex < 0 || toIndex >= songs.length) return false;
+    const next = [...songs];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    return commit(playlistId === FAVORITES_PLAYLIST_ID
+      ? { ...current, favorites: next }
+      : { ...current, playlists: current.playlists.map((playlist) =>
+        playlist.id === playlistId ? { ...playlist, songs: next } : playlist) });
+  }, [commit]);
+
   const exportData = useCallback((): LibraryExportResult =>
     exportLibraryData(snapshotRef.current.favorites, snapshotRef.current.playlists), []);
   const applyImportData = useCallback((
@@ -157,10 +178,10 @@ export const useLibraryStore = (): LibraryStore => {
   );
   const actionsValue = useMemo<LibraryActions>(() => ({
     toggleFavorite, createPlaylist, renamePlaylist, deletePlaylist,
-    addToPlaylist, removeFromPlaylist, exportData, parseImportData,
+    addToPlaylist, removeFromPlaylist, reorderPlaylistSongs, exportData, parseImportData,
     applyImportData, restoreData, importData,
   }), [addToPlaylist, applyImportData, createPlaylist, deletePlaylist, exportData,
-    importData, removeFromPlaylist, renamePlaylist, restoreData, toggleFavorite]);
+    importData, removeFromPlaylist, renamePlaylist, reorderPlaylistSongs, restoreData, toggleFavorite]);
   const proxyValue = useMemo<LibraryProxy>(
     () => ({ corsProxy, setCorsProxy }), [corsProxy, setCorsProxy],
   );
