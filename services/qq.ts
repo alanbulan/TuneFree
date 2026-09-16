@@ -2,7 +2,7 @@ import { Song, TopList } from "../types";
 import { mergeLyricTracks } from "../utils/lyrics";
 import { decryptQrc } from "qrc-decoder";
 import { SELF_HOSTED_PROXY } from "./config";
-import { getProxies } from "./proxy";
+import { getProxies, proxyFetchJson } from "./proxy";
 import { fixUrl } from "./utils";
 
 // ==============================
@@ -112,7 +112,8 @@ export const qqMusicuFetch = async (reqBody: any): Promise<any> => {
 // ==============================
 
 /**
- * QQ 音乐搜索：使用 musicu.fcg DoSearchForQQMusicDesktop（移动客户端标识）。
+ * QQ 音乐搜索：使用 client_search_cp 的 JSON 接口。
+ * DoSearchForQQMusicDesktop 的匿名请求当前返回业务码 2001。
  * 返回标准化的 Song 列表，封面通过 albumMid 构造高清 URL。
  *
  * @param keyword 搜索关键词
@@ -124,16 +125,19 @@ export const searchQQ = async (
   page: number,
   limit: number,
 ): Promise<Song[]> => {
-  const data = await qqMusicuFetch({
-    method: "DoSearchForQQMusicDesktop",
-    module: "music.search.SearchCgiService",
-    param: { query: keyword, page_num: page, num_per_page: limit },
+  const params = new URLSearchParams({
+    format: "json", new_json: "1", w: keyword, p: String(page), n: String(limit),
   });
-
-  const songs = data?.body?.song?.list;
+  const response = await proxyFetchJson(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?${params}`);
+  if (!response || response.code !== 0) {
+    throw new Error(response?.code !== undefined
+      ? `QQ 音乐搜索失败（业务码 ${response.code}）`
+      : 'QQ 音乐搜索响应不可用');
+  }
+  const songs = response.data?.song?.list;
   if (!Array.isArray(songs)) {
     // 明确的「零结果」是正常返回，其余情况必须抛出，否则会被误判成没有搜到。
-    if (data?.body?.song?.totalnum === 0) return [];
+    if (response.data?.song?.totalnum === 0) return [];
     throw new Error('QQ 音乐搜索响应不可用');
   }
 

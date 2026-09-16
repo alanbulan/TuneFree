@@ -7,7 +7,7 @@ import { Buffer } from 'node:buffer';
  *
  * 协议与桌面端 Rust provider（src-tauri/src/api/{netease,qq,kuwo}.rs）保持一致：
  * - netease: EAPI AES-128-ECB 加密请求
- * - qq:      musicu.fcg CgiGetVkey，filename 必须是 "M500<mid><mid>.mp3" 形式
+ * - qq:      musicu.fcg CgiGetVkey，携带 Web 客户端 comm，按 filename 选择音质
  * - kuwo:    mobi.s?f=web&type=convert_url_with_sign 明文接口，响应为 JSON；
  *            旧的 f=kuwo 块加密端点已被上游 nginx 无条件 403，仅作兜底保留。
  *            注意：酷我对非大陆出口 IP 返回 code=407 地区版权封锁，Cloudflare
@@ -28,8 +28,8 @@ interface Env {}
 
 /** 单个音源的解析结果：要么给出地址，要么说明为什么没有。 */
 type ResolveResult =
-  | { url: string }
-  | { url: null; reason: "vip" | "unavailable" | "region" };
+  | { url: string; reason?: never }
+  | { url: null; reason: "vip" | "unavailable" | "region"; message?: string; upstreamCode?: number };
 
 /** 只接受 http(s) 绝对地址，避免把 file:// 之类的值交给媒体元素。 */
 const isPlayableUrl = (value: unknown): value is string => {
@@ -158,8 +158,8 @@ const QQ_MUSICU_ENDPOINT = "https://u.y.qq.com/cgi-bin/musicu.fcg";
 const QQ_DEFAULT_STREAM_BASE = "https://ws.stream.qqmusic.qq.com/";
 
 /**
- * vkey 请求的文件名必须把 songmid 重复两遍（M800<mid><mid>.mp3），
- * 只写位速率前缀会拿到空的 purl，这是线上 500 的直接原因。
+ * filename 用于选择音质；QQ 会依据 songmid 返回规范化的媒体文件路径。
+ * 保留现有文件名写法，播放地址以返回的 purl 为准。
  */
 const buildQQFilename = (songmid: string, quality: string): string => {
     const [prefix, extension] =
@@ -191,6 +191,8 @@ const resolveQQPurl = (data: any): string | null => {
 
 async function getQQUrl(songmid: string, quality: string): Promise<ResolveResult> {
     const dataParam = JSON.stringify({
+        // 缺少 comm 时，Cloudflare 出口下免费曲目也会返回 result=104003。
+        comm: { ct: 24, cv: 0 },
         queryvkey: {
             method: "CgiGetVkey",
             module: "vkey.GetVkeyServer",
@@ -218,9 +220,24 @@ async function getQQUrl(songmid: string, quality: string): Promise<ResolveResult
     if (!resp.ok) throw new Error(`QQ Music responded HTTP ${resp.status}`);
 
     const data: any = await resp.json();
+    if (typeof data?.code !== 'number') throw new Error('QQ 音乐响应格式错误：缺少业务状态');
+    if (data.code !== 0) throw new Error(`QQ 音乐网关请求失败（业务码 ${data.code}）`);
+    if (typeof data?.queryvkey?.code !== 'number') throw new Error('QQ 音乐响应格式错误：缺少 vkey 状态');
+    if (data.queryvkey.code !== 0) throw new Error(`QQ 音乐解析请求失败（业务码 ${data.queryvkey.code}）`);
+    const items = data.queryvkey.data?.midurlinfo;
+    const item = Array.isArray(items) ? items[0] : null;
+    if (typeof item?.result !== 'number') throw new Error('QQ 音乐响应格式错误：缺少曲目解析结果');
+    if (item.result !== 0) {
+        return {
+            url: null, reason: 'unavailable', upstreamCode: item.result,
+            message: `QQ 音乐未提供播放地址（业务码 ${item.result}）`,
+        };
+    }
     const purl = resolveQQPurl(data);
-    // 空 purl 表示 VIP / 版权受限。
-    if (!purl) return { url: null, reason: "vip" };
+    if (!purl) {
+        if (item.purl) throw new Error('QQ 音乐响应格式错误：播放地址无效');
+        return { url: null, reason: 'unavailable', message: 'QQ 音乐未返回所选音质的播放地址' };
+    }
     return { url: purl };
 }
 
