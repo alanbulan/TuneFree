@@ -99,12 +99,11 @@ export const fetchNativeUrl = async (
     const resp = await fetch(
       `${API_PREFIX}/api/url?platform=${encodeURIComponent(platform)}&id=${encodeURIComponent(id)}&quality=${encodeURIComponent(quality)}`,
     );
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data?.url) return data.url as string;
-    }
-  } catch {
-    return null;
+    const data = await resp.json();
+    if (resp.ok && typeof data?.url === 'string' && data.url) return data.url;
+    console.warn(`[Resolver] ${platform} 原生解析失败：`, data?.error || data?.message || data?.reason || `HTTP ${resp.status}`);
+  } catch (error) {
+    console.warn(`[Resolver] ${platform} 原生解析请求失败：`, error);
   }
   return null;
 };
@@ -127,8 +126,8 @@ export const fetchFallbackLyrics = async (
     let lrc = "";
 
     try {
-      // 所有源统一先走 GD Studio 歌词
-      lrc = await getGDStudioLyrics(id, normalizedSource, songMeta);
+      // GD 公开接口当前不支持 QQ，QQ 直接使用原生歌词接口。
+      if (normalizedSource !== "qq") lrc = await getGDStudioLyrics(id, normalizedSource, songMeta);
 
       // GD Studio 歌词为空且是原生源，回退官方歌词 API
       if (!lrc && isNativeMusicSource(normalizedSource)) {
@@ -174,15 +173,15 @@ const getDirectSongUrl = async (
     return null;
   }
 
-  // 所有源统一走 GD Studio 解析
-  if (isGDStudioSource(normalizedSource)) {
+  // GD 公开接口当前不支持 QQ，QQ 直接使用原生解析。
+  if (normalizedSource !== "qq" && isGDStudioSource(normalizedSource)) {
     const gdUrl = await getGDStudioSongUrl(id, normalizedSource, quality, songMeta);
     if (gdUrl) return gdUrl;
   }
 
   // GD Studio 失败时，原生源（netease/qq/kuwo）回退官方 API 兜底
   if (isNativeMusicSource(normalizedSource)) {
-    console.warn(`[Resolver] GD Studio failed for ${normalizedSource}, falling back to native API`);
+    if (normalizedSource !== "qq") console.warn(`[Resolver] GD Studio failed for ${normalizedSource}, falling back to native API`);
     const nativeUrl = await fetchNativeUrl(String(id), normalizedSource, quality);
     if (nativeUrl) return fixUrl(nativeUrl) || null;
   }
@@ -223,28 +222,25 @@ const resolveDirectSongFull = async (
     return null;
   }
 
-  // 所有源统一走 GD Studio 批量解析（url + lyrics + pic 并行）
-  if (isGDStudioSource(normalizedPlatform)) {
-    const gdResult = await parseGDStudioSongFull(id, normalizedPlatform, quality, songMeta);
+  let gdResult: ParsedSongFull | null = null;
+  if (normalizedPlatform !== "qq" && isGDStudioSource(normalizedPlatform)) {
+    gdResult = await parseGDStudioSongFull(id, normalizedPlatform, quality, songMeta);
     if (gdResult?.url) return gdResult;
-
-    // GD Studio 失败时，原生源回退官方 API
-    if (isNativeMusicSource(normalizedPlatform)) {
-      console.warn(`[Resolver] GD Studio full resolve failed for ${normalizedPlatform}, falling back to native`);
-      const [url, lrc] = await Promise.all([
-        fetchNativeUrl(String(id), normalizedPlatform, quality).then(
-          (u) => (u ? fixUrl(u) || null : null),
-        ),
-        fetchFallbackLyrics(id, normalizedPlatform, songMeta),
-      ]);
-      const pic = songMeta?.pic ? fixUrl(songMeta.pic) : "";
-      if (url || lrc || pic) return { url, lrc, pic };
-    }
-
-    return gdResult; // 可能有歌词/封面但无 URL
   }
 
-  return null;
+  if (isNativeMusicSource(normalizedPlatform)) {
+    if (normalizedPlatform !== "qq") console.warn(`[Resolver] GD Studio full resolve failed for ${normalizedPlatform}, falling back to native`);
+    const [url, lrc] = await Promise.all([
+      fetchNativeUrl(String(id), normalizedPlatform, quality).then(
+        (u) => (u ? fixUrl(u) || null : null),
+      ),
+      fetchFallbackLyrics(id, normalizedPlatform, songMeta),
+    ]);
+    const pic = songMeta?.pic ? fixUrl(songMeta.pic) : "";
+    if (url || lrc || pic) return { url, lrc, pic };
+  }
+
+  return gdResult; // 可能有歌词/封面但无 URL
 };
 
 const getFallbackSources = (originalSource: string): readonly string[] => {
