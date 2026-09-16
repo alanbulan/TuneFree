@@ -333,6 +333,66 @@ describe('SourcesView', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一页日志' }));
     expect(screen.getByText('第 8 条')).toBeTruthy();
     expect(screen.getByRole('button', { name: '下一页日志' })).toHaveProperty('disabled', true);
+
+    // 退回上一页后「上一页」仍可用，回到首页才禁用
+    fireEvent.click(screen.getByRole('button', { name: '上一页日志' }));
+    expect(screen.getByText('第 2 / 3 页')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '上一页日志' }));
+    expect(screen.getByText('第 1 / 3 页')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '上一页日志' })).toHaveProperty('disabled', true);
+  });
+
+  it('解析记录只展示最近几条，更早的合并成计数', () => {
+    const call = (index: number, ok: boolean) => ({
+      source: 'wy', action: 'musicUrl', quality: '320k', ok,
+      message: ok ? '' : `第 ${index} 次失败`, durationMs: 100 * index, checkedAt: 1_700_000_000_000 + index,
+    });
+    setEntries(entry({ calls: [call(1, false), call(2, false), call(3, true), call(4, true), call(5, true)] }));
+    render(<SourcesView />);
+
+    const rows = document.querySelectorAll('.source-call-list li');
+    // 最近 3 条 + 1 行「另有 N 条」汇总
+    expect(rows).toHaveLength(4);
+    expect(document.querySelector('.source-call-more')?.textContent).toBe('另有 2 条更早的解析记录');
+  });
+
+  it('标签方向键循环切换，Home / End 跳到首尾', () => {
+    setEntries(
+      entry(),
+      entry({ record: { ...entry().record, id: 'source-2', name: '第二音源' } }),
+      entry({ record: { ...entry().record, id: 'source-3', name: '第三音源' } }),
+    );
+    render(<SourcesView />);
+    const tablist = screen.getByRole('tablist');
+    const selected = () => document.querySelector('[role=tab][aria-selected=true]')?.textContent;
+
+    fireEvent.keyDown(tablist, { key: 'ArrowRight' });
+    expect(selected()).toContain('第二音源');
+    fireEvent.keyDown(tablist, { key: 'ArrowLeft' });
+    expect(selected()).toContain('星海音乐源');
+    // 向左越界时回卷到最后一项
+    fireEvent.keyDown(tablist, { key: 'ArrowLeft' });
+    expect(selected()).toContain('第三音源');
+    fireEvent.keyDown(tablist, { key: 'Home' });
+    expect(selected()).toContain('星海音乐源');
+    fireEvent.keyDown(tablist, { key: 'End' });
+    expect(selected()).toContain('第三音源');
+  });
+
+  it('标签溢出时给出左右滚动按钮', () => {
+    const scroller = document.createElement('div');
+    vi.spyOn(HTMLElement.prototype, 'scrollBy').mockImplementation(() => {});
+    // happy-dom 没有真实布局，直接给滚动容器伪造溢出尺寸
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, get: () => 900 });
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 300 });
+    setEntries(entry(), entry({ record: { ...entry().record, id: 'source-2', name: '第二音源' } }));
+    render(<SourcesView />);
+    void scroller;
+
+    const right = screen.getByRole('button', { name: '向右滚动音源标签' });
+    expect(screen.queryByRole('button', { name: '向左滚动音源标签' })).toBeNull();
+    fireEvent.click(right);
+    expect(HTMLElement.prototype.scrollBy).toHaveBeenCalled();
   });
 
   it('音源以标签栏呈现，点击标签切换详情面板', () => {

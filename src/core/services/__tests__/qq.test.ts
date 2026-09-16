@@ -65,6 +65,23 @@ describe('QQ musicu 协议', () => {
     await expect(searchQQ('错误', 1, 10)).rejects.toThrow('QQ 音乐搜索响应不可用');
   });
 
+  it('搜索的代理链全部失败时返回不可用，业务码非 0 时保留码值', async () => {
+    // 每个代理都网络失败，走完轮询后返回 null
+    fetchMock.mockRejectedValue(new Error('offline'));
+    await expect(searchQQ('晴天', 1, 10)).rejects.toThrow('QQ 音乐搜索响应不可用');
+
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ code: 2001, data: null })));
+    await expect(searchQQ('晴天', 1, 10)).rejects.toThrow('业务码 2001');
+  });
+
+  it('搜索过程中取消会立刻传播，不再尝试剩余代理', async () => {
+    const controller = new AbortController();
+    controller.abort(new Error('cancel'));
+    fetchMock.mockRejectedValue(new Error('aborted'));
+    await expect(searchQQ('晴天', 1, 10, controller.signal)).rejects.toThrow('cancel');
+  });
+
   it('榜单兼容接口别名以及空响应', async () => {
     fetchMock.mockResolvedValueOnce(response({ group: [{ toplist: [{ topId: 1, title: '热榜', period: '每日', frontPicUrl: 'http://img.test/a' }] }, {}] }));
     expect((await getQQTopLists())[0]).toMatchObject({ id: '1', name: '热榜', picUrl: 'http://img.test/a' });

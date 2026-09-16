@@ -12,6 +12,69 @@ const song = { id: 1, source: 'netease', name: '歌曲', artist: '歌手', album
 beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
 
+describe('拖拽排序', () => {
+  const three = [
+    { id: 1, source: 'netease', name: '甲', artist: '', album: '' },
+    { id: 2, source: 'netease', name: '乙', artist: '', album: '' },
+    { id: 3, source: 'netease', name: '丙', artist: '', album: '' },
+  ];
+
+  const seeded = () => {
+    const hook = renderHook(useLibraryStore);
+    act(() => {
+      hook.result.current.actionsValue.applyImportData(
+        { favorites: three, playlists: [{ id: 'p1', name: '歌单', createTime: 1, songs: three }] } as unknown as LibraryImportPreview,
+        'replace',
+      );
+    });
+    return hook;
+  };
+
+  it('收藏与歌单都能把歌曲移到指定位置，并落盘', () => {
+    const { result } = seeded();
+
+    act(() => { expect(result.current.actionsValue.reorderPlaylistSongs('favorites', 0, 2)).toBe(true); });
+    expect(result.current.dataValue.favorites.map((item) => item.id)).toEqual([2, 3, 1]);
+
+    act(() => { expect(result.current.actionsValue.reorderPlaylistSongs('p1', 2, 0)).toBe(true); });
+    // dataValue.playlists 的首项是虚拟的「我喜欢」，导入的歌单排在它后面
+    expect(result.current.dataValue.playlists[1].songs.map((item) => item.id)).toEqual([3, 1, 2]);
+    // 顺序直接写进曲库，刷新后仍是新顺序
+    expect(JSON.parse(localStorage.getItem(LIBRARY_KEY)!).favorites.map((item: { id: number }) => item.id))
+      .toEqual([2, 3, 1]);
+  });
+
+  it('原地不动、越界与未知歌单都不写盘', () => {
+    const { result } = seeded();
+    const before = localStorage.getItem(LIBRARY_KEY);
+
+    act(() => {
+      expect(result.current.actionsValue.reorderPlaylistSongs('favorites', 1, 1)).toBe(false);
+      expect(result.current.actionsValue.reorderPlaylistSongs('favorites', -1, 1)).toBe(false);
+      expect(result.current.actionsValue.reorderPlaylistSongs('favorites', 0, 3)).toBe(false);
+      expect(result.current.actionsValue.reorderPlaylistSongs('favorites', 5, 0)).toBe(false);
+      expect(result.current.actionsValue.reorderPlaylistSongs('不存在', 0, 1)).toBe(false);
+    });
+
+    expect(localStorage.getItem(LIBRARY_KEY)).toBe(before);
+    expect(result.current.dataValue.favorites.map((item) => item.id)).toEqual([1, 2, 3]);
+  });
+
+  it('落盘失败时保持原顺序', () => {
+    const { result } = seeded();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const storage = localStorage;
+    vi.stubGlobal('localStorage', {
+      getItem: storage.getItem.bind(storage),
+      setItem: () => { throw new DOMException('已满', 'QuotaExceededError'); },
+      removeItem: storage.removeItem.bind(storage),
+    });
+
+    act(() => { expect(result.current.actionsValue.reorderPlaylistSongs('favorites', 0, 2)).toBe(false); });
+    expect(result.current.dataValue.favorites.map((item) => item.id)).toEqual([1, 2, 3]);
+  });
+});
+
 describe('曲库原子保存', () => {
   it('歌单和虚拟收藏支持添加、去重、移除及兼容导入', () => {
     const { result } = renderHook(useLibraryStore);

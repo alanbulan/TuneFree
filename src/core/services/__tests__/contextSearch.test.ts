@@ -113,6 +113,16 @@ describe('语境搜歌', () => {
     expect(searchSongs).not.toHaveBeenCalled();
   });
 
+  it('一个可搜索平台都没有时明确报错，而不是返回空列表', async () => {
+    mocks.invoke.mockResolvedValue([suggestion('晴天', '周杰伦')]);
+    // 注册表里没有任何带 search 的 provider
+    registerBuiltinProviders([]);
+    setCustomProviders([]);
+
+    await expect(searchSongsByContext('雨天')).rejects.toThrow(/没有可用的搜索音源/);
+    expect(searchSongs).not.toHaveBeenCalled();
+  });
+
   it('非桌面环境直接报错，不静默返回空', async () => {
     mocks.isTauri.mockReturnValue(false);
     await expect(searchSongsByContext('雨天')).rejects.toThrow(/桌面应用/);
