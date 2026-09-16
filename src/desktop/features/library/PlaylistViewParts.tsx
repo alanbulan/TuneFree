@@ -16,17 +16,18 @@ interface PlaylistDetailProps {
   onFavorite: (song: Song) => void;
   isFavorite: (song: Song) => boolean;
   onRemove: (song: Song) => void;
+  onReorder: (fromIndex: number, toIndex: number) => void;
 }
 
 export function PlaylistDetail({ playlist, currentSong, isPlaying, onBack, onRename,
-  onDelete, onPlay, onFavorite, isFavorite, onRemove }: PlaylistDetailProps) {
+  onDelete, onPlay, onFavorite, isFavorite, onRemove, onReorder }: PlaylistDetailProps) {
   return (
     <div>
       <button type="button" className="soft-button" onClick={onBack}>← 返回歌单列表</button>
       <div className="content-card glass-panel playlist-detail-card">
         <div className="panel-label-row">
           <div><p className="eyebrow">Playlist</p><h2 className="section-title">{playlist.name}</h2>
-            <p>{playlist.songs.length} 首歌曲</p></div>
+            <p>{playlist.songs.length} 首歌曲{playlist.songs.length > 1 ? ' · 可拖拽调整顺序' : ''}</p></div>
           <div className="inline-actions">
             {playlist.id !== 'favorites' && (<>
               <button type="button" className="soft-button" onClick={() => onRename(playlist)}>重命名</button>
@@ -37,7 +38,8 @@ export function PlaylistDetail({ playlist, currentSong, isPlaying, onBack, onRen
       </div>
       <SongTable songs={playlist.songs} currentSong={currentSong} isPlaying={isPlaying}
         emptyText="这个歌单还没有歌曲" actionLabel="操作" onPlay={onPlay}
-        onFavorite={onFavorite} isFavorite={isFavorite} onDelete={onRemove} deleteLabel="从歌单移除" />
+        onFavorite={onFavorite} isFavorite={isFavorite} onDelete={onRemove} deleteLabel="从歌单移除"
+        onReorder={onReorder} />
     </div>
   );
 }

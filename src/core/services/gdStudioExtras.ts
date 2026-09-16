@@ -2,44 +2,19 @@ import type { Song } from '../types';
 import { fixUrl } from './utils';
 import { mergeLyricTracks } from '../utils/lyrics';
 import { fetchGDStudioData, GDStudioApiError } from './gdStudioClient';
-import {
-  enrichAIRecommendationCovers,
-  loadAIRecommendationTracks,
-  mapAIRecommendationTracks,
-} from './gdStudioAi';
-import { normalizeBitrate, normalizeGDStudioSource, type GdStudioSource } from './gdStudioModel';
-import { resolvePic } from './sources/registry';
+import { normalizeBitrate, normalizeGDStudioSource } from './gdStudioModel';
 
 /**
  * GD 音乐台的「非平台解析」能力。
  *
- * 平台解析（musicUrl / lyric / pic / search）已经由内置脚本
- * `sources/builtin/gdMusicScript.ts` 承担；这里保留的是 GD 独占的两个接口：
+ * 平台解析（musicUrl / lyric / pic / search）由内置脚本
+ * `sources/builtin/gdMusicScript.ts` 承担；这里只剩 GD 独占的 `types=autosource`：
+ * 一次请求完成「按歌名找歌 + 取播放地址」。
  *
- * - `types=autosource`：一次请求完成「按歌名找歌 + 取播放地址」，用于 embeat
- *   （AI 推荐歌曲）与按歌名匹配；
- * - `embeat_agent` / Pollinations：AI 推荐歌单。
- *
- * 两处都用注册表的 `resolvePic` 取封面，因此封面能力同样来自 provider 声明。
+ * 它服务于**历史数据**：早期 AI 搜歌把歌曲存成 `source: 'embeat'`，这些歌还躺在
+ * 用户的收藏与歌单里，没有平台 id，只能靠歌名跨源匹配。新的语境搜歌走
+ * `services/contextSearch.ts`，产出的是带真实平台 id 的歌曲，不再经过这里。
  */
-
-/** 用注册表的通用封面能力替代原先的 GD 专用封面函数。 */
-const resolveRecommendationCover = async (
-  source: GdStudioSource,
-  picId: string,
-  _size: 300 | 500,
-  songId?: string | number,
-  signal?: AbortSignal,
-): Promise<string> => {
-  if (!picId) return '';
-  return resolvePic({
-    platform: source,
-    id: songId === undefined ? picId : songId,
-    quality: '320k',
-    picId,
-    signal,
-  });
-};
 
 export const resolveAutosource = async (
   song: Pick<Song, "name" | "artist" | "album" | "source">,
@@ -125,16 +100,4 @@ export const resolveAutosource = async (
     resolvedId,
     resolvedLyricId: resolvedId,
   };
-};
-
-/** 调用 Embeat 大模型获取 AI 推荐歌曲 (支持大语言模型搜歌 / 情感电台) */
-export const getAIRecommendedSongs = async (
-  keyword: string,
-  source: GdStudioSource = 'netease',
-  count: number = 20,
-  signal?: AbortSignal,
-): Promise<Song[]> => {
-  const tracks = await loadAIRecommendationTracks(keyword, source, count, signal);
-  await enrichAIRecommendationCovers(tracks, resolveRecommendationCover);
-  return mapAIRecommendationTracks(tracks);
 };

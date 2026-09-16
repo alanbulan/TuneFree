@@ -1,0 +1,36 @@
+/* 自绘 tooltip：替代浏览器原生 title 提示框。
+   主窗口与桌面歌词窗口是两套独立文档（后者不加载 globals.css），
+   因此这里的每个 token 都带字面量回退值，保证在两边都能正确着色。 */
+.tooltip-anchor { display: contents; }
+.tooltip-bubble {
+  position: fixed;
+  z-index: 2000;
+  max-width: 280px;
+  padding: 6px 10px;
+  border: 1px solid rgba(var(--accent-rgb, 250, 35, 59), 0.14);
+  border-radius: 9px;
+  background: var(--glass-bg-strong, rgba(255, 255, 255, 0.94));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 6px 20px var(--shadow-md, rgba(0, 0, 0, 0.14));
+  color: var(--text, #1c1c1e);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: center;
+  pointer-events: none;
+}
+/* 定位于锚点中心，再按方向整体上移或下移。 */
+.tooltip-bubble.is-top { transform: translate(-50%, -100%); }
+.tooltip-bubble.is-bottom { transform: translate(-50%, 0); }
+/* 多行提示（如含换行）居中看起来很散，改为左对齐。 */
+.tooltip-bubble.is-multiline { text-align: left; white-space: pre-line; }
+
+@keyframes tooltipIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.tooltip-bubble { animation: tooltipIn .13s cubic-bezier(.16, 1, .3, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .tooltip-bubble { animation: none; }
+}

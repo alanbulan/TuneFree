@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { PRESET_COLORS } from '../../../../core/utils/theme';
+import Tooltip from '../../../components/Tooltip';
 
 interface ColorPaletteProps {
   value: string;
@@ -34,20 +35,20 @@ export default function ColorPalette({ value, onChange }: ColorPaletteProps) {
         {PRESET_COLORS.map((preset) => {
           const selected = isPresetMatch(preset.color);
           return (
-            <button
-              key={preset.color}
-              type="button"
-              className={`color-swatch ${selected ? 'color-swatch-active' : ''}`}
-              title={preset.name}
-              style={{ backgroundColor: preset.color }}
-              onClick={() => handlePresetClick(preset.color)}
-              aria-label={preset.name}
-            />
+            <Tooltip key={preset.color} label={preset.name}>
+              <button
+                type="button"
+                className={`color-swatch ${selected ? 'color-swatch-active' : ''}`}
+                style={{ backgroundColor: preset.color }}
+                onClick={() => handlePresetClick(preset.color)}
+                aria-label={preset.name}
+              />
+            </Tooltip>
           );
         })}
       </div>
       <div className="color-palette-custom">
-        <label className="color-picker-wrapper" title="自定义颜色">
+        <Tooltip label="自定义颜色"><label className="color-picker-wrapper">
           <input
             type="color"
             className="color-picker-input"
@@ -56,7 +57,7 @@ export default function ColorPalette({ value, onChange }: ColorPaletteProps) {
           />
           <span className="color-picker-display" style={{ backgroundColor: value }} />
           <span className="color-picker-hex">{value.toUpperCase()}</span>
-        </label>
+        </label></Tooltip>
       </div>
     </div>
   );

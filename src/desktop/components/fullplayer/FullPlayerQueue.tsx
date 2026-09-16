@@ -11,6 +11,7 @@ import {
 import { isSameSong, type Song } from '../../../core/types';
 import CoverArt from '../CoverArt';
 import VirtualList from '../VirtualList';
+import Tooltip from '../Tooltip';
 import { useToast } from '../ToastHost';
 
 const playModeLabel: Record<'sequence' | 'loop' | 'shuffle', string> = {
@@ -72,15 +73,16 @@ function FullPlayerQueue() {
             {playModeLabel[playMode]}
           </button>
         </div>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="清空待播队列"
-          title="清空待播队列"
-          onClick={handleClearQueue}
-        >
-          <TrashIcon size={16} />
-        </button>
+        <Tooltip label="清空待播队列" side="bottom">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="清空待播队列"
+            onClick={handleClearQueue}
+          >
+            <TrashIcon size={16} />
+          </button>
+        </Tooltip>
       </div>
       <div className="queue-list full-queue-list">
         {queue.length === 0 ? (

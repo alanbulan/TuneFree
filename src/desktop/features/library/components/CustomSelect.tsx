@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import MotionChoice from '../../../components/MotionChoice';
+import Tooltip from '../../../components/Tooltip';
 
 interface CustomSelectProps {
   id?: string;
@@ -65,6 +66,7 @@ export default function CustomSelect({ id, value, options, onChange, disabled }:
         items[next]?.focus();
       }
     }}>
+      <Tooltip label={selectedOption.label}>
       <button
         id={id}
         ref={triggerRef}
@@ -75,7 +77,6 @@ export default function CustomSelect({ id, value, options, onChange, disabled }:
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-controls={isOpen ? listboxId : undefined}
-        title={selectedOption.label}
       >
         <span>{selectedOption.label}</span>
         <svg
@@ -92,6 +93,7 @@ export default function CustomSelect({ id, value, options, onChange, disabled }:
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
+      </Tooltip>
 
       <AnimatePresence>
       {isOpen && (

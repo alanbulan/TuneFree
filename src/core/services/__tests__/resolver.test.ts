@@ -17,7 +17,6 @@ vi.mock('../kuwo', () => ({
 }));
 vi.mock('../gdStudioExtras', () => ({
   resolveAutosource: vi.fn(),
-  getAIRecommendedSongs: vi.fn(),
 }));
 
 import { fetchFallbackLyrics, fetchNativeUrl, getSongUrl, parseSongFull, getLyrics } from '../resolver';

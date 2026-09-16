@@ -1,9 +1,12 @@
-import { useId, useRef } from 'react';
+import { useId, useMemo, useRef, useSyncExternalStore } from 'react';
 import { ArrowRight, BrainCircuit, LoaderCircle, Sparkles } from 'lucide-react';
 import { PlayIcon } from '../../../core/components/Icons';
+import { subscribeMusicSources } from '../../../core/services/sources/manager';
+import { getSourceGeneration, topListPlatforms } from '../../../core/services/sources/registry';
 import type { Song } from '../../../core/types';
 import { getMusicSourceLabel } from '../../../core/utils/musicSource';
 import MotionChoice from '../../components/MotionChoice';
+import Tooltip from '../../components/Tooltip';
 
 export function HomeHero({
   greeting, favoritesCount, playlistsCount, firstSong, selectionName, onPlay,
@@ -22,10 +25,12 @@ export function HomeHero({
         <h1 className="hero-title">{greeting}</h1>
         <p className="hero-copy">从熟悉的旋律，到下一首心动。</p>
         {firstSong && (
-          <button type="button" className="primary-button hero-play"
-            onClick={() => onPlay(firstSong)} title={`播放 ${selectionName || '当前歌单'}`}>
-            <PlayIcon size={15} /> 播放当前歌单
-          </button>
+          <Tooltip label={`播放 ${selectionName || '当前歌单'}`}>
+            <button type="button" className="primary-button hero-play"
+              onClick={() => onPlay(firstSong)}>
+              <PlayIcon size={15} /> 播放当前歌单
+            </button>
+          </Tooltip>
         )}
       </div>
       <dl className="stat-card home-library-stats" aria-label="我的音乐库">
@@ -36,16 +41,24 @@ export function HomeHero({
   );
 }
 
-const sources = [
-  { key: 'netease', label: getMusicSourceLabel('netease') },
-  { key: 'qq', label: getMusicSourceLabel('qq') },
-  { key: 'kuwo', label: getMusicSourceLabel('kuwo') },
-  { key: 'recommendation', label: '为你推荐' },
-  { key: 'embeat', label: 'AI 搜歌' },
-];
-
+/**
+ * 首页音源标签。
+ *
+ * 平台部分从注册表的 `topListPlatforms()` 派生——首页展示的是榜单，所以取
+ * 「有榜单能力」的平台，而不是所有可搜索平台。写死清单会和搜索页的来源
+ * 各说各话（这正是之前哔哩哔哩混进来的原因），派生之后两边始终一致。
+ *
+ * 订阅源代数：注册表是可变的（内置脚本异步就绪、用户导入 / 停用音源），
+ * 不订阅的话标签会一直停在首次渲染的那份清单上。
+ */
 export function HomeSourceTabs({ activeSource, onChange }: { activeSource: string; onChange: (source: string) => void }) {
   const indicatorId = useId();
+  useSyncExternalStore(subscribeMusicSources, getSourceGeneration, getSourceGeneration);
+  const sources = useMemo(() => [
+    ...topListPlatforms().map((key) => ({ key, label: getMusicSourceLabel(key) })),
+    { key: 'recommendation', label: '为你推荐' },
+    { key: 'embeat', label: 'AI 搜歌' },
+  ], []);
   return (
     <div className="section-header home-source-header">
       <h2 className="section-title">发现音乐</h2>

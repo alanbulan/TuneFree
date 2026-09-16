@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use crate::app::error::{CommandError, CommandResult};
 use crate::recommendation::{
-    LibrarySnapshot, LlmConfigInput, LlmConfigView, LlmProviderTestResult, RecSong,
-    RecommendationEvent, RecommendationFeedback, RecommendationItem, RecommendationJob,
-    RecommendationMaintenanceStats, RecommendationService,
+    llm::ContextSongSuggestion, LibrarySnapshot, LlmConfigInput, LlmConfigView,
+    LlmProviderTestResult, RecSong, RecommendationEvent, RecommendationFeedback,
+    RecommendationItem, RecommendationJob, RecommendationMaintenanceStats, RecommendationService,
 };
 use tauri::State;
 
@@ -130,6 +130,15 @@ pub(crate) async fn test_llm_provider(
     config: Option<LlmConfigInput>,
 ) -> CommandResult<LlmProviderTestResult> {
     state.test_llm_provider(config).await
+}
+
+#[tauri::command]
+pub(crate) async fn search_songs_by_context(
+    state: State<'_, Arc<RecommendationService>>,
+    keyword: String,
+    limit: Option<usize>,
+) -> CommandResult<Vec<ContextSongSuggestion>> {
+    state.search_songs_by_context(keyword, limit).await
 }
 
 #[tauri::command]

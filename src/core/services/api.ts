@@ -49,7 +49,8 @@ export {
 } from "./kuwo";
 export { searchKugou } from "./kugou";
 export { searchMigu } from "./migu";
-export { resolveAutosource, getAIRecommendedSongs } from "./gdStudioExtras";
+export { resolveAutosource } from "./gdStudioExtras";
+export { searchSongsByContext, ContextSearchUnavailableError } from "./contextSearch";
 export {
   aggregatePlatforms,
   searchablePlatforms,

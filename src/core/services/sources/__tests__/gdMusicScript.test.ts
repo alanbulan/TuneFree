@@ -70,17 +70,35 @@ const timedUpstream = (body: unknown) => (payload: SourceProxyPayload) =>
 afterEach(() => vi.restoreAllMocks());
 
 describe('GD 内置脚本与真实 LX 运行时', () => {
-  it('沿用 v1.1.31 的五个平台与 GD 作者归属，只有 JOOX 与 B 站提供 GD 搜索', () => {
+  it('只声明上游实测存活的平台与能力，作者归属不变', () => {
     const { sources } = createHarness(timedUpstream({}));
-    expect(Object.keys(sources)).toEqual(['wy', 'tx', 'kw', 'joox', 'bilibili']);
-    expect(Object.keys(sources).filter((key) => sources[key].actions?.includes('search'))).toEqual(['joox', 'bilibili']);
+    // QQ（tencent）整条线已上游下掉，哔哩哔哩是视频平台：两者都不再声明。
+    expect(Object.keys(sources)).toEqual(['wy', 'kw', 'joox']);
+    expect(Object.keys(sources).filter((key) => sources[key].actions?.includes('search'))).toEqual(['joox']);
+    // 只有网易云还有可用的播放地址；酷我与 JOOX 仅保留歌词与封面。
+    expect(sources.wy.actions).toEqual(['musicUrl', 'lyric', 'pic']);
+    expect(sources.kw.actions).toEqual(['lyric', 'pic']);
+    expect(sources.joox.actions).toEqual(['lyric', 'pic', 'search']);
+    // 没有 musicUrl 的平台不声明音质，避免调用方误以为能出播放地址。
+    expect(sources.wy.qualitys).toEqual(['128k', '320k', 'flac', 'flac24bit']);
+    expect(sources.kw.qualitys).toEqual([]);
+    expect(sources.joox.qualitys).toEqual([]);
     expect(parseScriptMeta(GD_MUSIC_SCRIPT, 'gd.js')).toMatchObject({
       author: 'GD Studio', homepage: 'https://music.gdstudio.xyz/',
     });
   });
 
+  it('不再支持 QQ 与哔哩哔哩：请求直接失败，不发任何上游请求', async () => {
+    const harness = createHarness(timedUpstream({ url: 'https://cdn.test/song.mp3' }));
+    await expect(harness.invoke('tx', 'musicUrl', { musicInfo: { id: '123' } }))
+      .rejects.toThrow('不支持的音乐源');
+    await expect(harness.invoke('bilibili', 'musicUrl', { musicInfo: { id: '123' } }))
+      .rejects.toThrow('不支持的音乐源');
+    expect(harness.requests).toHaveLength(0);
+  });
+
   it.each([
-    ['wy', 'netease'], ['tx', 'tencent'], ['kw', 'kuwo'], ['joox', 'joox'], ['bilibili', 'bilibili'],
+    ['wy', 'netease'],
   ])('%s 的平台与音质请求参数兼容旧版', async (source, apiSource) => {
     const harness = createHarness(timedUpstream({ url: 'https://cdn.test/song.mp3' }));
     for (const [quality, bitrate] of [['128k', '128'], ['320k', '320'], ['flac', '740'], ['flac24bit', '999']]) {
@@ -93,7 +111,13 @@ describe('GD 内置脚本与真实 LX 运行时', () => {
     }
   });
 
-  it('按服务器时间签名，URL/歌词使用各自标识，QQ 映射为 tencent', async () => {
+  it.each(['kw', 'joox'])('%s 不再声明播放地址，getUrl 直接返回空且不发请求', async (source) => {
+    const harness = createHarness(timedUpstream({ url: 'https://cdn.test/song.mp3' }));
+    expect(await harness.provider(source).getUrl!({ platform: toAppPlatform(source)!, id: '123', quality: '320k' })).toBeNull();
+    expect(harness.requests).toHaveLength(0);
+  });
+
+  it('按服务器时间签名，URL/歌词使用各自标识', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(1780000000000);
     const harness = createHarness((payload) => {
       if (payload.url.endsWith('/time')) return envelope('1789380000');
@@ -101,8 +125,8 @@ describe('GD 内置脚本与真实 LX 运行时', () => {
     });
     const musicInfo = { id: 'song-id', urlId: 'url-id', lyricId: 'lyric-id' };
     await Promise.all([
-      harness.invoke('tx', 'musicUrl', { type: 'flac', musicInfo }),
-      harness.invoke('tx', 'lyric', { musicInfo }),
+      harness.invoke('wy', 'musicUrl', { type: 'flac', musicInfo }),
+      harness.invoke('wy', 'lyric', { musicInfo }),
     ]);
     expect(harness.requests.filter((request) => request.url.endsWith('/time'))).toHaveLength(1);
     const forms = harness.requests.filter((request) => request.method === 'POST').map(formOf);
@@ -110,7 +134,7 @@ describe('GD 内置脚本与真实 LX 运行时', () => {
     for (const form of forms) {
       const expected = createHash('md5').update(`178938000|music.gdstudio.org|20260616|${form.get('id')}`).digest('hex').slice(-8).toUpperCase();
       expect(form.get('s')).toBe(expected);
-      expect(form.get('source')).toBe('tencent');
+      expect(form.get('source')).toBe('netease');
     }
     expect(forms.find((form) => form.get('types') === 'url')?.get('br')).toBe('740');
   });
@@ -135,12 +159,13 @@ describe('GD 内置脚本与真实 LX 运行时', () => {
     expect(await harness.provider('wy').getLyrics!({ platform: 'netease', id: '123', quality: '320k' })).toBe('[00:01]中文');
   });
 
-  it('封面直链、QQ 与 JOOX 模板不请求 GD；没有 picId 时不误用歌曲 ID', async () => {
+  it('封面直链与 JOOX 模板不请求 GD；没有 picId 时不误用歌曲 ID', async () => {
     const harness = createHarness(timedUpstream({}));
     expect(await harness.invoke('kw', 'pic', { musicInfo: { picId: 'https://img.test/cover.jpg' } })).toBe('https://img.test/cover.jpg');
-    expect(await harness.invoke('tx', 'pic', { musicInfo: { id: 'song', picId: 'album' } })).toBe('https://y.gtimg.cn/music/photo_new/T002R300x300M000album.jpg');
     expect(await harness.invoke('joox', 'pic', { musicInfo: { picId: 'cover' } })).toBe('https://image.joox.com/JOOXcover/0/cover/500');
-    expect(await harness.invoke('tx', 'pic', { musicInfo: { id: 'song' } })).toBeNull();
+    // QQ 的封面模板已随该平台一并移除，不能再靠 albummid 拼出链接。
+    expect(harness.sources.tx).toBeUndefined();
+    expect(await harness.invoke('wy', 'pic', { musicInfo: { id: 'song' } })).toBeNull();
     expect(harness.requests).toHaveLength(0);
   });
 
@@ -198,9 +223,10 @@ describe('GD 内置脚本与真实 LX 运行时', () => {
     await expect(httpFailure.invoke('wy', 'musicUrl', { musicInfo: { id: '123' } })).rejects.toThrow('HTTP 503');
     const apiFailure = createHarness(timedUpstream({ error: 'rate limit' }));
     await expect(apiFailure.invoke('wy', 'musicUrl', { musicInfo: { id: '123' } })).rejects.toThrow('rate limit');
+    // 上游对某个 source 关门时，错误文案要指出是哪个平台的接口不支持。
     const unsupported = createHarness((payload) => payload.url.endsWith('/time')
       ? envelope('1789380000') : envelope({ detail: 'Value of `source` is not supported.' }, 400));
-    await expect(unsupported.invoke('tx', 'musicUrl', { musicInfo: { id: '123' } }))
-      .rejects.toThrow('GD 公开接口目前不支持该平台（tencent）');
+    await expect(unsupported.invoke('wy', 'musicUrl', { musicInfo: { id: '123' } }))
+      .rejects.toThrow('GD 公开接口目前不支持该平台（netease）');
   });
 });

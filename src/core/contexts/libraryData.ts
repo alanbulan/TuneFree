@@ -191,6 +191,13 @@ export interface LibraryActions {
   deletePlaylist: (id: string) => boolean;
   addToPlaylist: (playlistId: string, song: Song) => boolean;
   removeFromPlaylist: (playlistId: string, songId: number | string, source?: string) => boolean;
+  /**
+   * 把歌曲从 `fromIndex` 移到 `toIndex`（拖拽排序）。
+   *
+   * `playlistId` 传 'favorites' 即调整收藏顺序。顺序直接存在歌曲数组里，
+   * 因此自动随备份 / 导出 / 导入走，不需要另一套顺序索引。
+   */
+  reorderPlaylistSongs: (playlistId: string, fromIndex: number, toIndex: number) => boolean;
   exportData: () => LibraryExportResult;
   parseImportData: (jsonData: string) => LibraryImportResult;
   applyImportData: (data: LibraryImportPreview, mode?: LibraryImportMode) => LibraryApplyImportResult;

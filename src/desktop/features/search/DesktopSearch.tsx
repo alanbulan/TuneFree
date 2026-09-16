@@ -3,11 +3,11 @@ import { MusicIcon } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { searchAggregate, searchSongs } from '../../../core/services/api';
-import { aggregatePlatforms, getSourceGeneration, searchUsesGDStudioQuota } from '../../../core/services/sources/registry';
+import { getSourceGeneration, searchUsesGDStudioQuota } from '../../../core/services/sources/registry';
+import { CircuitOpenError } from '../../../core/services/sources/circuitBreaker';
 import { subscribeMusicSources } from '../../../core/services/sources/manager';
 import type { Song } from '../../../core/types';
 import {
-  GD_STUDIO_ATTRIBUTION,
   GD_STUDIO_RATE_LIMIT_HINT,
   getMusicSourceLabel,
 } from '../../../core/utils/musicSource';
@@ -19,23 +19,14 @@ import { mergeSearchPage } from './searchPagination';
 import SearchControls from './SearchControls';
 import MotionPanel from '../../components/MotionPanel';
 
-const extendedKey = 'tunefree_aggregate_extended_sources';
-
-const getSearchHint = (searchMode: 'aggregate' | 'single', selectedSource: string, includeExtendedSources: boolean): string => {
-  if (searchMode === 'aggregate' && includeExtendedSources) {
-    const core = aggregatePlatforms(false);
-    const extended = aggregatePlatforms(true).filter((platform) => !core.includes(platform));
-    const labels = extended.map((platform) => getMusicSourceLabel(platform)).join(' / ');
-    const gdLabels = extended.filter((platform) => searchUsesGDStudioQuota(platform))
-      .map((platform) => getMusicSourceLabel(platform)).join(' / ');
-    const quotaNote = gdLabels ? `；其中 ${gdLabels} 会占用 ${GD_STUDIO_ATTRIBUTION} 的公开接口频次` : '';
-    return `扩展聚合已启用：${labels}${quotaNote}。`;
-  }
-  if (searchMode === 'single' && searchUsesGDStudioQuota(selectedSource)) {
-    return `${getMusicSourceLabel(selectedSource, 'full')} 使用 ${GD_STUDIO_ATTRIBUTION} 公开接口，建议控制频率：${GD_STUDIO_RATE_LIMIT_HINT}。`;
-  }
-  return '聚合搜索会交叉合并网易云、QQ、酷我结果，适合桌面端快速试播。';
-};
+/**
+ * 聚合搜索恒定包含扩展音源。
+ *
+ * 原先这是个用户开关，默认关闭——结果是大多数用户从没打开过，白白少搜了
+ * 酷狗 / 咪咕 / JOOX。扩展音源本来就是「能搜到更多歌」的纯增益，
+ * 失败的音源会被熔断器摘掉、并在界面上标出，不需要用户手动权衡。
+ */
+const INCLUDE_EXTENDED_SOURCES = true;
 
 interface DesktopSearchProps {
   commandQuery?: string;
@@ -56,13 +47,10 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
   const [isSearching, setIsSearching] = useState(false);
   const [searchMode, setSearchMode] = useState<'aggregate' | 'single'>('aggregate');
   const [selectedSource, setSelectedSource] = useState('netease');
-  const [includeExtendedSources, setIncludeExtendedSources] = useState(() =>
-    typeof window !== 'undefined' && localStorage.getItem(extendedKey) === '1',
-  );
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [searchError, setSearchError] = useState('');
-  const criteria = JSON.stringify([query, searchMode, selectedSource, includeExtendedSources, commandNonce]);
+  const criteria = JSON.stringify([query, searchMode, selectedSource, commandNonce]);
   const [previousCriteria, setPreviousCriteria] = useState(criteria);
   const criteriaRef = useRef(criteria);
   if (previousCriteria !== criteria) {
@@ -82,10 +70,6 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
   const { currentSong, isPlaying } = usePlayerNowPlaying();
   const { toggleFavorite, isFavorite } = useLibrary();
   const { showToast } = useToast();
-
-  useEffect(() => {
-    localStorage.setItem(extendedKey, includeExtendedSources ? '1' : '0');
-  }, [includeExtendedSources]);
 
   useEffect(() => {
     if (commandQuery.trim() || localStorage.getItem('tunefree_desktop_pending_query')) {
@@ -129,7 +113,7 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
     }
     try {
       const data = searchMode === 'aggregate'
-        ? await searchAggregate(clean, page, { includeExtendedSources, signal: controller.signal,
+        ? await searchAggregate(clean, page, { includeExtendedSources: INCLUDE_EXTENDED_SOURCES, signal: controller.signal,
           onPartial: (partial, failed) => {
             if (controller.signal.aborted || requestId !== searchRequestIdRef.current) return;
             applyResults(partial);
@@ -140,12 +124,14 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
       if (requestId !== searchRequestIdRef.current) return;
       const merged = applyResults(data);
       if (merged) setHasMore(merged.hasMore);
-    } catch {
+    } catch (cause) {
       if (controller.signal.aborted || requestId !== searchRequestIdRef.current) return;
       setSearchError(
-        searchMode === 'single' && searchUsesGDStudioQuota(selectedSource)
-          ? `${getMusicSourceLabel(selectedSource, 'full')} 当前不可用，或可能触发了公开接口频控（${GD_STUDIO_RATE_LIMIT_HINT}）。`
-          : '搜索失败，请稍后重试。',
+        cause instanceof CircuitOpenError
+          ? `${getMusicSourceLabel(cause.platform, 'full')} 最近连续失败，已暂时停用；几秒后会自动重试一次。`
+          : searchMode === 'single' && searchUsesGDStudioQuota(selectedSource)
+            ? `${getMusicSourceLabel(selectedSource, 'full')} 当前不可用，或可能触发了公开接口频控（${GD_STUDIO_RATE_LIMIT_HINT}）。`
+            : '搜索失败，请稍后重试。',
       );
       if (page === 1) setResults([]);
       setHasMore(false);
@@ -155,7 +141,7 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
         setIsSearching(false);
       }
     }
-  }, [addToHistory, includeExtendedSources, page, query, searchMode, selectedSource, showToast]);
+  }, [addToHistory, page, query, searchMode, selectedSource, showToast]);
 
   useEffect(() => {
     if (!query.trim()) return;
@@ -180,8 +166,6 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
     setPage((current) => current + 1);
   }, [hasMore, isSearching, results.length]);
 
-  const hint = getSearchHint(searchMode, selectedSource, includeExtendedSources);
-
   const handlePlay = (song: Song) => {
     void playQueue(results, song);
   };
@@ -199,15 +183,14 @@ export default function DesktopSearch({ commandQuery = '', commandNonce = 0 }: D
     <div>
       <div className="search-layout search-layout-focused">
         <section className="search-card glass-panel search-primary-card">
-          <SearchControls query={query} mode={searchMode} source={selectedSource} extended={includeExtendedSources}
-            onQuery={setQuery} onMode={setSearchMode} onSource={setSelectedSource} onExtended={setIncludeExtendedSources}
+          <SearchControls query={query} mode={searchMode} source={selectedSource}
+            onQuery={setQuery} onMode={setSearchMode} onSource={setSelectedSource}
             onSearch={() => {
               if (debounceRef.current) window.clearTimeout(debounceRef.current);
               debounceRef.current = null;
               void performSearch();
             }} />
-          <MotionPanel transitionKey={`${searchMode}:${selectedSource}:${includeExtendedSources}`}>
-          <p className="search-hint">{hint}</p>
+          <MotionPanel transitionKey={`${searchMode}:${selectedSource}`}>
           {searchError && <p className="search-hint is-error">{searchError}</p>}
 
           <div className="section-header">

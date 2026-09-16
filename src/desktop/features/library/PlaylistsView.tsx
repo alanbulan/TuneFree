@@ -11,7 +11,7 @@ import MotionPanel from '../../components/MotionPanel';
 
 export default function PlaylistsView() {
   const { playlists, createPlaylist, deletePlaylist, renamePlaylist, removeFromPlaylist,
-    isFavorite, toggleFavorite } = useLibrary();
+    reorderPlaylistSongs, isFavorite, toggleFavorite } = useLibrary();
   const { playQueue } = usePlayerActions();
   const { currentSong, isPlaying } = usePlayerNowPlaying();
   const { confirmDialog, promptDialog } = useDesktopDialog();
@@ -77,7 +77,8 @@ export default function PlaylistsView() {
       onDelete={(playlist) => void handleDeletePlaylist(playlist)}
       onPlay={(song) => void playQueue(selectedPlaylist.songs, song)} onFavorite={handleFavorite}
       isFavorite={(song) => isFavorite(song.id, song.source)}
-      onRemove={(song) => removeFromPlaylist(selectedPlaylist.id, song.id, song.source)} /> : (
+      onRemove={(song) => removeFromPlaylist(selectedPlaylist.id, song.id, song.source)}
+      onReorder={(from, to) => { reorderPlaylistSongs(selectedPlaylist.id, from, to); }} /> : (
     <section className="playlist-grid">
       <PlaylistActionCards newName={newPlaylistName} onNewNameChange={setNewPlaylistName}
         onCreate={handleCreatePlaylist} importSource={importSource} onImportSourceChange={setImportSource}

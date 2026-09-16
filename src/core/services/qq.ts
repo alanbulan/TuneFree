@@ -23,6 +23,8 @@ const QQ_COMM = {
 } as const;
 
 const MUSICU_URL = "https://u.y.qq.com/cgi-bin/musicu.fcg";
+/** 经典桌面搜索接口：未登录即可返回结果（musicu 的搜索已不再可用）。 */
+const SEARCH_URL = "https://c.y.qq.com/soso/fcgi-bin/client_search_cp";
 
 const decodeQQBase64 = (value: unknown): string => {
   if (typeof value !== "string" || !value) return "";
@@ -110,6 +112,53 @@ export const qqMusicuFetch = async (
   return null;
 };
 
+/**
+ * 搜索专用请求封装（GET + 查询串，同样走代理轮询）。
+ *
+ * 搜索**不能**用 `musicu.fcg`：该端点现在对未登录请求一律返回空列表
+ * （移动端 comm 更是直接 2001），因此 `searchQQ` 会一直抛错、QQ 整个音源
+ * 在聚合搜索里消失。经典桌面接口 `client_search_cp` 无需登录即有完整结果，
+ * 且返回的字段（songmid / songid / strMediaMid / albummid）与解析链路一致。
+ */
+const qqSearchFetch = async (
+  params: Record<string, string | number>,
+  signal?: AbortSignal,
+): Promise<any> => {
+  const query = new URLSearchParams(
+    Object.entries(params).map(([key, value]) => [key, String(value)]),
+  ).toString();
+  const target = `${SEARCH_URL}?${query}`;
+
+  for (const proxy of getProxies()) {
+    const linked = createLinkedAbort(signal, 8000);
+    try {
+      const finalUrl = `${proxy}${encodeURIComponent(target)}`;
+      const isSelfProxy = proxy === SELF_HOSTED_PROXY;
+
+      const resp = await fetch(finalUrl, {
+        method: "GET",
+        headers: {
+          ...(isSelfProxy ? buildLocalServerHeaders() : {}),
+        },
+        ...(isSelfProxy ? {} : { mode: "cors" as RequestMode }),
+        credentials: "omit",
+        signal: linked.signal,
+      });
+
+      if (!resp.ok) { await resp.body?.cancel(); continue; }
+      const data = await resp.json();
+      if (data?.code === 0 && data?.data) return data.data;
+    } catch {
+      throwIfAborted(signal);
+      /* 继续下一个代理 */
+    } finally {
+      linked.cleanup();
+    }
+  }
+
+  return null;
+};
+
 // ==============================
 // 搜索
 // ==============================
@@ -128,28 +177,32 @@ export const searchQQ = async (
   limit: number,
   signal?: AbortSignal,
 ): Promise<Song[]> => {
-  const data = await qqMusicuFetch({
-    method: "DoSearchForQQMusicDesktop",
-    module: "music.search.SearchCgiService",
-    param: { query: keyword, page_num: page, num_per_page: limit },
+  const data = await qqSearchFetch({
+    format: "json",
+    p: page,
+    n: limit,
+    w: keyword,
   }, signal);
 
-  const songs = data?.body?.song?.list;
+  const songs = data?.song?.list;
   if (!Array.isArray(songs)) {
-    if (data?.body?.song?.totalnum === 0) return [];
+    if (data?.song?.totalnum === 0) return [];
     throw new Error('QQ 音乐搜索响应不可用');
   }
 
   return songs.map((s: any) => ({
-    id: s.mid || String(s.id),
-    lyricId: s.id ? String(s.id) : undefined,
-    strMediaMid: typeof s.file?.media_mid === 'string' ? s.file.media_mid : undefined,
-    name: s.name || "",
+    id: s.songmid || String(s.songid),
+    lyricId: s.songid ? String(s.songid) : undefined,
+    // strMediaMid 才是媒体文件 MID，解析播放地址时必须用它。
+    strMediaMid: typeof s.strMediaMid === "string" ? s.strMediaMid
+      : typeof s.media_mid === "string" ? s.media_mid
+      : undefined,
+    name: s.songname || "",
     artist: s.singer?.map((si: any) => si.name).join(", ") || "",
-    album: s.album?.name || "",
-    pic: s.album?.mid
+    album: s.albumname || "",
+    pic: s.albummid
       ? fixUrl(
-          `https://y.gtimg.cn/music/photo_new/T002R500x500M000${s.album.mid}.jpg`,
+          `https://y.gtimg.cn/music/photo_new/T002R500x500M000${s.albummid}.jpg`,
         )
       : "",
     source: "qq" as const,

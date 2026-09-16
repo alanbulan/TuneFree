@@ -14,6 +14,10 @@ import {
   type MusicSourceEntry,
 } from '../../../../core/services/sources/manager';
 import { getMusicSourceLabel } from '../../../../core/utils/musicSource';
+import {
+  getOpenCircuits,
+  subscribeCircuitBreaker,
+} from '../../../../core/services/sources/circuitBreaker';
 import { useDesktopDialog } from '../../../components/DialogHost';
 import { useToast } from '../../../components/ToastHost';
 import { sourceStatus } from './sourceStatus';
@@ -50,6 +54,12 @@ export const useMusicSourcesViewModel = () => {
     subscribeMusicSources,
     getMusicSourcesSnapshot,
     getMusicSourcesSnapshot,
+  );
+  // 已熔断的通道单独订阅：用户手动重载音源会清空它，界面要跟着更新。
+  const openCircuits = useSyncExternalStore(
+    subscribeCircuitBreaker,
+    getOpenCircuits,
+    getOpenCircuits,
   );
   const { showToast } = useToast();
   const { confirmDialog } = useDesktopDialog();
@@ -193,6 +203,11 @@ export const useMusicSourcesViewModel = () => {
   return {
     entries: snapshot.entries,
     readyCount: snapshot.readyCount,
+    /**
+     * 已熔断的通道：上游连续失败被摘下的 (音源, 平台, 能力)。
+     * 这是「日志里一片失效」的可解释来源——不是每次都在重试，而是已经放弃了。
+     */
+    openCircuits,
     healthCounts: {
       unverified: snapshot.entries.filter((entry) => sourceStatus(entry).tone === 'unverified').length,
       success: snapshot.entries.filter((entry) => sourceStatus(entry).tone === 'success').length,

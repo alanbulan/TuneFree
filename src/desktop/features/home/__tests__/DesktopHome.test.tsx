@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LibraryProvider } from '../../../../core/contexts/LibraryContext';
 import { getTopListDetail, getTopLists } from '../../../../core/services/api';
-import { getAIRecommendedSongs } from '../../../../core/services/gdStudioExtras';
+import { searchSongsByContext } from '../../../../core/services/contextSearch';
 import { saveRecommendationFeedback } from '../../../../core/services/recommendation';
 import { IpcError } from '../../../../core/ipc';
 import { deferred } from '../../../../core/__tests__/deferred';
@@ -15,7 +15,10 @@ const mocks = vi.hoisted(() => ({ play: vi.fn(), toast: vi.fn(), remove: vi.fn()
 vi.mock('../../../../core/contexts/PlayerContext', () => ({ usePlayerActions: () => ({ playQueue: mocks.play }),
   usePlayerNowPlaying: () => ({ currentSong: { id: 'playing', name: '灵感', artist: '歌手', album: '', source: 'qq' }, isPlaying: true }) }));
 vi.mock('../../../../core/services/api', async (original) => ({ ...await original<typeof import('../../../../core/services/api')>(), getTopLists: vi.fn(), getTopListDetail: vi.fn() }));
-vi.mock('../../../../core/services/gdStudioExtras', () => ({ getAIRecommendedSongs: vi.fn() }));
+vi.mock('../../../../core/services/contextSearch', async (original) => ({
+  ...await original<typeof import('../../../../core/services/contextSearch')>(),
+  searchSongsByContext: vi.fn(),
+}));
 vi.mock('../../../../core/services/recommendation', async (original) => ({ ...await original<typeof import('../../../../core/services/recommendation')>(),
   saveRecommendationFeedback: vi.fn(), logRecommendationEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../../../components/ToastHost', () => ({ useToast: () => ({ showToast: mocks.toast }) }));
@@ -31,7 +34,7 @@ beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); vi.setSystemTime(new Date(2030, 0, ++day, 20));
   vi.mocked(getTopLists).mockReset().mockResolvedValue([chart, { id: 'empty', name: '新歌榜' }]);
   vi.mocked(getTopListDetail).mockReset().mockResolvedValue([song]);
-  vi.mocked(getAIRecommendedSongs).mockReset().mockResolvedValue([song]);
+  vi.mocked(searchSongsByContext).mockReset().mockResolvedValue([song]);
   vi.mocked(saveRecommendationFeedback).mockReset().mockResolvedValue(undefined);
   vi.mocked(useRecommendationJob).mockReturnValue({ songs: [], loading: false, initializing: false, error: '', removeSong: mocks.remove });
 });
@@ -96,14 +99,14 @@ describe('AI 搜歌', () => {
   it('建议词只填充输入，提交后才生成；附带反馈元数据并响应播放', async () => {
     renderHome(); await ready(); selectSource('AI 搜歌');
     fireEvent.click(screen.getByRole('button', { name: '下雨天的咖啡馆' }));
-    expect(getAIRecommendedSongs).not.toHaveBeenCalled();
+    expect(searchSongsByContext).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '描述想听的音乐' }));
     expect(screen.queryByRole('button', { name: '从这首歌出发' })).toBeNull();
     const input = screen.getByRole('textbox', { name: '描述想听的音乐' });
     expect((input as HTMLInputElement).value).toBe('下雨天的咖啡馆');
     fireEvent.change(input, { target: { value: ' 雨天 ' } });
     fireEvent.submit(input.closest('form')!); await ready();
-    expect(getAIRecommendedSongs).toHaveBeenCalledWith('雨天', 'netease', 20, expect.any(AbortSignal));
+    expect(searchSongsByContext).toHaveBeenCalledWith('雨天', 12, expect.any(AbortSignal));
     expect(mocks.busy).toHaveBeenCalledWith(true);
     fireEvent.click(screen.getByRole('button', { name: '立即播放 夜曲' }));
     expect(saveRecommendationFeedback).toHaveBeenCalledWith(expect.objectContaining({ action: 'play' }));
@@ -112,31 +115,35 @@ describe('AI 搜歌', () => {
   });
 
   it('取消和离开页面中断生成，迟到结果不改变新页面', async () => {
-    const pending = deferred<Song[]>(); vi.mocked(getAIRecommendedSongs).mockReturnValueOnce(pending.promise);
+    const pending = deferred<Song[]>(); vi.mocked(searchSongsByContext).mockReturnValueOnce(pending.promise);
     renderHome(); await ready(); selectSource('AI 搜歌');
     fireEvent.click(screen.getByRole('button', { name: '夜晚散步' })); fireEvent.submit(document.querySelector('.context-search-form')!);
-    const signal = vi.mocked(getAIRecommendedSongs).mock.calls[0][3]!;
+    const signal = vi.mocked(searchSongsByContext).mock.calls[0][2]!;
     fireEvent.click(screen.getByRole('button', { name: '停止生成' })); expect(signal.aborted).toBe(true);
     await act(async () => pending.resolve([song])); expect(screen.queryByRole('button', { name: '立即播放 夜曲' })).toBeNull();
-    const next = deferred<Song[]>(); vi.mocked(getAIRecommendedSongs).mockReturnValueOnce(next.promise);
+    const next = deferred<Song[]>(); vi.mocked(searchSongsByContext).mockReturnValueOnce(next.promise);
     fireEvent.submit(document.querySelector('.context-search-form')!); selectSource('QQ');
     await act(async () => next.reject(new Error('cancelled')));
-    expect(screen.queryByText('语境搜歌服务当前不可用，请稍后再试。')).toBeNull();
+    expect(screen.queryByText(/AI 搜歌失败/)).toBeNull();
     expect(mocks.busy).toHaveBeenLastCalledWith(false);
   });
 
-  it('空结果、限流及普通失败展示不同反馈，输入法 Enter 不提交', async () => {
+  it('空结果与两类失败给出可行动反馈，输入法 Enter 不提交', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     renderHome(); await ready(); selectSource('AI 搜歌');
     fireEvent.click(screen.getByRole('button', { name: '夜晚散步' }));
     const input = screen.getByRole('textbox', { name: '描述想听的音乐' });
     expect(fireEvent.keyDown(input, { key: 'Enter', isComposing: true })).toBe(false);
-    vi.mocked(getAIRecommendedSongs).mockResolvedValueOnce([]); fireEvent.submit(input.closest('form')!); await ready();
+    vi.mocked(searchSongsByContext).mockResolvedValueOnce([]); fireEvent.submit(input.closest('form')!); await ready();
     expect(mocks.toast).toHaveBeenCalledWith('暂未找到符合意境的歌曲，换个词试试看', 'info');
-    vi.mocked(getAIRecommendedSongs).mockRejectedValueOnce(new Error('RATE_LIMIT'));
-    fireEvent.submit(input.closest('form')!); await ready(); expect(screen.getByText('语境搜歌请求过于频繁，请稍后再试。')).toBeTruthy();
-    vi.mocked(getAIRecommendedSongs).mockRejectedValueOnce(new Error('offline'));
-    fireEvent.submit(input.closest('form')!); await ready(); expect(screen.getByText('语境搜歌服务当前不可用，请稍后再试。')).toBeTruthy();
+    // 模型没配好：必须引导去设置页，而不是笼统地报「服务不可用」
+    vi.mocked(searchSongsByContext).mockRejectedValueOnce(new Error('云端推荐未启用或配置不完整'));
+    fireEvent.submit(input.closest('form')!); await ready();
+    expect(screen.getByText(/在设置中填写 API 根地址/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '打开设置' })).toBeTruthy();    // 其余失败保留真实原因，便于排查
+    vi.mocked(searchSongsByContext).mockRejectedValueOnce(new Error('模型服务请求超时'));
+    fireEvent.submit(input.closest('form')!); await ready();
+    expect(screen.getByText(/模型服务响应超时/)).toBeTruthy();
   });
 
   it('空输入和生成中的表单不能重复提交', () => {

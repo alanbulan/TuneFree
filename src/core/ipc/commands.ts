@@ -10,6 +10,7 @@ import { toIpcError } from "./error";
 import type { Song } from "../types";
 import type {
   AvailableUpdate,
+  ContextSongSuggestion,
   DownloadedFileResult,
   DownloadMetadataInput,
   LibrarySnapshot,
@@ -87,6 +88,10 @@ export interface CommandMap {
   test_llm_provider: {
     args: { config?: LlmConfigInput };
     result: LlmProviderTestResult;
+  };
+  search_songs_by_context: {
+    args: { keyword: string; limit?: number };
+    result: ContextSongSuggestion[];
   };
   clear_recommendation_data: {
     args: void;

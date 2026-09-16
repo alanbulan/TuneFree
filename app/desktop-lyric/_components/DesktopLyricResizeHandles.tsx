@@ -41,7 +41,7 @@ export function DesktopLyricResizeHandles({ disabled = false }: DesktopLyricResi
           key={handle.direction}
           type="button"
           className={`desktop-lyric-resize-handle ${handle.className}`}
-          title={handle.title}
+          aria-label={handle.title}
           tabIndex={-1}
           onMouseDown={(event) => {
             event.preventDefault();

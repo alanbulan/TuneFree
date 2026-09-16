@@ -6,6 +6,7 @@ import { useCompanionThinking } from '../hooks/useCompanionThinking';
 import { useMiraPetPosition, useReducedMotion } from './useMiraPetPosition';
 import BloubMenu from './BloubMenu';
 import { getBloubSelectionLabel, type BloubSelection } from './bloubCatalog';
+import Tooltip from './Tooltip';
 
 const BloubAvatar = lazy(() => import('./BloubAvatar'));
 type CompanionMood = 'empty' | 'loading' | 'playing' | 'paused' | 'celebrate' | 'thinking';
@@ -101,10 +102,11 @@ export default function BloubCompanion({ aiBusy = false }: { aiBusy?: boolean })
     <motion.div ref={petRef} className={`bloub-companion is-${mood}${dragging ? ' is-dragging' : ''}`}
       style={petStyle} data-state={state} data-expression={expression}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
+      <Tooltip label={`${statusText} · 点击打招呼，拖动调整位置`}>
       <div ref={handleRef} className="companion-handle" role="button" tabIndex={0}
         aria-expanded={menuOpen} aria-haspopup="dialog"
         aria-label={`Bloub 音乐伙伴，${statusText}。点击、Enter 或空格打招呼，方向键移动，Home 键复位，右键打开动作面板。`}
-        title={`${statusText} · 点击打招呼，拖动调整位置`} onContextMenu={(event) => {
+        onContextMenu={(event) => {
           event.preventDefault(); setMenuOpen(true);
         }}
         onPointerDown={(event) => {
@@ -125,6 +127,7 @@ export default function BloubCompanion({ aiBusy = false }: { aiBusy?: boolean })
           </Suspense>
         )}
       </div>
+      </Tooltip>
       <div className={`companion-bubble${bubbleLeft ? ' is-left' : ''}${bubbleBelow ? ' is-below' : ''}`}
         aria-hidden="true">{statusText}</div>
       {!dragging && <AnimatePresence>

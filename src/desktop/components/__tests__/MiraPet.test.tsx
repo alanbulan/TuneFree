@@ -52,7 +52,7 @@ describe('MiraPet 订阅面与情绪', () => {
     nowPlaying.isNearEnd = true;
     rerender(<MiraPet />);
     expect(petClassName()).toContain('is-celebrate');
-    expect(petHandle().title).toContain('快到结尾啦');
+    expect(petHandle().getAttribute('aria-label')).toContain('快到结尾啦');
   });
 
   it('暂停、加载与空队列各自映射到不同情绪', () => {
@@ -138,11 +138,11 @@ describe('MiraPet 订阅面与情绪', () => {
     act(() => vi.advanceTimersByTime(4200));
     expect(petHandle().closest('.bloub-companion')!.getAttribute('data-state')).toBe('orbit');
     fireEvent.keyDown(petHandle(), { key: 'Enter' });
-    expect(petHandle().title).toContain('收到，你好呀');
+    expect(petHandle().getAttribute('aria-label')).toContain('收到，你好呀');
     fireEvent.keyDown(petHandle(), { key: ' ' });
-    expect(petHandle().title).toContain('把好心情送给你');
+    expect(petHandle().getAttribute('aria-label')).toContain('把好心情送给你');
     act(() => vi.advanceTimersByTime(1800));
-    expect(petHandle().title).toContain('好音乐');
+    expect(petHandle().getAttribute('aria-label')).toContain('好音乐');
   });
 
   it('左键开始移动桌宠时立即收起菜单，拖动结束后不会再次弹出', () => {

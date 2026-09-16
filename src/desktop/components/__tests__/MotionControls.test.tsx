@@ -54,8 +54,8 @@ describe('Motion 切换和控件交互', () => {
   });
 
   it('搜索输入保留输入法合成，所有范围与音源选项能切换', () => {
-    const handlers = { onQuery: vi.fn(), onMode: vi.fn(), onSource: vi.fn(), onExtended: vi.fn(), onSearch: vi.fn() };
-    const view = render(<SearchControls query="" mode="aggregate" source="netease" extended={false} {...handlers} />);
+    const handlers = { onQuery: vi.fn(), onMode: vi.fn(), onSource: vi.fn(), onSearch: vi.fn() };
+    const view = render(<SearchControls query="" mode="aggregate" source="netease" {...handlers} />);
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: '夜曲' } });
     fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
@@ -66,15 +66,12 @@ describe('Motion 切换和控件交互', () => {
     fireEvent.click(screen.getByRole('button', { name: '全部音源' }));
     fireEvent.click(screen.getByRole('button', { name: '指定音源' }));
     expect(handlers.onMode.mock.calls).toEqual([['aggregate'], ['single']]);
-    fireEvent.click(screen.getByRole('button', { name: '扩展源 关' }));
-    expect(handlers.onExtended).toHaveBeenCalledWith(true);
-    view.rerender(<SearchControls query="夜曲" mode="single" source="qq" extended {...handlers} />);
+    // 聚合模式不再有「扩展源」开关：扩展音源恒定参与。
+    expect(screen.queryByRole('button', { name: /扩展源/ })).toBeNull();
+    view.rerender(<SearchControls query="夜曲" mode="single" source="qq" {...handlers} />);
     for (const radio of screen.getAllByRole('radio')) fireEvent.click(radio);
     expect(handlers.onSource.mock.calls.length).toBe(screen.getAllByRole('radio').length);
     expect((input as HTMLInputElement).placeholder).toContain('QQ');
-    view.rerender(<SearchControls query="夜曲" mode="aggregate" source="qq" extended {...handlers} />);
-    fireEvent.click(screen.getByRole('button', { name: '扩展源 开' }));
-    expect(handlers.onExtended).toHaveBeenLastCalledWith(false);
   });
 
   it('多个音质组的选中层互不串联，并转发全部音质', () => {
