@@ -18,12 +18,11 @@ describe('语境搜歌失败提示', () => {
   });
 
   it('没有错误信息时给通用文案，不显示空消息', () => {
-    expect(describeContextSearchError(new Error(''))).toEqual({
-      message: 'AI 搜歌暂时不可用，请稍后再试。', needsSetup: false,
-    });
-    expect(describeContextSearchError(undefined)).toEqual({
-      message: 'AI 搜歌暂时不可用，请稍后再试。', needsSetup: false,
-    });
+    const expected = { message: 'AI 搜歌暂时不可用，请稍后再试。', needsSetup: false };
+    // 空白串与非 Error 值都会走到同一条兜底分支
+    expect(describeContextSearchError(new Error('   '))).toEqual(expected);
+    expect(describeContextSearchError('')).toEqual(expected);
+    expect(describeContextSearchError(undefined)).toEqual(expected);
   });
 
   it('其他失败保留原始原因，便于排查', () => {
