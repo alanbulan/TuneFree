@@ -2,12 +2,13 @@ import { BUILTIN_SCRIPTS, type BuiltinScriptDefinition } from './builtin/builtin
 import { createLxProvider } from './lxProvider';
 import { declarationPlatform } from './platformMap';
 import { relaySourceRequest } from './relay';
-import { setBuiltinScriptProviders, setCustomProviders, type RegisteredProvider } from './registry';
+import { setBuiltinScriptProviders, setCustomProviders, setSourceOrder, type RegisteredProvider } from './registry';
 import { parseScriptMeta } from './scriptMeta';
 import {
   createSourceRecord,
   decompressScript,
   loadSourceRecords,
+  loadSourceOrder,
   persistSourceRecords,
   totalScriptBytes,
   TOTAL_SCRIPT_BYTES_LIMIT,
@@ -17,15 +18,7 @@ import { LxSandbox } from './workerHost';
 import { buildSourceEntry, type MusicSourceEntry } from './sourceEntry';
 import { prepareSourceUpdate, sourceUpdateUrl, type SourceUpdateState } from './sourceUpdates';
 export type { MusicSourceEntry, MusicSourcePlatform } from './sourceEntry';
-
-
-/**
- * 自定义音源管理器：持久化记录 + 沙箱生命周期 + provider 注册，是 UI 唯一的状态来源。
- *
- * 这是 core 层模块，不依赖 react；界面通过 `subscribe` + `getSnapshot`
- * （配合 useSyncExternalStore）订阅。
- */
-
+/** 音源管理器：持久化、沙箱生命周期与 provider 注册，供界面订阅。 */
 export interface MusicSourcesSnapshot {
   entries: MusicSourceEntry[];
   readyCount: number;
@@ -40,7 +33,25 @@ export interface ImportOutcome {
 /** 启动沙箱的并发度：脚本初始化会发网络请求，避免一次性全放出去。 */
 const START_CONCURRENCY = 3;
 
+let sourceOrder: string[] = [];
 let records: MusicSourceRecord[] = [];
+const orderedIds = (): string[] => {
+  const available = [...records.map((record) => record.id), ...BUILTIN_SCRIPTS.map((item) => item.id)];
+  return [...sourceOrder.filter((id) => available.includes(id)), ...available.filter((id) => !sourceOrder.includes(id))];
+};
+
+export const moveMusicSource = (id: string, targetId: string): string | null => {
+  const ids = orderedIds();
+  const from = ids.indexOf(id), to = ids.indexOf(targetId);
+  if (from < 0 || to < 0 || from === to) return null;
+  ids.splice(to, 0, ids.splice(from, 1)[0]);
+  const saved = persistSourceRecords(records, ids);
+  if (!saved.ok) return saved.error;
+  sourceOrder = ids;
+  setSourceOrder(ids);
+  notify();
+  return null;
+};
 const sandboxes = new Map<string, LxSandbox>();
 /** 内置脚本沙箱（与用户脚本同一实现，但不落盘、不可删除）。 */
 const builtinSandboxes = new Map<string, LxSandbox>();
@@ -97,8 +108,9 @@ const buildSnapshot = (): MusicSourcesSnapshot => {
     const failed = startErrors.get(record.id);
     return buildSourceEntry(record, snapshot, failed, updates.get(record.id));
   })];
+  const ids = orderedIds();
   return {
-    entries,
+    entries: entries.sort((a, b) => ids.indexOf(a.record.id) - ids.indexOf(b.record.id)),
     readyCount: entries.filter((entry) => entry.status === 'ready').length,
   };
 };
@@ -250,6 +262,8 @@ const runWithConcurrency = async (tasks: Array<() => Promise<void>>, limit: numb
 export const ensureMusicSourcesInitialized = (): Promise<void> => {
   initialization ??= (async () => {
     records = loadSourceRecords();
+    sourceOrder = loadSourceOrder();
+    setSourceOrder(orderedIds());
     rebuildProviders();
     notify();
     await runWithConcurrency(
@@ -265,10 +279,12 @@ export const ensureMusicSourcesInitialized = (): Promise<void> => {
 };
 
 /** 先保存再发布，失败时保留当前记录、开关和运行中的沙箱。 */
-const applyRecords = (next: MusicSourceRecord[]): string | null => {
-  const saved = persistSourceRecords(next);
+const applyRecords = (next: MusicSourceRecord[], order = sourceOrder): string | null => {
+  const saved = persistSourceRecords(next, order);
   if (!saved.ok) return saved.error;
   records = next;
+  sourceOrder = order;
+  setSourceOrder(orderedIds());
   rebuildProviders();
   notify();
   return null;
@@ -426,7 +442,7 @@ export const checkMusicSourceUpdates = async (automatic = false): Promise<Source
       const next = records.map((record) => record.id === id ? replacement : record);
       const error = next.some((record) => record.id === replacement.id && record !== replacement)
         ? '列表中已存在该新版音源'
-        : totalScriptBytes(next) > TOTAL_SCRIPT_BYTES_LIMIT ? '更新后音源总量超过存储上限' : applyRecords(next);
+        : totalScriptBytes(next) > TOTAL_SCRIPT_BYTES_LIMIT ? '更新后音源总量超过存储上限' : applyRecords(next, sourceOrder.map((sourceId) => sourceId === id ? replacement.id : sourceId));
       if (error) { prepared.sandbox.dispose(); result = { status: 'failed', message: error }; }
       else {
         stopSandbox(id); startErrors.delete(id); updates.delete(id);
@@ -473,6 +489,8 @@ export const disposeMusicSources = (): void => {
   updates.clear();
   startErrors.clear();
   records = [];
+  sourceOrder = [];
+  setSourceOrder([]);
   initialization = null;
   setCustomProviders([]);
   setBuiltinScriptProviders([]);

@@ -43,6 +43,20 @@ describe('拖拽排序', () => {
   ];
   const rows = () => songs.map((song) => screen.getByLabelText(`${song.name} - ${song.artist}`));
 
+  it('外部文本、空拖放和已取消的拖拽不移动歌曲', () => {
+    const onReorder = vi.fn();
+    render(<SongTable songs={songs} onPlay={vi.fn()} onReorder={onReorder} />);
+    const [first, second] = rows();
+    for (const text of ['', '0', '外部文本']) {
+      fireEvent.drop(second, { dataTransfer: { getData: () => text } });
+    }
+    const dataTransfer = { setData: vi.fn(), getData: () => '0' };
+    fireEvent.dragStart(first, { dataTransfer });
+    fireEvent.dragEnd(first);
+    fireEvent.drop(second, { dataTransfer });
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+
   it('拖动到目标行后在松手时提交一次重排', () => {
     const onReorder = vi.fn();
     render(<SongTable songs={songs} onPlay={vi.fn()} onReorder={onReorder} />);

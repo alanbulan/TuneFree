@@ -42,6 +42,7 @@ export interface MusicSourceRecord {
 interface StoredSources {
   version: number;
   sources: MusicSourceRecord[];
+  order?: string[];
 }
 
 const STORAGE_VERSION = 1;
@@ -116,8 +117,15 @@ export const loadSourceRecords = (): MusicSourceRecord[] =>
 
 export type PersistResult = { ok: true } | { ok: false; error: string };
 
-export const persistSourceRecords = (records: MusicSourceRecord[]): PersistResult => {
-  const payload: StoredSources = { version: STORAGE_VERSION, sources: records };
+export const loadSourceOrder = (): string[] => safeGetJson<string[]>(
+  MUSIC_SOURCES_STORAGE_KEY, [], (value) => {
+    const order = value && typeof value === 'object' ? (value as Partial<StoredSources>).order : null;
+    return Array.isArray(order) && order.every((id) => typeof id === 'string') ? [...new Set(order)] : [];
+  },
+);
+
+export const persistSourceRecords = (records: MusicSourceRecord[], order = loadSourceOrder()): PersistResult => {
+  const payload: StoredSources = { version: STORAGE_VERSION, sources: records, order };
   const written = safeSetJson(MUSIC_SOURCES_STORAGE_KEY, payload);
   return written
     ? { ok: true }

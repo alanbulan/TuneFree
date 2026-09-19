@@ -4,6 +4,7 @@ import { AudioLines, ChevronLeft, ChevronRight, Download, RefreshCw, Upload } fr
 import type { SourceCapability } from '../../../core/services/sources/circuitBreaker';
 import SourceImportPanel from './sources/SourceImportPanel';
 import SourceRow from './sources/SourceRow';
+import { sourceDisplayText } from './sources/sourceLogs';
 import { sourceStatus } from './sources/sourceStatus';
 import Tooltip from '../../components/Tooltip';
 import { useMusicSourcesViewModel } from './sources/useMusicSourcesViewModel';
@@ -33,6 +34,7 @@ export default function SourcesView() {
   const model = useMusicSourcesViewModel();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tabsOverflow, setTabsOverflow] = useState({ left: false, right: false });
+  const draggingId = useRef<string | null>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const entries = model.entries;
   // 选中的音源被删除、或首次进入时，回落到列表第一项。
@@ -74,6 +76,12 @@ export default function SourcesView() {
       : event.key === 'Home' ? 0 : event.key === 'End' ? 0 : null;
     if (offset === null || entries.length === 0) return;
     event.preventDefault();
+    if (event.altKey && offset) {
+      const index = entries.findIndex((entry) => entry.record.id === activeEntry?.record.id);
+      const target = entries[index + offset];
+      if (activeEntry && target) model.moveSource(activeEntry.record.id, target.record.id);
+      return;
+    }
     const current = Math.max(0, entries.findIndex((entry) => entry.record.id === activeEntry?.record.id));
     const next = event.key === 'Home' ? 0
       : event.key === 'End' ? entries.length - 1
@@ -89,7 +97,7 @@ export default function SourcesView() {
       aria-label="音源管理"
       onDragOver={(event) => {
         event.preventDefault();
-        model.setDropActive(true);
+        if (Array.from(event.dataTransfer.types).includes('Files')) model.setDropActive(true);
       }}
       onDragLeave={(event) => {
         if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
@@ -98,31 +106,28 @@ export default function SourcesView() {
       onDrop={(event) => {
         event.preventDefault();
         model.setDropActive(false);
-        void model.importFiles(Array.from(event.dataTransfer?.files ?? []));
+        const files = Array.from(event.dataTransfer?.files ?? []);
+        if (files.length) void model.importFiles(files);
       }}
     >
       <SourceImportPanel model={model} />
 
       {model.openCircuits.length > 0 && (
-        <div className="sources-breaker-panel" role="status" aria-label="已熔断的通道">
-          <h3>已暂停的通道 <span>{model.openCircuits.length}</span></h3>
-          <p>
-            这些平台能力连续解析失败，已暂时跳过，避免每次都白跑请求。
-            冷却后会自动重试一次；「重新加载」可立即恢复全部通道。
-          </p>
+        <details className="sources-breaker-panel" aria-label="已熔断的通道">
+          <summary>部分解析通道已暂停 <span>{model.openCircuits.length}</span><small>查看原因</small></summary>
+          <p>连续失败的通道暂时跳过，不影响其他音源。冷却 5 分钟后，下次请求会尝试恢复。</p>
           <ul>
-            {model.openCircuits.map((circuit) => (
-              <li key={`${circuit.providerId}:${circuit.platform}:${circuit.capability}`}>
-                <span className="breaker-provider">{model.platformLabel(circuit.platform)}</span>
-                <span className="breaker-capability">{CAPABILITY_LABELS[circuit.capability]}</span>
-                <span className="breaker-detail">
-                  连续失败 {circuit.failures} 次
-                  {circuit.cooldownMs > 0 ? `，${Math.ceil(circuit.cooldownMs / 60_000)} 分钟后重试` : '，即将重试'}
-                </span>
-              </li>
-            ))}
+            {model.openCircuits.map((circuit) => {
+              const entry = entries.find((item) => circuit.providerId.startsWith(`lx:${item.record.id}:`));
+              return <li key={`${circuit.providerId}:${circuit.platform}:${circuit.capability}`}>
+                <span className="breaker-provider">{sourceDisplayText(entry?.record.name ?? circuit.providerId)}</span>
+                <span className="breaker-capability">{model.platformLabel(circuit.platform)} · {CAPABILITY_LABELS[circuit.capability]}</span>
+                <span className="breaker-detail">连续失败 {circuit.failures} 次</span>
+                <p className="breaker-error">{sourceDisplayText(circuit.lastError) || '脚本未提供具体错误信息'}</p>
+              </li>;
+            })}
           </ul>
-        </div>
+        </details>
       )}
 
       <div className="sources-list-heading">
@@ -146,6 +151,7 @@ export default function SourcesView() {
         </div>
       ) : (
         <>
+          <p className="sources-order-hint">从左到右优先解析，可拖动调整（Alt + 左右方向键）。失败时尝试下一音源，最后使用原生解析。</p>
           <div className="source-tabs-bar">
             {tabsOverflow.left && (
               <button type="button" className="source-tabs-arrow" aria-label="向左滚动音源标签"
@@ -161,16 +167,36 @@ export default function SourcesView() {
                 const status = sourceStatus(entry);
                 const selected = entry.record.id === activeEntry.record.id;
                 return (
-                  <Tooltip key={entry.record.id} label={`${entry.record.name} · ${status.label}`} side="bottom">
+                  <Tooltip key={entry.record.id} label={`${sourceDisplayText(entry.record.name)} · ${status.label}`} side="bottom">
                     <button type="button" role="tab"
                       id={`source-tab-${entry.record.id}`}
                       aria-selected={selected}
                       aria-controls={`source-panel-${entry.record.id}`}
                       tabIndex={selected ? 0 : -1}
                       className={`source-tab is-${status.tone}${selected ? ' is-selected' : ''}${entry.record.enabled ? '' : ' is-disabled'}`}
+                      draggable
+                      onDragStart={(event) => {
+                        draggingId.current = entry.record.id;
+                        event.dataTransfer.setData('application/x-tunefree-source', entry.record.id);
+                        event.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragOver={(event) => {
+                        if (!draggingId.current) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        event.dataTransfer.dropEffect = 'move';
+                      }}
+                      onDrop={(event) => {
+                        if (!draggingId.current) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        model.moveSource(draggingId.current, entry.record.id);
+                        draggingId.current = null;
+                      }}
+                      onDragEnd={() => { draggingId.current = null; }}
                       onClick={() => setSelectedId(entry.record.id)}>
                       <span className="source-tab-dot" aria-hidden="true" />
-                      <span className="source-tab-name">{entry.record.name}</span>
+                      <span className="source-tab-name">{sourceDisplayText(entry.record.name)}</span>
                     </button>
                   </Tooltip>
                 );

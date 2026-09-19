@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   ),
   importFromUrl: vi.fn(async () => ({ fileName: 'x.js', ok: true, message: '已导入' })),
   remove: vi.fn(),
+  move: vi.fn(),
   setEnabled: vi.fn(),
   setNameMatch: vi.fn(),
   reload: vi.fn(),
@@ -54,6 +55,7 @@ vi.mock('../../../../core/services/sources/manager', () => ({
   importMusicSourceFiles: mocks.importFiles,
   importMusicSourceFromUrl: mocks.importFromUrl,
   removeMusicSource: mocks.remove,
+  moveMusicSource: mocks.move,
   setMusicSourceEnabled: mocks.setEnabled,
   setMusicSourceNameMatchFallback: mocks.setNameMatch,
   reloadMusicSources: mocks.reload,
@@ -120,6 +122,26 @@ describe('SourcesView', () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('支持拖拽和键盘排序，内部拖拽不触发导入，也不显示 emoji', () => {
+    setEntries(entry(), entry({ record: { ...entry().record, id: 'second', name: '第二音源🐱' } }));
+    render(<SourcesView />);
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs[1].textContent).toBe('第二音源');
+    fireEvent.dragStart(tabs[0], { dataTransfer: { setData: vi.fn() } });
+    fireEvent.dragOver(tabs[1], { dataTransfer: {} });
+    fireEvent.drop(tabs[1], { dataTransfer: {} });
+    expect(mocks.move).toHaveBeenCalledWith('source-1', 'second');
+    expect(mocks.importFiles).not.toHaveBeenCalled();
+    expect(screen.queryByText('松开以导入音源')).toBeNull();
+    fireEvent.keyDown(tabs[0], { key: 'ArrowRight', altKey: true });
+    expect(mocks.move).toHaveBeenCalledTimes(2);
+    fireEvent.dragStart(tabs[0], { dataTransfer: { setData: vi.fn() } });
+    fireEvent.dragEnd(tabs[0]);
+    fireEvent.drop(tabs[1], { dataTransfer: { files: [] } });
+    expect(mocks.move).toHaveBeenCalledTimes(2);
+    expect(mocks.importFiles).not.toHaveBeenCalled();
   });
 
   it('空状态给出导入说明', () => {
@@ -209,7 +231,7 @@ describe('SourcesView', () => {
     const page = document.querySelector('.sources-page') as HTMLElement;
     const toolbar = document.querySelector('.sources-toolbar') as HTMLElement;
 
-    fireEvent.dragOver(page);
+    fireEvent.dragOver(page, { dataTransfer: { types: ['Files'] } });
     expect(page.className).toContain('is-dropping');
 
     // 指针进入子元素时不应清掉拖拽态（happy-dom 的 DragEvent 不认 relatedTarget，
@@ -390,8 +412,10 @@ describe('SourcesView', () => {
     const panel = screen.getByLabelText('已熔断的通道');
     expect(panel.textContent).toContain('JOOX');
     expect(panel.textContent).toContain('搜索');
+    expect(panel.textContent).toContain('GD 接口 HTTP 503');
+    expect(panel.hasAttribute('open')).toBe(false);
     expect(panel.textContent).toContain('连续失败 3 次');
-    expect(panel.textContent).toContain('分钟后重试');
+    expect(panel.textContent).toContain('下次请求会尝试恢复');
     resetCircuits();
   });
 

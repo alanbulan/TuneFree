@@ -68,7 +68,7 @@ describe('自定义音源接入解析链路', () => {
     vi.restoreAllMocks();
   });
 
-  it('命中自定义音源时独占该平台，不再请求内置接口', async () => {
+  it('命中自定义音源后立即返回，不再请求内置接口', async () => {
     register('netease', { getUrl: async () => 'https://custom.test/a.mp3' });
 
     await expect(getSongUrl(1, 'netease', '320k', songMeta)).resolves.toBe('https://custom.test/a.mp3');
@@ -79,7 +79,7 @@ describe('自定义音源接入解析链路', () => {
     expect(fetchMock).toHaveBeenCalled();
   });
 
-  it('自定义音源失败时该平台直接失败，但仍会跨源兜底', async () => {
+  it('自定义音源失败先尝试同平台原生解析', async () => {
     register('netease', {
       getUrl: async () => {
         throw new Error('源接口 500');
@@ -90,10 +90,10 @@ describe('自定义音源接入解析链路', () => {
     ]);
 
     await expect(getSongUrl(1, 'netease', '320k', songMeta)).resolves.toBe('https://native.test/x.mp3');
-    // 兜底落在 QQ 平台：只有那一次内置请求，netease 自己的内置接口没被调用。
+    // 同平台可用时，不再跨平台匹配其他版本。
     const requested = fetchMock.mock.calls.map((call) => String(call[0]));
-    expect(requested.some((url) => url.includes('platform=netease'))).toBe(false);
-    expect(requested.some((url) => url.includes('platform=qq'))).toBe(true);
+    expect(requested.some((url) => url.includes('platform=netease'))).toBe(true);
+    expect(requested.some((url) => url.includes('platform=qq'))).toBe(false);
   });
 
   it('自定义音源提供歌词时优先使用，且不请求原生歌词', async () => {

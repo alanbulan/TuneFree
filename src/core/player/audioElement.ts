@@ -73,8 +73,12 @@ const handleAudioFailure = (
       isSourceError ? "Playback source is not supported." : "Playback failed.",
       getMediaErrorSummary(audio.error),
     );
+    const reason = audio.error?.code === 2 ? '音频加载失败，网络连接中断或播放地址已失效'
+      : audio.error?.code === 3 ? '音频解码失败，请切换音质或音源'
+        : isSourceError ? '播放地址不可用或音频格式不受支持，请切换音源'
+          : '音频播放失败，请重试或切换音源';
     clearActiveAudioSource();
-    recommendation.showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
+    recommendation.showPlayerNotice(reason, "error");
     setIsLoading(false);
     setIsPlaying(false);
   };

@@ -23,7 +23,7 @@ export interface LxProviderInput {
   sandbox: LxSandbox;
   /** 是否允许按歌名匹配（缺 id 的跨源兜底），默认关闭。 */
   nameMatchFallback: boolean;
-  // 以下字段供「内置脚本」使用：用户脚本走自定义独占规则，不需要优先级。
+  // 以下字段供「内置脚本」使用：用户脚本的解析顺序由管理页排序控制。
   priority?: number;
   lyricsPriority?: number;
   fallback?: boolean | 'with-custom';

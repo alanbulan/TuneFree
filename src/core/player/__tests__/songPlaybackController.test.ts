@@ -44,7 +44,7 @@ describe('音频播放失败的收敛', () => {
   it('没有可用地址且恢复耗尽时清理状态并给出提示', async () => {
     const h = createHarness(); const playback = startPlayback(h, song('a')); await flushMicrotasks();
     h.pending[0].resolve({ parsed: null, cacheKey: null }); await playback.done; h.runRecovery.mock.calls[0][0].onGiveUp();
-    expect(h.clearActiveAudioSource).toHaveBeenCalled(); expect(h.double.setIsPlaying).toHaveBeenLastCalledWith(false); expect(h.showPlayerNotice).toHaveBeenCalledWith(expect.stringContaining('换源'), 'error');
+    expect(h.clearActiveAudioSource).toHaveBeenCalled(); expect(h.double.setIsPlaying).toHaveBeenLastCalledWith(false); expect(h.showPlayerNotice).toHaveBeenCalledWith('未获取到可用播放地址，请在音源页查看解析失败原因', 'error');
   });
 });
 

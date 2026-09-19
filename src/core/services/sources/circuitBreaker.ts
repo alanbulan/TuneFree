@@ -88,13 +88,20 @@ export const isCircuitOpen = (
   providerId: string,
   platform: string,
   capability: SourceCapability,
+  claimProbe = true,
 ): boolean => {
   const state = states.get(keyOf(providerId, platform, capability));
   if (!state || state.failures < FAILURE_THRESHOLD) return false;
   if (state.probing) return true;
   if (Date.now() - state.openedAt < OPEN_MS) return true;
-  state.probing = true;
+  if (claimProbe) state.probing = true;
   return false;
+};
+
+/** 请求被取消时释放探测名额，保留原失败记录。 */
+export const releaseCircuitProbe = (providerId: string, platform: string, capability: SourceCapability): void => {
+  const state = states.get(keyOf(providerId, platform, capability));
+  if (state) state.probing = false;
 };
 
 export const recordSuccess = (

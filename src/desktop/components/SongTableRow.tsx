@@ -92,7 +92,9 @@ function SongTableRow({
       onDrop={drag ? (event) => {
         event.preventDefault();
         // 源下标从 dataTransfer 读回，这样 SongTable 不需要在渲染期持有拖拽状态。
-        const from = Number(event.dataTransfer.getData('text/plain'));
+        const raw = event.dataTransfer.getData('text/plain').trim();
+        if (!raw) return;
+        const from = Number(raw);
         drag.drop(Number.isInteger(from) ? from : index, index);
       } : undefined}
       onDragEnd={drag ? () => drag.end() : undefined}

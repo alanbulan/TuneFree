@@ -21,9 +21,10 @@ import {
   searchablePlatforms,
   setBuiltinScriptProviders,
   setCustomProviders,
+  setSourceOrder,
   usesGDStudioQuota,
 } from '../registry';
-import { CircuitOpenError, getOpenCircuits, resetCircuits } from '../circuitBreaker';
+import { CircuitOpenError, getOpenCircuits, recordFailure, resetCircuits } from '../circuitBreaker';
 import type { MusicProvider, SourceResolveRequest } from '../types';
 
 /**
@@ -100,6 +101,8 @@ describe('registry', () => {
     registerBuiltinProviders(BUILTIN_PROVIDERS);
     setBuiltinScriptProviders([]);
     setCustomProviders([]);
+    setSourceOrder([]);
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -123,8 +126,8 @@ describe('registry', () => {
         platform: 'kuwo',
       },
     ]);
-    // 解析仍然独占（自定义源存在时不再出现内置 provider）
-    expect(providersFor('kuwo').map((item) => item.id)).toEqual(['fake']);
+    // 解析失败后同平台内置链路仍参与兜底
+    expect(providersFor('kuwo').map((item) => item.id)).toEqual(['fake', 'native-like']);
     // 歌词 / 封面把内置 provider 排在自定义源之后（GD 替身不负责 kuwo，故不出现）
     expect(providersFor('kuwo', 'metadata').map((item) => item.id)).toEqual(['fake', 'native-like']);
 
@@ -139,12 +142,12 @@ describe('registry', () => {
     await expect(resolvePic(request())).resolves.toBe('https://img.test/native.jpg');
   });
 
-  it('自定义音源独占其平台：命中即返回，失败也不回落内置', async () => {
+  it('自定义音源命中即返回，失败回落内置', async () => {
     const customGetUrl = vi.fn(async () => 'https://custom.test/a.mp3');
     setCustomProviders([{ provider: provider({ platforms: ['kuwo'], getUrl: customGetUrl }), platform: 'kuwo' }]);
 
     await expect(resolveDirectUrl(request())).resolves.toBe('https://custom.test/a.mp3');
-    expect(providersFor('kuwo').map((item) => item.id)).toEqual(['fake']);
+    expect(providersFor('kuwo').map((item) => item.id)).toEqual(['fake', 'native-like']);
     expect(getCustomProviders('kuwo')).toHaveLength(1);
     expect(getCustomProviders('netease')).toHaveLength(0);
 
@@ -152,7 +155,7 @@ describe('registry', () => {
       throw new Error('源接口 500');
     });
     setCustomProviders([{ provider: provider({ platforms: ['kuwo'], getUrl: failing }), platform: 'kuwo' }]);
-    await expect(resolveDirectUrl(request())).resolves.toBeNull();
+    await expect(resolveDirectUrl(request())).resolves.toBe('https://native.test/a.mp3');
   });
 
   it('自定义音源之间按注册顺序尝试，取消时向上抛 AbortError', async () => {
@@ -486,5 +489,85 @@ describe('熔断接入注册表', () => {
     }
     // 空结果只是「这首没有」，该 provider 依然参与后续解析
     expect(getOpenCircuits()).toEqual([]);
+  });
+});
+
+describe('通道恢复与用户排序回归', () => {
+  afterEach(() => {
+    registerBuiltinProviders(BUILTIN_PROVIDERS);
+    setCustomProviders([]);
+    setBuiltinScriptProviders([]);
+    setSourceOrder([]);
+    vi.useRealTimers();
+  });
+  it('枚举搜索平台不占用探测名额，冷却后真实搜索可以恢复', async () => {
+    vi.useFakeTimers();
+    const search = vi.fn(async () => []);
+    registerBuiltinProviders([provider({ id: 'search', searchPlatforms: ['kuwo'], search })]);
+    for (let i = 0; i < 3; i++) recordFailure('search', 'kuwo', 'search', new Error('超时'));
+    expect(liveSearchPlatforms()).toEqual([]);
+    vi.advanceTimersByTime(300001);
+    expect(liveSearchPlatforms()).toEqual(['kuwo']);
+    expect(liveSearchPlatforms()).toEqual(['kuwo']);
+    await searchSongs('歌', 'kuwo', 1, 5);
+    expect(search).toHaveBeenCalledOnce();
+    expect(getOpenCircuits()).toEqual([]);
+  });
+  it('前一个源成功时，不占用后续源的恢复探测名额', async () => {
+    vi.useFakeTimers();
+    const first = vi.fn(async (): Promise<string | null> => 'https://ok.test/a.mp3');
+    const next = vi.fn(async () => 'https://next.test/a.mp3');
+    registerBuiltinProviders([]);
+    setCustomProviders([
+      { platform: 'kuwo', provider: provider({ id: 'a', platforms: ['kuwo'], getUrl: first }) },
+      { platform: 'kuwo', provider: provider({ id: 'b', platforms: ['kuwo'], getUrl: next }) },
+    ]);
+    for (let i = 0; i < 3; i++) recordFailure('b', 'kuwo', 'url', new Error('超时'));
+    vi.advanceTimersByTime(300001);
+    await resolveDirectUrl(request());
+    first.mockResolvedValue(null);
+    await expect(resolveDirectUrl(request())).resolves.toBe('https://next.test/a.mp3');
+    expect(next).toHaveBeenCalledOnce();
+  });
+  it('取消探测不导致通道永久停在探测中', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const getUrl = vi.fn(async (): Promise<string> => { controller.abort(); throw new Error('取消'); });
+    registerBuiltinProviders([provider({ id: 'a', platforms: ['kuwo'], getUrl })]);
+    for (let i = 0; i < 3; i++) recordFailure('a', 'kuwo', 'url', new Error('超时'));
+    vi.advanceTimersByTime(300001);
+    await expect(resolveDirectUrl(request({ signal: controller.signal }))).rejects.toThrow();
+    getUrl.mockImplementation(async () => 'https://ok.test/a.mp3');
+    await expect(resolveDirectUrl(request())).resolves.toBe('https://ok.test/a.mp3');
+  });
+  it('取消冷却后的搜索探测会释放名额，下次可以再次搜索', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const search = vi.fn(async (): Promise<[]> => { controller.abort(); throw new Error('取消'); });
+    registerBuiltinProviders([provider({ id: 's', searchPlatforms: ['kuwo'], search })]);
+    for (let i = 0; i < 3; i++) recordFailure('s', 'kuwo', 'search', new Error('超时'));
+    vi.advanceTimersByTime(300001);
+    await expect(searchSongs('歌', 'kuwo', 1, 5, controller.signal)).rejects.toThrow();
+    search.mockResolvedValue([]);
+    await expect(searchSongs('歌', 'kuwo', 1, 5)).resolves.toEqual([]);
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(getOpenCircuits()).toEqual([]);
+  });
+  it('按歌名匹配的候选遵循手动顺序，未授权的脚本不参与', () => {
+    setCustomProviders(['a', 'b', 'c'].map((id) => ({ platform: 'kuwo', provider: provider({
+      id: `lx:${id}:kw`, platforms: ['kuwo'], nameMatch: id !== 'c',
+    }) })));
+    setSourceOrder(['c', 'b', 'a']);
+    expect(getNameMatchCandidates().map((entry) => entry.provider.id)).toEqual(['lx:b:kw', 'lx:a:kw']);
+  });
+  it('用户顺序可把内置脚本移到导入脚本之前，且不清空失败记录', async () => {
+    registerBuiltinProviders(fakeBuiltins);
+    setCustomProviders([{ platform: 'kuwo', provider: provider({ id: 'lx:custom:kw', platforms: ['kuwo'], getUrl: async () => null }) }]);
+    setBuiltinScriptProviders([{ platform: 'kuwo', provider: provider({ id: 'lx:builtin:gd:kw', platforms: ['kuwo'], getUrl: async () => 'https://gd.test/a.mp3' }) }]);
+    for (let i = 0; i < 3; i++) recordFailure('lx:custom:kw', 'kuwo', 'url', new Error('超时'));
+    setSourceOrder(['builtin:gd', 'custom']);
+    expect(providersFor('kuwo').map((p) => p.id)).toEqual(['lx:builtin:gd:kw', 'lx:custom:kw', 'native-like']);
+    expect(getOpenCircuits()).toHaveLength(1);
+    await expect(resolveDirectUrl(request())).resolves.toBe('https://gd.test/a.mp3');
   });
 });

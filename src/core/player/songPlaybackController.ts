@@ -203,7 +203,7 @@ const handleMissingUrl = (
     song, quality, trigger: "missingUrl", canRetryWithoutCors: false,
     onGiveUp: () => {
       audio.clearActiveAudioSource();
-      recommendation.showPlayerNotice("这首歌暂时无法播放，请换源或稍后再试", "error");
+      recommendation.showPlayerNotice("未获取到可用播放地址，请在音源页查看解析失败原因", "error");
       runtime.setIsLoading(false);
       runtime.setIsPlaying(false);
     },

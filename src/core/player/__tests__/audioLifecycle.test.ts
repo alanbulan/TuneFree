@@ -73,7 +73,7 @@ describe('原生音频元素事件', () => {
     audio.error = { code: 4, message: 'source not supported' }; audio.dispatchEvent(new Event('error'));
     const recover = vi.mocked(h.recovery.runRecovery).mock.calls[0][0]; expect(recover.canRetryWithoutCors).toBe(true);
     recover.onGiveUp(); expect(h.clear).toHaveBeenCalledOnce(); expect(h.setIsPlaying).toHaveBeenCalledWith(false);
-    expect(h.recommendation.showPlayerNotice).toHaveBeenCalledWith('这首歌暂时无法播放，请换源或稍后再试', 'error');
+    expect(h.recommendation.showPlayerNotice).toHaveBeenCalledWith('播放地址不可用或音频格式不受支持，请切换音源', 'error');
     h.refs.currentSong.current = null; audio.error = { code: 2, message: 'network' }; audio.dispatchEvent(new Event('error'));
     expect(h.recovery.evictActiveParsedSong).toHaveBeenCalledOnce(); expect(h.refs.recoveryStage.current).toBe('initial');
     expect(h.clear).toHaveBeenCalledTimes(2);

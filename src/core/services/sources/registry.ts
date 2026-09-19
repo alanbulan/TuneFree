@@ -14,6 +14,7 @@ import {
   CircuitOpenError,
   isCircuitOpen,
   recordFailure,
+  releaseCircuitProbe,
   recordSuccess,
   resetCircuits,
   type SourceCapability,
@@ -27,7 +28,7 @@ import {
  * resolver、搜索接口、界面选项、跨源兜底都从注册表派生。
  *
  * 优先级规则：
- * - 用户导入的自定义音源（kind = 'lx'）在它声明的平台上**独占**，不再回落内置 provider；
+ * - 播放按用户排列的脚本顺序尝试，失败后继续内置解析；
  * - 内置 provider 之间按 `priority`（解析）与 `lyricsPriority`（歌词）排序，
  *   GD 音乐台解析优先、原生歌词优先，与既有行为一致。
  */
@@ -42,6 +43,17 @@ let builtinProviders: MusicProvider[] = [...BUILTIN_PROVIDERS];
 let builtinScriptProviders: RegisteredProvider[] = [];
 let customProviders: RegisteredProvider[] = [];
 let generation = 0;
+let scriptOrder: string[] = [];
+
+/** 只更新排序和解析缓存代数，不重置通道健康状态。 */
+export const setSourceOrder = (ids: string[]): void => {
+  scriptOrder = [...ids];
+  generation += 1;
+};
+const orderOf = (provider: MusicProvider): number => {
+  const index = scriptOrder.findIndex((id) => provider.id.startsWith(`lx:${id}:`));
+  return index < 0 ? Number.MAX_SAFE_INTEGER : index;
+};
 
 /** 注册内置 provider（应用启动时调用一次）。 */
 export const registerBuiltinProviders = (providers: MusicProvider[]): void => {
@@ -81,19 +93,21 @@ export const getSourceGeneration = (): number => generation;
 const customFor = (platform: string): MusicProvider[] =>
   customProviders
     .filter((entry) => providerHandles(entry.provider, platform))
-    .map((entry) => entry.provider);
+    .map((entry) => entry.provider)
+    .sort((left, right) => orderOf(left) - orderOf(right));
 
 /** 自定义音源（跨源兜底与「按歌名匹配」用）。 */
 export const getCustomProviders = (platform: string): MusicProvider[] => customFor(platform);
 
 /** 所有显式允许按歌名匹配的自定义源。 */
 export const getNameMatchCandidates = (): RegisteredProvider[] =>
-  customProviders.filter((entry) => entry.provider.nameMatch === true);
+  customProviders.filter((entry) => entry.provider.nameMatch === true)
+    .sort((left, right) => orderOf(left.provider) - orderOf(right.provider));
 
 /**
  * 某平台可用的 provider，按能力与优先级排好序。
  *
- * - `capability: 'url'`（解析）：自定义音源独占该平台，没有自定义源时按优先级走内置；
+ * - `capability: 'url'`（解析）：脚本按用户顺序，原生解析兜底；
  * - `capability: 'metadata'`（歌词 / 封面）：自定义源优先，但**不独占**——
  *   自定义源没有的内容仍然可以回落到内置链路（原生歌词带翻译与逐字）。
  */
@@ -110,22 +124,10 @@ export const providersFor = (
     .filter((provider) => providerHandles(provider, platform))
     .sort((left, right) => sortKey(left) - sortKey(right));
   if (capability === 'metadata') return [...custom, ...builtins];
-  return custom.length > 0 ? custom : builtins;
+  return [...custom, ...builtins].sort((left, right) => orderOf(left) - orderOf(right));
 };
 
 const finalize = (url: string): string => normalizeMusicUrl(url) || url;
-
-/**
- * 按熔断状态过滤 provider：连续失败到阈值的通道直接跳过，
- * 把机会让给下一个 provider 或跨源兜底，而不是每次都白跑一遍。
- */
-const liveProviders = (
-  platform: string,
-  capability: 'url' | 'metadata',
-  breakerCapability: SourceCapability,
-): MusicProvider[] =>
-  providersFor(platform, capability)
-    .filter((provider) => !isCircuitOpen(provider.id, platform, breakerCapability));
 
 /**
  * 跑一个 provider 能力并把结果登记进熔断器。
@@ -140,23 +142,28 @@ const runProvider = async <T>(
   request: Pick<SourceResolveRequest, 'signal'>,
   operation: () => Promise<T>,
 ): Promise<T | null> => {
+  if (request.signal?.aborted) throw abortReasonError(request.signal);
+  if (isCircuitOpen(provider.id, platform, capability)) return null;
   try {
     const result = await operation();
     recordSuccess(provider.id, platform, capability);
     return result;
   } catch (error) {
-    if (request.signal?.aborted) throw abortReasonError(request.signal);
+    if (request.signal?.aborted) {
+      releaseCircuitProbe(provider.id, platform, capability);
+      throw abortReasonError(request.signal);
+    }
     recordFailure(provider.id, platform, capability, error);
     console.warn(`[Sources] ${capability} 失败（${provider.label} / ${platform}）：`, error);
     return null;
   }
 };
 
-/** 解析播放地址：自定义源独占，否则按优先级依次尝试（GD → 原生）。 */
+/** 解析播放地址：按用户顺序依次尝试，失败回落原生解析。 */
 export const resolveDirectUrl = async (
   request: SourceResolveRequest,
 ): Promise<string | null> => {
-  for (const provider of liveProviders(request.platform, 'url', 'url')) {
+  for (const provider of providersFor(request.platform, 'url')) {
     if (!provider.getUrl) continue;
     const url = await runProvider(provider, request.platform, 'url', request,
       () => provider.getUrl!(request));
@@ -167,7 +174,7 @@ export const resolveDirectUrl = async (
 
 /** 歌词：自定义源优先，失败回落内置；取第一个非空结果。 */
 export const resolveLyrics = async (request: SourceResolveRequest): Promise<string> => {
-  for (const provider of liveProviders(request.platform, 'metadata', 'lyrics')) {
+  for (const provider of providersFor(request.platform, 'metadata')) {
     if (!provider.getLyrics) continue;
     const lyrics = await runProvider(provider, request.platform, 'lyrics', request,
       () => provider.getLyrics!(request));
@@ -178,7 +185,7 @@ export const resolveLyrics = async (request: SourceResolveRequest): Promise<stri
 
 /** 封面：同样「自定义优先、内置兜底」（自定义源常把封面放在 pic action 里）。 */
 export const resolvePic = async (request: SourceResolveRequest): Promise<string> => {
-  for (const provider of liveProviders(request.platform, 'metadata', 'pic')) {
+  for (const provider of providersFor(request.platform, 'metadata')) {
     if (!provider.getPic) continue;
     const pic = await runProvider(provider, request.platform, 'pic', request,
       () => provider.getPic!(request));
@@ -194,7 +201,7 @@ export const resolvePic = async (request: SourceResolveRequest): Promise<string>
 export const resolveFull = async (
   request: SourceResolveRequest,
 ): Promise<ParsedSongFull | null> => {
-  for (const provider of liveProviders(request.platform, 'url', 'full')) {
+  for (const provider of providersFor(request.platform, 'url')) {
     if (!provider.resolveFull) continue;
     const parsed = await runProvider(provider, request.platform, 'full', request,
       () => provider.resolveFull!(request));
@@ -225,6 +232,7 @@ export const searchSongs = async (
   if (!provider?.search) return [];
   // 熔断打开的平台直接拒绝：单源搜索要明确告诉用户为什么没结果，
   // 而不是发一个注定失败的请求再报「搜索失败」。
+  if (signal?.aborted) throw abortReasonError(signal);
   if (isCircuitOpen(provider.id, platform, 'search')) {
     throw new CircuitOpenError(platform, 'search');
   }
@@ -235,7 +243,10 @@ export const searchSongs = async (
     recordSuccess(provider.id, platform, 'search');
     return songs;
   } catch (error) {
-    if (signal?.aborted) throw abortReasonError(signal);
+    if (signal?.aborted) {
+      releaseCircuitProbe(provider.id, platform, 'search');
+      throw abortReasonError(signal);
+    }
     recordFailure(provider.id, platform, 'search', error);
     throw error;
   }
@@ -266,7 +277,7 @@ export const searchablePlatforms = (): string[] => {
 export const liveSearchPlatforms = (): string[] =>
   searchablePlatforms().filter((platform) => {
     const provider = searchProviderFor(platform);
-    return !provider || !isCircuitOpen(provider.id, platform, 'search');
+    return !provider || !isCircuitOpen(provider.id, platform, 'search', false);
   });
 
 /**
