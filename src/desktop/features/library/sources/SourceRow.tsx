@@ -4,7 +4,7 @@ import type { MusicSourceEntry } from '../../../../core/services/sources/manager
 import type { MusicSourcesViewModel } from './useMusicSourcesViewModel';
 import { sourceStatus } from './sourceStatus';
 import Tooltip from '../../../components/Tooltip';
-import { summarizeSourceLogs } from './sourceLogs';
+import { sourceDisplayText, summarizeSourceLogs } from './sourceLogs';
 
 /** 每页展示多少条日志卡片。 */
 const LOGS_PER_PAGE = 4;
@@ -38,7 +38,7 @@ export default function SourceRow({ entry, model }: { entry: MusicSourceEntry; m
         <span className="source-avatar" aria-hidden="true"><AudioLines size={22} /></span>
         <div className="source-identity">
           <div className="source-title-row">
-            <Tooltip label={record.name}><h3 className="source-name">{record.name}</h3></Tooltip>
+            <Tooltip label={sourceDisplayText(record.name)}><h3 className="source-name">{sourceDisplayText(record.name)}</h3></Tooltip>
             {isBuiltin && <span className="source-builtin-label">内置</span>}
             {version && <span className="source-version">{isBuiltin ? '适配 ' : ''}v{version}</span>}
           </div>
@@ -67,6 +67,7 @@ export default function SourceRow({ entry, model }: { entry: MusicSourceEntry; m
           <h4><Activity size={14} aria-hidden="true" /> 诊断信息</h4>
           <span>{entry.status === 'ready' ? '初始化完成' : entry.status === 'failed' && platforms.length ? '运行已中止' : '初始化未完成'}</span>
         </div>
+        {isBuiltin && platforms.some((platform) => platform.appPlatform === 'joox' && !platform.actions.includes('musicUrl')) && <p className="source-diagnostic-note">JOOX 支持搜索、歌词和封面；当前上游未提供可用播放地址，播放需匹配其他平台版本。</p>}
         {error && <p className="source-error" role="alert">{error}</p>}
         {urlCalls.length === 0 ? <p className="source-diagnostic-note">
           {!record.enabled ? '启用后加载脚本，并在播放时记录解析结果。'
@@ -78,7 +79,7 @@ export default function SourceRow({ entry, model }: { entry: MusicSourceEntry; m
               而排查时真正关心的是「最近一次」而不是全部历史。 */}
           {visibleCalls.map((call) => <li key={`${call.source}-${call.action}-${call.checkedAt}`} className={call.ok ? 'is-success' : 'is-failed'}>
             <span className="source-call-platform">{model.platformLabel(platforms.find((platform) => platform.lxPlatform === call.source)?.appPlatform ?? call.source)}</span>
-            <span>{call.ok ? '返回有效播放地址' : call.message}</span>
+            <span>{call.ok ? '返回有效播放地址' : sourceDisplayText(call.message)}</span>
             <small>{call.quality} · {(call.durationMs / 1000).toFixed(1)} 秒 · {new Date(call.checkedAt).toLocaleTimeString('zh-CN', { hour12: false })}</small>
           </li>)}
           {hiddenCallCount > 0 && <li className="source-call-more">另有 {hiddenCallCount} 条更早的解析记录</li>}
@@ -101,7 +102,7 @@ export default function SourceRow({ entry, model }: { entry: MusicSourceEntry; m
                 <li key={JSON.stringify([item.tag, item.message])} className={`is-${item.tone}`}>
                   <time className="source-log-time">{item.time || '--:--:--'}</time>
                   <span className="source-log-tag">{item.tag || '日志'}</span>
-                  <span className="source-log-message">{item.message}</span>
+                  <span className="source-log-message">{sourceDisplayText(item.message)}</span>
                   {item.count > 1 && <span className="source-log-repeat">×{item.count}</span>}
                 </li>
               ))}
@@ -137,7 +138,7 @@ export default function SourceRow({ entry, model }: { entry: MusicSourceEntry; m
           <div><dt>平台与声明音质</dt><Tooltip label="实际音质以接口返回为准"><dd className="source-quality-list">
             {platforms.length === 0 ? '无' : platforms.map((platform) => <div key={platform.lxPlatform}>
               <strong>{model.platformLabel(platform.appPlatform)}</strong>
-              <span>{platform.qualitys?.join(' / ') || '由脚本决定'}</span>
+              <span>{platform.actions.includes('musicUrl') ? platform.qualitys?.join(' / ') || '由脚本决定' : '不提供直接播放'}</span>
             </div>)}
           </dd></Tooltip></div>
         </dl>

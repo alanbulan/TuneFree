@@ -8,12 +8,13 @@ import {
   importMusicSourceFromUrl,
   reloadMusicSources,
   removeMusicSource,
+  moveMusicSource,
   setMusicSourceEnabled,
   setMusicSourceNameMatchFallback,
   subscribeMusicSources,
 } from '../manager';
 import { getCustomProviders, getSourceGeneration, providersFor, setCustomProviders } from '../registry';
-import { loadSourceRecords, persistSourceRecords } from '../store';
+import { loadSourceOrder, loadSourceRecords, persistSourceRecords } from '../store';
 import type { LxSourceDeclaration } from '../protocol';
 import { compareScriptVersions, sourceUpdateUrl } from '../sourceUpdates';
 
@@ -131,6 +132,23 @@ describe('manager', () => {
     localStorage.clear();
     sandboxState.instances = [];
     relayMock.mockReset();
+  });
+
+  it('排序包含内置脚本，重启后保持，并在写入失败时保留原顺序', async () => {
+    await ensureMusicSourcesInitialized();
+    await importMusicSourceFiles([{ fileName: 'a.js', text: scriptOf('音源 A') }]);
+    await flush();
+    const id = userEntries()[0].record.id;
+    expect(moveMusicSource('builtin:gd', id)).toBeNull();
+    expect(getMusicSourcesSnapshot().entries[0].record.id).toBe('builtin:gd');
+    disposeMusicSources();
+    await ensureMusicSourcesInitialized();
+    expect(getMusicSourcesSnapshot().entries[0].record.id).toBe('builtin:gd');
+    storageMock.failWrites.value = true;
+    try {
+      expect(moveMusicSource(id, 'builtin:gd')).toContain('写入本地存储失败');
+      expect(getMusicSourcesSnapshot().entries[0].record.id).toBe('builtin:gd');
+    } finally { storageMock.failWrites.value = false; }
   });
 
   it('初始化：读取存储、启动启用音源并注册 provider', async () => {
@@ -406,6 +424,7 @@ describe('manager', () => {
     await flush();
     const original = loadSourceRecords()[0];
     const oldSandbox = findSandbox()[0];
+    moveMusicSource('builtin:gd', original.id);
     setMusicSourceNameMatchFallback(original.id, true);
     relayMock.mockResolvedValueOnce({ envelope: { status: 200, statusText: 'OK', headers: {},
       bodyBase64: Buffer.from(scriptOf('音源 A').replace('1.0.0', '2.0.0')).toString('base64') } });
@@ -414,6 +433,7 @@ describe('manager', () => {
     expect(loadSourceRecords()).toHaveLength(1);
     expect(loadSourceRecords()[0]).toMatchObject({ version: '2.0.0', nameMatchFallback: true, importedAt: original.importedAt });
     expect(loadSourceRecords()[0].id).not.toBe(original.id);
+    expect(loadSourceOrder()).toEqual(['builtin:gd', loadSourceRecords()[0].id]);
     expect(oldSandbox.disposed).toBe(true);
     expect(getCustomProviders('kuwo')).toHaveLength(1);
     expect(userEntries()[0].update?.status).toBe('updated');

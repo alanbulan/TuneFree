@@ -138,6 +138,7 @@ export const useLibraryStore = (): LibraryStore => {
       : current.playlists.find((playlist) => playlist.id === playlistId)?.songs;
     if (!songs) return false;
     // 越界或原地不动都不落盘：拖拽会高频触发，无谓写入会刷掉撤销体验。
+    if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) return false;
     if (fromIndex === toIndex) return false;
     if (fromIndex < 0 || fromIndex >= songs.length) return false;
     if (toIndex < 0 || toIndex >= songs.length) return false;

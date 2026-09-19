@@ -7,6 +7,7 @@ import {
   importMusicSourceFromUrl,
   reloadMusicSources,
   removeMusicSource,
+  moveMusicSource,
   setMusicSourceEnabled,
   setMusicSourceNameMatchFallback,
   subscribeMusicSources,
@@ -201,6 +202,10 @@ export const useMusicSourcesViewModel = () => {
   const platformLabel = useCallback((platform: string) => getMusicSourceLabel(platform, 'full'), []);
 
   return {
+    moveSource: (id: string, targetId: string) => {
+      const error = moveMusicSource(id, targetId);
+      if (error) showToast(error, 'error');
+    },
     entries: snapshot.entries,
     readyCount: snapshot.readyCount,
     /**

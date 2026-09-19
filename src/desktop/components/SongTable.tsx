@@ -51,6 +51,7 @@ export default function SongTable({
 
   // 拖拽过程中的源行与落点行。只在松手时提交一次重排，途中不动真实数据，
   // 避免每次 dragover 都写一遍 localStorage。
+  const dragOrigin = useRef<number | null>(null);
   const [dragState, setDragState] = useState<{ from: number; over: number } | null>(null);
 
   const handlers = useMemo<SongRowHandlers>(() => ({
@@ -62,14 +63,15 @@ export default function SongTable({
   }), []);
 
   const dragHandlers = useMemo<SongRowDragHandlers>(() => ({
-    start: (index) => setDragState({ from: index, over: index }),
+    start: (index) => { dragOrigin.current = index; setDragState({ from: index, over: index }); },
     over: (index) => setDragState((current) =>
       !current || current.over === index ? current : { ...current, over: index }),
     drop: (from, to) => {
       setDragState(null);
-      if (from !== to) latestRef.current.onReorder?.(from, to);
+      if (from === dragOrigin.current && from !== to) latestRef.current.onReorder?.(from, to);
+      dragOrigin.current = null;
     },
-    end: () => setDragState(null),
+    end: () => { dragOrigin.current = null; setDragState(null); },
     move: (index, offset) => latestRef.current.onReorder?.(index, index + offset),
   }), []);
 

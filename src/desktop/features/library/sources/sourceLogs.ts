@@ -93,3 +93,7 @@ export const summarizeSourceLogs = (logs: readonly string[]): {
       .reduce((sum, entry) => sum + entry.count, 0),
   };
 };
+
+/** 去掉第三方脚本展示文案中的装饰 emoji，不改变原脚本或日志。 */
+export const sourceDisplayText = (value: string): string => value
+  .replace(/\p{Extended_Pictographic}|\p{Regional_Indicator}|\uFE0F|\u200D|\u20E3|[\u{1F3FB}-\u{1F3FF}]/gu, '').trim();
