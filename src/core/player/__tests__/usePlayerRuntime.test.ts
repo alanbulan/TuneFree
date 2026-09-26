@@ -78,4 +78,17 @@ describe("usePlayerRuntime commit entry points", () => {
     expect(raw).not.toContain("127.0.0.1");
     expect(raw).not.toContain("00:01");
   });
+  it("marks songs unplayable and only re-renders when the set actually changes", () => {
+    const { result } = renderHook(() => usePlayerRuntime());
+    const initial = result.current.unplayableSongKeys;
+    act(() => { result.current.markSongUnplayable(song("1"), false); });
+    expect(result.current.unplayableSongKeys).toBe(initial);
+    act(() => { result.current.markSongUnplayable(song("1"), true); });
+    const marked = result.current.unplayableSongKeys;
+    expect([...marked]).toEqual(["netease:1"]);
+    act(() => { result.current.markSongUnplayable(song("1"), true); });
+    expect(result.current.unplayableSongKeys).toBe(marked);
+    act(() => { result.current.markSongUnplayable(song("1"), false); });
+    expect(result.current.unplayableSongKeys.size).toBe(0);
+  });
 });

@@ -8,7 +8,6 @@ import {
 } from '../../../core/contexts/PlayerContext';
 import { useLyricDisplayMode } from '../../../core/hooks/useLyricDisplayMode';
 import { findActiveLyricIndex, parseLyrics } from '../../../core/utils/lyrics';
-import { buildScoreNotes, type NoteStyle } from '../../utils/formatting';
 import MotionPanel from '../MotionPanel';
 import FullPlayerLyricLine from './FullPlayerLyricLine';
 
@@ -35,12 +34,6 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
     lyricDisplayMode,
   );
   const lyricClock = currentTime + lyricOffsetSeconds;
-  const activeLyric = activeLyricIndex >= 0 ? lyricRows[activeLyricIndex] : null;
-  const scoreText = activeLyric?.text || currentSong?.name || 'TuneFree Desktop';
-  // 漂浮音符是纯装饰的 infinite 动画，只在换行时重建一次；相位错开完全由 index 派生的
-  // 固定负延迟给出（传 0 即取消对播放进度的依赖），不能跟着 10Hz 的 currentTime 重算，
-  // 否则每 100ms 就会重设一次动画相位，音符会加速并微跳。
-  const scoreNotes = useMemo(() => buildScoreNotes(scoreText, 0), [scoreText]);
   const hasSong = !!currentSong;
   const lyricsLoading = isLoading && hasSong && !rawLyrics;
   const songKey = currentSong ? `${currentSong.source}:${currentSong.id}` : 'none';
@@ -80,29 +73,6 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
 
   return (
     <div className="full-lyrics-stage">
-      <div className="lyric-orbit" aria-hidden="true" />
-      <div className="lyric-score" aria-hidden="true">
-        <div className="score-staff">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <span key={index} />
-          ))}
-        </div>
-        {scoreNotes.map((note, index) => {
-          const style: NoteStyle = {
-            top: `${note.top}%`,
-            left: `${note.left}%`,
-            '--note-delay': `${note.delay.toFixed(2)}s`,
-            '--note-duration': `${note.duration.toFixed(2)}s`,
-            '--note-drift': `${note.drift}px`,
-          };
-
-          return (
-            <span className="score-note" style={style} key={`${note.glyph}-${index}`}>
-              {note.glyph}
-            </span>
-          );
-        })}
-      </div>
       <MotionPanel className="full-lyrics-content" transitionKey={`${songKey}:${lyricRows.length > 0 ? 'lyrics' : lyricsLoading}`}>
           {lyricRows.length > 0 ? (
             <div ref={lyricListRef} className="lyric-scroll lyric-scrollable" role="list" aria-label="歌词">

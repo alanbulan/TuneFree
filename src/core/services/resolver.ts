@@ -11,6 +11,7 @@ import {
 import {
   fallbackPlatformsFor,
   getNameMatchCandidates,
+  isRejectedUrl,
   resolveDirectUrl,
   resolveFull,
   resolveLyrics,
@@ -29,11 +30,13 @@ import { toSourceResolveRequest, type SourceResolveRequest } from "./sources/typ
 /**
  * 解析链路的公共可选项：
  * - signal 会贯穿到底层每一次 fetch，取消时以 AbortError reject（而非返回 null）；
- * - forceRefresh 跳过歌词 / 播放链接缓存读取。
+ * - forceRefresh 跳过歌词 / 播放链接缓存读取；
+ * - rejectedUrls 是刚刚播放失败的地址，返回它们的音源视为失败，链路继续尝试下一个音源。
  */
 export interface ResolveOptions {
   signal?: AbortSignal;
   forceRefresh?: boolean;
+  rejectedUrls?: readonly string[];
   /** 播放先取 URL，歌词和封面由补充请求获取。 */
   deferMetadata?: boolean;
 }
@@ -170,7 +173,7 @@ const resolveNameMatchFallback = async (
           album: songMeta.album,
           signal,
         });
-        if (!url) return null;
+        if (!url || isRejectedUrl(options ?? {}, url)) return null;
         // 保持原平台与原 id 的元数据绑定，避免播放器把曲目认成另一首歌。
         return {
           url: normalizeMusicUrl(url) || url,

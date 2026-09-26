@@ -108,7 +108,47 @@
 .full-action-button:hover:not(:disabled) { transform: translateY(-1px); background: var(--card-solid); color: var(--accent); }
 .full-action-button.active { color: #fff; background: var(--accent); }
 .full-action-button:disabled { opacity: .45; cursor: not-allowed; }
-.download-action-group { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 下载入口：单个按钮 + 弹出菜单，菜单样式沿用 custom-select 的浮层语言 */
+.full-download-menu { position: relative; }
+.full-download-arrow { margin-left: -2px; color: currentColor; opacity: .7; transition: transform .2s cubic-bezier(.4,0,.2,1); }
+.full-download-arrow.is-open { transform: rotate(180deg); }
+.full-download-options {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 2px;
+  min-width: 148px;
+  padding: 6px;
+  border: 1px solid rgba(var(--accent-rgb), .12);
+  border-radius: 14px;
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 10px 32px var(--shadow-md);
+  transform-origin: top left;
+}
+.full-download-options.opens-upwards { top: auto; bottom: calc(100% + 6px); transform-origin: bottom left; }
+.full-download-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-soft);
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+.full-download-option:hover:not(:disabled),
+.full-download-option:focus-visible { color: var(--accent); background: rgba(var(--accent-rgb), .07); outline: none; }
+.full-download-option:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.full-download-option:disabled { color: var(--muted); opacity: .6; cursor: not-allowed; }
 .full-more-panel {
   margin-top: 14px;
   padding: 12px;
@@ -212,11 +252,13 @@
 .queue-cover { width: 42px; height: 42px; border-radius: 11px; flex: 0 0 auto; }
 .queue-song-meta { min-width: 0; display: grid; gap: 3px; }
 .queue-item.active .queue-title { color: var(--accent); }
+.queue-item.is-unplayable .queue-cover, .queue-item.is-unplayable .queue-title { opacity: .55; }
+.queue-item.is-unplayable .queue-artist { color: var(--danger); }
 .full-player-controls {
   position: relative;
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 300px minmax(320px, 1fr) 330px;
+  grid-template-columns: 330px minmax(320px, 1fr) 330px;
   align-items: center;
   gap: 18px;
   min-height: 104px;
@@ -226,6 +268,9 @@
   border-top: 0;
 }
 .full-player-controls > *:not(.transport-wave-bg) { position: relative; z-index: 1; }
+/* 歌名/歌手已在左栏大字展示，底栏不再重复；左列留空，让播放控制与进度条保持居中 */
+.full-player-controls > .transport-center { grid-column: 2; }
+.full-player-controls > .transport-tools { grid-column: 3; }
 .transport-wave-bg {
   position: absolute;
   inset: auto 22px 8px;

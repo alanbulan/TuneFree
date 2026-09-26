@@ -106,10 +106,11 @@ export const createRuntimeDouble = (options: {
     forceNoCorsPlayback: ref(false),
     activeParsedCacheKey: ref<string | null>(null),
     pendingQualityChange: ref(false),
-    refreshedCacheKeys: ref(new Set<string>()),
+    refreshedResolutions: ref(new Map<string, string[]>()),
     playbackSessionId: ref<string | null>(null),
     failedRecommendationRequestId: ref<string | null>(null),
     failedRecommendationSongKeys: ref(new Set<string>()),
+    failedQueueSongKeys: ref(new Set<string>()),
     handlers: ref(null),
     isIOS: ref(false),
   } as unknown as PlayerRefs;
@@ -140,6 +141,7 @@ export const createRuntimeDouble = (options: {
     setPlayMode: vi.fn(),
     setAudioQuality: vi.fn(),
     setPlayerNotice: vi.fn(),
+    markSongUnplayable: vi.fn(),
     setAnalyser: vi.fn(),
     currentSong: refs.currentSong.current,
     queue: refs.queue.current,
@@ -151,6 +153,7 @@ export const createRuntimeDouble = (options: {
     playMode: "sequence",
     audioQuality: quality,
     playerNotice: null,
+    unplayableSongKeys: new Set<string>(),
     analyser: null,
   } as unknown as PlayerRuntime;
 

@@ -10,7 +10,7 @@ import DesktopShell from '../DesktopShell';
 
 const mocks = vi.hoisted(() => ({
   tauri: true, toast: vi.fn(), invoke: vi.fn(), listen: vi.fn(), unsubscribe: vi.fn(),
-  notice: null as null | { message: string; tone: string },
+  notice: null as null | { message: string; tone: string; kind?: string },
   close: null as null | ((event: { preventDefault: () => void }) => void),
   events: new Map<string, (payload: never) => void>(),
   window: { onCloseRequested: vi.fn(), hide: vi.fn(), minimize: vi.fn(), toggleMaximize: vi.fn(), close: vi.fn() },
@@ -52,7 +52,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 describe('应用壳层导航与原生事件', () => {
   it('保留各页滚动、执行搜索请求、展开播放器并循环主题', async () => {
     mocks.notice = { message: '播放失败', tone: 'error' }; const view = render(<Shell />, { wrapper: Providers }); await ready();
-    expect(mocks.toast).toHaveBeenCalledWith('播放失败', 'error');
+    expect(mocks.toast).toHaveBeenCalledWith('播放失败', 'error', undefined);
     const scroll = view.container.querySelector('.view-scroll') as HTMLElement; scroll.scrollTop = 280; fireEvent.scroll(scroll);
     click('查看收藏'); await ready(); expect(scroll.scrollTop).toBe(0); expect(screen.getByText('伙伴：true')).toBeTruthy();
     click('首页'); expect(scroll.scrollTop).toBe(280); click('收起侧边菜单'); click('展开侧边菜单');
@@ -112,5 +112,18 @@ describe('应用壳层导航与原生事件', () => {
   it('浏览器预览不注册原生监听', async () => {
     mocks.tauri = false; render(<Shell />, { wrapper: Providers }); await ready();
     expect(mocks.listen).not.toHaveBeenCalled(); expect(mocks.window.onCloseRequested).not.toHaveBeenCalled(); expect(screen.queryByRole('button', { name: '关闭' })).toBeNull();
+  });
+  it('播放失败提示附带下一首与音源页操作，自动跳过只附带音源页', async () => {
+    mocks.notice = { message: '无法播放', tone: 'error', kind: 'playbackFailed' };
+    const view = render(<Shell />, { wrapper: Providers }); await ready();
+    const [, , failedActions] = mocks.toast.mock.lastCall as [string, string, { label: string; onClick: () => void }[]];
+    expect(failedActions.map((action) => action.label)).toEqual(['下一首', '音源页']);
+    failedActions[0].onClick(); expect(mocks.next).toHaveBeenCalledWith(true);
+    click('展开 false'); expect(screen.getByText('搜索歌手')).toBeTruthy();
+    act(() => failedActions[1].onClick()); await ready();
+    expect(screen.getByText('资料库：sources')).toBeTruthy(); expect(screen.queryByText('搜索歌手')).toBeNull();
+    mocks.notice = { message: '已跳过', tone: 'warning', kind: 'songSkipped' }; view.rerender(<Shell />); await ready();
+    const [, , skippedActions] = mocks.toast.mock.lastCall as [string, string, { label: string }[]];
+    expect(skippedActions.map((action) => action.label)).toEqual(['音源页']);
   });
 });

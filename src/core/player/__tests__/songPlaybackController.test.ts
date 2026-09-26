@@ -32,7 +32,7 @@ describe('音频播放失败的收敛', () => {
     const playback = startPlayback(h, song('a')); await flushMicrotasks(); h.pending[0].resolve({ parsed: parsedFor('a'), cacheKey: null }); await playback.done;
     if (kind === 'AbortError') { expect(h.runRecovery).not.toHaveBeenCalled(); expect(h.showPlayerNotice).not.toHaveBeenCalled(); }
     else if (kind === 'NotAllowedError') { expect(h.showPlayerNotice).toHaveBeenCalledWith(expect.stringContaining('再次点击'), 'warning'); expect(h.runRecovery).not.toHaveBeenCalled(); }
-    else { expect(h.runRecovery).toHaveBeenCalledWith(expect.objectContaining({ trigger: 'playRejected', canRetryWithoutCors: true })); h.runRecovery.mock.calls[0][0].onGiveUp(); expect(h.clearActiveAudioSource).toHaveBeenCalled(); expect(h.showPlayerNotice).toHaveBeenCalledWith('播放失败，请稍后再试', 'error'); }
+    else { expect(h.runRecovery).toHaveBeenCalledWith(expect.objectContaining({ trigger: 'playRejected', canRetryWithoutCors: true })); h.runRecovery.mock.calls[0][0].onGiveUp(); expect(h.clearActiveAudioSource).toHaveBeenCalled(); expect(h.showPlayerNotice).toHaveBeenCalledWith('播放失败，请稍后再试', 'error', 'playbackFailed'); h.runRecovery.mock.calls[0][0].onGiveUp('连续失败'); expect(h.showPlayerNotice).toHaveBeenLastCalledWith('连续失败', 'error', 'playbackFailed'); }
   });
   it('CORS 策略变化重建元素，上下文恢复失败不产生未处理拒绝', async () => {
     const h = createHarness(); h.double.audio.crossOrigin = 'anonymous'; h.double.refs.isIOS.current = true;
@@ -44,7 +44,8 @@ describe('音频播放失败的收敛', () => {
   it('没有可用地址且恢复耗尽时清理状态并给出提示', async () => {
     const h = createHarness(); const playback = startPlayback(h, song('a')); await flushMicrotasks();
     h.pending[0].resolve({ parsed: null, cacheKey: null }); await playback.done; h.runRecovery.mock.calls[0][0].onGiveUp();
-    expect(h.clearActiveAudioSource).toHaveBeenCalled(); expect(h.double.setIsPlaying).toHaveBeenLastCalledWith(false); expect(h.showPlayerNotice).toHaveBeenCalledWith('未获取到可用播放地址，请在音源页查看解析失败原因', 'error');
+    expect(h.clearActiveAudioSource).toHaveBeenCalled(); expect(h.double.setIsPlaying).toHaveBeenLastCalledWith(false); expect(h.showPlayerNotice).toHaveBeenCalledWith('未获取到可用播放地址，请在音源页查看解析失败原因', 'error', 'playbackFailed');
+    h.runRecovery.mock.calls[0][0].onGiveUp('连续失败'); expect(h.showPlayerNotice).toHaveBeenLastCalledWith('连续失败', 'error', 'playbackFailed');
   });
 });
 
@@ -58,8 +59,6 @@ interface Harness {
   runRecovery: ReturnType<typeof vi.fn>;
   clearActiveAudioSource: ReturnType<typeof vi.fn>;
   resetPlaybackState: ReturnType<typeof vi.fn>;
-  playNextRecommendationAfterFailure: ReturnType<typeof vi.fn>;
-  evictActiveParsedSong: ReturnType<typeof vi.fn>;
   showPlayerNotice: ReturnType<typeof vi.fn>;
 }
 
@@ -82,8 +81,6 @@ const createHarness = (options: Parameters<typeof createRuntimeDouble>[0] = {}):
   const runRecovery = vi.fn();
   const clearActiveAudioSource = vi.fn();
   const resetPlaybackState = vi.fn();
-  const playNextRecommendationAfterFailure = vi.fn(() => false);
-  const evictActiveParsedSong = vi.fn();
   const showPlayerNotice = vi.fn();
 
   const dependencies = {
@@ -98,7 +95,7 @@ const createHarness = (options: Parameters<typeof createRuntimeDouble>[0] = {}):
       clearActiveAudioSource,
     },
     controls: { resumePlayback: vi.fn(() => Promise.resolve()) },
-    recovery: { runRecovery, evictActiveParsedSong, playNextRecommendationAfterFailure },
+    recovery: { runRecovery },
     recommendation: {
       startPlaybackSession: vi.fn(),
       resetPlaybackState,
@@ -116,8 +113,7 @@ const createHarness = (options: Parameters<typeof createRuntimeDouble>[0] = {}):
 
   return {
     double, dependencies, pending, signals, resolveParsedSong, preloadNextSong,
-    runRecovery, clearActiveAudioSource, resetPlaybackState,
-    playNextRecommendationAfterFailure, evictActiveParsedSong, showPlayerNotice,
+    runRecovery, clearActiveAudioSource, resetPlaybackState, showPlayerNotice,
   };
 };
 
@@ -189,12 +185,11 @@ describe("executeSongPlayback 竞态与取消", () => {
     await playback.done;
 
     expect(harness.runRecovery).not.toHaveBeenCalled();
-    expect(harness.evictActiveParsedSong).not.toHaveBeenCalled();
     expect(harness.clearActiveAudioSource).not.toHaveBeenCalled();
     expect(harness.double.setIsPlaying).not.toHaveBeenCalledWith(true);
   });
 
-  it("解析真正失败时收敛到失败恢复路径", async () => {
+  it("解析真正失败时交给 missingUrl 恢复分支，继续降音质或跳到下一首", async () => {
     const target = song("a");
     const harness = createHarness({ queue: [target] });
 
@@ -203,10 +198,24 @@ describe("executeSongPlayback 竞态与取消", () => {
     harness.pending[0].reject(new Error("解析失败"));
     await playback.done;
 
-    expect(harness.double.setIsLoading).toHaveBeenLastCalledWith(false);
-    expect(harness.evictActiveParsedSong).toHaveBeenCalledTimes(1);
-    expect(harness.playNextRecommendationAfterFailure).toHaveBeenCalledTimes(1);
-    expect(harness.clearActiveAudioSource).toHaveBeenCalledTimes(1);
+    expect(harness.runRecovery).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      song: target, quality: "320k", trigger: "missingUrl", canRetryWithoutCors: false,
+    }));
+    expect(harness.clearActiveAudioSource).not.toHaveBeenCalled();
+  });
+
+  it("被新请求取代后才抛出的解析错误不再触发恢复", async () => {
+    const harness = createHarness({ queue: [song("a"), song("b")] });
+
+    const firstPlay = startPlayback(harness, song("a"));
+    await flushMicrotasks();
+    const secondPlay = startPlayback(harness, song("b"));
+    await flushMicrotasks();
+    harness.pending[0].reject(new Error("旧请求失败"));
+    harness.pending[1].resolve({ parsed: parsedFor("b"), cacheKey: null });
+    await Promise.all([firstPlay.done, secondPlay.done]);
+
+    expect(harness.runRecovery).not.toHaveBeenCalled();
   });
 
   it("解析成功但没有播放地址时交给 missingUrl 恢复分支", async () => {
@@ -242,6 +251,34 @@ describe("executeSongPlayback 竞态与取消", () => {
     expect(harness.double.refs.queue.current[0]).toMatchObject({
       id: "a", url: "https://cdn.example.com/a.mp3",
     });
+  });
+
+  it("恢复链路的刷新跳过缓存，并把刚播放失败的地址交给解析器排除", async () => {
+    const target = song("a");
+    const harness = createHarness({ queue: [target], currentSong: target });
+    const normal = executeSongPlayback(harness.dependencies, target);
+    await flushMicrotasks();
+    expect(harness.resolveParsedSong.mock.calls[0][2]).not.toHaveProperty("forceRefresh");
+    harness.pending[0].resolve({ parsed: parsedFor("a"), cacheKey: null });
+    await normal;
+
+    harness.double.refs.refreshedResolutions.current.set("netease:a:320k", ["https://cdn.example.com/dead.mp3", "", "https://cdn.example.com/403.mp3"]);
+    const refresh = executeSongPlayback(harness.dependencies, target, "320k");
+    await flushMicrotasks();
+    expect(harness.resolveParsedSong).toHaveBeenLastCalledWith(target, "320k", expect.objectContaining({
+      forceRefresh: true, rejectedUrls: ["https://cdn.example.com/dead.mp3", "https://cdn.example.com/403.mp3"],
+    }));
+    harness.pending[1].resolve({ parsed: parsedFor("a"), cacheKey: null });
+    await refresh;
+
+    harness.double.refs.refreshedResolutions.current.set("netease:a:128k", [""]);
+    const unknownUrl = executeSongPlayback(harness.dependencies, target, "128k");
+    await flushMicrotasks();
+    expect(harness.resolveParsedSong).toHaveBeenLastCalledWith(target, "128k", expect.objectContaining({
+      forceRefresh: true, rejectedUrls: [],
+    }));
+    harness.pending[2].resolve({ parsed: parsedFor("a"), cacheKey: null });
+    await unknownUrl;
   });
 
   it("重复播放当前正在放的歌不会新开解析请求", async () => {

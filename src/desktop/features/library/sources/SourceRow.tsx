@@ -66,12 +66,17 @@ export default function SourceRow({ entry, model }: { entry: MusicSourceEntry; m
         <div className="source-diagnostics-heading">
           <h4><Activity size={14} aria-hidden="true" /> 诊断信息</h4>
           <span>{entry.status === 'ready' ? '初始化完成' : entry.status === 'failed' && platforms.length ? '运行已中止' : '初始化未完成'}</span>
+          {/* 单个音源的主动检测，与页头「一键检测全部音源」走同一条路径。 */}
+          {entry.status === 'ready' && record.enabled && <button type="button" className="soft-button source-probe-button"
+            aria-label={`检测 ${record.name}`} disabled={model.probe !== null} onClick={() => void model.probeSources([entry])}>
+            {model.probe?.active.includes(record.id) ? '检测中…' : '检测'}
+          </button>}
         </div>
         {isBuiltin && platforms.some((platform) => platform.appPlatform === 'joox' && !platform.actions.includes('musicUrl')) && <p className="source-diagnostic-note">JOOX 支持搜索、歌词和封面；当前上游未提供可用播放地址，播放需匹配其他平台版本。</p>}
         {error && <p className="source-error" role="alert">{error}</p>}
         {urlCalls.length === 0 ? <p className="source-diagnostic-note">
           {!record.enabled ? '启用后加载脚本，并在播放时记录解析结果。'
-            : entry.status === 'ready' ? '等待首次解析。脚本已加载，播放地址尚未验证。'
+            : entry.status === 'ready' ? '等待首次解析。脚本已加载，播放地址尚未验证，可点击「检测」主动验证。'
               : entry.status === 'failed' && platforms.length ? '脚本运行异常，重新加载后可再次尝试。'
                 : '脚本尚未完成初始化，暂不能提供解析。'}
         </p> : <ul className="source-call-list">

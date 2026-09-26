@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { isTauri, invokeCommand } from '../../../../core/ipc';
 import {
   getMusicSourcesSnapshot,
@@ -19,6 +19,7 @@ import {
   getOpenCircuits,
   subscribeCircuitBreaker,
 } from '../../../../core/services/sources/circuitBreaker';
+import { probeMusicSources } from '../../../../core/services/sources/sourceProbe';
 import { useDesktopDialog } from '../../../components/DialogHost';
 import { useToast } from '../../../components/ToastHost';
 import { sourceStatus } from './sourceStatus';
@@ -73,6 +74,9 @@ export const useMusicSourcesViewModel = () => {
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const reloadingRef = useRef(false);
   const updatingRef = useRef(false);
+  /** 检测进度：已完成数 / 总数 / 正在检测的音源；null 表示没有进行中的检测。 */
+  const [probe, setProbe] = useState<{ done: number; total: number; active: string[] } | null>(null);
+  const probeRef = useRef<AbortController | null>(null);
 
   const importFiles = useCallback(
     async (files: File[]) => {
@@ -175,6 +179,51 @@ export const useMusicSourcesViewModel = () => {
     finally { updatingRef.current = false; setCheckingUpdates(false); }
   }, [showToast]);
 
+  /**
+   * 主动检测：逐个音源用检测歌曲真实解析一次播放地址（限并发、可取消、不可重入）。
+   * 结果由沙箱写进各音源的诊断记录，状态点与「最近解析」列表随之刷新；
+   * 不经过熔断器，也不改变音源顺序。一键检测与单个音源的「检测」共用这一条路径。
+   */
+  const probeSources = useCallback(async (targets: MusicSourceEntry[]) => {
+    if (probeRef.current) return;
+    const candidates = targets.filter((entry) => entry.record.enabled && entry.status === 'ready');
+    if (candidates.length === 0) {
+      showToast('没有可检测的音源（需已启用并加载完成）', 'warning');
+      return;
+    }
+    const controller = new AbortController();
+    probeRef.current = controller;
+    const total = candidates.length;
+    setProbe({ done: 0, total, active: [] });
+    try {
+      const results = await probeMusicSources(candidates, {
+        signal: controller.signal,
+        onProgress: (done, active) => setProbe({ done, total, active }),
+      });
+      const passed = results.filter((result) => result.ok).length;
+      const skipped = results.filter((result) => result.skipped).length;
+      const failed = results.length - passed - skipped;
+      if (controller.signal.aborted) {
+        showToast(`已取消检测，完成 ${results.length}/${total}`, 'info');
+      } else if (total === 1) {
+        const [result] = results;
+        const name = candidates[0].record.name;
+        showToast(result.ok ? `「${name}」检测通过，用时 ${(result.durationMs / 1000).toFixed(1)} 秒` : `「${name}」检测未通过：${result.message}`,
+          result.ok ? 'success' : 'warning');
+      } else {
+        showToast(`检测完成：${passed} 个可用${failed ? `，${failed} 个失败` : ''}${skipped ? `，${skipped} 个无可检测平台` : ''}`,
+          failed ? 'warning' : 'success');
+      }
+    } finally {
+      probeRef.current = null;
+      setProbe(null);
+    }
+  }, [showToast]);
+
+  const cancelProbe = useCallback(() => probeRef.current?.abort(), []);
+  // 离开音源页时停止检测，不在后台继续占用脚本请求。
+  useEffect(() => () => probeRef.current?.abort(), []);
+
   const toggleExpanded = useCallback((id: string) => {
     setExpandedId((current) => (current === id ? null : id));
   }, []);
@@ -234,6 +283,9 @@ export const useMusicSourcesViewModel = () => {
     reloading,
     checkingUpdates: checkingUpdates || snapshot.entries.some((entry) => entry.update?.status === 'checking'),
     checkUpdates,
+    probe,
+    probeSources,
+    cancelProbe,
     openHomepage,
     platformLabel,
   };

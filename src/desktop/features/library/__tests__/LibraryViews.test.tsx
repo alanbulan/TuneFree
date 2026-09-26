@@ -5,16 +5,19 @@ import { LIBRARY_KEY } from '../../../../core/contexts/libraryStorage';
 import { IpcError } from '../../../../core/ipc';
 import { importPlaylist } from '../../../../core/services/playlistImport';
 import { deferred } from '../../../../core/__tests__/deferred';
-import type { Song } from '../../../../core/types';
+import type { PlayMode, Song } from '../../../../core/types';
 import type { OfflineDownloadMeta } from '../../../../core/services/offlineDownloads';
 import FavoritesView from '../FavoritesView';
 import DownloadsView from '../DownloadsView';
 import DesktopLibrary from '../DesktopLibrary';
 
 const mocks = vi.hoisted(() => ({ play: vi.fn(), toast: vi.fn(), prompt: vi.fn(), confirm: vi.fn(), list: vi.fn(),
-  remove: vi.fn(), invoke: vi.fn(), tauri: true, changed: null as null | (() => void), unsubscribe: vi.fn() }));
-vi.mock('../../../../core/contexts/PlayerContext', () => ({ usePlayerActions: () => ({ playQueue: mocks.play, playSong: mocks.play }),
-  usePlayerNowPlaying: () => ({ currentSong: null, isPlaying: false }) }));
+  remove: vi.fn(), invoke: vi.fn(), tauri: true, changed: null as null | (() => void), unsubscribe: vi.fn(),
+  toggleMode: vi.fn(), playMode: 'sequence' as PlayMode }));
+vi.mock('../../../../core/contexts/PlayerContext', () => ({
+  usePlayerActions: () => ({ playQueue: mocks.play, playSong: mocks.play, togglePlayMode: mocks.toggleMode }),
+  usePlayerNowPlaying: () => ({ currentSong: null, isPlaying: false }),
+  usePlayerQueueState: () => ({ queue: [], playMode: mocks.playMode }) }));
 vi.mock('../../../../core/ipc', async (original) => ({ ...await original<typeof import('../../../../core/ipc')>(), isTauri: () => mocks.tauri, invokeCommand: mocks.invoke }));
 vi.mock('../../../../core/services/recommendation', async (original) => ({ ...await original<typeof import('../../../../core/services/recommendation')>(), logRecommendationEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../../../../core/services/playlistImport', async (original) => ({ ...await original<typeof import('../../../../core/services/playlistImport')>(), importPlaylist: vi.fn() }));
@@ -56,7 +59,7 @@ const failWrites = () => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 };
 beforeEach(() => {
-  vi.clearAllMocks(); localStorage.clear(); mocks.tauri = true; mocks.changed = null;
+  vi.clearAllMocks(); localStorage.clear(); mocks.tauri = true; mocks.changed = null; mocks.playMode = 'sequence';
   mocks.invoke.mockReset().mockResolvedValue('C:/Music'); mocks.list.mockReset().mockResolvedValue([]);
   mocks.remove.mockReset().mockResolvedValue(undefined); mocks.confirm.mockReset().mockResolvedValue(true);
   mocks.prompt.mockReset().mockResolvedValue('新名字');
@@ -148,6 +151,35 @@ describe('歌单与收藏页面', () => {
     expect(songNames()).toEqual(['告白气球', '夜曲']);
     expect(JSON.parse(localStorage.getItem(LIBRARY_KEY)!).favorites.map((item: Song) => item.name))
       .toEqual(['告白气球', '夜曲']);
+  });
+
+  it('收藏页播放全部从第一首开始，随机播放先切到随机模式再从随机一首开始', () => {
+    setSortableLibrary(); vi.spyOn(Math, 'random').mockReturnValue(0.75);
+    const view = render(<FavoritesView />, { wrapper: LibraryProvider });
+    expect(screen.getByText('2 首歌曲')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '播放全部' }));
+    expect(mocks.play).toHaveBeenLastCalledWith([song, second], song);
+    // 顺序 → 单曲循环 → 随机：从顺序模式需要轮换两次。
+    fireEvent.click(screen.getByRole('button', { name: '随机播放' }));
+    expect(mocks.toggleMode).toHaveBeenCalledTimes(2); expect(mocks.play).toHaveBeenLastCalledWith([song, second], second);
+    mocks.toggleMode.mockClear(); mocks.playMode = 'loop'; view.rerender(<FavoritesView />);
+    fireEvent.click(screen.getByRole('button', { name: '随机播放' })); expect(mocks.toggleMode).toHaveBeenCalledTimes(1);
+    mocks.toggleMode.mockClear(); mocks.playMode = 'shuffle'; view.rerender(<FavoritesView />);
+    fireEvent.click(screen.getByRole('button', { name: '随机播放' })); expect(mocks.toggleMode).not.toHaveBeenCalled();
+    expect(mocks.play).toHaveBeenCalledTimes(4);
+  });
+
+  it('空列表禁用播放全部与随机播放，歌单详情（含我喜欢）同样提供两个按钮', () => {
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify({ favorites: [], playlists: [] }));
+    const view = render(<FavoritesView />, { wrapper: LibraryProvider });
+    expect(screen.getByRole('button', { name: '播放全部' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: '随机播放' }).hasAttribute('disabled')).toBe(true);
+    view.unmount(); setLibrary(); renderPlaylists();
+    fireEvent.click(screen.getByRole('button', { name: /夜晚.*打开/ }));
+    fireEvent.click(screen.getByRole('button', { name: '播放全部' })); expect(mocks.play).toHaveBeenLastCalledWith([song], song);
+    fireEvent.click(screen.getByRole('button', { name: '← 返回歌单列表' }));
+    fireEvent.click(screen.getByRole('button', { name: /未命名歌单.*打开/ }));
+    expect(screen.getByRole('button', { name: '随机播放' }).hasAttribute('disabled')).toBe(true);
   });
 
   it('歌单详情同样可拖拽排序', () => {

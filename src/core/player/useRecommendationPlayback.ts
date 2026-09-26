@@ -3,7 +3,7 @@ import { logRecommendationEvent } from "../services/recommendation";
 import { getSongKey } from "../types";
 import type { AudioQuality, Song } from "../types";
 import { createPlaybackSessionId, getFiniteAudioDuration } from "./playerUtils";
-import type { PlayerNotice } from "./types";
+import type { PlayerNotice, PlayerNoticeKind } from "./types";
 import type { PlayerRuntime } from "./usePlayerRuntime";
 
 export const useRecommendationPlayback = (runtime: PlayerRuntime) => {
@@ -13,8 +13,8 @@ export const useRecommendationPlayback = (runtime: PlayerRuntime) => {
     audio: audioRef, play30LoggedKey: play30LoggedKeyRef, completeLoggedKey: completeLoggedKeyRef,
   } = refs;
   const showPlayerNotice = useCallback(
-    (message: string, tone: PlayerNotice["tone"] = "info") => {
-      setPlayerNotice({ id: Date.now(), tone, message });
+    (message: string, tone: PlayerNotice["tone"] = "info", kind?: PlayerNoticeKind) => {
+      setPlayerNotice({ id: Date.now(), tone, message, ...(kind ? { kind } : {}) });
     },
     [setPlayerNotice],
   );

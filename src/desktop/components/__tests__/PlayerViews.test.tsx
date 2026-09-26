@@ -15,6 +15,7 @@ import { DesktopLyricToggle, TransportMiniLyric } from '../DesktopTransportWidge
 
 const mocks = vi.hoisted(() => ({
   song: null as Song | null, playing: false, loading: false, mode: 'sequence', queue: [] as Song[], time: 0,
+  unplayable: new Set<string>(),
   toast: vi.fn(), similar: vi.fn(), feedback: vi.fn(), download: vi.fn(), cancel: vi.fn(),
   downloading: false, cancelling: false, quality: null as null | 'flac', progress: null as number | null,
   actions: { playPrev: vi.fn(), playNext: vi.fn(), togglePlay: vi.fn(), togglePlayMode: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('../../../core/contexts/PlayerContext', () => ({
   usePlayerSettings: () => ({ audioQuality: 'flac' }),
   usePlayerProgress: () => ({ currentTime: mocks.time, lyricOffsetSeconds: 0 }),
   usePlayerActions: () => mocks.actions,
+  usePlayerNotice: () => ({ playerNotice: null, unplayableSongKeys: mocks.unplayable }),
 }));
 vi.mock('../../../core/services/recommendation', async (original) => ({
   ...await original<typeof import('../../../core/services/recommendation')>(),
@@ -50,6 +52,7 @@ const item: RecommendationItem = { song: other, score: 1, reasons: ['相似'], r
 const ready = async () => { await act(async () => {}); };
 const Providers = ({ children }: PropsWithChildren) => <ThemeProvider><LibraryProvider>{children}</LibraryProvider></ThemeProvider>;
 const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
+const pick = (name: string) => fireEvent.click(screen.getByRole('menuitem', { name }));
 function Actions({ search = vi.fn() }: { search?: (query: string) => void }) {
   const [open, setOpen] = useState(false);
   return <FullPlayerActions showMorePanel={open} setShowMorePanel={setOpen} onSearch={search} />;
@@ -76,8 +79,8 @@ describe('播放器操作', () => {
     fireEvent.change(screen.getByPlaceholderText('新建歌单'), { target: { value: ' 深夜 ' } }); click('创建');
     expect(mocks.toast).toHaveBeenLastCalledWith('已创建「深夜」', 'success');
     click('深夜 已添加'); expect(screen.getByRole('button', { name: '深夜 已添加' })).toBeTruthy();
-    click('离线缓存'); expect(mocks.download).toHaveBeenCalledWith(song, 'flac');
-    click('128K'); expect(mocks.download).toHaveBeenLastCalledWith(song, '128k');
+    click('下载'); pick('离线缓存'); expect(mocks.download).toHaveBeenCalledWith(song, 'flac');
+    click('下载'); pick('128K'); expect(mocks.download).toHaveBeenLastCalledWith(song, '128k');
     click('更多');
   });
 
@@ -151,16 +154,21 @@ describe('播放器操作', () => {
 
   it('下载状态允许取消并显示进度，没有歌曲时禁用动作', () => {
     mocks.downloading = true; mocks.quality = 'flac'; mocks.progress = 42;
-    const view = render(<Actions />, { wrapper: Providers }); click('取消下载'); expect(mocks.cancel).toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: '下载中 42%' }).hasAttribute('disabled')).toBe(true);
+    const view = render(<Actions />, { wrapper: Providers }); click('下载 42%'); pick('取消下载'); expect(mocks.cancel).toHaveBeenCalled();
+    click('下载 42%'); expect(screen.getByRole('menuitem', { name: '下载中 42%' }).hasAttribute('disabled')).toBe(true);
     view.unmount(); mocks.progress = null; mocks.cancelling = true;
-    const next = render(<Actions />, { wrapper: Providers }); expect(screen.getByRole('button', { name: '取消中' }).hasAttribute('disabled')).toBe(true); expect(screen.getByText('获取中')).toBeTruthy();
+    const next = render(<Actions />, { wrapper: Providers }); click('下载中');
+    expect(screen.getByRole('menuitem', { name: '取消中' }).hasAttribute('disabled')).toBe(true); expect(screen.getByText('获取中')).toBeTruthy();
     next.unmount(); mocks.song = null; mocks.quality = null; mocks.cancelling = false;
     render(<Actions />, { wrapper: Providers }); expect(screen.getByRole('button', { name: '喜欢' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: '下载' }).hasAttribute('disabled')).toBe(true);
   });
 
   it('队列清空和删除可撤销，并区分没有待播歌曲', () => {
+    mocks.unplayable = new Set(['qq:2']);
     const view = render(<FullPlayerQueue />); click('播放 晴天'); expect(mocks.actions.playSong).toHaveBeenCalledWith(other);
+    expect(screen.getByRole('button', { name: '播放 晴天' }).closest('.queue-item')?.classList.contains('is-unplayable')).toBe(true);
+    expect(screen.getByText(/播放失败 ·/)).toBeTruthy(); mocks.unplayable = new Set();
     click('列表循环'); expect(mocks.actions.togglePlayMode).toHaveBeenCalled();
     fireEvent.click(screen.getAllByRole('button', { name: '从队列移除' })[1]); expect(mocks.actions.removeFromQueue).toHaveBeenCalledWith('2', 'qq');
     act(() => mocks.toast.mock.lastCall![2].onClick()); expect(mocks.actions.playQueue).toHaveBeenLastCalledWith([song, other], song);

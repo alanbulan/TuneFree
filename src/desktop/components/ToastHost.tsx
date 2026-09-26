@@ -13,11 +13,12 @@ interface ToastState {
   id: number;
   message: string;
   tone: ToastTone;
-  action?: ToastAction;
+  actions: readonly ToastAction[];
 }
 
 interface ToastContextType {
-  showToast: (message: string, tone?: ToastTone, action?: ToastAction) => void;
+  /** `action` 可以是单个操作，也可以是一组（如播放失败时的「下一首」「音源页」）。 */
+  showToast: (message: string, tone?: ToastTone, action?: ToastAction | readonly ToastAction[]) => void;
   dismissToast: () => void;
 }
 
@@ -40,14 +41,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, [clearToastTimer]);
 
   const showToast = useCallback(
-    (message: string, tone: ToastTone = 'info', action?: ToastAction) => {
+    (message: string, tone: ToastTone = 'info', action?: ToastAction | readonly ToastAction[]) => {
       const id = Date.now();
+      const actions = action === undefined ? [] : 'label' in action ? [action] : action;
       clearToastTimer();
-      setToast({ id, message, tone, action });
+      setToast({ id, message, tone, actions });
       timeoutRef.current = window.setTimeout(() => {
         setToast((current) => (current?.id === id ? null : current));
         timeoutRef.current = null;
-      }, action ? 5200 : 3200);
+      }, actions.length > 0 ? 5200 : 3200);
     },
     [clearToastTimer],
   );
@@ -63,19 +65,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toast && (
           <div className={`toast-card toast-${toast.tone}`} role="status">
             <span>{toast.message}</span>
-            {toast.action && (
+            {toast.actions.map((action) => (
               <button
+                key={action.label}
                 type="button"
                 className="toast-action"
                 onClick={() => {
-                  const action = toast.action;
                   dismissToast();
-                  action?.onClick();
+                  action.onClick();
                 }}
               >
-                {toast.action.label}
+                {action.label}
               </button>
-            )}
+            ))}
             <button type="button" className="toast-close" aria-label="关闭提示" onClick={dismissToast}>
               ×
             </button>

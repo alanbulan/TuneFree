@@ -32,6 +32,8 @@ export interface SourceResolveRequest {
   qualityHashes?: Record<string, { hash?: string; size?: number }>;
   /** 跳过 provider 内部缓存（播放恢复链路的 refresh 会用到）。 */
   forceRefresh?: boolean;
+  /** 播放器刚刚播放失败的地址：provider 再返回它时按解析失败处理，链路改试下一个音源。 */
+  rejectedUrls?: readonly string[];
   signal?: AbortSignal;
 }
 
@@ -100,7 +102,7 @@ export const providerLists = (provider: MusicProvider, platform: string): boolea
 export const toSourceResolveRequest = (
   song: Pick<Song, 'id' | 'source'> & SongMeta,
   quality: string,
-  options: { forceRefresh?: boolean; signal?: AbortSignal } = {},
+  options: { forceRefresh?: boolean; rejectedUrls?: readonly string[]; signal?: AbortSignal } = {},
 ): SourceResolveRequest => ({
   platform: String(song.source || ''),
   id: song.id,
@@ -116,5 +118,6 @@ export const toSourceResolveRequest = (
   urlId: song.urlId,
   lyricId: song.lyricId,
   forceRefresh: options.forceRefresh,
+  rejectedUrls: options.rejectedUrls,
   signal: options.signal,
 });

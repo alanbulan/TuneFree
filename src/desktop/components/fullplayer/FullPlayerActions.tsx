@@ -1,8 +1,6 @@
 import { memo, useState, type Dispatch, type SetStateAction } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  CloseIcon,
-  DownloadIcon,
   HeartFillIcon,
   HeartIcon,
   MoreIcon,
@@ -11,16 +9,16 @@ import {
   ShareIcon,
 } from '../../../core/components/Icons';
 import { useLibrary } from '../../../core/contexts/LibraryContext';
-import { usePlayerActions, usePlayerNowPlaying, usePlayerSettings } from '../../../core/contexts/PlayerContext';
+import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import {
   attachRecommendationMeta,
   getSimilarSongs,
   recommendationFeedbackFromSong,
   saveRecommendationFeedback,
 } from '../../../core/services/recommendation';
-import { getSongKey, type AudioQuality } from '../../../core/types';
-import { useSongDownload, qualityOptions, getDownloadMeta } from '../../hooks/useSongDownload';
+import { getSongKey } from '../../../core/types';
 import { useToast } from '../ToastHost';
+import FullPlayerDownloadMenu from './FullPlayerDownloadMenu';
 
 interface FullPlayerActionsProps {
   showMorePanel: boolean;
@@ -34,17 +32,9 @@ function FullPlayerActions({
   onSearch,
 }: FullPlayerActionsProps) {
   const { currentSong } = usePlayerNowPlaying();
-  const { audioQuality } = usePlayerSettings();
   const { playQueue } = usePlayerActions();
   const { toggleFavorite, isFavorite, playlists, addToPlaylist, createPlaylist } = useLibrary();
   const { showToast } = useToast();
-  const {
-    downloadQuality,
-    downloadProgress,
-    isCancelling,
-    handleDownload,
-    cancelDownload,
-  } = useSongDownload();
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [loadingSimilar, setLoadingSimilar] = useState(false);
 
@@ -61,11 +51,6 @@ function FullPlayerActions({
       label: '撤销',
       onClick: () => currentSong && toggleFavorite(currentSong),
     });
-  };
-
-  const handleOfflineCache = async () => {
-    if (!currentSong || downloadQuality) return;
-    await handleDownload(currentSong, audioQuality);
   };
 
   const handleSimilarSongs = async () => {
@@ -150,39 +135,7 @@ function FullPlayerActions({
           <SearchIcon size={18} />
           {loadingSimilar ? '计算中' : '相似歌曲'}
         </button>
-        <div className="download-action-group" aria-label="下载音质">
-          <button
-            type="button"
-            className="full-action-button"
-            disabled={isCancelling || (!currentSong && downloadQuality === null)}
-            onClick={() => {
-              if (downloadQuality !== null) void cancelDownload();
-              else void handleOfflineCache();
-            }}
-          >
-            {downloadQuality !== null ? <CloseIcon size={16} /> : <DownloadIcon size={16} />}
-            {downloadQuality !== null ? (isCancelling ? '取消中' : '取消下载') : '离线缓存'}
-          </button>
-          {qualityOptions.map((quality: AudioQuality) => {
-            const meta = getDownloadMeta(quality);
-            return (
-              <button
-                type="button"
-                className="full-action-button"
-                disabled={!currentSong || !!downloadQuality}
-                onClick={() => currentSong && handleDownload(currentSong, quality)}
-                key={quality}
-              >
-                <DownloadIcon size={16} />
-                {downloadQuality === quality
-                  ? downloadProgress !== null
-                    ? `下载中 ${downloadProgress}%`
-                    : '获取中'
-                  : meta.label}
-              </button>
-            );
-          })}
-        </div>
+        <FullPlayerDownloadMenu />
       </div>
       <AnimatePresence initial={false}>
       {currentSong && showMorePanel ? (

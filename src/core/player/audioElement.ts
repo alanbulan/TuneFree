@@ -19,6 +19,9 @@ interface CreateAudioOptions {
   syncPlaybackTime: (force?: boolean) => void;
 }
 
+/** 播放满这么多秒才算真正恢复：起播即失败的歌不会清空连续失败记录，自动跳过因此不会无限循环。 */
+const FAILURE_STREAK_RESET_SECONDS = 10;
+
 export const detachAudioHandlers = (
   audio: HTMLAudioElement,
   handlers: AudioHandlers | null,
@@ -68,7 +71,7 @@ const handleAudioFailure = (
   const isSourceError = audio.error?.code === MEDIA_ERR_SRC_NOT_SUPPORTED_CODE;
   console.error(`Audio Element Error: Code=${audio.error?.code}, Msg=${audio.error?.message}`);
 
-  const giveUp = () => {
+  const giveUp = (notice?: string) => {
     console.error(
       isSourceError ? "Playback source is not supported." : "Playback failed.",
       getMediaErrorSummary(audio.error),
@@ -78,7 +81,7 @@ const handleAudioFailure = (
         : isSourceError ? '播放地址不可用或音频格式不受支持，请切换音源'
           : '音频播放失败，请重试或切换音源';
     clearActiveAudioSource();
-    recommendation.showPlayerNotice(reason, "error");
+    recommendation.showPlayerNotice(notice ?? reason, "error", "playbackFailed");
     setIsLoading(false);
     setIsPlaying(false);
   };
@@ -112,6 +115,10 @@ const createHandlers = (
       if (!song) return;
       const key = getSongKey(song);
       const position = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+      if (position >= FAILURE_STREAK_RESET_SECONDS) {
+        refs.failedQueueSongKeys.current.clear();
+        runtime.markSongUnplayable(song, false);
+      }
       if (position >= 30 && refs.play30LoggedKey.current !== key) {
         refs.play30LoggedKey.current = key;
         recommendation.logPlaybackEvent("play_30s", song, position, duration);

@@ -20,7 +20,7 @@ export const useQueueControls = (
   const {
     preloadedResolutionKey: preloadedResolutionKeyRef, audio: audioRef, currentSong: currentSongRef,
     playSong: playSongRef, queue: queueRef, playMode: playModeRef,
-    refreshedCacheKeys: refreshedCacheKeysRef, audioQuality: audioQualityRef, playRequestId: playRequestIdRef,
+    refreshedResolutions: refreshedResolutionsRef, audioQuality: audioQualityRef, playRequestId: playRequestIdRef,
     playAbort: playAbortRef, playNext: playNextRef,
   } = refs;
   const playQueue = useCallback(async (songs: Song[], startSong?: Song) => {
@@ -67,12 +67,12 @@ export const useQueueControls = (
     if (!nextSong) return;
     if (current && isSameSong(nextSong, current)) {
       recommendation.startPlaybackSession();
-      refreshedCacheKeysRef.current.clear();
+      refreshedResolutionsRef.current.clear();
       void playSongRef.current(nextSong, audioQualityRef.current);
     } else {
       void playSongRef.current(nextSong);
     }
-  }, [audio, recommendation, refs, audioRef, currentSongRef, playSongRef, queueRef, playModeRef, refreshedCacheKeysRef, audioQualityRef]);
+  }, [audio, recommendation, refs, audioRef, currentSongRef, playSongRef, queueRef, playModeRef, refreshedResolutionsRef, audioQualityRef]);
 
   const playPrev = useCallback(() => {
     const activeAudio = audioRef.current;

@@ -6,6 +6,7 @@ import { MusicSourceRuntime } from '../../../components/MusicSourceRuntime';
 import type { MusicSourceEntry } from '../../../../core/services/sources/manager';
 import type { SourceUpdateState } from '../../../../core/services/sources/sourceUpdates';
 import { recordFailure, resetCircuits } from '../../../../core/services/sources/circuitBreaker';
+import type { SourceProbeResult } from '../../../../core/services/sources/sourceProbe';
 
 const mocks = vi.hoisted(() => ({
   isTauri: vi.fn(() => false),
@@ -25,6 +26,10 @@ const mocks = vi.hoisted(() => ({
   reload: vi.fn(),
   checkUpdates: vi.fn(async (): Promise<SourceUpdateState[]> => []),
   ensureInitialized: vi.fn(async () => undefined),
+  probe: vi.fn(async (
+    _entries: MusicSourceEntry[],
+    _options: { signal?: AbortSignal; onProgress?: (done: number, active: string[]) => void },
+  ): Promise<SourceProbeResult[]> => []),
 }));
 
 const state = vi.hoisted(() => ({
@@ -61,6 +66,10 @@ vi.mock('../../../../core/services/sources/manager', () => ({
   reloadMusicSources: mocks.reload,
   checkMusicSourceUpdates: mocks.checkUpdates,
   ensureMusicSourcesInitialized: mocks.ensureInitialized,
+}));
+
+vi.mock('../../../../core/services/sources/sourceProbe', () => ({
+  probeMusicSources: mocks.probe,
 }));
 
 vi.mock('../../../components/ToastHost', () => ({
@@ -128,7 +137,7 @@ describe('SourcesView', () => {
     setEntries(entry(), entry({ record: { ...entry().record, id: 'second', name: '第二音源🐱' } }));
     render(<SourcesView />);
     const tabs = screen.getAllByRole('tab');
-    expect(tabs[1].textContent).toBe('第二音源');
+    expect(tabs[1].querySelector('.source-tab-name')?.textContent).toBe('第二音源');
     fireEvent.dragStart(tabs[0], { dataTransfer: { setData: vi.fn() } });
     fireEvent.dragOver(tabs[1], { dataTransfer: {} });
     fireEvent.drop(tabs[1], { dataTransfer: {} });
@@ -298,7 +307,7 @@ describe('SourcesView', () => {
     setEntries(entry({ calls: [{ source: 'wy', action: 'musicUrl', quality: '320k', ok: false,
       message: '解析结果格式错误', durationMs: 500, checkedAt: 1 }] }));
     render(<SourcesView />);
-    expect(screen.getByText('最近解析失败')).toBeTruthy();
+    expect(screen.getAllByText('最近解析失败')).toHaveLength(2);
     expect(screen.getByText('解析结果格式错误')).toBeTruthy();
     expect(screen.queryByText('已就绪')).toBeNull();
     expect(screen.getByRole('button', { name: /展开.*的详情/ }).getAttribute('aria-expanded')).toBe('false');
@@ -307,7 +316,7 @@ describe('SourcesView', () => {
   it('已初始化的脚本崩溃时展示运行异常，区分初始化失败', () => {
     setEntries(entry({ status: 'failed', error: 'Cannot read properties of null' }));
     render(<SourcesView />);
-    expect(screen.getByText('运行异常')).toBeTruthy();
+    expect(screen.getAllByText('运行异常')).toHaveLength(2);
     expect(screen.getByText('运行已中止')).toBeTruthy();
     expect(screen.queryByText('初始化失败')).toBeNull();
   });
@@ -419,28 +428,32 @@ describe('SourcesView', () => {
     resetCircuits();
   });
 
-  it('标签溢出时给出左右滚动按钮', () => {
-    vi.spyOn(HTMLElement.prototype, 'scrollBy').mockImplementation(() => {});
-    // happy-dom 没有真实布局，直接给滚动容器伪造溢出尺寸
-    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, get: () => 900 });
-    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 300 });
-    setEntries(entry(), entry({ record: { ...entry().record, id: 'source-2', name: '第二音源' } }));
-    render(<SourcesView />);
-
-    const right = screen.getByRole('button', { name: '向右滚动音源标签' });
-    expect(screen.queryByRole('button', { name: '向左滚动音源标签' })).toBeNull();
-    fireEvent.click(right);
-    expect(HTMLElement.prototype.scrollBy).toHaveBeenCalled();
-
-    // 已经滚到中间时两个方向都应出现
-    const scroller = document.querySelector('.source-tabs') as HTMLElement;
-    Object.defineProperty(scroller, 'scrollLeft', { configurable: true, value: 120 });
-    fireEvent.scroll(scroller);
-    const left = screen.getByRole('button', { name: '向左滚动音源标签' });
-    fireEvent.click(left);
-    expect(HTMLElement.prototype.scrollBy).toHaveBeenLastCalledWith(
-      expect.objectContaining({ left: -220 }),
+  it('音源以带序号的纵向列表呈现，序号即解析优先级，上下方向键切换与排序', () => {
+    setEntries(
+      entry(),
+      entry({ record: { ...entry().record, id: 'source-2', name: '第二音源', enabled: false } }),
+      entry({ record: { ...entry().record, id: 'source-3', name: '第三音源' } }),
     );
+    render(<SourcesView />);
+    const tablist = screen.getByRole('tablist');
+    expect(tablist.getAttribute('aria-orientation')).toBe('vertical');
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((tab) => tab.querySelector('.source-tab-rank')?.textContent)).toEqual(['1', '2', '3']);
+    expect(tabs[1].className).toContain('is-disabled');
+    expect(tabs[1].querySelector('.source-tab-status')?.textContent).toBe('已停用');
+    expect(screen.getByText(/序号即解析优先级/)).toBeTruthy();
+
+    fireEvent.keyDown(tablist, { key: 'ArrowDown' });
+    expect(tabs[1].getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(tablist, { key: 'ArrowUp' });
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(tablist, { key: 'ArrowDown', altKey: true });
+    expect(mocks.move).toHaveBeenLastCalledWith('source-1', 'source-2');
+    // 已在顶部时 Alt + 上 不移动
+    fireEvent.keyDown(tablist, { key: 'ArrowUp', altKey: true });
+    expect(mocks.move).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(tablist, { key: 'Enter' });
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true');
   });
 
   it('音源以标签栏呈现，点击标签切换详情面板', () => {
@@ -602,7 +615,7 @@ describe('SourcesView', () => {
     setEntries(entry({ status: 'failed', error: '脚本加载失败：语法错误', platforms: [] }));
     render(<SourcesView />);
 
-    expect(screen.getByText('初始化失败')).toBeTruthy();
+    expect(screen.getAllByText('初始化失败')).toHaveLength(2);
     expect(screen.getByText('脚本加载失败：语法错误')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /重新加载/ }));
     expect(mocks.reload).toHaveBeenCalled();
@@ -648,6 +661,93 @@ describe('SourcesView', () => {
     await act(() => result.current.reload());
     expect(result.current.reloading).toBe(false);
     expect(mocks.toast).toHaveBeenLastCalledWith('重载失败', 'error');
+  });
+
+  it('一键检测全部音源：只测已启用且就绪的音源，展示进度并在结束后汇总', async () => {
+    let finish!: (results: SourceProbeResult[]) => void;
+    mocks.probe.mockImplementationOnce(async (_entries, options) => {
+      options.onProgress?.(1, ['source-3']);
+      return new Promise((resolve) => { finish = resolve; });
+    });
+    setEntries(
+      entry(),
+      entry({ record: { ...entry().record, id: 'source-2', name: '停用音源', enabled: false } }),
+      entry({ record: { ...entry().record, id: 'source-3', name: '第三音源' } }),
+      entry({ record: { ...entry().record, id: 'source-4', name: '加载音源' }, status: 'loading' }),
+    );
+    render(<SourcesView />);
+    fireEvent.click(screen.getByRole('button', { name: /一键检测全部音源/ }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('检测中 1/2'));
+    expect(mocks.probe.mock.calls[0][0].map((item) => item.record.id)).toEqual(['source-1', 'source-3']);
+    expect(screen.getByRole('tab', { name: /第三音源/ }).querySelector('.source-tab-status')?.textContent).toBe('检测中…');
+    expect(screen.getByRole('button', { name: /重新加载/ }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: '检测 星海音乐源' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByRole('button', { name: /一键检测全部音源/ })).toBeNull();
+    await act(async () => finish([
+      { id: 'source-1', ok: true, skipped: false, message: '返回有效播放地址', durationMs: 300 },
+      { id: 'source-3', ok: false, skipped: false, message: '接口返回 403', durationMs: 200 },
+    ]));
+    expect(mocks.toast).toHaveBeenLastCalledWith('检测完成：1 个可用，1 个失败', 'warning');
+    expect(screen.getByRole('button', { name: /一键检测全部音源/ }).hasAttribute('disabled')).toBe(false);
+
+    mocks.probe.mockResolvedValueOnce([
+      { id: 'source-1', ok: true, skipped: false, message: '返回有效播放地址', durationMs: 300 },
+      { id: 'source-3', ok: false, skipped: true, message: '没有可检测的平台', durationMs: 0 },
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: /一键检测全部音源/ }));
+    await waitFor(() => expect(mocks.toast).toHaveBeenLastCalledWith('检测完成：1 个可用，1 个无可检测平台', 'success'));
+  });
+
+  it('检测可以取消，取消后汇总已完成数量', async () => {
+    mocks.probe.mockImplementationOnce((_entries, options) => new Promise((resolve) => {
+      options.signal?.addEventListener('abort', () => resolve([]));
+    }));
+    setEntries(entry(), entry({ record: { ...entry().record, id: 'source-2', name: '第二音源' } }));
+    render(<SourcesView />);
+    fireEvent.click(screen.getByRole('button', { name: /一键检测全部音源/ }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('检测中 0/2'));
+    fireEvent.click(screen.getByRole('button', { name: /取消检测/ }));
+    await waitFor(() => expect(mocks.toast).toHaveBeenLastCalledWith('已取消检测，完成 0/2', 'info'));
+    expect(screen.getByRole('button', { name: /一键检测全部音源/ })).toBeTruthy();
+  });
+
+  it('单个音源的检测按钮复用同一路径，并给出通过或失败原因', async () => {
+    setEntries(entry(), entry({ record: { ...entry().record, id: 'source-2', name: '第二音源' }, status: 'loading' }));
+    render(<SourcesView />);
+    expect(screen.getByText(/可点击「检测」主动验证/)).toBeTruthy();
+    mocks.probe.mockResolvedValueOnce([{ id: 'source-1', ok: true, skipped: false, message: '返回有效播放地址', durationMs: 1234 }]);
+    fireEvent.click(screen.getByRole('button', { name: '检测 星海音乐源' }));
+    await waitFor(() => expect(mocks.toast).toHaveBeenLastCalledWith('「星海音乐源」检测通过，用时 1.2 秒', 'success'));
+    expect(mocks.probe.mock.calls[0][0]).toHaveLength(1);
+
+    mocks.probe.mockImplementationOnce(async (_entries, options) => {
+      options.onProgress?.(0, ['source-1']);
+      return [{ id: 'source-1', ok: false, skipped: false, message: '接口返回 403', durationMs: 10 }];
+    });
+    fireEvent.click(screen.getByRole('button', { name: '检测 星海音乐源' }));
+    await waitFor(() => expect(mocks.toast).toHaveBeenLastCalledWith('「星海音乐源」检测未通过：接口返回 403', 'warning'));
+    // 未就绪的音源不提供单独检测
+    fireEvent.click(screen.getByRole('tab', { name: /第二音源/ }));
+    expect(screen.queryByRole('button', { name: '检测 第二音源' })).toBeNull();
+  });
+
+  it('检测不可重入：没有候选时提示，进行中重复触发只跑一次，卸载时中止', async () => {
+    const { result, unmount } = renderHook(() => useMusicSourcesViewModel());
+    await act(() => result.current.probeSources([entry({ status: 'loading' })]));
+    expect(mocks.toast).toHaveBeenLastCalledWith('没有可检测的音源（需已启用并加载完成）', 'warning');
+    expect(mocks.probe).not.toHaveBeenCalled();
+
+    let signal: AbortSignal | undefined;
+    mocks.probe.mockImplementationOnce((_entries, options) => {
+      signal = options.signal;
+      return new Promise(() => {});
+    });
+    act(() => { void result.current.probeSources([entry()]); });
+    await act(() => result.current.probeSources([entry()]));
+    expect(mocks.probe).toHaveBeenCalledTimes(1);
+    expect(result.current.probe).toEqual({ done: 0, total: 1, active: [] });
+    unmount();
+    expect(signal?.aborted).toBe(true);
   });
 
   it('内置脚本条目只读：显示内置标记，没有启停、删除与按歌名匹配开关', () => {

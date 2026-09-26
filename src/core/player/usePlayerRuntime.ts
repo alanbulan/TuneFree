@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import type { AudioQuality, PlayMode, Song } from "../types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getSongKey, type AudioQuality, type PlayMode, type Song } from "../types";
 import {
   loadStoredAudioQuality,
   loadStoredCurrentSong,
@@ -42,10 +42,11 @@ const createPlayerRefs = (
     lyricMismatchNoticedKey: ref<string | null>(null),
     recoveryStage: ref<RecoveryStage>("initial"),
     forceNoCorsPlayback: ref(false), activeParsedCacheKey: ref<string | null>(null),
-    pendingQualityChange: ref(false), refreshedCacheKeys: ref<Set<string>>(new Set()),
+    pendingQualityChange: ref(false), refreshedResolutions: ref<Map<string, string[]>>(new Map()),
     playbackSessionId: ref<string | null>(null),
     failedRecommendationRequestId: ref<string | null>(null),
     failedRecommendationSongKeys: ref<Set<string>>(new Set()),
+    failedQueueSongKeys: ref<Set<string>>(new Set()),
     handlers: ref<AudioHandlers | null>(null),
     isIOS: ref(/iPad|iPhone|iPod/.test(navigator.userAgent) ||
       (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)),
@@ -63,6 +64,8 @@ export const usePlayerRuntime = () => {
   const [playMode, setPlayMode] = useState<PlayMode>(loadStoredPlayMode);
   const [audioQuality, setAudioQuality] = useState<AudioQuality>(loadStoredAudioQuality);
   const [playerNotice, setPlayerNotice] = useState<PlayerNotice | null>(null);
+  const [unplayableSongKeys, setUnplayableSongKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const unplayableSongKeysRef = useRef(unplayableSongKeys);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
 
   const [refs] = useState<PlayerRefs>(
@@ -88,6 +91,17 @@ export const usePlayerRuntime = () => {
     setCurrentSong(next);
   }, [currentSongRef]);
 
+  // 播放进度回调里会高频调用，先比对 ref，状态真的变化时才触发渲染。
+  const markSongUnplayable = useCallback((song: Song, unplayable: boolean) => {
+    const key = getSongKey(song);
+    const current = unplayableSongKeysRef.current;
+    if (current.has(key) === unplayable) return;
+    const next = new Set(current);
+    if (unplayable) next.add(key); else next.delete(key);
+    unplayableSongKeysRef.current = next;
+    setUnplayableSongKeys(next);
+  }, []);
+
   useEffect(() => { persistQueue(queue); }, [queue]);
   useEffect(() => { persistCurrentSong(currentSong); }, [currentSong]);
   useEffect(() => {
@@ -102,8 +116,8 @@ export const usePlayerRuntime = () => {
   return {
     currentSong, isPlaying, isLoading, currentTime, duration,
     lyricOffsetSeconds, queue, playMode, audioQuality,
-    playerNotice, analyser, refs,
-    commitQueue, commitCurrentSong,
+    playerNotice, unplayableSongKeys, analyser, refs,
+    commitQueue, commitCurrentSong, markSongUnplayable,
     setIsPlaying, setIsLoading, setCurrentTime,
     setDuration, setLyricOffsetSeconds, setPlayMode,
     setAudioQuality, setPlayerNotice, setAnalyser,

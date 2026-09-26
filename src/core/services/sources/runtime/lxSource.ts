@@ -58,7 +58,7 @@ const tfUrlEncodeForm = (form) =>
     .map((key) => encodeURIComponent(key) + '=' + encodeURIComponent(form[key]))
     .join('&');
 
-/* 洛雪 request 的 body 语义：form（表单）、json、string、Buffer。 */
+/* 洛雪 request 的 body 语义：form（表单）、json、string、Buffer，以及普通对象。 */
 const tfBuildRequestBody = (settings, headers) => {
   if (settings.form && typeof settings.form === 'object') {
     if (!tfHasHeader(headers, 'content-type')) headers['content-type'] = 'application/x-www-form-urlencoded';
@@ -71,6 +71,14 @@ const tfBuildRequestBody = (settings, headers) => {
   const body = settings.body;
   if (body === undefined || body === null) return new Uint8Array(0);
   if (typeof body === 'string') return tfBytesFromString(body, 'utf-8');
+  // 洛雪（needle）会序列化普通对象：声明了表单类型就按表单编码，否则按 JSON。
+  if (Object.prototype.toString.call(body) === '[object Object]') {
+    if (/x-www-form-urlencoded/i.test(tfHeaderValue(headers, 'content-type'))) {
+      return tfBytesFromString(tfUrlEncodeForm(body), 'utf-8');
+    }
+    if (!tfHasHeader(headers, 'content-type')) headers['content-type'] = 'application/json';
+    return tfBytesFromString(JSON.stringify(body), 'utf-8');
+  }
   return tfToBytes(body);
 };
 

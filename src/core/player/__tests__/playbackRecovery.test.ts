@@ -26,7 +26,6 @@ const walkLadder = (
 };
 
 const fullContext: RecoveryContext = {
-  hasRecommendation: true,
   quality: "320k",
   canRetryWithoutCors: true,
 };
@@ -34,8 +33,7 @@ const fullContext: RecoveryContext = {
 describe("decideRecovery", () => {
   it("walks the full ladder for a source-level media error", () => {
     expect(walkLadder("mediaError", fullContext)).toEqual({
-      stages: ["corsCompatRetry", "cacheRefresh", "qualityFallback",
-        "recommendationSkip", "failed"],
+      stages: ["corsCompatRetry", "cacheRefresh", "qualityFallback", "songSkip", "failed"],
       actions: ["retryNoCors", "retryRefresh", "downgradeQuality", "skipNext", "giveUp"],
     });
   });
@@ -53,15 +51,14 @@ describe("decideRecovery", () => {
 
   it("skips both compat retry and cache refresh when the resolver returned no url", () => {
     expect(walkLadder("missingUrl", fullContext)).toEqual({
-      stages: ["qualityFallback", "recommendationSkip", "failed"],
+      stages: ["qualityFallback", "songSkip", "failed"],
       actions: ["downgradeQuality", "skipNext", "giveUp"],
     });
   });
 
-  it("gives up immediately on a missing url at the lowest quality without recommendations", () => {
-    expect(walkLadder("missingUrl", {
-      hasRecommendation: false, quality: "128k", canRetryWithoutCors: false,
-    }).actions).toEqual(["giveUp"]);
+  it("still tries the next song on a missing url at the lowest quality", () => {
+    expect(walkLadder("missingUrl", { quality: "128k", canRetryWithoutCors: false }).actions)
+      .toEqual(["skipNext", "giveUp"]);
   });
 
   it("never offers a quality downgrade when already at 128k", () => {
@@ -70,20 +67,12 @@ describe("decideRecovery", () => {
     expect(actions).toEqual(["retryNoCors", "retryRefresh", "skipNext", "giveUp"]);
   });
 
-  it("never offers a recommendation skip for a non-recommendation song", () => {
-    const { actions } = walkLadder("playRejected", {
-      ...fullContext, hasRecommendation: false,
-    });
-    expect(actions).not.toContain("skipNext");
-    expect(actions).toEqual(["retryNoCors", "retryRefresh", "downgradeQuality", "giveUp"]);
-  });
-
   it("resumes from an intermediate stage instead of restarting the ladder", () => {
     expect(decideRecovery("cacheRefresh", "mediaError", fullContext)).toEqual({
       nextStage: "qualityFallback", action: "downgradeQuality",
     });
     expect(decideRecovery("qualityFallback", "mediaError", fullContext)).toEqual({
-      nextStage: "recommendationSkip", action: "skipNext",
+      nextStage: "songSkip", action: "skipNext",
     });
   });
 

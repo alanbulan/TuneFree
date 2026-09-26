@@ -203,6 +203,18 @@
 .table-action.active { color: var(--accent); background: rgba(var(--accent-rgb),.10); }
 .table-action-danger { color: var(--danger); }
 .table-action-danger:hover { color: #fff; background: var(--danger); }
+/* 行内操作只在悬停或行内获得焦点时浮现，平时不让一列红色图标抢视线。
+   用 opacity 而非 display/visibility 隐藏，按钮始终可被 Tab 聚焦，聚焦即显形。 */
+.song-row .table-action { opacity: 0; transition: opacity .16s ease, color .16s ease, background .16s ease; }
+.song-row:hover .table-action,
+.song-row:focus-within .table-action { opacity: 1; }
+/* 已收藏的红心是状态而非操作，常显；只有「我的收藏」里整列都是红心，才同样悬停再显示。 */
+.song-row .table-action.active { opacity: 1; }
+.favorites-view .song-row:not(:hover):not(:focus-within) .table-action.active { opacity: 0; }
+/* 触屏没有悬停态，保持常显，否则操作按钮无从发现。 */
+@media (hover: none) { .song-row .table-action { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .song-row .table-action { transition: none; } }
+.favorites-toolbar { margin-bottom: 14px; font-size: 12px; }
 
 .search-layout { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 18px; }
 .search-layout-focused { align-items: start; }
@@ -468,7 +480,7 @@
   .full-player-panel { grid-template-columns: minmax(200px, .58fr) minmax(420px, 1.42fr); }
   .full-lyrics-stage { min-height: 500px; }
   .full-queue-card { display: none; }
-  .full-player-controls { grid-template-columns: 230px minmax(260px, 1fr) 260px; }
+  .full-player-controls { grid-template-columns: 260px minmax(260px, 1fr) 260px; }
 }
 @media (max-width: 860px) {
   .hero-grid { padding: 24px; gap: 18px; }
@@ -502,6 +514,8 @@
   .full-lyrics-stage { min-height: clamp(300px, 52dvh, 430px); padding: 22px 16px; }
   .lyric-scrollable { min-height: 0; max-height: none; }
   .full-player-controls { grid-template-columns: 1fr; }
+  .full-player-controls > .transport-center,
+  .full-player-controls > .transport-tools { grid-column: auto; }
 }
 
 @media (max-width: 700px) {

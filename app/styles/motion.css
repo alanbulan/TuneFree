@@ -1,7 +1,7 @@
 /* ── 动效层：全部关键帧 + 统一的减少动态豁免 ──────────────────── */
 @keyframes skeletonSweep { 0% { background-position: 160% 0; } 100% { background-position: -80% 0; } }
 @keyframes viewScrollFade { from { background: var(--view-fade-from); } to { background: transparent; } }
-@keyframes toastIn { from { opacity: 0; transform: translate3d(12px, 8px, 0) scale(.98); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
+@keyframes toastIn { from { opacity: 0; transform: translate3d(0, -8px, 0) scale(.98); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
 @keyframes viewEnter {
   from { opacity: 0; transform: translate3d(18px, 10px, 0) scale(.988); filter: blur(8px); }
   to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
@@ -13,11 +13,6 @@
 @keyframes coverSpin { to { transform: rotate(360deg); } }
 @keyframes coverBackdropFloat { 0% { transform: translate3d(-1.5%, -1%, 0) scale(1.08) rotate(-1deg); } 100% { transform: translate3d(1.5%, 1%, 0) scale(1.14) rotate(1deg); } }
 @keyframes waveDrift { 0%, 100% { transform: translate3d(-18px, 0, 0) rotate(-1deg) scaleX(1.02); } 50% { transform: translate3d(18px, -5px, 0) rotate(1deg) scaleX(1.08); } }
-@keyframes scoreNoteFloat {
-  0%, 100% { opacity: .28; transform: translate3d(-50%, 7px, 0) scale(.88) rotate(-8deg); }
-  45% { opacity: .78; transform: translate3d(calc(-50% + var(--note-drift)), -12px, 0) scale(1.08) rotate(7deg); }
-}
-@keyframes lyricFloat { 0%, 100% { transform: translateY(-8px) scale(1); } 50% { transform: translateY(12px) scale(1.04); } }
 @keyframes ambientFloat { 0%, 100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(18px,-14px,0) scale(1.06); } }
 
 @keyframes dropdownFadeIn {
@@ -85,8 +80,6 @@ html.app-hidden *::after {
    同样因层叠顺序早于业务层，只有强制优先级才能压过后续文件的同名声明。 */
 @media (prefers-reduced-motion: reduce) {
   .spinning-cover.is-rotating img,
-  .lyric-orbit,
-  .score-note,
   .full-player-panel.is-playing::before,
   .skeleton-block,
   .skeleton-line,

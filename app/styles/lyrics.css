@@ -13,52 +13,6 @@
   background: var(--lyric-stage-bg);
   box-shadow: inset 0 1px 0 var(--glass-highlight), 0 18px 54px var(--shadow-lg);
 }
-.lyric-orbit {
-  position: absolute;
-  width: min(48vw, 520px);
-  height: min(48vw, 520px);
-  border-radius: 999px;
-  border: 42px solid rgba(var(--accent-rgb),.055);
-  background: radial-gradient(circle, rgba(var(--accent-rgb),.09), transparent 60%);
-  animation: lyricFloat 7s ease-in-out infinite;
-}
-.lyric-score {
-  position: absolute;
-  inset: 26px 24px;
-  overflow: hidden;
-  opacity: .9;
-  pointer-events: none;
-  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
-}
-.score-staff {
-  position: absolute;
-  inset: 18% 0 auto;
-  height: 62%;
-  display: grid;
-  align-content: space-between;
-  transform: rotate(-3deg);
-}
-.score-staff span { height: 1px; background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb),.18), rgba(var(--accent-secondary-rgb),.13), transparent); }
-.score-note {
-  position: absolute;
-  color: rgba(var(--accent-rgb),.36);
-  font-size: clamp(18px, 2.4vw, 34px);
-  font-weight: 900;
-  text-shadow: 0 10px 24px rgba(var(--accent-rgb),.16);
-  transform: translate3d(-50%, 0, 0);
-  animation: scoreNoteFloat var(--note-duration) ease-in-out infinite;
-  animation-delay: var(--note-delay);
-}
-.dark-theme .lyric-score { opacity: 1; }
-.dark-theme .score-staff span {
-  background: linear-gradient(90deg, transparent, rgba(244,244,245,.28), rgba(var(--accent-rgb),.34), transparent);
-}
-.dark-theme .score-note {
-  color: rgba(244,244,245,.66);
-  text-shadow:
-    0 0 18px rgba(var(--accent-rgb),.34),
-    0 10px 26px rgba(0,0,0,.35);
-}
 .full-lyrics-content { position: relative; z-index: 1; width: 100%; max-width: 900px; height: 100%; color: var(--muted); text-align: center; }
 .lyric-scroll {
   width: 100%;
@@ -89,7 +43,8 @@
   border: 0;
   border-radius: 18px;
   padding: 8px 18px;
-  color: var(--muted);
+  /* 非高亮行用专用的高对比色（对舞台背景约 7:1），层次交给缩放与主题色高亮，而不是降低透明度 */
+  color: var(--lyric-line-color);
   background: transparent;
   font-family: var(--lyric-font-family, inherit);
   font-size: clamp(26px, calc(var(--lyric-font-size, 22px) * 1.55), 48px);
@@ -97,7 +52,6 @@
   line-height: 1.32;
   letter-spacing: -.025em;
   text-align: center;
-  opacity: .72;
   transform-origin: 50% 50%;
   transform: scale(.72);
   transition: color .22s ease, opacity .22s ease, transform .22s ease;
@@ -135,11 +89,12 @@
 .karaoke-word.active { transform: translateY(-.035em); }
 .lyric-line:not(.active) .karaoke-word { color: inherit; }
 .lyric-line:not(.active) .karaoke-word::after { visibility: hidden; }
-.lyric-line em { margin-top: 6px; color: var(--text-tertiary); font-size: .45em; font-style: normal; font-weight: 600; letter-spacing: 0; }
+.lyric-line em { margin-top: 6px; color: var(--lyric-line-sub-color); font-size: .45em; font-style: normal; font-weight: 600; letter-spacing: 0; }
 /* 所有行采用相同排版尺寸，高亮仅改变合成层，不会挤动邻行或中断滚动。 */
 .lyric-line.active { color: var(--accent); opacity: 1; transform: scale(1); }
 .lyric-line.active em { color: var(--text-soft); }
-.lyric-line.dim { opacity: .34; }
+/* 远离当前行的歌词只轻微淡出，淡出后对比度仍保持在 4.5:1 左右 */
+.lyric-line.dim { opacity: .82; }
 .lyric-loading-dot { width: 24px; height: 24px; border: 2px solid rgba(var(--accent-rgb),.20); border-top-color: var(--accent); border-radius: 50%; animation: coverSpin .9s linear infinite; }
 
 /* 同步翻译的逐字着色：沿用逐字状态色，但不叠加主歌词的高亮特效 */

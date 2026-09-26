@@ -46,9 +46,9 @@ describe('队列播放与媒体控制', () => {
     act(() => result.current.playNext(false)); await act(async () => {}); expect(console.error).toHaveBeenCalled();
     h.refs.playMode.current = 'sequence'; act(() => result.current.playNext());
     expect(h.refs.playSong.current).toHaveBeenLastCalledWith(song('2')); expect(h.recommendation.logEarlySkipIfNeeded).toHaveBeenCalledOnce();
-    h.refs.queue.current = [song('1')]; h.refs.refreshedCacheKeys.current.add('stale'); act(() => result.current.playNext());
+    h.refs.queue.current = [song('1')]; h.refs.refreshedResolutions.current.set('stale', []); act(() => result.current.playNext());
     expect(h.refs.playSong.current).toHaveBeenLastCalledWith(song('1'), '320k');
-    expect(h.recommendation.startPlaybackSession).toHaveBeenCalledOnce(); expect(h.refs.refreshedCacheKeys.current.size).toBe(0);
+    expect(h.recommendation.startPlaybackSession).toHaveBeenCalledOnce(); expect(h.refs.refreshedResolutions.current.size).toBe(0);
     h.refs.queue.current = []; act(() => { result.current.playNext(); result.current.playPrev(); });
   });
 

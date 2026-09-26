@@ -73,8 +73,9 @@ export const usePlayerController = (): PlayerController => {
     duration: runtime.duration,
     lyricOffsetSeconds: runtime.lyricOffsetSeconds,
   }), [runtime.currentTime, runtime.duration, runtime.lyricOffsetSeconds]);
-  const noticeValue = useMemo(() => ({ playerNotice: runtime.playerNotice }),
-    [runtime.playerNotice]);
+  const noticeValue = useMemo(() => ({
+    playerNotice: runtime.playerNotice, unplayableSongKeys: runtime.unplayableSongKeys,
+  }), [runtime.playerNotice, runtime.unplayableSongKeys]);
 
   return {
     actionsValue, nowPlayingValue, queueStateValue,
