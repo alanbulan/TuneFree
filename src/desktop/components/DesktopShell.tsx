@@ -1,7 +1,7 @@
 import { FormEvent, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useDesktopPreferences } from '../../core/contexts/DesktopPreferencesContext';
-import { usePlayerNotice } from '../../core/contexts/PlayerContext';
+import { usePlayerActions, usePlayerNotice } from '../../core/contexts/PlayerContext';
 import { useTheme } from '../../core/contexts/ThemeContext';
 import { getCurrentWindow, invokeCommand, isTauri } from '../../core/ipc';
 import DesktopHome from '../features/home/DesktopHome';
@@ -60,6 +60,7 @@ function useViewScrollMemory(view: DesktopView) {
 export default function DesktopShell({ view, onViewChange }: DesktopShellProps) {
   const { closeBehavior, setCloseBehavior } = useDesktopPreferences();
   const { playerNotice } = usePlayerNotice();
+  const { playNext } = usePlayerActions();
   const { showToast } = useToast();
   const { lockDesktopLyric, lyricSize } = useTheme();
   const [commandQuery, setCommandQuery] = useState('');
@@ -79,9 +80,6 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
     closePromptOpen,
   });
 
-  useEffect(() => {
-    if (playerNotice) showToast(playerNotice.message, playerNotice.tone);
-  }, [playerNotice, showToast]);
 
   const hideMainToTray = useCallback(async () => {
     if (!isTauri()) return;
@@ -170,6 +168,19 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   useEffect(() => {
     viewChangeRef.current = onViewChange;
   });
+
+  useEffect(() => {
+    if (!playerNotice) return;
+    // 播放失败的提示附带可点的后续操作；音源页入口会先收起全屏播放器。
+    const openSources = { label: '音源页', onClick: () => {
+      setFullPlayerOpen(false);
+      viewChangeRef.current('sources');
+    } };
+    const actions = playerNotice.kind === 'playbackFailed'
+      ? [{ label: '下一首', onClick: () => playNext(true) }, openSources]
+      : playerNotice.kind === 'songSkipped' ? [openSources] : undefined;
+    showToast(playerNotice.message, playerNotice.tone, actions);
+  }, [playerNotice, playNext, showToast]);
 
   const submitSearch = useCallback((query: string) => {
     const clean = query.trim();

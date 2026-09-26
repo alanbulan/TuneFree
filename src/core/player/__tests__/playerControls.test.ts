@@ -1,7 +1,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePlaybackControls } from '../usePlaybackControls';
-import { usePlaybackRecovery } from '../usePlaybackRecovery';
+import { MAX_CONSECUTIVE_SONG_FAILURES, MAX_URL_REFRESHES, usePlaybackRecovery } from '../usePlaybackRecovery';
 import { usePlayerSettingsActions } from '../usePlayerSettingsActions';
 import { useRecommendationPlayback } from '../useRecommendationPlayback';
 import { createRuntimeDouble, deferred, song } from './playerTestDoubles';
@@ -114,32 +114,81 @@ describe('播放控制的真实状态边界', () => {
 });
 
 describe('播放恢复阶梯', () => {
-  it('过期缓存只刷新一次，清理始终移除当前键', () => {
+  it('过期缓存按上限刷新，每次记下放不了的地址，清理始终移除当前键', () => {
     const h = harness();
     const { result } = renderHook(() => usePlaybackRecovery(h.runtime, h.recommendation));
     expect(result.current.retryCachedSongResolution(song('a'), '320k')).toBe(false);
-    h.refs.activeParsedCacheKey.current = 'netease:a:320k';
+    h.refs.activeParsedCacheKey.current = 'netease:a:320k:3';
+    h.refs.parsedSongCache.current.set('netease:a:320k:3', { data: {} as never, expiresAt: Infinity });
+    h.audio.src = 'https://cdn.test/a.mp3';
     expect(result.current.retryCachedSongResolution(song('a'), '320k')).toBe(true);
-    expect(h.refs.refreshedCacheKeys.current.has('netease:a:320k')).toBe(true);
-    h.refs.activeParsedCacheKey.current = 'netease:a:320k';
+    expect(h.refs.refreshedResolutions.current.get('netease:a:320k')).toEqual(['https://cdn.test/a.mp3']);
+    expect(h.refs.parsedSongCache.current.has('netease:a:320k:3')).toBe(false);
+    expect(h.refs.playSong.current).toHaveBeenCalledWith(song('a'), '320k');
+    h.refs.activeParsedCacheKey.current = 'netease:a:320k:4'; h.audio.src = window.location.href;
+    expect(result.current.retryCachedSongResolution(song('a'), '320k')).toBe(true);
+    expect(h.refs.refreshedResolutions.current.get('netease:a:320k')).toEqual(['https://cdn.test/a.mp3', '']);
+    h.refs.activeParsedCacheKey.current = 'netease:a:320k:5';
+    expect(MAX_URL_REFRESHES).toBe(2);
     expect(result.current.retryCachedSongResolution(song('a'), '320k')).toBe(false);
+    h.refs.activeParsedCacheKey.current = 'netease:ab:flac:3';
+    expect(result.current.retryCachedSongResolution(song('a'), 'flac')).toBe(false);
     result.current.evictActiveParsedSong();
     expect(h.refs.activeParsedCacheKey.current).toBeNull();
   });
 
-  it('推荐播放失败跳过同一批次失败项，普通歌曲不自动跳过', () => {
+  it('推荐播放失败跳过同一批次失败项', () => {
     const first = song('a', { recommendationRequestId: 'batch' });
     const second = song('b', { recommendationRequestId: 'batch' });
-    const h = harness(first); h.refs.queue.current = [first, second];
+    const h = harness(first); h.refs.queue.current = [first, song('plain'), second];
     const { result } = renderHook(() => usePlaybackRecovery(h.runtime, h.recommendation));
-    expect(result.current.playNextRecommendationAfterFailure(song('plain'))).toBe(false);
-    expect(result.current.playNextRecommendationAfterFailure(first)).toBe(true);
+    expect(result.current.skipFailedSong(first)).toBe(true);
     expect(h.refs.playSong.current).toHaveBeenCalledWith(second);
-    expect(result.current.playNextRecommendationAfterFailure(second)).toBe(false);
+    expect(result.current.skipFailedSong(second)).toBe(false);
     expect(h.refs.failedRecommendationSongKeys.current.size).toBe(2);
+    expect(h.refs.failedQueueSongKeys.current.size).toBe(0);
   });
 
-  it('按 CORS、缓存刷新、降音质、推荐跳过、最终失败依次收尾', () => {
+  it('普通歌曲失败按播放顺序跳过已失败项，整圈失败时停下', () => {
+    const [a, b, c] = [song('a'), song('b'), song('c')];
+    const h = harness(a); h.refs.queue.current = [a, b, c];
+    const { result } = renderHook(() => usePlaybackRecovery(h.runtime, h.recommendation));
+    h.refs.failedQueueSongKeys.current.add('netease:b');
+    expect(result.current.skipFailedSong(a)).toBe(true);
+    expect(h.refs.playSong.current).toHaveBeenLastCalledWith(c);
+    expect(h.recommendation.showPlayerNotice).toHaveBeenLastCalledWith('《歌曲 a》暂时无法播放，已自动切到下一首', 'warning', 'songSkipped');
+    expect(result.current.skipFailedSong(c)).toBe(false);
+    expect(h.refs.playSong.current).toHaveBeenCalledOnce();
+  });
+
+  it('单曲循环与随机播放时同样跳到队列中的其它歌曲', () => {
+    const [a, b] = [song('a'), song('b')];
+    const h = harness(a); h.refs.queue.current = [a, b];
+    const { result } = renderHook(() => usePlaybackRecovery(h.runtime, h.recommendation));
+    h.refs.playMode.current = 'loop';
+    expect(result.current.skipFailedSong(a)).toBe(true);
+    expect(h.refs.playSong.current).toHaveBeenLastCalledWith(b);
+    h.refs.failedQueueSongKeys.current.clear(); h.refs.playMode.current = 'shuffle';
+    expect(result.current.skipFailedSong(b)).toBe(true);
+    expect(h.refs.playSong.current).toHaveBeenLastCalledWith(a);
+  });
+
+  it('连续失败达到上限后停止跳过，提示检查音源并重新计数', () => {
+    const songs = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => song(id));
+    const h = harness(songs[0]); h.refs.queue.current = songs;
+    const { result } = renderHook(() => usePlaybackRecovery(h.runtime, h.recommendation));
+    const onGiveUp = vi.fn();
+    for (const [index, failing] of songs.slice(0, MAX_CONSECUTIVE_SONG_FAILURES).entries()) {
+      h.refs.recoveryStage.current = 'initial';
+      result.current.runRecovery({ song: failing, quality: '128k', trigger: 'missingUrl', canRetryWithoutCors: false, onGiveUp });
+      if (index < MAX_CONSECUTIVE_SONG_FAILURES - 1) expect(h.refs.playSong.current).toHaveBeenLastCalledWith(songs[index + 1]);
+    }
+    expect(h.refs.playSong.current).toHaveBeenCalledTimes(MAX_CONSECUTIVE_SONG_FAILURES - 1);
+    expect(onGiveUp).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(`连续 ${MAX_CONSECUTIVE_SONG_FAILURES} 首`));
+    expect(h.refs.failedQueueSongKeys.current.size).toBe(0);
+  });
+
+  it('按 CORS、有限次刷新、降音质、推荐跳过、最终失败依次收尾', () => {
     const first = song('a', { recommendationRequestId: 'batch' });
     const h = harness(first); h.refs.queue.current.push(song('b', { recommendationRequestId: 'batch' }));
     const { result } = renderHook(() => usePlaybackRecovery(h.runtime, h.recommendation));
@@ -147,22 +196,32 @@ describe('播放恢复阶梯', () => {
       canRetryWithoutCors: true, onGiveUp: vi.fn() };
     result.current.runRecovery(request);
     expect(h.refs.forceNoCorsPlayback.current).toBe(true);
-    h.refs.activeParsedCacheKey.current = 'netease:a:320k';
-    result.current.runRecovery(request);
-    expect(h.refs.recoveryStage.current).toBe('cacheRefresh');
-    result.current.runRecovery(request);
+    // 兼容模式已启用后，真实调用方不会再给出 canRetryWithoutCors
+    const afterCors = { ...request, canRetryWithoutCors: false };
+    for (let refresh = 1; refresh <= MAX_URL_REFRESHES; refresh += 1) {
+      h.refs.activeParsedCacheKey.current = `netease:a:320k:${refresh}`;
+      result.current.runRecovery(afterCors);
+      expect(h.refs.playSong.current).toHaveBeenLastCalledWith(first, '320k');
+      expect(h.refs.recoveryStage.current).toBe('initial');
+    }
+    h.refs.activeParsedCacheKey.current = 'netease:a:320k:9';
+    result.current.runRecovery(afterCors);
     expect(h.refs.playSong.current).toHaveBeenLastCalledWith(first, '128k');
-    expect(h.refs.audioQuality.current).toBe('128k');
-    expect(h.runtime.setAudioQuality).toHaveBeenCalledExactlyOnceWith('128k');
+    // 降级只作用于这一首，不改写用户保存的音质偏好。
+    expect(h.refs.audioQuality.current).toBe('320k');
+    expect(h.runtime.setAudioQuality).not.toHaveBeenCalled();
     expect(h.recommendation.logPlaybackEvent).not.toHaveBeenCalled();
-    result.current.runRecovery(request);
+    result.current.runRecovery(afterCors);
     expect(h.refs.playSong.current).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'b' }));
-    result.current.runRecovery(request);
-    expect(request.onGiveUp).toHaveBeenCalledOnce();
+    expect(h.recommendation.showPlayerNotice).toHaveBeenLastCalledWith(expect.any(String), 'warning', 'songSkipped');
+    expect(h.runtime.markSongUnplayable).toHaveBeenLastCalledWith(first, true);
+    result.current.runRecovery(afterCors);
+    expect(request.onGiveUp).toHaveBeenCalledExactlyOnceWith(undefined);
+    expect(h.runtime.markSongUnplayable).toHaveBeenCalledTimes(2);
     expect(h.refs.recoveryStage.current).toBe('initial');
   });
 
-  it('无缓存且最低音质不可用时直接结束，不反复尝试', () => {
+  it('无缓存且最低音质不可用、队列里也没有其它歌曲时直接结束', () => {
     const h = harness(); const onGiveUp = vi.fn();
     const { result } = renderHook(() => usePlaybackRecovery(h.runtime, h.recommendation));
     result.current.runRecovery({ song: song('a'), quality: '128k', trigger: 'playRejected', canRetryWithoutCors: false, onGiveUp });
@@ -177,7 +236,10 @@ describe('推荐播放事件与设置', () => {
     const session = result.current.startPlaybackSession();
     expect(result.current.startPlaybackSession()).toBe(session);
     act(() => result.current.showPlayerNotice('已准备好'));
+    expect(h.runtime.setPlayerNotice).toHaveBeenCalledWith(expect.not.objectContaining({ kind: expect.anything() }));
     expect(h.runtime.setPlayerNotice).toHaveBeenCalledWith(expect.objectContaining({ message: '已准备好', tone: 'info' }));
+    act(() => result.current.showPlayerNotice('无法播放', 'error', 'playbackFailed'));
+    expect(h.runtime.setPlayerNotice).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'playbackFailed' }));
     h.audio.currentTime = 10;
     act(() => result.current.logEarlySkipIfNeeded());
     expect(logEvent).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'skip_early', positionSeconds: 10, sessionId: session }));

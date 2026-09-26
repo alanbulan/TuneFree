@@ -4,6 +4,7 @@ import {
   getShuffleStepIndex,
   syncShuffleOrder,
 } from "../contexts/playerQueue";
+import { getSongKey } from "../types";
 import type { Song } from "../types";
 import type { PlayerRefs } from "./types";
 
@@ -28,4 +29,25 @@ export const resolveQueueStepIndex = (
   const order = syncShuffleOrder(refs.shuffleOrder.current, queue);
   refs.shuffleOrder.current = order;
   return getShuffleStepIndex(order, queue, currentSong, step);
+};
+
+/**
+ * 播放失败后的下一首：沿用正常的「下一首」顺序，跳过本轮已经失败的歌曲；整圈都失败时返回 -1。
+ * 单曲循环时当前歌曲已不可播放，因此同样按列表顺序往后找。
+ */
+export const resolveNextPlayableIndex = (
+  refs: PlayerRefs,
+  currentSong: Song,
+  failedKeys: ReadonlySet<string>,
+): number => {
+  const queue = refs.queue.current;
+  let cursor = currentSong;
+  for (let attempt = 0; attempt < queue.length; attempt += 1) {
+    const index = resolveQueueStepIndex(refs, cursor, 1);
+    const candidate = queue[index];
+    if (!candidate) return -1;
+    if (!failedKeys.has(getSongKey(candidate))) return index;
+    cursor = candidate;
+  }
+  return -1;
 };

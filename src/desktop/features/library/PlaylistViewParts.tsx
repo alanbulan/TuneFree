@@ -3,6 +3,7 @@ import { getImgReferrerPolicy } from '../../../core/services/utils';
 import type { Playlist, Song } from '../../../core/types';
 import SongTable from '../../components/SongTable';
 import CustomSelect from './components/CustomSelect';
+import PlayAllButtons from './PlayAllButtons';
 import { PLAYLIST_IMPORT_SOURCES } from '../../../core/services/playlistImport';
 
 interface PlaylistDetailProps {
@@ -29,6 +30,7 @@ export function PlaylistDetail({ playlist, currentSong, isPlaying, onBack, onRen
           <div><p className="eyebrow">Playlist</p><h2 className="section-title">{playlist.name}</h2>
             <p>{playlist.songs.length} 首歌曲{playlist.songs.length > 1 ? ' · 可拖拽调整顺序' : ''}</p></div>
           <div className="inline-actions">
+            <PlayAllButtons songs={playlist.songs} />
             {playlist.id !== 'favorites' && (<>
               <button type="button" className="soft-button" onClick={() => onRename(playlist)}>重命名</button>
               <button type="button" className="danger-button" onClick={() => onDelete(playlist)}>删除歌单</button>

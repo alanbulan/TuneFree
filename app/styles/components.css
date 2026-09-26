@@ -3,13 +3,15 @@
    顶到 700 行上限，拆到独立文件，用保序 @import 挂在本层最前面。 */
 @import "./desktop-widgets.css";
 
+/* 顶部居中：右下角会盖住底栏的队列与音质切换 */
 .toast-host {
   position: fixed;
-  right: 22px;
-  bottom: 118px;
+  top: 72px;
+  left: 16px;
+  right: 16px;
   z-index: 80;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   pointer-events: none;
 }
 .toast-card {

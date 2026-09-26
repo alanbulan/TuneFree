@@ -2,6 +2,7 @@ import { getSongKey, isSameSong } from "../types";
 import type { AudioQuality, Song } from "../types";
 import {
   getFiniteAudioDuration,
+  getSongQualityKey,
   isAbortError,
   isUnsupportedSourcePlayError,
   shouldUseCors,
@@ -68,7 +69,7 @@ const beginPlaybackRequest = (
   const isCurrentSong = isSameSong(refs.currentSong.current, song);
   if (!forceQuality) {
     recommendation.startPlaybackSession();
-    refs.refreshedCacheKeys.current.clear();
+    refs.refreshedResolutions.current.clear();
     if (refs.failedRecommendationRequestId.current !== song.recommendationRequestId) {
       refs.failedRecommendationRequestId.current = song.recommendationRequestId || null;
       refs.failedRecommendationSongKeys.current.clear();
@@ -152,9 +153,9 @@ const handlePlayError = (
     song, quality, trigger: "playRejected",
     canRetryWithoutCors: isUnsupportedSourcePlayError(error) &&
       !refs.forceNoCorsPlayback.current,
-    onGiveUp: () => {
+    onGiveUp: (notice) => {
       audio.clearActiveAudioSource();
-      recommendation.showPlayerNotice("播放失败，请稍后再试", "error");
+      recommendation.showPlayerNotice(notice ?? "播放失败，请稍后再试", "error", "playbackFailed");
       runtime.setIsPlaying(false);
       runtime.setIsLoading(false);
     },
@@ -201,9 +202,10 @@ const handleMissingUrl = (
   console.error(`No valid URL for ${song.name} [${quality}]`);
   recovery.runRecovery({
     song, quality, trigger: "missingUrl", canRetryWithoutCors: false,
-    onGiveUp: () => {
+    onGiveUp: (notice) => {
       audio.clearActiveAudioSource();
-      recommendation.showPlayerNotice("未获取到可用播放地址，请在音源页查看解析失败原因", "error");
+      recommendation.showPlayerNotice(notice ?? "未获取到可用播放地址，请在音源页查看解析失败原因", "error",
+        "playbackFailed");
       runtime.setIsLoading(false);
       runtime.setIsPlaying(false);
     },
@@ -218,13 +220,16 @@ export const executeSongPlayback = async (
   if (!dependencies.runtime.refs.audio.current) return;
   if (await reuseCurrentPlayback(dependencies, song, forceQuality)) return;
   const request = beginPlaybackRequest(dependencies, song, forceQuality);
+  // 恢复链路的刷新：跳过内部缓存，并让刚刚播放失败的地址不再被采用。
+  const failedUrls = forceQuality === undefined ? undefined : dependencies.runtime.refs
+    .refreshedResolutions.current.get(getSongQualityKey(song, request.targetQuality));
   try {
     const resolution = await dependencies.resolver.resolveParsedSong(
       song, request.targetQuality, {
         signal: request.signal,
-        ...(forceQuality && dependencies.runtime.refs.refreshedCacheKeys.current.has(
-          `${getSongKey(song)}:${request.targetQuality}`,
-        ) ? { forceRefresh: true } : {}),
+        ...(failedUrls === undefined ? {} : {
+          forceRefresh: true, rejectedUrls: failedUrls.filter(Boolean),
+        }),
       },
     );
     if (request.requestId !== dependencies.runtime.refs.playRequestId.current ||
@@ -239,14 +244,10 @@ export const executeSongPlayback = async (
     }
   } catch (error) {
     if (isAbortError(error)) return;
-    if (request.requestId === dependencies.runtime.refs.playRequestId.current) {
-      dependencies.runtime.setIsLoading(false);
-      dependencies.runtime.setIsPlaying(false);
-      dependencies.recovery.evictActiveParsedSong();
-      if (!dependencies.recovery.playNextRecommendationAfterFailure(song)) {
-        dependencies.audio.clearActiveAudioSource();
-      }
-    }
     console.error("Error in playSong", error);
+    // 解析链路意外抛错与「没拿到地址」同样处理：降音质、跳到下一首，最后才停下。
+    if (request.requestId === dependencies.runtime.refs.playRequestId.current) {
+      handleMissingUrl(dependencies, song, request.targetQuality);
+    }
   }
 };

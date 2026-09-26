@@ -8,6 +8,7 @@ import {
   getSourceGeneration,
   getTopListDetail,
   getTopLists,
+  isRejectedUrl,
   liveSearchPlatforms,
   topListPlatforms,
   providersFor,
@@ -474,6 +475,40 @@ describe('熔断接入注册表', () => {
     // 熔断后坏源被跳过，尝试次数不再增长
     expect(await resolveDirectUrl(urlRequest)).toBe('https://good.test/a.mp3');
     expect(attempts).toBe(3);
+  });
+
+  it('返回刚刚播放失败的地址视为该音源失败，链路继续尝试下一个音源', async () => {
+    const deadUrl = vi.fn(async () => 'https://dead.test/redirect?id=1&level=standard');
+    registerBuiltinProviders([
+      provider({ id: 'dead', label: '死链源', platforms: ['qq'], priority: 1, getUrl: deadUrl }),
+      provider({ id: 'good', label: '好源', platforms: ['qq'], priority: 2, getUrl: async () => 'https://good.test/a.mp3' }),
+    ]);
+    const qq = (rejectedUrls?: string[]) => request({ platform: 'qq', rejectedUrls });
+
+    await expect(resolveDirectUrl(qq())).resolves.toBe('https://dead.test/redirect?id=1&level=standard');
+    await expect(resolveDirectUrl(qq([]))).resolves.toBe('https://dead.test/redirect?id=1&level=standard');
+    // 播放器读回的 audio.src 是规范化后的地址，比较时两边都按 URL 规范化
+    for (let index = 0; index < 3; index += 1) {
+      await expect(resolveDirectUrl(qq(['HTTPS://DEAD.TEST/redirect?id=1&level=standard'])))
+        .resolves.toBe('https://good.test/a.mp3');
+    }
+    // 连续返回死链会触发熔断，之后普通解析也不再采用它
+    await expect(resolveDirectUrl(qq())).resolves.toBe('https://good.test/a.mp3');
+    expect(deadUrl).toHaveBeenCalledTimes(5);
+    expect(isRejectedUrl({ rejectedUrls: ['not a url'] }, 'not a url')).toBe(true);
+    expect(isRejectedUrl({}, 'https://good.test/a.mp3')).toBe(false);
+  });
+
+  it('整曲解析返回刚刚播放失败的地址时同样跳过', async () => {
+    registerBuiltinProviders([
+      provider({
+        id: 'full', label: '整曲源', platforms: ['joox'],
+        resolveFull: async (input) => ({ url: 'https://gd.test/full.mp3', lrc: '', pic: '', resolvedSource: input.platform }),
+      }),
+    ]);
+    await expect(resolveFull(request({ platform: 'joox', rejectedUrls: ['https://gd.test/full.mp3'] }))).resolves.toBeNull();
+    await expect(resolveFull(request({ platform: 'joox', rejectedUrls: ['https://gd.test/other.mp3'] })))
+      .resolves.toMatchObject({ url: 'https://gd.test/full.mp3' });
   });
 
   it('返回空结果不算失败，不会误伤没有歌词的歌', async () => {

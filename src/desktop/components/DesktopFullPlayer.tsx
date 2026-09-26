@@ -168,18 +168,6 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
           <div className="transport-wave-bg" aria-hidden="true">
             <AudioVisualizer isPlaying={isPlaying} />
           </div>
-          <div className="transport-main">
-            <CoverArt
-              src={currentSong?.pic}
-              alt={currentSong?.name || 'TuneFree'}
-              className={`transport-cover spinning-cover ${isPlaying ? 'is-rotating' : ''}`}
-              iconSize={20}
-            />
-            <div className="transport-info">
-              <div className="transport-title">{currentSong?.name || '选择一首音乐开始'}</div>
-              <div className="transport-artist">{currentSong?.artist || 'TuneFree Desktop'}</div>
-            </div>
-          </div>
           <div className="transport-center">
             <div className="transport-controls">
               <button type="button" className="control-button" aria-label="上一首" onClick={() => playPrev()}>

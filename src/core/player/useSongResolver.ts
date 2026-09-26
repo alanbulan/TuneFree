@@ -5,9 +5,9 @@ import { pruneExpiredEntries } from "../utils/boundedCache";
 import { throwIfAborted } from "../services/proxy";
 import type { ResolveOptions } from "../services/resolver";
 import { resolveOfflinePlayback } from "../services/offlineDownloads";
-import { getSongKey, isSameSong } from "../types";
+import { isSameSong } from "../types";
 import type { AudioQuality, Song } from "../types";
-import { isAbortError, PARSED_SONG_CACHE_TTL_MS } from "./playerUtils";
+import { getSongQualityKey, isAbortError, PARSED_SONG_CACHE_TTL_MS } from "./playerUtils";
 import { resolveQueueStepIndex } from "./queueNavigation";
 import type { ParsedSongResolution } from "./types";
 import type { PlayerRuntime } from "./usePlayerRuntime";
@@ -22,7 +22,7 @@ export const useSongResolver = (runtime: PlayerRuntime) => {
   // 而不是等 TTL 到期（否则表现为「导入音源后仍然解析失败」）。
   const getParsedSongCacheKey = useCallback(
     (song: Pick<Song, "id" | "source">, quality: AudioQuality) =>
-      `${getSongKey(song)}:${quality}:${getSourceGeneration()}`,
+      `${getSongQualityKey(song, quality)}:${getSourceGeneration()}`,
     [],
   );
 

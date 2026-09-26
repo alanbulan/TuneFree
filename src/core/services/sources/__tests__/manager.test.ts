@@ -3,6 +3,7 @@ import {
   disposeMusicSources,
   checkMusicSourceUpdates,
   ensureMusicSourcesInitialized,
+  getMusicSourceSandbox,
   getMusicSourcesSnapshot,
   importMusicSourceFiles,
   importMusicSourceFromUrl,
@@ -149,6 +150,16 @@ describe('manager', () => {
       expect(moveMusicSource(id, 'builtin:gd')).toContain('写入本地存储失败');
       expect(getMusicSourcesSnapshot().entries[0].record.id).toBe('builtin:gd');
     } finally { storageMock.failWrites.value = false; }
+  });
+
+  it('按 id 取运行中的沙箱：用户脚本与内置脚本都能取到，未知 id 为空', async () => {
+    await ensureMusicSourcesInitialized();
+    await importMusicSourceFiles([{ fileName: 'a.js', text: scriptOf('音源 A') }]);
+    await flush();
+    const id = userEntries()[0].record.id;
+    expect(getMusicSourceSandbox(id)).toBe(findSandbox().find((instance) => instance.code.includes('音源 A')));
+    expect(getMusicSourceSandbox('builtin:gd')).toBeTruthy();
+    expect(getMusicSourceSandbox('missing')).toBeUndefined();
   });
 
   it('初始化：读取存储、启动启用音源并注册 provider', async () => {

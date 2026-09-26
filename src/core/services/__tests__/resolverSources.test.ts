@@ -148,6 +148,24 @@ describe('自定义音源接入解析链路', () => {
     });
   });
 
+  it('刚刚播放失败的地址贯穿到音源请求，按歌名匹配也不再采用它', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+    const byName = vi.fn(async () => 'https://custom.test/by-name.mp3');
+    register('kugou', { getUrl: byName, nameMatch: true });
+
+    await expect(getSongUrl('42', 'netease', '320k', songMeta, {
+      rejectedUrls: ['https://custom.test/by-name.mp3'],
+    })).resolves.toBeNull();
+    expect(byName).toHaveBeenCalled();
+
+    const direct = vi.fn(async () => 'https://custom.test/direct.mp3');
+    register('netease', { getUrl: direct });
+    await parseSongFull('42', 'netease', '320k', songMeta, { forceRefresh: true, rejectedUrls: ['https://dead.test/a.mp3'] });
+    expect(direct).toHaveBeenCalledWith(expect.objectContaining({
+      forceRefresh: true, rejectedUrls: ['https://dead.test/a.mp3'],
+    }));
+  });
+
   it('按歌名匹配兜底：失败、抛错与无候选都不影响最终结果', async () => {
     fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
     register('kugou', { getUrl: async () => null, nameMatch: true });

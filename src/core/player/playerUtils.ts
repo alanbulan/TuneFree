@@ -1,8 +1,17 @@
-import { getSongKey, type Song } from "../types";
+import { getSongKey, type AudioQuality, type Song } from "../types";
 import { hasTranslatedLyrics, parseLyrics, supportsTranslatedLyricFallback } from "../utils/lyrics";
 import type { ParsedSongCacheEntry } from "./types";
 
 export const PARSED_SONG_CACHE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * 「歌曲 + 音质」键。解析缓存键在它后面追加音源配置代数，失败恢复的「只刷新一次」也按它去重，
+ * 两处必须由同一个函数生成，否则恢复阶梯会因为键对不上而静默失效。
+ */
+export const getSongQualityKey = (
+  song: Pick<Song, "id" | "source">,
+  quality: AudioQuality,
+): string => `${getSongKey(song)}:${quality}`;
 export const MEDIA_ERR_SRC_NOT_SUPPORTED_CODE = 4;
 /** 进度超过该比例即视为"接近结束"，让只关心阈值的订阅方避开 10Hz 的进度刷新。 */
 export const NEAR_END_PROGRESS_RATIO = 0.92;

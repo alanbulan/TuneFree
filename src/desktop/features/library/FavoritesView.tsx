@@ -2,6 +2,7 @@ import { useLibrary } from '../../../core/contexts/LibraryContext';
 import { usePlayerActions, usePlayerNowPlaying } from '../../../core/contexts/PlayerContext';
 import { useToast } from '../../components/ToastHost';
 import SongTable from '../../components/SongTable';
+import PlayAllButtons from './PlayAllButtons';
 import type { Song } from '../../../core/types';
 
 export default function FavoritesView() {
@@ -20,7 +21,11 @@ export default function FavoritesView() {
   };
 
   return (
-    <section>
+    <section className="favorites-view">
+      <div className="inline-actions favorites-toolbar">
+        <PlayAllButtons songs={favorites} />
+        <span className="muted-text">{favorites.length} 首歌曲</span>
+      </div>
       <SongTable
         songs={favorites}
         currentSong={currentSong}

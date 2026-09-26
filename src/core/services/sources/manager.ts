@@ -73,10 +73,11 @@ const notify = (): void => {
 
 export const subscribeMusicSources = (listener: () => void): (() => void) => {
   listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+  return () => { listeners.delete(listener); };
 };
+
+/** 按音源 id 取运行中的沙箱（含内置脚本），供「一键检测」直接调用单个音源、绕开熔断与排序。 */
+export const getMusicSourceSandbox = (id: string): LxSandbox | undefined => sandboxes.get(id) ?? builtinSandboxes.get(id);
 
 /** 内置脚本在音源页上的只读条目（同样展示状态、平台与日志）。 */
 const buildBuiltinEntries = (): MusicSourceEntry[] =>

@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Song } from "../../types";
 import { PARSED_SONG_CACHE_TTL_MS } from "../playerUtils";
 import type { ParsedSongData } from "../types";
+import { MAX_URL_REFRESHES, usePlaybackRecovery } from "../usePlaybackRecovery";
+import type { RecommendationPlayback } from "../useRecommendationPlayback";
 import { useSongResolver } from "../useSongResolver";
 import { abortError, createRuntimeDouble, song, type RuntimeDouble } from "./playerTestDoubles";
 
@@ -131,6 +133,25 @@ describe("useSongResolver 解析缓存", () => {
     await expect(resolver.current.resolveParsedSong(target, "320k"))
       .rejects.toMatchObject({ name: "AbortError" });
     expect(double.refs.parsedSongCache.current.size).toBe(0);
+  });
+
+  it("失败恢复能识别解析器生成的真实缓存键，并按上限刷新", async () => {
+    const target = song("a");
+    const double = createRuntimeDouble({ queue: [target] });
+    api.parseSongFull.mockResolvedValue(parsed("a"));
+    const resolver = mountResolver(double);
+    const recommendation = { showPlayerNotice: vi.fn() } as unknown as RecommendationPlayback;
+    const recovery = renderHook(() => usePlaybackRecovery(double.runtime, recommendation)).result;
+
+    const { cacheKey } = await resolver.current.resolveParsedSong(target, "320k");
+    for (let refresh = 0; refresh < MAX_URL_REFRESHES; refresh += 1) {
+      double.refs.activeParsedCacheKey.current = cacheKey;
+      expect(recovery.current.retryCachedSongResolution(target, "320k")).toBe(true);
+    }
+    expect(double.refs.parsedSongCache.current.has(cacheKey as string)).toBe(false);
+    expect(double.refs.playSong.current).toHaveBeenCalledWith(target, "320k");
+    double.refs.activeParsedCacheKey.current = cacheKey;
+    expect(recovery.current.retryCachedSongResolution(target, "320k")).toBe(false);
   });
 });
 

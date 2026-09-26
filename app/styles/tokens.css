@@ -73,6 +73,9 @@
   --glass-inner: rgba(255,255,255,.7);
   /* Lyric stage gradient */
   --lyric-stage-bg: linear-gradient(180deg, rgba(255,255,255,.70), rgba(242,242,247,.78));
+  /* 全屏歌词非高亮行：对舞台背景（约 #f4f4f7）主行约 7:1、扩展行约 5.5:1 */
+  --lyric-line-color: #50505a;
+  --lyric-line-sub-color: #62626b;
   /* Full player panel gradient overlay */
   --player-overlay: linear-gradient(90deg, rgba(255,255,255,.92) 0%, rgba(255,255,255,.84) 47%, rgba(255,255,255,.96) 62%, #fff 72%, #fff 100%);
   --view-fade-from: rgba(255,255,255,.22);
@@ -134,7 +137,10 @@
   --glass-highlight: rgba(255,255,255,.06);
   --glass-inner: rgba(255,255,255,.06);
   /* Lyric stage gradient */
-  --lyric-stage-bg: linear-gradient(180deg, rgba(24,24,27,.70), rgba(9,9,11,.78));
+  /* 不透明度略高于浅色，封面模糊背景偏亮时也能压住歌词底色 */
+  --lyric-stage-bg: linear-gradient(180deg, rgba(24,24,27,.80), rgba(9,9,11,.86));
+  --lyric-line-color: #c4c4cc;
+  --lyric-line-sub-color: #a1a1aa;
   /* Full player panel gradient overlay */
   --player-overlay: linear-gradient(180deg, rgba(24,24,27,.10), rgba(9,9,11,.34));
   --view-fade-from: transparent;

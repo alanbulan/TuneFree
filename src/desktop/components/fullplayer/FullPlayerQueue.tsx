@@ -5,10 +5,11 @@ import {
 } from '../../../core/components/Icons';
 import {
   usePlayerActions,
+  usePlayerNotice,
   usePlayerNowPlaying,
   usePlayerQueueState,
 } from '../../../core/contexts/PlayerContext';
-import { isSameSong, type Song } from '../../../core/types';
+import { getSongKey, isSameSong, type Song } from '../../../core/types';
 import CoverArt from '../CoverArt';
 import VirtualList from '../VirtualList';
 import Tooltip from '../Tooltip';
@@ -23,6 +24,7 @@ const playModeLabel: Record<'sequence' | 'loop' | 'shuffle', string> = {
 function FullPlayerQueue() {
   const { currentSong } = usePlayerNowPlaying();
   const { queue, playMode } = usePlayerQueueState();
+  const { unplayableSongKeys } = usePlayerNotice();
   const { playSong, playQueue, clearQueue, removeFromQueue, togglePlayMode } = usePlayerActions();
   const { showToast } = useToast();
 
@@ -98,9 +100,10 @@ function FullPlayerQueue() {
             getKey={(song: Song, index: number) => `${song.source}-${song.id}-${index}`}
             renderItem={(song: Song, index: number, style: CSSProperties) => {
               const active = isSameSong(currentSong, song);
+              const unplayable = unplayableSongKeys.has(getSongKey(song));
               return (
                 <div
-                  className={`queue-item ${active ? 'active' : ''}`}
+                  className={`queue-item ${active ? 'active' : ''}${unplayable ? ' is-unplayable' : ''}`}
                   key={`${song.source}-${song.id}-${index}`}
                   style={style}
                 >
@@ -119,7 +122,9 @@ function FullPlayerQueue() {
                     />
                     <span className="queue-song-meta">
                       <span className="queue-title">{song.name}</span>
-                      <span className="queue-artist">{song.artist || '未知歌手'}</span>
+                      <span className="queue-artist">
+                        {unplayable ? '播放失败 · ' : ''}{song.artist || '未知歌手'}
+                      </span>
                     </span>
                   </button>
                   <button

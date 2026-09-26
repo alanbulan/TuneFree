@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { AudioLines, ChevronLeft, ChevronRight, Download, RefreshCw, Upload } from 'lucide-react';
+import { AudioLines, CircleStop, Download, GripVertical, RefreshCw, Stethoscope, Upload } from 'lucide-react';
 import type { SourceCapability } from '../../../core/services/sources/circuitBreaker';
 import SourceImportPanel from './sources/SourceImportPanel';
 import SourceRow from './sources/SourceRow';
@@ -18,62 +18,32 @@ const CAPABILITY_LABELS: Record<SourceCapability, string> = {
   full: '整曲解析',
 };
 
-/** 标签栏箭头一次滚动的距离，约等于两个标签的宽度。 */
-const TAB_SCROLL_STEP = 220;
+/** 列表方向键：上下为主（纵向列表），左右保留为等价操作。 */
+const KEY_OFFSETS: Record<string, -1 | 1> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
 
 /**
  * 自定义音源管理页（/library/sources）。
  *
- * 布局是「音源名称标签栏 + 单个详情面板」，而不是把每个音源都堆成一张卡片：
- * 音源数量多起来之后，纵向堆叠会把页面撑得很长、必须滚动才能看全，
- * 而同一时刻用户只会关注其中一个音源。标签栏让页面高度与音源数量无关。
+ * 布局是「左侧带序号的纵向音源列表 + 右侧单个详情面板」：
+ * 列表顺序就是解析优先级（1 最先尝试），序号把这层含义直接摆出来；
+ * 纵向列表自带滚动，十几个音源也能一眼看全，而详情面板始终只展示选中的那一个。
  *
  * 拖拽在整页统一处理，所以页面任意位置都是放置目标。
  */
 export default function SourcesView() {
   const model = useMusicSourcesViewModel();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tabsOverflow, setTabsOverflow] = useState({ left: false, right: false });
   const draggingId = useRef<string | null>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const entries = model.entries;
+  const probingIds = model.probe?.active ?? [];
+  const busy = model.importing || model.reloading || model.checkingUpdates || model.probe !== null;
   // 选中的音源被删除、或首次进入时，回落到列表第一项。
   const activeEntry = entries.find((entry) => entry.record.id === selectedId) ?? entries[0] ?? null;
 
-  /**
-   * 标签栏用横向滚动而不是换行：换行的高度会随音源数量增长，攒多了同样会把
-   * 详情面板挤出首屏；横向滚动把高度钉死，箭头让溢出部分可见。
-   */
-  const updateTabsOverflow = useCallback(() => {
-    const element = tabsRef.current;
-    if (!element) return;
-    const maxScroll = element.scrollWidth - element.clientWidth;
-    setTabsOverflow({
-      left: element.scrollLeft > 2,
-      // 内容不足一屏时 maxScroll 为负，天然落进「没有更多」分支。
-      right: element.scrollLeft < maxScroll - 2,
-    });
-  }, []);
-
-  useEffect(() => {
-    updateTabsOverflow();
-    const element = tabsRef.current;
-    if (!element || typeof ResizeObserver === 'undefined') return;
-    // 容器尺寸变化（窗口缩放、字体加载）同样会影响是否溢出。
-    const observer = new ResizeObserver(updateTabsOverflow);
-    observer.observe(element);
-    return () => observer.disconnect();
-  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- 新增/删除音源时容器宽度不变、ResizeObserver 不会触发，必须靠数量变化重新量一次。
-  }, [updateTabsOverflow, entries.length]);
-
-  const scrollTabs = (direction: -1 | 1) => {
-    tabsRef.current?.scrollBy({ left: direction * TAB_SCROLL_STEP, behavior: 'smooth' });
-  };
-
-  /** 标签栏的左右方向键切换（ARIA tabs 的标准交互）。 */
+  /** 列表的方向键切换（ARIA tabs 的标准交互）；按住 Alt 则把选中音源上移 / 下移一位。 */
   const handleTabKeys = (event: KeyboardEvent<HTMLDivElement>) => {
-    const offset = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1
-      : event.key === 'Home' ? 0 : event.key === 'End' ? 0 : null;
+    const offset = KEY_OFFSETS[event.key] ?? (event.key === 'Home' || event.key === 'End' ? 0 : null);
     if (offset === null || entries.length === 0) return;
     event.preventDefault();
     if (event.altKey && offset) {
@@ -133,11 +103,22 @@ export default function SourcesView() {
       <div className="sources-list-heading">
         <h2>全部音源 <span>{entries.length}</span></h2>
         <div className="sources-list-tools">
-          <button type="button" className="soft-button sources-reload" disabled={model.importing || model.reloading || model.checkingUpdates}
+          {model.probe ? <>
+            <span className="sources-probe-progress" role="status">检测中 {model.probe.done}/{model.probe.total}</span>
+            <button type="button" className="soft-button sources-reload" onClick={model.cancelProbe}>
+              <CircleStop size={14} aria-hidden="true" /> 取消检测
+            </button>
+          </> : (
+            <button type="button" className="soft-button sources-reload sources-probe" disabled={busy || entries.length === 0}
+              onClick={() => void model.probeSources(entries)}>
+              <Stethoscope size={14} aria-hidden="true" /> 一键检测全部音源
+            </button>
+          )}
+          <button type="button" className="soft-button sources-reload" disabled={busy}
             onClick={() => void model.checkUpdates()}>
             <Download size={14} aria-hidden="true" /> {model.checkingUpdates ? '检查更新中…' : '检查并更新'}
           </button>
-          <button type="button" className="soft-button sources-reload" disabled={model.importing || model.reloading || model.checkingUpdates} onClick={() => void model.reload()}>
+          <button type="button" className="soft-button sources-reload" disabled={busy} onClick={() => void model.reload()}>
             <RefreshCw size={14} aria-hidden="true" /> {model.reloading ? '加载中…' : '重新加载'}
           </button>
         </div>
@@ -151,23 +132,18 @@ export default function SourcesView() {
         </div>
       ) : (
         <>
-          <p className="sources-order-hint">从左到右优先解析，可拖动调整（Alt + 左右方向键）。失败时尝试下一音源，最后使用原生解析。</p>
-          <div className="source-tabs-bar">
-            {tabsOverflow.left && (
-              <button type="button" className="source-tabs-arrow" aria-label="向左滚动音源标签"
-                onClick={() => scrollTabs(-1)}>
-                <ChevronLeft size={15} aria-hidden="true" />
-              </button>
-            )}
+          <p className="sources-order-hint">序号即解析优先级：从 1 开始依次尝试，可拖动调整（Alt + 上下方向键）。失败时尝试下一音源，最后使用原生解析。</p>
+          <div className="sources-layout">
             {/* tabIndex=-1：容器本身参与键盘事件处理（方向键切换），但不进入 Tab 序列，
                 焦点始终由内部的 tab 按钮承担，避免多一个空停靠点。 */}
-            <div className="source-tabs" role="tablist" aria-label="音源列表" ref={tabsRef}
-              tabIndex={-1} onKeyDown={handleTabKeys} onScroll={updateTabsOverflow}>
-              {entries.map((entry) => {
-                const status = sourceStatus(entry);
+            <div className="source-tabs" role="tablist" aria-orientation="vertical" aria-label="音源列表（按解析优先级排序）"
+              ref={tabsRef} tabIndex={-1} onKeyDown={handleTabKeys}>
+              {entries.map((entry, index) => {
+                const status = probingIds.includes(entry.record.id)
+                  ? { tone: 'loading', label: '检测中…' } : sourceStatus(entry);
                 const selected = entry.record.id === activeEntry.record.id;
                 return (
-                  <Tooltip key={entry.record.id} label={`${sourceDisplayText(entry.record.name)} · ${status.label}`} side="bottom">
+                  <Tooltip key={entry.record.id} label={`第 ${index + 1} 优先 · ${sourceDisplayText(entry.record.name)}`}>
                     <button type="button" role="tab"
                       id={`source-tab-${entry.record.id}`}
                       aria-selected={selected}
@@ -195,24 +171,22 @@ export default function SourcesView() {
                       }}
                       onDragEnd={() => { draggingId.current = null; }}
                       onClick={() => setSelectedId(entry.record.id)}>
-                      <span className="source-tab-dot" aria-hidden="true" />
-                      <span className="source-tab-name">{sourceDisplayText(entry.record.name)}</span>
+                      <span className="source-tab-rank">{index + 1}</span>
+                      <span className="source-tab-text">
+                        <span className="source-tab-name">{sourceDisplayText(entry.record.name)}</span>
+                        <span className="source-tab-status"><span className="source-tab-dot" aria-hidden="true" />{status.label}</span>
+                      </span>
+                      <GripVertical size={14} className="source-tab-grip" aria-hidden="true" />
                     </button>
                   </Tooltip>
                 );
               })}
             </div>
-            {tabsOverflow.right && (
-              <button type="button" className="source-tabs-arrow" aria-label="向右滚动音源标签"
-                onClick={() => scrollTabs(1)}>
-                <ChevronRight size={15} aria-hidden="true" />
-              </button>
-            )}
-          </div>
-          <div className="source-panel" role="tabpanel" tabIndex={-1}
-            id={`source-panel-${activeEntry.record.id}`}
-            aria-labelledby={`source-tab-${activeEntry.record.id}`}>
-            <SourceRow key={activeEntry.record.id} entry={activeEntry} model={model} />
+            <div className="source-panel" role="tabpanel" tabIndex={-1}
+              id={`source-panel-${activeEntry.record.id}`}
+              aria-labelledby={`source-tab-${activeEntry.record.id}`}>
+              <SourceRow key={activeEntry.record.id} entry={activeEntry} model={model} />
+            </div>
           </div>
         </>
       )}

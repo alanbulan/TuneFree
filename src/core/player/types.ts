@@ -4,10 +4,17 @@ import type { AudioQuality, PlayMode, Song } from "../types";
 import type { parseSongFull } from "../services/api";
 import type { RecoveryStage } from "./playbackRecovery";
 
+/**
+ * 播放失败类提示的语义，界面据此附带操作：
+ * `playbackFailed` 已停止播放（可切下一首、去音源页），`songSkipped` 已自动跳过（可去音源页）。
+ */
+export type PlayerNoticeKind = "playbackFailed" | "songSkipped";
+
 export interface PlayerNotice {
   id: number;
   tone: "info" | "success" | "warning" | "error";
   message: string;
+  kind?: PlayerNoticeKind;
 }
 
 export interface PlayerContextValue {
@@ -24,6 +31,8 @@ export interface PlayerContextValue {
   analyser: AnalyserNode | null;
   audioQuality: AudioQuality;
   playerNotice: PlayerNotice | null;
+  /** 本次运行中播放失败、尚未成功播放过的歌曲键（`getSongKey`），供队列标记。 */
+  unplayableSongKeys: ReadonlySet<string>;
   playSong: (song: Song, forceQuality?: AudioQuality) => Promise<void>;
   playQueue: (songs: Song[], startSong?: Song) => Promise<void>;
   togglePlay: () => void;
@@ -55,7 +64,7 @@ export type PlayerQueueState = Pick<PlayerContextValue, "queue" | "playMode">;
 export type PlayerSettings = Pick<PlayerContextValue, "audioQuality">;
 export type PlayerAnalyser = Pick<PlayerContextValue, "analyser">;
 export type PlayerProgress = Pick<PlayerContextValue, "currentTime" | "duration" | "lyricOffsetSeconds">;
-export type PlayerNoticeState = Pick<PlayerContextValue, "playerNotice">;
+export type PlayerNoticeState = Pick<PlayerContextValue, "playerNotice" | "unplayableSongKeys">;
 
 export type ParsedSongData = NonNullable<Awaited<ReturnType<typeof parseSongFull>>>;
 export interface ParsedSongCacheEntry { data: ParsedSongData; expiresAt: number }
@@ -112,10 +121,13 @@ export interface PlayerRefs {
   forceNoCorsPlayback: MutableRefObject<boolean>;
   activeParsedCacheKey: MutableRefObject<string | null>;
   pendingQualityChange: MutableRefObject<boolean>;
-  refreshedCacheKeys: MutableRefObject<Set<string>>;
+  /** 本轮「歌曲 + 音质」每次刷新解析前播放失败的地址（未知时为空串）；刷新次数有上限，重新解析时跳过这些地址。 */
+  refreshedResolutions: MutableRefObject<Map<string, string[]>>;
   playbackSessionId: MutableRefObject<string | null>;
   failedRecommendationRequestId: MutableRefObject<string | null>;
   failedRecommendationSongKeys: MutableRefObject<Set<string>>;
+  /** 普通队列里连续播放失败、已被自动跳过的歌曲；正常播放一段时间或最终放弃时清空。 */
+  failedQueueSongKeys: MutableRefObject<Set<string>>;
   handlers: MutableRefObject<AudioHandlers | null>;
   isIOS: MutableRefObject<boolean>;
 }

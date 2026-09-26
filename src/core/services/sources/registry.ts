@@ -129,6 +129,29 @@ export const providersFor = (
 
 const finalize = (url: string): string => normalizeMusicUrl(url) || url;
 
+const comparableUrl = (url: string): string => {
+  try {
+    return new URL(url).href;
+  } catch {
+    return url;
+  }
+};
+
+/** 该地址是否是播放器刚刚播放失败的那个（两边都按最终交给播放器的形式比较）。 */
+export const isRejectedUrl = (
+  request: Pick<SourceResolveRequest, 'rejectedUrls'>,
+  url: string,
+): boolean => {
+  if (!request.rejectedUrls?.length) return false;
+  const target = comparableUrl(finalize(url));
+  return request.rejectedUrls.some((rejected) => comparableUrl(rejected) === target);
+};
+
+/** 返回了刚刚播放失败的地址按解析失败处理：计入熔断，并让链路继续尝试下一个音源。 */
+const rejectFailedUrl = (request: SourceResolveRequest, url: string | null | undefined): void => {
+  if (url && isRejectedUrl(request, url)) throw new Error('返回的播放地址刚刚播放失败');
+};
+
 /**
  * 跑一个 provider 能力并把结果登记进熔断器。
  *
@@ -165,8 +188,11 @@ export const resolveDirectUrl = async (
 ): Promise<string | null> => {
   for (const provider of providersFor(request.platform, 'url')) {
     if (!provider.getUrl) continue;
-    const url = await runProvider(provider, request.platform, 'url', request,
-      () => provider.getUrl!(request));
+    const url = await runProvider(provider, request.platform, 'url', request, async () => {
+      const candidate = await provider.getUrl!(request);
+      rejectFailedUrl(request, candidate);
+      return candidate;
+    });
     if (url) return finalize(url);
   }
   return null;
@@ -203,8 +229,11 @@ export const resolveFull = async (
 ): Promise<ParsedSongFull | null> => {
   for (const provider of providersFor(request.platform, 'url')) {
     if (!provider.resolveFull) continue;
-    const parsed = await runProvider(provider, request.platform, 'full', request,
-      () => provider.resolveFull!(request));
+    const parsed = await runProvider(provider, request.platform, 'full', request, async () => {
+      const full = await provider.resolveFull!(request);
+      rejectFailedUrl(request, full?.url);
+      return full;
+    });
     if (parsed) return parsed;
   }
   return null;

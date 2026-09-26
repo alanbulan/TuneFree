@@ -197,6 +197,32 @@ describe('沙箱运行时（真实片段 + vm）', () => {
     await flush();
   });
 
+  it('普通对象 body 与洛雪一致：默认序列化为 JSON，声明表单类型时按表单编码', async () => {
+    const harness = createRuntimeHarness();
+    harness.send(
+      LOAD_MESSAGE(`
+        lx.on(lx.EVENT_NAMES.request, () => {
+          lx.request('https://api.test/json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: { source: 'tx', rid: '003aAYrm3GE0Ac' } }, () => {});
+          lx.request('https://api.test/bare', { method: 'POST', body: { a: 1 } }, () => {});
+          lx.request('https://api.test/form', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: { q: '歌名', n: 2 } }, () => {});
+          return 'done';
+        });
+      `),
+    );
+    harness.send({ kind: 'invoke', callId: 'c', event: 'request', payload: { source: 'tx', action: 'musicUrl', info: {} } });
+    await flush();
+    const requests = harness.received.filter(
+      (message): message is Extract<SandboxToHostMessage, { kind: 'request' }> => message.kind === 'request',
+    );
+    const bodyOf = (index: number) => Buffer.from(requests[index].payload.bodyBase64, 'base64').toString('utf-8');
+    expect(bodyOf(0)).toBe('{"source":"tx","rid":"003aAYrm3GE0Ac"}');
+    expect(requests[0].payload.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(bodyOf(1)).toBe('{"a":1}');
+    expect(requests[1].payload.headers['content-type']).toBe('application/json');
+    expect(bodyOf(2)).toBe(`q=${encodeURIComponent('歌名')}&n=2`);
+    await flush();
+  });
+
   it('请求失败、处理器抛错、缺少处理器都会回执 invoke-error', async () => {
     const harness = createRuntimeHarness();
     harness.send(

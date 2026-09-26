@@ -10,7 +10,7 @@ export type RecoveryStage =
   | "corsCompatRetry"
   | "cacheRefresh"
   | "qualityFallback"
-  | "recommendationSkip"
+  | "songSkip"
   | "failed";
 
 export type RecoveryTrigger = "mediaError" | "playRejected" | "missingUrl";
@@ -23,8 +23,6 @@ export type RecoveryAction =
   | "giveUp";
 
 export interface RecoveryContext {
-  /** 当前歌曲是否来自一次 AI 推荐请求（决定能否跳到同批次的下一首）。 */
-  hasRecommendation: boolean;
   quality: string;
   /**
    * 仅当失败确实来自"音源不被支持"、且尚未切换到兼容播放模式时为 true。
@@ -45,7 +43,7 @@ const STAGE_SEQUENCE: readonly RecoveryStage[] = [
   "corsCompatRetry",
   "cacheRefresh",
   "qualityFallback",
-  "recommendationSkip",
+  "songSkip",
   "failed",
 ];
 
@@ -53,7 +51,7 @@ const STAGE_ACTIONS: Record<Exclude<RecoveryStage, "initial">, RecoveryAction> =
   corsCompatRetry: "retryNoCors",
   cacheRefresh: "retryRefresh",
   qualityFallback: "downgradeQuality",
-  recommendationSkip: "skipNext",
+  songSkip: "skipNext",
   failed: "giveUp",
 };
 
@@ -70,9 +68,8 @@ const isStageAvailable = (
       return trigger !== "missingUrl";
     case "qualityFallback":
       return context.quality !== RECOVERY_FALLBACK_QUALITY;
-    case "recommendationSkip":
-      return context.hasRecommendation;
     default:
+      // 跳过当前歌曲总是值得一试；队列里是否还有可播的歌由执行方在运行时判定。
       return true;
   }
 };

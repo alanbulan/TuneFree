@@ -57,6 +57,14 @@ describe('桌面弹窗与提示', () => {
     await tick(6000); expect(screen.queryByRole('status')).toBeNull();
   });
 
+  it('一条提示可以附带多个操作，点击任一操作都会先关闭提示', () => {
+    const next = vi.fn(); const sources = vi.fn(); const view = renderHook(useToast, { wrapper: ToastProvider });
+    act(() => view.result.current.showToast('无法播放', 'error', [{ label: '下一首', onClick: next }, { label: '音源页', onClick: sources }]));
+    expect(screen.getByRole('button', { name: '下一首' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '音源页' }));
+    expect(sources).toHaveBeenCalledOnce(); expect(next).not.toHaveBeenCalled(); expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('曲库写入失败展示可读提示，缺少 Provider 的调用明确报错', () => {
     const Probe = () => { const { createPlaylist } = useLibraryActions(); return <button onClick={() => createPlaylist('列表')}>保存</button>; };
     render(<LibraryProvider><ToastProvider><LibrarySaveNotice /><Probe /></ToastProvider></LibraryProvider>);
