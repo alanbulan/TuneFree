@@ -233,7 +233,10 @@
 .full-player-layer { overflow: hidden; }
 .full-player-backdrop,
 .full-player-panel { transition: none; }
-.full-song-meta {
+.full-song-meta { position: relative; }
+/* 只裁切标题切换动画；操作按钮与下载菜单不能放进 overflow: hidden，否则菜单被截断，
+   聚焦菜单项时浏览器还会滚动这个容器，把按钮顶出视野。 */
+.full-song-meta-title {
   position: relative;
   min-height: 80px;
   overflow: hidden;

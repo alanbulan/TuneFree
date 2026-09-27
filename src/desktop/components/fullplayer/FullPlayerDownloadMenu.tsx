@@ -36,10 +36,10 @@ export default function FullPlayerDownloadMenu() {
     triggerRef.current?.focus();
   };
 
-  // 打开后焦点交给第一个可用项；点击菜单外任意位置即收起。
+  // 打开后焦点交给第一个可用项（不滚动祖先容器，免得面板被顶偏）；点击菜单外任意位置即收起。
   useEffect(() => {
     if (!isOpen) return;
-    containerRef.current!.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    containerRef.current!.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
     const handleOutsideClick = (event: MouseEvent) => {
       if (!containerRef.current!.contains(event.target as Node)) setIsOpen(false);
     };
@@ -64,7 +64,7 @@ export default function FullPlayerDownloadMenu() {
     const current = items.indexOf(document.activeElement as HTMLButtonElement);
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
       : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
-    items[next]?.focus();
+    items[next]?.focus({ preventScroll: true });
   };
 
   const triggerLabel = !isDownloading ? '下载' : downloadProgress !== null ? `下载 ${downloadProgress}%` : '下载中';
