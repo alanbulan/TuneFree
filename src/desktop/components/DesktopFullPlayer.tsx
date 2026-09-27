@@ -139,19 +139,21 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
             iconSize={64}
           />
           <div className="full-song-meta">
-            <AnimatePresence mode="popLayout">
-              <motion.div
-                key={currentSong?.id || 'none'}
-                className="full-song-meta-swap"
-                initial={{ y: 12, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: -12, opacity: 0 }}
-                transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
-              >
-                <h2>{currentSong?.name || '未在播放'}</h2>
-                <p>{currentSong?.artist || '从排行榜、搜索或资料库中选择音乐'}</p>
-              </motion.div>
-            </AnimatePresence>
+            <div className="full-song-meta-title">
+              <AnimatePresence mode="popLayout">
+                <motion.div
+                  key={currentSong?.id || 'none'}
+                  className="full-song-meta-swap"
+                  initial={{ y: 12, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -12, opacity: 0 }}
+                  transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
+                >
+                  <h2>{currentSong?.name || '未在播放'}</h2>
+                  <p>{currentSong?.artist || '从排行榜、搜索或资料库中选择音乐'}</p>
+                </motion.div>
+              </AnimatePresence>
+            </div>
             <FullPlayerActions
               showMorePanel={showMorePanel}
               setShowMorePanel={setShowMorePanel}

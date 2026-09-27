@@ -76,7 +76,9 @@
 
 /* 音源列表：左侧纵向、带序号（序号 = 解析优先级），右侧只展示选中音源的详情。 */
 .sources-layout { display: grid; grid-template-columns: minmax(208px, 256px) minmax(0, 1fr); align-items: start; gap: 14px; min-width: 0; }
-.source-tabs { display: flex; flex-direction: column; gap: 3px; min-width: 0; max-height: max(260px, calc(100vh - 250px)); overflow-y: auto; overscroll-behavior: contain; padding: 6px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--card-solid); scrollbar-width: thin; }
+.source-tabs { display: flex; flex-direction: column; gap: 3px; min-width: 0; max-height: max(260px, calc(100vh - 250px)); overflow-y: auto; overscroll-behavior: contain; padding: 6px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--card-solid); scrollbar-width: none; }
+/* 仍可滚轮滚动，但不画滚动条：列表很窄，一条滚动条会割裂卡片。 */
+.source-tabs::-webkit-scrollbar { width: 0; height: 0; }
 .source-tab { display: grid; grid-template-columns: 24px minmax(0, 1fr) 14px; align-items: center; gap: 10px; width: 100%; padding: 8px 8px 8px 9px; border: 1px solid transparent; border-radius: 10px; color: var(--text-soft); background: transparent; font: inherit; text-align: left; cursor: pointer; transition: border-color .16s ease, background .16s ease, color .16s ease; }
 .source-tab:hover { color: var(--text); background: var(--surface-soft-2); }
 .source-tab.is-selected { border-color: rgba(var(--accent-rgb), .32); color: var(--accent); background: rgba(var(--accent-rgb), .07); }

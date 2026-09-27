@@ -152,7 +152,9 @@
 .virtual-list { position: relative; overflow: auto; contain: strict; }
 .virtual-spacer { position: relative; width: 100%; }
 .song-virtual-list { border-top: 1px solid var(--line); }
-.queue-virtual-list { width: 100%; flex: 1 1 auto; min-height: 0; }
+.queue-virtual-list { width: 100%; flex: 1 1 auto; min-height: 0; scrollbar-width: none; }
+/* 队列卡片很窄，与音源列表一样只保留滚轮滚动、不画滚动条。 */
+.queue-virtual-list::-webkit-scrollbar { width: 0; height: 0; }
 .table-head,
 .song-row { display: grid; grid-template-columns: 44px minmax(180px, 1.2fr) minmax(120px, .7fr) 86px 104px; align-items: center; gap: 12px; }
 .table-head { padding: 10px 14px; color: var(--faint); font-size: 10px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; background: var(--card-soft); }
