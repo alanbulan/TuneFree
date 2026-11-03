@@ -28,9 +28,9 @@ Mac 冒烟测试会显示主窗口以验证首帧，使用非持久化 WebView �
 
 需要安装：
 
-- Node.js 24.15+
-- npm 12.0.2
-- Rust 1.98.1（由 `rust-toolchain.toml` 固定）
+- Node.js 26.13.0（与 CI 一致）
+- npm 12.2.1
+- Rust 1.99.1（由 `rust-toolchain.toml` 固定，最低 Rust 版本为 1.95）
 - Git
 - Windows：Visual Studio C++ Build Tools、WebView2 Runtime
 - macOS：Xcode Command Line Tools（`xcode-select --install`）
@@ -74,7 +74,7 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npx tauri build --target universal-apple-darwin --bundles app,dmg
 ```
 
-Tauri 自动合并 `src-tauri/tauri.macos.conf.json`，启用透明歌词窗口所需的 macOS API，并设置 DMG / APP 目标。产物位于 `src-tauri/target/universal-apple-darwin/release/bundle/`。启用更新资产签名时，需要配置 [RELEASE.md](./RELEASE.md) 中的 Tauri 签名环境变量。
+Tauri 自动合并 `src-tauri/tauri.macos.conf.json`，设置 DMG / APP 目标、最低 macOS 版本与本地签名。产物位于 `src-tauri/target/universal-apple-darwin/release/bundle/`。启用更新资产签名时，需要配置 [RELEASE.md](./RELEASE.md) 中的 Tauri 签名环境变量。
 
 `node_modules/`、`out/`、`coverage/` 和 `src-tauri/target/` 是本地依赖、测试覆盖率或构建缓存，不应提交。
 

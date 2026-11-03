@@ -19,9 +19,10 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'npm run dev',
-    url: 'http://127.0.0.1:3101/library/playlists',
-    reuseExistingServer: !process.env.CI,
+    // Exercise the same production chunks embedded by the native application.
+    command: 'npm run build && npm run start',
+    url: 'http://127.0.0.1:3101/',
+    reuseExistingServer: false,
     timeout: 60_000,
   },
 });

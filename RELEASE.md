@@ -36,6 +36,8 @@ npm run lint
 npm run typecheck
 npm run architecture:check
 npm run test:coverage
+npx playwright install chromium
+npm run test:e2e
 npm run audit
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
@@ -85,7 +87,7 @@ git push origin v1.1.32
 
 自动构建工作流在最后一步执行 `node scripts/publish-release.mjs --publish`，检查资产后立即公开，并按版本顺序决定是否更新 `latest`。本地排查时可不传 `--publish`，仅检查草稿资产。
 
-共享闸门由 `validate` job 承担，Windows 和 macOS 构建均依赖它。macOS 还运行原生构建、双架构检查、启动验收和 Rust 检查；新版本的 `publish` job 依赖两个平台均成功。
+共享闸门由 `validate` job 承担：Rust 矩阵在 Windows 与 macOS 分别执行格式、Clippy、测试、原生构建、启动验收及工作区差异检查。两个发布构建均依赖整个矩阵成功；macOS 发布时还检查通用二进制的双架构并实际启动。新版本的 `publish` job 依赖两个平台的发布构建均成功。
 
 ## 为当前版本补发 Mac 包
 

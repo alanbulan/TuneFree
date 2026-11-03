@@ -25,8 +25,9 @@ export const useSongPlayback = (
       executeSongPlayback(dependenciesRef.current, song, forceQuality),
     [],
   );
-  const playSongRef = runtime.refs.playSong;
-  // oxlint-disable-next-line react/refs -- 依赖是回调和 ref 对象；current 只在提交后的布局 effect 中写入。
-  useLayoutEffect(() => { playSongRef.current = playSong; }, [playSong, playSongRef]);
+  useLayoutEffect(() => {
+    const playSongRef = runtime.refs.playSong;
+    playSongRef.current = playSong;
+  }, [playSong, runtime]);
   return playSong;
 };

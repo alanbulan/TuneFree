@@ -39,9 +39,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: '26.13.0'
           cache: npm
 
       - name: Read Rust toolchain
@@ -53,20 +53,20 @@ jobs:
           "version=$($match.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1 2026-10-16
         with:
           toolchain: ${{ steps.rust.outputs.version }}
           targets: x86_64-pc-windows-msvc
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: src-tauri
           key: release-x86_64-pc-windows-msvc
 
       - name: Install frontend dependencies
         run: |
-          npm install --global npm@12.0.2
+          npm install --global npm@12.2.1
           npm ci
 
       - name: Verify release tag matches the app version
@@ -133,7 +133,7 @@ jobs:
       ${{ !cancelled() && needs.validate.result == 'success' &&
           (needs.release-windows-x64.result == 'success' ||
            (github.event_name == 'workflow_dispatch' && needs.release-windows-x64.result == 'skipped')) }}
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 60
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
@@ -143,9 +143,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: '26.13.0'
           cache: npm
 
       - name: Verify version and resolve existing release
@@ -180,14 +180,14 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1 2026-10-16
         with:
           toolchain: ${{ steps.rust.outputs.version }}
           targets: aarch64-apple-darwin,x86_64-apple-darwin
           components: clippy
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: src-tauri
           key: release-universal-apple-darwin
@@ -195,10 +195,10 @@ jobs:
 
       - name: Install frontend dependencies
         run: |
-          npm install --global npm@12.0.2
+          npm install --global npm@12.2.1
           npm ci
 
-      # Tauri CLI 先依据 macOS 配置同步透明窗口 feature，再运行原生 Cargo 检查。
+      # 通用包除共享宿主门禁外，另检查双架构二进制与实际启动。
       - name: Build and launch the universal executable
         run: |
           npx tauri build --no-bundle --target universal-apple-darwin
@@ -234,9 +234,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: '26.13.0'
       - name: Publish the completed release
         shell: pwsh
         env:
