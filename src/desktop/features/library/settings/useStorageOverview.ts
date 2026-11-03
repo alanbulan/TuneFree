@@ -71,7 +71,8 @@ export function useStorageOverview(
       version: 4,
       favorites,
       playlists: userPlaylists,
-      exportDate: new Date().toISOString(),
+      // 这里只估算备份字节数；ISO 时间戳固定为 24 个 ASCII 字符。
+      exportDate: '1970-01-01T00:00:00.000Z',
     });
     const recommendationDbBytes = Math.max(0, llmConfig.databaseSizeBytes || 0);
     const totalBytes = offlineAudioBytes + recommendationDbBytes + jsonBackupBytes + downloadsJsonBytes;

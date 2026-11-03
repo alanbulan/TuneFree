@@ -3,6 +3,10 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 const playlistName = '返回导航回归歌单';
 const backName = '← 返回歌单列表';
 
+test.afterEach(async ({ page }) => {
+  expect(await page.pageErrors(), 'Production UI must not throw uncaught errors').toEqual([]);
+});
+
 async function openPlaylist(page: Page, count: number, theme: 'light' | 'dark' = 'light') {
   await page.addInitScript(({ count, theme, name }) => {
     const songs = Array.from({ length: count }, (_, index) => ({
@@ -16,7 +20,9 @@ async function openPlaylist(page: Page, count: number, theme: 'light' | 'dark' =
     localStorage.setItem('tunefree_play_mode', JSON.stringify('sequence'));
   }, { count, theme, name: playlistName });
 
-  await page.goto('/library/playlists');
+  await page.goto('/');
+  await page.getByRole('navigation', { name: '主导航', exact: true })
+    .getByRole('button', { name: '歌单', exact: true }).click();
   await page.getByRole('button', { name: new RegExp(`${playlistName}.*打开`) }).click();
   await expect(page.getByRole('heading', { name: playlistName, exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveClass(new RegExp(`${theme}-theme`));
