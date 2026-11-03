@@ -46,7 +46,7 @@ Mac 包采用 ad-hoc 本地签名，尚未进行 Apple Developer ID 签名与公
 ![Tauri](https://img.shields.io/badge/Tauri-2-24c8d8?style=flat-square&logo=tauri&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-7-3178c6?style=flat-square&logo=typescript&logoColor=white)
-![Rust](https://img.shields.io/badge/Rust-1.98.1-ce9178?style=flat-square&logo=rust&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-1.99.1-ce9178?style=flat-square&logo=rust&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-8-646cff?style=flat-square&logo=vite&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-local-3872a4?style=flat-square&logo=sqlite&logoColor=white)
 
@@ -129,7 +129,7 @@ scripts/                     架构、IPC、发布和运行验收脚本
 
 ## 开发与验证
 
-环境：Node.js 24.15+、npm 12.0.2、Rust 1.98.1。Windows 需要 Visual Studio C++ Build Tools 与 WebView2；macOS 需要 Xcode Command Line Tools。
+验证环境：Node.js 26.13.0、npm 12.2.1、Rust 1.99.1（`rust-toolchain.toml` 固定；最低 Rust 版本为 1.95）。Windows 需要 Visual Studio C++ Build Tools 与 WebView2；macOS 需要 Xcode Command Line Tools。
 
 ```sh
 npm ci
@@ -147,6 +147,8 @@ npm run lint
 npm run typecheck
 npm run architecture:check
 npm run test:coverage
+npx playwright install chromium
+npm run test:e2e
 npm run audit
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
@@ -155,7 +157,7 @@ npx tauri build --no-bundle
 npm run smoke
 ```
 
-上述顺序对应共享 Windows 门禁。macOS 先通过 Tauri CLI 构建，以同步平台配置所需的透明窗口 feature，再执行 Cargo 检查；完整顺序见 [release.yml](./.github/workflows/release.yml)。
+浏览器回归会先构建生产资源，再检查长歌单滚动、返回导航和操作区域。原生质量门禁在 Windows 与 macOS 上分别执行，两端都会实际构建并启动应用；完整流程见 [validate.yml](./.github/workflows/validate.yml)。macOS 发布时另外构建通用二进制并验证两种 CPU 架构。
 
 Clippy 的严格规则固化在 `Cargo.toml`。Tauri 的 `beforeBuildCommand` 已包含前端构建，不必额外重复 `npm run build`。真实音源核验：
 

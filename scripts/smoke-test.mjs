@@ -83,7 +83,8 @@ async function runSmoke() {
     // 只清理本次 mkdtemp 创建、并确认位于系统临时目录下的绝对路径。
     const resolved = realpathSync(workDir);
     if (dirname(resolved) === realpathSync(tmpdir()) && basename(resolved).startsWith('tunefree-smoke-')) {
-      try { rmSync(resolved, { recursive: true, force: true }); }
+      // Windows/WebView2 的文件句柄可能晚于主进程 close 释放，清理时有限退避重试。
+      try { rmSync(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
       catch { console.warn(`测试进程仍占用临时目录：${resolved}`); }
     }
   }

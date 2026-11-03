@@ -1,6 +1,6 @@
 {
   "name": "tunefree-desktop",
-  "version": "1.1.38",
+  "version": "1.1.39",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,6 +15,7 @@
     "audit": "npm audit --audit-level=high",
     "test": "vitest",
     "test:coverage": "vitest --run --coverage",
+    "test:e2e": "playwright test",
     "tauri": "tauri",
     "version:check": "node bump-version.js --dry-run",
     "version:bump": "node bump-version.js",
@@ -22,30 +23,31 @@
     "version:bump:major": "node bump-version.js --major"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.1",
-    "framer-motion": "^13.2.0",
-    "lucide-react": "^1.42.0",
-    "pako": "^3.0.1",
+    "@tauri-apps/api": "^2.12.4",
+    "framer-motion": "^14.9.0",
+    "lucide-react": "^1.67.0",
+    "pako": "^3.0.3",
     "qrc-decoder": "^1.0.2",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.4",
-    "@testing-library/dom": "^10.4.1",
+    "@playwright/test": "1.64.1",
+    "@tauri-apps/cli": "^2.12.4",
+    "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
-    "@types/node": "^26.5.0",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.7",
-    "@vitejs/plugin-react": "6.1.1",
-    "@vitest/coverage-v8": "^5.0.1",
-    "happy-dom": "^20.14.0",
-    "oxlint": "^1.82.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "@vitest/coverage-v8": "^5.1.0",
+    "happy-dom": "^21.0.4",
+    "oxlint": "^1.90.0",
     "typescript": "7.0.2",
-    "vite": "8.3.0",
-    "vitest": "5.0.1"
+    "vite": "8.3.5",
+    "vitest": "5.1.0"
   },
   "overrides": {
-    "postcss": "^8.5.28"
+    "postcss": "^8.5.32"
   }
 }

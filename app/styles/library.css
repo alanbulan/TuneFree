@@ -504,7 +504,7 @@
   .nav-button,
   .playlist-pill { display: grid; place-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; }
   .workspace { grid-column: 2; }
-  .view-scroll { padding: 24px 20px 28px; }
+  .view-scroll { --view-scroll-padding-top: 24px; padding: var(--view-scroll-padding-top) 20px 28px; }
   .transport { grid-template-columns: minmax(120px, .7fr) minmax(0, 1.3fr); height: auto; }
   .transport-tools { display: none; }
   .hero-grid, .search-layout, .settings-grid, .playlist-grid { grid-template-columns: 1fr; }
@@ -534,7 +534,7 @@
 }
 
 @media (max-width: 560px) {
-  .view-scroll { padding: 18px 12px 22px; }
+  .view-scroll { --view-scroll-padding-top: 18px; padding: var(--view-scroll-padding-top) 12px 22px; }
   .transport { grid-template-columns: minmax(0, 1fr); }
   .mini-player-summary { display: none; }
 }
