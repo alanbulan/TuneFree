@@ -216,9 +216,10 @@
 
 .workspace { grid-column: 2; grid-row: 2 / 3; position: relative; z-index: 1; min-width: 0; min-height: 0; overflow: hidden; background: var(--ios-bg); }
 .view-scroll {
+  --view-scroll-padding-top: 34px;
   height: 100%;
   overflow: auto;
-  padding: 34px 40px 42px;
+  padding: var(--view-scroll-padding-top) 40px 42px;
   animation: viewScrollFade .28s cubic-bezier(.2,.8,.2,1) both;
 }
 .view-transition-panel {

@@ -15,6 +15,7 @@
     "audit": "npm audit --audit-level=high",
     "test": "vitest",
     "test:coverage": "vitest --run --coverage",
+    "test:e2e": "playwright test",
     "tauri": "tauri",
     "version:check": "node bump-version.js --dry-run",
     "version:bump": "node bump-version.js",
@@ -31,6 +32,7 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@tauri-apps/cli": "^2.11.4",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.3",
