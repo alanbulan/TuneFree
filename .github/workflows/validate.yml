@@ -30,6 +30,10 @@ jobs:
       - run: npm run architecture:check
       - run: npm run test:coverage
 
+      # 真实 Chromium 布局回归：happy-dom 无法验证 sticky 导航与滚动区域。
+      - run: npx playwright install chromium
+      - run: npm run test:e2e
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
