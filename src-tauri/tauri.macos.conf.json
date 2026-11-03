@@ -1,8 +1,5 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "app": {
-    "macOSPrivateApi": true
-  },
   "bundle": {
     "targets": ["app", "dmg"],
     "macOS": {

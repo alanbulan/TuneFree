@@ -16,6 +16,10 @@ out
 # Test coverage (produced by `npm run test:coverage`, uploaded as a CI artifact)
 coverage
 
+# Browser regression tests
+playwright-report
+test-results
+
 # Local tooling
 .playwright-mcp
 .reference

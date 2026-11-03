@@ -24,7 +24,9 @@ export function PlaylistDetail({ playlist, currentSong, isPlaying, onBack, onRen
   onDelete, onPlay, onFavorite, isFavorite, onRemove, onReorder }: PlaylistDetailProps) {
   return (
     <div>
-      <button type="button" className="soft-button" onClick={onBack}>← 返回歌单列表</button>
+      <nav className="playlist-detail-nav" aria-label="歌单导航">
+        <button type="button" className="soft-button" onClick={onBack}>← 返回歌单列表</button>
+      </nav>
       <div className="content-card glass-panel playlist-detail-card">
         <div className="panel-label-row">
           <div><p className="eyebrow">Playlist</p><h2 className="section-title">{playlist.name}</h2>

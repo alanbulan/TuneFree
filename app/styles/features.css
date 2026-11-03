@@ -419,6 +419,16 @@ label.settings-checkbox-label.is-small { color: var(--text-soft); font-size: 12p
 .downloads-pagination-status { color: var(--muted); font-size: 14px; font-weight: 500; }
 
 /* ── 歌单页 ─────────────────────────────────────────────────── */
+/* 扣除滚动区顶部留白，吸顶时贴齐工作区上沿；层级限制在 workspace 中。 */
+.playlist-detail-nav {
+  position: sticky;
+  top: calc(-1 * var(--view-scroll-padding-top, 0px));
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  padding-block: 8px;
+  background: var(--ios-bg);
+}
 .playlist-detail-card { margin: 14px 0; }
 /* 自定义下拉展开时要盖住同卡片内的后续控件 */
 .playlist-import-source-field { position: relative; z-index: 11; }
