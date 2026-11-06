@@ -6,7 +6,7 @@ import MotionChoice from '../../../components/MotionChoice';
 
 const closeBehaviorOptions: Array<{ label: string; value: CloseBehavior; hint: string }> = [
   { label: '每次询问', value: 'ask', hint: '关闭时弹出选择，可临时决定后台运行或退出。' },
-  { label: '最小化到托盘', value: 'tray', hint: '关闭主窗口后继续后台播放，可从托盘恢复。' },
+  { label: '后台运行', value: 'tray', hint: '关闭主窗口后继续播放，再次打开 TuneFree 或点击系统托盘可恢复窗口。' },
   { label: '退出应用', value: 'exit', hint: '关闭主窗口时彻底退出，桌面歌词也会关闭。' },
 ];
 

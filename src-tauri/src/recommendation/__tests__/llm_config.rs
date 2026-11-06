@@ -9,7 +9,7 @@ async fn configuration_clamps_values_and_round_trips_isolated_system_credentials
     migration::run_migrations(&conn).unwrap();
     let mut input = config_input(" https://example.test/v1/ ");
     input.model = " test-model ".into();
-    input.timeout_ms = Some(100_000);
+    input.timeout_ms = Some(1_000_000);
     input.max_candidates = Some(0);
     input.max_results = Some(100);
     input.cache_ttl_seconds = Some(0);
@@ -22,7 +22,7 @@ async fn configuration_clamps_values_and_round_trips_isolated_system_credentials
             && view.has_api_key
             && view.upload_recent_events
     );
-    assert_eq!(view.timeout_ms, 60_000);
+    assert_eq!(view.timeout_ms, MAX_LLM_TIMEOUT_MS);
     assert_eq!(view.max_candidates, 1);
     assert_eq!(view.max_results, 50);
     assert_eq!(view.cache_ttl_seconds, 60);

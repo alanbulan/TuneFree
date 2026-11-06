@@ -1,3 +1,4 @@
+use super::llm_timeout::{run_llm_timeout_migration_v5, LLM_TIMEOUT_MIGRATION_VERSION};
 use super::*;
 
 #[test]
@@ -76,8 +77,46 @@ fn unreadable_migration_metadata_is_reported_and_never_treated_as_applied() {
     assert!(run_derived_data_migration_v2(&conn).is_err());
     assert!(run_event_weight_migration_v3(&conn).is_err());
     assert!(run_recommendation_click_migration_v4(&conn).is_err());
+    assert!(run_llm_timeout_migration_v5(&conn).is_err());
     assert!(mark_rebuild_pending(&conn, PENDING_REBUILD_PROFILE).is_err());
     assert!(run_pending_rebuilds(&conn).is_err());
+}
+
+#[test]
+fn model_timeout_migration_upgrades_only_the_old_default_and_runs_once() {
+    for previous_timeout in [8000, 15000, 120000] {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        conn.execute(
+            "DELETE FROM recommendation_schema_migrations WHERE version = ?1",
+            [LLM_TIMEOUT_MIGRATION_VERSION],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE llm_config SET timeout_ms = ?1",
+            [previous_timeout as i64],
+        )
+        .unwrap();
+        run_migrations(&conn).unwrap();
+        let timeout: i64 = conn
+            .query_row("SELECT timeout_ms FROM llm_config", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            timeout,
+            if previous_timeout == 8000 {
+                DEFAULT_LLM_TIMEOUT_MS as i64
+            } else {
+                previous_timeout as i64
+            }
+        );
+        conn.execute("UPDATE llm_config SET timeout_ms = 8000", [])
+            .unwrap();
+        run_migrations(&conn).unwrap();
+        let chosen_timeout: i64 = conn
+            .query_row("SELECT timeout_ms FROM llm_config", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(chosen_timeout, 8000);
+    }
 }
 
 #[test]

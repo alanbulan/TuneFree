@@ -141,7 +141,85 @@ async fn a_request_timeout_does_not_trigger_compatibility_retry() {
         .test(&config(&server.base_url, 100), "test-key")
         .await;
     assert!(!result.ok);
+    let error = result.error.unwrap();
+    assert!(error.contains("超时"));
+    assert!(error.contains("高级参数"));
+    assert!(!error.contains(&server.base_url));
     assert_eq!(server.state.calls.lock().len(), 1);
+}
+
+#[tokio::test]
+async fn successful_connection_probe_and_slow_playlist_use_the_configured_body_deadline() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let playlist = r#"{"songs":[{"name":"晴天","artist":"周杰伦","reason":"雨天的回忆"}]}"#;
+    let response = playlist.to_string();
+    let server = tokio::spawn(async move {
+        for (index, content) in [r#"{"ok":true}"#, response.as_str()].iter().enumerate() {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 8192];
+            assert!(stream.read(&mut request).await.unwrap() > 0);
+            let body = json!({"choices":[{"message":{"content":content},"finish_reason":"stop"}]})
+                .to_string();
+            let headers = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+            stream.write_all(headers.as_bytes()).await.unwrap();
+            stream.write_all(&body.as_bytes()[..1]).await.unwrap();
+            if index == 1 {
+                // 服务先返回响应头，但正文超过旧版 8 秒；不是 JSON 格式错误。
+                tokio::time::sleep(Duration::from_millis(8200)).await;
+            }
+            stream.write_all(&body.as_bytes()[1..]).await.unwrap();
+            stream.shutdown().await.unwrap();
+        }
+    });
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(100))
+        .build()
+        .unwrap();
+    let provider = OpenAiCompatibleProvider::new(client);
+    let config = config(&base, super::super::model::DEFAULT_LLM_TIMEOUT_MS);
+    assert!(provider.test(&config, "test-key").await.ok);
+    let content = provider
+        .chat_json(
+            &config,
+            "test-key",
+            vec![json!({"role":"user","content":"下雨天的咖啡馆"})],
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(content, playlist);
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn body_read_timeouts_are_reported_as_timeouts_without_retrying() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = [0; 4096];
+        assert!(stream.read(&mut request).await.unwrap() > 0);
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n{")
+            .await
+            .unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), listener.accept())
+                .await
+                .is_err(),
+            "正文超时后不能重试请求"
+        );
+    });
+    let provider = OpenAiCompatibleProvider::new(reqwest::Client::new());
+    let result = provider.test(&config(&base, 80), "test-key").await;
+    assert!(!result.ok);
+    let error = result.error.unwrap();
+    assert!(error.contains("超时"), "{error}");
+    assert!(!error.contains("decoding"), "{error}");
+    server.await.unwrap();
 }
 
 #[tokio::test]

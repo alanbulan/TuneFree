@@ -49,7 +49,7 @@ export default function ClosePrompt({
             onMouseDown={(event) => event.stopPropagation()} className="glass-panel close-prompt-card">
             <h3 id="close-prompt-title" className="close-prompt-title">关闭 TuneFree？</h3>
             <p className="close-prompt-text">
-              可以让 TuneFree 留在系统托盘继续播放，也可以彻底退出应用。彻底退出时桌面歌词会一起关闭。
+              可以让 TuneFree 在后台继续播放，再次打开应用即可恢复窗口。彻底退出时桌面歌词会一起关闭。
             </p>
             <label className="close-prompt-remember">
               <input type="checkbox" checked={rememberChoice}
@@ -58,7 +58,7 @@ export default function ClosePrompt({
             </label>
             <div className="close-prompt-actions">
               <button ref={cancelRef} type="button" className="soft-button" onClick={() => onResolve('cancel')}>取消</button>
-              <button type="button" className="soft-button" onClick={() => onResolve('tray')}>最小化到托盘</button>
+              <button type="button" className="soft-button" onClick={() => onResolve('tray')}>后台运行</button>
               <button type="button" className="primary-button" onClick={() => onResolve('exit')}>退出应用</button>
             </div>
           </motion.section>

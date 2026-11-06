@@ -90,6 +90,13 @@ impl OpenAiCompatibleProvider {
         body
     }
 
+    fn timeout_message(config: &LlmConfig) -> String {
+        format!(
+            "模型服务请求超时（当前上限 {} 秒），请在“高级参数”中增加超时或选择响应更快的模型",
+            std::time::Duration::from_millis(config.timeout_ms).as_secs_f64()
+        )
+    }
+
     fn messages_without_system_role(
         messages: &[serde_json::Value],
     ) -> Option<Vec<serde_json::Value>> {
@@ -148,15 +155,27 @@ impl OpenAiCompatibleProvider {
             .await
         {
             Ok(response) => response,
+            Err(error) if error.is_timeout() => {
+                return ChatRequestOutcome::Failed(Self::timeout_message(config));
+            }
             Err(error) => {
-                return ChatRequestOutcome::Failed(format!("模型服务请求失败: {}", error));
+                return ChatRequestOutcome::Failed(format!(
+                    "模型服务请求失败: {}",
+                    error.without_url()
+                ));
             }
         };
         let status = response.status();
         let text = match response.text().await {
             Ok(text) => text,
+            Err(error) if error.is_timeout() => {
+                return ChatRequestOutcome::Failed(Self::timeout_message(config));
+            }
             Err(error) => {
-                return ChatRequestOutcome::Failed(format!("读取模型响应失败: {}", error))
+                return ChatRequestOutcome::Failed(format!(
+                    "读取模型响应失败: {}",
+                    error.without_url()
+                ))
             }
         };
         let parsed = serde_json::from_str::<serde_json::Value>(&text);
@@ -247,7 +266,7 @@ impl OpenAiCompatibleProvider {
             self.chat_json_attempts(config, api_key, messages, use_json_object),
         )
         .await
-        .unwrap_or_else(|_| Err("模型服务请求超时".to_string().into()))
+        .unwrap_or_else(|_| Err(Self::timeout_message(config).into()))
     }
 
     async fn chat_json_attempts(

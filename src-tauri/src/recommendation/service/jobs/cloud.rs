@@ -18,7 +18,7 @@ const LLM_ATTEMPTS_PER_STAGE: u64 = 2;
 /// 平台搜索与本地计算的额外预算。
 const PLATFORM_SEARCH_BUDGET_MS: u64 = 25_000;
 
-/// 总时限由单请求超时推导：`llm_config.timeout_ms` 允许配置到 60 秒
+/// 总时限由单请求超时推导：`llm_config.timeout_ms` 允许配置到 180 秒
 /// （见 `llm_config::config_from_input` 的 clamp），固定 55 秒总时限会在
 /// 单请求超时较大时把任务"冤杀"。这里保证总时限始终覆盖最坏情况下的
 /// 全部串行 LLM 请求（2 阶段 × 2 次尝试）加平台搜索预算。

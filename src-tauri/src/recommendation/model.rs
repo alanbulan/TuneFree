@@ -239,6 +239,9 @@ pub struct LlmConfig {
     pub upload_recent_events: bool,
 }
 
+pub const DEFAULT_LLM_TIMEOUT_MS: u64 = 60_000;
+pub const MAX_LLM_TIMEOUT_MS: u64 = 180_000;
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmConfigInput {

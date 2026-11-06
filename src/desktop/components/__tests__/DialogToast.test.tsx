@@ -41,7 +41,7 @@ describe('桌面弹窗与提示', () => {
     fireEvent.keyDown(window, { key: 'Tab', shiftKey: true }); expect(document.activeElement).toBe(last);
     fireEvent.keyDown(window, { key: 'Enter' }); fireEvent.click(first); expect(remember).toHaveBeenCalledWith(true);
     fireEvent.mouseDown(screen.getByRole('dialog')); expect(resolve).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: '取消' })); fireEvent.click(screen.getByRole('button', { name: '最小化到托盘' })); fireEvent.click(last);
+    fireEvent.click(screen.getByRole('button', { name: '取消' })); fireEvent.click(screen.getByRole('button', { name: '后台运行' })); fireEvent.click(last);
     fireEvent.mouseDown(screen.getByRole('presentation')); expect(resolve.mock.calls).toEqual([['cancel'], ['tray'], ['exit'], ['cancel']]);
   });
 
