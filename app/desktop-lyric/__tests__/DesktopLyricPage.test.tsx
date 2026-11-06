@@ -10,7 +10,7 @@ import type { DesktopLyricPlayerState } from '../_core/types';
 import DesktopLyricPage from '../page';
 
 const mocks = vi.hoisted(() => ({ tauri: true, listen: vi.fn(), invoke: vi.fn(), resize: vi.fn(), dispose: vi.fn(), events: new Map<string, (v: unknown) => void>() }));
-vi.mock('../../../src/core/ipc', () => ({ isTauri: () => mocks.tauri, listenEvent: mocks.listen, invokeCommand: mocks.invoke, getCurrentWindow: () => ({ startResizeDragging: mocks.resize }) }));
+vi.mock('../../../src/core/ipc', () => ({ isTauri: () => mocks.tauri, listenEvent: mocks.listen, invokeCommand: mocks.invoke, emitEventTo: vi.fn().mockResolvedValue(undefined), getCurrentWindow: () => ({ startResizeDragging: mocks.resize }) }));
 let height = 420, width = 650, contentHeight = 90;
 const ready = async () => { await act(async () => {}); };
 const emit = (name: string, value: unknown) => act(() => mocks.events.get(name)?.(value));
@@ -51,7 +51,7 @@ describe('桌面歌词窗口', () => {
     render(<DesktopLyricPage />); await ready(); const root = screen.getByRole('region');
     expect(screen.queryByRole('button', { name: '上一首' })).toBeNull(); fireEvent.mouseEnter(root);
     for (const name of ['上一首', '播放', '下一首', '字号放大', '字号缩小', '关闭桌面歌词']) fireEvent.click(screen.getByRole('button', { name }));
-    expect(mocks.invoke.mock.calls.map((call) => call[1].action)).toEqual(['prev', 'play-pause', 'next', 'adjust-lyric-size', 'adjust-lyric-size', 'close-lyric']);
+    expect(mocks.invoke.mock.calls.filter((call) => call[0] === 'relay_player_control').map((call) => call[1].action)).toEqual(['prev', 'play-pause', 'next', 'adjust-lyric-size', 'adjust-lyric-size', 'close-lyric']);
     for (const handle of root.querySelectorAll('.desktop-lyric-resize-handle')) fireEvent.mouseDown(handle);
     expect(mocks.resize.mock.calls.map((call) => call[0])).toEqual(['North', 'South', 'West', 'East', 'NorthWest', 'NorthEast', 'SouthWest', 'SouthEast']);
     mocks.resize.mockRejectedValueOnce(new Error('resize')); vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -92,7 +92,8 @@ describe('桌面歌词窗口', () => {
     const registration = deferred<() => void>(); mocks.listen.mockReturnValue(registration.promise);
     const next = renderHook(useDesktopLyricBridge); next.unmount(); await act(async () => registration.resolve(mocks.dispose)); expect(mocks.dispose).toHaveBeenCalledTimes(8);
     mocks.listen.mockRejectedValue(new Error('注册失败')); const failure = renderHook(useDesktopLyricBridge); await ready(); failure.unmount();
-    expect(console.error).toHaveBeenCalledTimes(4);
+    expect(console.error).toHaveBeenCalledWith('Failed to setup desktop lyric bridge:', expect.any(Error));
+    expect(mocks.invoke.mock.calls.filter(([name]) => name === 'mark_desktop_lyric_ready')).toHaveLength(1);
   });
 
   it('无原生宿主时控件保持本地预览，主题读取在无窗口环境有默认值', async () => {

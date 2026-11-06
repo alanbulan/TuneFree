@@ -10,6 +10,7 @@ import {
   THEME_STORAGE_KEYS,
 } from '../../utils/theme';
 import { ThemeProvider, useTheme } from '../ThemeContext';
+import { deferred } from '../../__tests__/deferred';
 
 const ipc = vi.hoisted(() => ({
   native: false,
@@ -17,7 +18,8 @@ const ipc = vi.hoisted(() => ({
   invokeCommand: vi.fn(() => Promise.resolve()),
 }));
 
-vi.mock('../../ipc', () => ({
+vi.mock('../../ipc', async (original) => ({
+  ...await original<typeof import('../../ipc')>(),
   isTauri: () => ipc.native,
   emitEventTo: ipc.emitEventTo,
   invokeCommand: ipc.invokeCommand,
@@ -98,6 +100,40 @@ describe('ThemeContext 主题下发', () => {
     await act(async () => {});
     expect(ipc.invokeCommand).toHaveBeenCalledWith('show_desktop_lyric_window', { lock: true });
     expect(ipc.invokeCommand).toHaveBeenCalledWith('set_desktop_lyric_lock', { lock: true });
+  });
+
+  it('打开歌词失败后恢复关闭状态，显示原因且允许重新打开', async () => {
+    ipc.native = true;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mount(); await act(async () => {});
+    ipc.invokeCommand.mockRejectedValueOnce({ code: 'TIMEOUT', message: '桌面歌词页面初始化超时' });
+    act(() => api?.setShowDesktopLyric(true));
+    await act(async () => {});
+    expect(api?.showDesktopLyric).toBe(false);
+    expect(api?.desktopLyricError).toBe('桌面歌词未能打开：桌面歌词页面初始化超时');
+    expect(localStorage.getItem(THEME_STORAGE_KEYS.showDesktopLyric)).toBe('false');
+    expect(ipc.invokeCommand).toHaveBeenLastCalledWith('hide_desktop_lyric_window');
+
+    act(() => api?.setShowDesktopLyric(true));
+    await act(async () => {});
+    expect(api?.showDesktopLyric).toBe(true);
+    expect(api?.desktopLyricError).toBe('');
+  });
+
+  it('关闭重开后忽略上一次打开命令的失败', async () => {
+    ipc.native = true;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mount(); await act(async () => {});
+    const pending = deferred<void>();
+    ipc.invokeCommand.mockReturnValueOnce(pending.promise);
+    act(() => api?.setShowDesktopLyric(true));
+    await act(async () => {});
+    act(() => api?.setShowDesktopLyric(false));
+    act(() => api?.setShowDesktopLyric(true));
+    await act(async () => pending.reject(new Error('上一次打开失败')));
+    expect(api?.showDesktopLyric).toBe(true);
+    expect(api?.desktopLyricError).toBe('');
+    expect(localStorage.getItem(THEME_STORAGE_KEYS.showDesktopLyric)).toBe('true');
   });
 
   it('system 模式下 OS 主题切换会实时改写 CSS 变量', () => {

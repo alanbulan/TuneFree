@@ -6,5 +6,7 @@ test('desktop lyric production entry loads its shared chunks and controls', asyn
   await expect(lyrics).toBeVisible();
   await lyrics.focus();
   await expect(page.getByRole('button', { name: '播放', exact: true })).toBeVisible();
+  await expect(lyrics).toHaveCSS('box-shadow', 'none');
+  await expect(lyrics).toHaveCSS('outline-style', 'none');
   expect(await page.pageErrors(), 'Desktop lyric entry must not throw uncaught errors').toEqual([]);
 });

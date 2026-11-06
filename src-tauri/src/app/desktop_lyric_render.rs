@@ -19,12 +19,12 @@ pub(crate) fn mark_desktop_lyric_ready(
 ) -> CommandResult<()> {
     state.ready.store(true, Ordering::Release);
     // notify_waiters wakes every pending waiter; notify_one would leave all
-    // but one concurrent caller parked until their 2s timeout expired.
+    // but one concurrent caller parked until their timeout expired.
     state.ready_notify.notify_waiters();
     Ok(())
 }
 
-/// Waits until the desktop-lyric webview reports its first paint.
+/// Waits until the lyric page has mounted and registered its event listeners.
 pub(crate) async fn wait_for_desktop_lyric_ready(
     state: &DesktopLyricRenderState,
 ) -> CommandResult<()> {
@@ -39,7 +39,7 @@ pub(crate) async fn wait_for_desktop_lyric_ready(
     if state.ready.load(Ordering::Acquire) {
         return Ok(());
     }
-    tokio::time::timeout(Duration::from_secs(2), notified)
+    tokio::time::timeout(Duration::from_secs(8), notified)
         .await
         .map_err(|_| CommandError::new(ErrorCode::Timeout, "桌面歌词页面初始化超时"))
 }

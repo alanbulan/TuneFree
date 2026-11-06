@@ -41,6 +41,7 @@ afterEach(() => {
   if (visibilityListener) document.removeEventListener('visibilitychange', visibilityListener);
   visibilityListener = undefined;
   document.documentElement.classList.remove('app-hidden');
+  document.documentElement.classList.remove('macos-rounded-window');
   document.body.innerHTML = '';
   vi.restoreAllMocks();
 });
@@ -72,27 +73,26 @@ describe('window entrypoints', () => {
     expect(document.documentElement.classList.contains('app-hidden')).toBe(false);
   });
 
-  it('announces lyric readiness only after two animation frames', async () => {
+  it('only rounds the native macOS main window', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)');
+    await import('../../main');
+    expect(document.documentElement.classList.contains('macos-rounded-window')).toBe(true);
+    document.documentElement.classList.remove('macos-rounded-window');
+    vi.resetModules(); mocks.tauri = false;
+    await import('../../main');
+    expect(document.documentElement.classList.contains('macos-rounded-window')).toBe(false);
+  });
+
+  it('leaves readiness to the mounted lyric bridge instead of hidden animation frames', async () => {
     await import('../../desktopLyricMain');
     expect(mocks.createRoot).toHaveBeenCalledWith(document.getElementById('root'));
     expect(mocks.invoke).not.toHaveBeenCalled();
     await paint();
     expect(mocks.invoke).not.toHaveBeenCalled();
     await paint();
-    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('mark_desktop_lyric_ready');
-    expect(mocks.emit).toHaveBeenCalledExactlyOnceWith('main', 'desktop-lyric-ready', undefined);
-  });
-
-  it('reports failed lyric readiness without losing either notification', async () => {
-    const error = new Error('window closed');
-    mocks.invoke.mockRejectedValue(error);
-    mocks.emit.mockRejectedValue(error);
-    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-    await import('../../desktopLyricMain');
-    await paint();
-    await paint();
-    expect(log).toHaveBeenCalledWith('Failed to mark desktop lyric ready:', error);
-    expect(log).toHaveBeenCalledWith('Failed to announce desktop lyric readiness:', error);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(mocks.emit).not.toHaveBeenCalled();
+    expect(frames).toHaveLength(0);
   });
 
   it('mounts the browser lyric page without calling native IPC', async () => {

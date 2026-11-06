@@ -2,6 +2,20 @@
 * { box-sizing: border-box; }
 html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 #root { width: 100%; height: 100%; min-height: 0; }
+/* 仅 macOS 原生主窗口启用，裁剪整个文档（包括弹层）的实际透明外轮廓。 */
+html.macos-rounded-window {
+  background: transparent;
+  clip-path: inset(0 round 12px);
+}
+html.macos-rounded-window::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  border: 1px solid rgba(128, 128, 128, .18);
+  border-radius: 12px;
+  pointer-events: none;
+}
 body {
   color: var(--text);
   font-family: var(--font);

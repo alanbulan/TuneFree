@@ -309,9 +309,22 @@ fn handle_desktop_lyric_event(window: &tauri::Window, event: &WindowEvent) {
     }
 }
 
-fn build_application(context: BootstrapContext) -> tauri::App {
+fn application_context() -> tauri::Context<tauri::Wry> {
     let mut app_context = tauri::generate_context!();
+    // 透明的原生背景让主界面的圆角露出桌面；其余窗口与平台沿用原配置。
+    #[cfg(target_os = "macos")]
+    for window in &mut app_context.config_mut().app.windows {
+        if window.label == "main" {
+            window.transparent = true;
+            window.background_color = Some(tauri::utils::config::Color(0, 0, 0, 0));
+        }
+    }
     super::smoke::configure(&mut app_context).expect("冒烟测试隔离环境无效");
+    app_context
+}
+
+fn build_application(context: BootstrapContext) -> tauri::App {
+    let app_context = application_context();
     let setup_context = SetupContext {
         api_client: context.api_client.clone(),
         proxy_client: context.proxy_client,

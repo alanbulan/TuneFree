@@ -2,25 +2,31 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ParsedLyric } from '../../../src/core/utils/lyrics';
 import { getDesktopLyricCurrentLine, useDesktopLyricBridge } from './useDesktopLyricBridge';
+import { deferred } from '../../../src/core/__tests__/deferred';
 
 const ipc = vi.hoisted(() => ({
   handlers: new Map<string, (payload: unknown) => void>(),
   disposed: [] as string[],
   invoked: [] as Array<{ command: string; args: unknown }>,
+  emit: vi.fn().mockResolvedValue(undefined),
+  registration: vi.fn(),
+  ready: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../../src/core/ipc', () => ({
   isTauri: () => true,
+  emitEventTo: ipc.emit,
   invokeCommand: (command: string, args?: unknown) => {
     ipc.invoked.push({ command, args });
-    return Promise.resolve();
+    return ipc.ready();
   },
   listenEvent: (event: string, handler: (payload: unknown) => void) => {
     ipc.handlers.set(event, handler);
-    return Promise.resolve(() => {
+    const dispose = () => {
       ipc.disposed.push(event);
       ipc.handlers.delete(event);
-    });
+    };
+    return ipc.registration(event) ?? Promise.resolve(dispose);
   },
 }));
 
@@ -86,6 +92,9 @@ describe('useDesktopLyricBridge 事件消费', () => {
     ipc.handlers.clear();
     ipc.disposed.length = 0;
     ipc.invoked.length = 0;
+    ipc.emit.mockReset().mockResolvedValue(undefined);
+    ipc.ready.mockReset().mockResolvedValue(undefined);
+    ipc.registration.mockReset();
   });
 
   it('订阅拆分后的两个歌词事件', async () => {
@@ -94,6 +103,42 @@ describe('useDesktopLyricBridge 事件消费', () => {
       expect.arrayContaining(['lyric-song', 'lyric-tick']),
     );
     expect(ipc.handlers.has('lyric-update')).toBe(false);
+    expect(ipc.invoked).toContainEqual({ command: 'mark_desktop_lyric_ready', args: undefined });
+    expect(ipc.emit).toHaveBeenCalledWith('main', 'desktop-lyric-ready', undefined);
+  });
+
+  it('隐藏页面没有动画帧时仍就绪，且等所有监听注册后才请求状态', async () => {
+    const animation = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+    const pending = deferred<() => void>();
+    ipc.registration.mockImplementation((event) => event === 'lyric-tick' ? pending.promise : undefined);
+    const view = await mountBridge();
+    expect(ipc.invoked).toEqual([]);
+    expect(ipc.emit).not.toHaveBeenCalled();
+    await act(async () => pending.resolve(vi.fn()));
+    expect(ipc.invoked).toEqual([{ command: 'mark_desktop_lyric_ready', args: undefined }]);
+    expect(ipc.emit).toHaveBeenCalledOnce();
+    expect(animation).not.toHaveBeenCalled();
+    view.unmount(); animation.mockRestore();
+  });
+
+  it('卸载发生在原生就绪确认期间时不再请求歌曲快照', async () => {
+    const pending = deferred<void>();
+    ipc.ready.mockReturnValueOnce(pending.promise);
+    const view = await mountBridge();
+    view.unmount();
+    await act(async () => pending.resolve());
+    expect(ipc.emit).not.toHaveBeenCalled();
+  });
+
+  it.each(['ready', 'emit'] as const)('%s 失败有明确日志且订阅仍可释放', async (step) => {
+    const failure = new Error('窗口关闭');
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    ipc[step].mockRejectedValueOnce(failure);
+    const view = await mountBridge();
+    expect(log).toHaveBeenCalledWith('Failed to setup desktop lyric bridge:', failure);
+    view.unmount();
+    expect(ipc.disposed).toContain('lyric-tick');
+    log.mockRestore();
   });
 
   it('从 lyric-song 取歌曲与歌词，从 lyric-tick 取进度', async () => {
@@ -168,7 +213,7 @@ describe('useDesktopLyricBridge 事件消费', () => {
 
   it('控制指令统一走 relay_player_control 命令', async () => {
     const { result } = await mountBridge();
-
+    ipc.invoked.length = 0;
     act(() => result.current.controls.next());
     act(() => result.current.controls.adjustLyricSize(4));
 
