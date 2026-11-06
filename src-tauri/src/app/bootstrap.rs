@@ -419,6 +419,10 @@ pub fn run() {
     });
     // 正常退出时回到 Rust 入口，完成运行时清理并落盘覆盖率数据。
     let exit_code = build_application(context).run_return(|app_handle, event| match event {
+        // Dock / Finder 启动已在运行的应用会发送 Reopen，不会启动第二个进程。
+        // 桌面歌词可见时 has_visible_windows 仍为 true，也必须恢复主窗口。
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen { .. } => show_main_window(app_handle),
         tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
             persist_visible_desktop_lyric_bounds(app_handle);
             if let Some(state) = app_handle.try_state::<AppLifecycleState>() {

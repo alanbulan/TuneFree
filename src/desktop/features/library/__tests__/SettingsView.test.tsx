@@ -257,7 +257,7 @@ describe('设置页面真实控件', () => {
 
   it('主题、歌词、行为、推荐输入和备份操作均与视图模型连接', async () => {
     render(<SettingsView />, { wrapper: Wrapper }); await ready();
-    for (const name of ['深色模式', '浅色模式', '跟随系统', '逐字动态', '逐行显示', '最小化到托盘', '退出应用', '每次询问']) {
+    for (const name of ['深色模式', '浅色模式', '跟随系统', '逐字动态', '逐行显示', '后台运行', '退出应用', '每次询问']) {
       fireEvent.click(screen.getByRole('button', { name }));
     }
     fireEvent.change(screen.getByRole('slider'), { target: { value: '30' } });

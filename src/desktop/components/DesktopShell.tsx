@@ -85,10 +85,10 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
     if (!isTauri()) return;
     try {
       await getCurrentWindow().hide();
-      showToast('TuneFree 已在后台继续运行，可从系统托盘恢复', 'info');
+      showToast('TuneFree 已在后台继续播放，再次打开应用即可恢复窗口', 'info');
     } catch (e) {
       console.error('Failed to hide main window to tray:', e);
-      showToast('最小化到托盘失败', 'error');
+      showToast('后台运行失败', 'error');
     }
   }, [showToast]);
 

@@ -90,6 +90,11 @@ pub(crate) fn generate_local_server_token() -> CommandResult<String> {
 /// Shows and focuses the main application window.
 pub(crate) fn show_main_window(app_handle: &tauri::AppHandle) {
     if let Some(window) = app_handle.get_webview_window("main") {
+        // Cmd-H 隐藏的是整个 NSApplication，单独 show 窗口不足以恢复它。
+        #[cfg(target_os = "macos")]
+        if let Err(error) = app_handle.show() {
+            log::warn!("恢复应用可见状态失败: {}", error);
+        }
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();

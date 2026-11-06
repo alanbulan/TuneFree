@@ -70,10 +70,10 @@ describe('应用壳层导航与原生事件', () => {
   it('关闭提示可取消、记住托盘选择，原生命令失败可见', async () => {
     render(<Shell />, { wrapper: Providers }); await ready(); await closeRequest();
     expect(screen.getByRole('dialog')).toBeTruthy(); await closeRequest(); click('取消');
-    await closeRequest(); fireEvent.click(screen.getByRole('checkbox')); click('最小化到托盘'); await ready();
+    await closeRequest(); fireEvent.click(screen.getByRole('checkbox')); click('后台运行'); await ready();
     expect(localStorage.getItem('tunefree_close_behavior')).toBe('tray'); expect(mocks.window.hide).toHaveBeenCalledTimes(1);
     await closeRequest(); expect(mocks.window.hide).toHaveBeenCalledTimes(2);
-    mocks.window.hide.mockRejectedValueOnce(new Error('hide')); await closeRequest(); expect(mocks.toast).toHaveBeenLastCalledWith('最小化到托盘失败', 'error');
+    mocks.window.hide.mockRejectedValueOnce(new Error('hide')); await closeRequest(); expect(mocks.toast).toHaveBeenLastCalledWith('后台运行失败', 'error');
   });
 
   it('退出选择及预存的退出行为执行同一原生命令', async () => {

@@ -98,7 +98,8 @@ export default function RecommendationSettingsCard({ model }: { model: SettingsV
         <div className="settings-number-grid">
           <div className="panel-field">
             <label>超时（毫秒）</label>
-            <input className="panel-input" type="number" min={1000} max={60000} value={model.llmConfig.timeoutMs} onChange={(event) => updateConfig({ timeoutMs: Number(event.target.value) })} />
+            <input className="panel-input" type="number" min={1000} max={180000} value={model.llmConfig.timeoutMs} onChange={(event) => updateConfig({ timeoutMs: Number(event.target.value) })} />
+            <p className="settings-note">默认等待 60 秒，最长 180 秒。生成完整歌单通常比连接测试耗时更长。</p>
           </div>
           <div className="panel-field">
             <label>候选上限</label>

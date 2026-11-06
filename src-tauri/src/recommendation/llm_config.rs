@@ -3,7 +3,7 @@ use rusqlite::{params, Connection};
 use super::{
     catalog,
     credential_store::{self, CredentialStoreError},
-    model::{LlmConfig, LlmConfigInput, LlmConfigView},
+    model::{LlmConfig, LlmConfigInput, LlmConfigView, DEFAULT_LLM_TIMEOUT_MS, MAX_LLM_TIMEOUT_MS},
 };
 use crate::app::error::{CommandError, ErrorCode};
 
@@ -16,7 +16,7 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<LlmConfig> {
                 enabled: row.get::<_, i64>(0)? != 0,
                 base_url: row.get(1)?,
                 model: row.get(2)?,
-                timeout_ms: row.get::<_, i64>(3)?.max(1000) as u64,
+                timeout_ms: row.get::<_, i64>(3)?.clamp(1000, MAX_LLM_TIMEOUT_MS as i64) as u64,
                 max_candidates: row.get::<_, i64>(4)?.clamp(1, 120) as usize,
                 max_results: row.get::<_, i64>(5)?.clamp(1, 50) as usize,
                 cache_ttl_seconds: row.get::<_, i64>(6)?.max(60),
@@ -31,7 +31,10 @@ pub fn config_from_input(input: &LlmConfigInput) -> LlmConfig {
         enabled: input.enabled,
         base_url: input.base_url.trim().to_string(),
         model: input.model.trim().to_string(),
-        timeout_ms: input.timeout_ms.unwrap_or(8000).clamp(1000, 60000),
+        timeout_ms: input
+            .timeout_ms
+            .unwrap_or(DEFAULT_LLM_TIMEOUT_MS)
+            .clamp(1000, MAX_LLM_TIMEOUT_MS),
         max_candidates: input.max_candidates.unwrap_or(80).clamp(1, 120),
         max_results: input.max_results.unwrap_or(30).clamp(1, 50),
         cache_ttl_seconds: input

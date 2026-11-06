@@ -1,10 +1,12 @@
 use rusqlite::Connection;
 
-use super::{catalog, events, profile};
+use super::{catalog, events, model::DEFAULT_LLM_TIMEOUT_MS, profile};
 
 const DERIVED_DATA_MIGRATION_VERSION: i64 = 2;
 const EVENT_WEIGHT_MIGRATION_VERSION: i64 = 3;
 const RECOMMENDATION_CLICK_MIGRATION_VERSION: i64 = 4;
+#[path = "migration_timeout.rs"]
+mod llm_timeout;
 
 #[cfg(test)]
 #[path = "__tests__/migrations.rs"]
@@ -161,7 +163,7 @@ const SCHEMA_SQL: &str = r#"
           enabled INTEGER NOT NULL DEFAULT 0,
           base_url TEXT NOT NULL DEFAULT '',
           model TEXT NOT NULL DEFAULT '',
-          timeout_ms INTEGER NOT NULL DEFAULT 8000,
+          timeout_ms INTEGER NOT NULL DEFAULT 60000,
           max_candidates INTEGER NOT NULL DEFAULT 80,
           max_results INTEGER NOT NULL DEFAULT 30,
           cache_ttl_seconds INTEGER NOT NULL DEFAULT 86400,
@@ -204,8 +206,8 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
         "INSERT OR IGNORE INTO llm_config (
             id, enabled, base_url, model, timeout_ms, max_candidates, max_results,
             cache_ttl_seconds, upload_recent_events, updated_at
-         ) VALUES (1, 0, '', '', 8000, 80, 30, 86400, 0, strftime('%s','now') * 1000)",
-        [],
+         ) VALUES (1, 0, '', '', ?1, 80, 30, 86400, 0, strftime('%s','now') * 1000)",
+        [DEFAULT_LLM_TIMEOUT_MS as i64],
     )?;
 
     conn.execute(
@@ -231,6 +233,7 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
     run_derived_data_migration_v2(conn)?;
     run_event_weight_migration_v3(conn)?;
     run_recommendation_click_migration_v4(conn)?;
+    llm_timeout::run_llm_timeout_migration_v5(conn)?;
 
     Ok(())
 }

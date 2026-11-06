@@ -135,7 +135,7 @@ export async function getLlmConfig(): Promise<LlmConfigView> {
       enabled: false,
       baseUrl: '',
       model: '',
-      timeoutMs: 8000,
+      timeoutMs: 60000,
       maxCandidates: 80,
       maxResults: 30,
       cacheTtlSeconds: 86400,
