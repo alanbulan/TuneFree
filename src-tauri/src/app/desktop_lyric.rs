@@ -34,13 +34,17 @@ pub(crate) async fn show_desktop_lyric_window(
         .get_webview_window("desktop-lyric")
         .ok_or_else(|| CommandError::window_unavailable("找不到桌面歌词窗口"))?;
 
-    let render_state = app_handle.state::<DesktopLyricRenderState>();
-    wait_for_desktop_lyric_ready(&render_state).await?;
     apply_desktop_lyric_lock(&lyric_window, lock)?;
+    // WKWebView can suspend a hidden page. Show it before waiting for its
+    // listener handshake; waiting for a hidden requestAnimationFrame deadlocks.
     lyric_window
         .show()
         .map_err(|error| lyric_window_error("显示桌面歌词失败", error))?;
-
+    let render_state = app_handle.state::<DesktopLyricRenderState>();
+    if let Err(error) = wait_for_desktop_lyric_ready(&render_state).await {
+        let _ = lyric_window.hide();
+        return Err(error);
+    }
     Ok(())
 }
 

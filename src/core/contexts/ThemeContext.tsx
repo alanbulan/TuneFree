@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { emitEventTo, invokeCommand, isTauri } from '../ipc';
+import { emitEventTo, invokeCommand, isTauri, toIpcError } from '../ipc';
 import {
   applyThemeClasses,
   applyThemeVariables,
@@ -46,6 +46,7 @@ interface ThemeContextType {
   showDesktopLyric: boolean;
   setShowDesktopLyric: (show: boolean) => void;
   lockDesktopLyric: boolean;
+  desktopLyricError: string;
   setLockDesktopLyric: (lock: boolean) => void;
 }
 
@@ -61,6 +62,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [lyricFont, setLyricFontState] = useState<string>(initialPreferences.lyricFont);
   const [showDesktopLyric, setShowDesktopLyricState] = useState<boolean>(initialPreferences.showDesktopLyric);
   const [lockDesktopLyric, setLockDesktopLyricState] = useState<boolean>(initialPreferences.lockDesktopLyric);
+  const [desktopLyricError, setDesktopLyricError] = useState('');
   const desktopLyricCommandQueue = useRef<Promise<void>>(Promise.resolve());
   const lockDesktopLyricRef = useRef(lockDesktopLyric);
   const hasAppliedThemeRef = useRef(false);
@@ -91,6 +93,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setShowDesktopLyric = useCallback((show: boolean) => {
+    setDesktopLyricError('');
     setShowDesktopLyricState(show);
     localStorage.setItem(THEME_STORAGE_KEYS.showDesktopLyric, show ? 'true' : 'false');
   }, []);
@@ -146,6 +149,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // 串行同步歌词窗口显隐，避免快速关闭/重开时旧命令覆盖最新状态。
   useEffect(() => {
     if (!isTauri()) return;
+    let cancelled = false;
 
     desktopLyricCommandQueue.current = desktopLyricCommandQueue.current.catch(() => {}).then(async () => {
       try {
@@ -156,8 +160,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         console.error('Tauri window management failed:', err);
+        if (showDesktopLyric && !cancelled) {
+          setDesktopLyricError(`桌面歌词未能打开：${toIpcError(err).message}`);
+          setShowDesktopLyricState(false);
+          localStorage.setItem(THEME_STORAGE_KEYS.showDesktopLyric, 'false');
+        }
       }
     });
+    return () => { cancelled = true; };
   }, [showDesktopLyric]);
 
   // 锁定变化只更新焦点和鼠标穿透，不触发布局恢复或窗口显隐。
@@ -185,6 +195,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     showDesktopLyric,
     setShowDesktopLyric,
     lockDesktopLyric,
+    desktopLyricError,
     setLockDesktopLyric,
   }), [
     themeMode,
@@ -198,6 +209,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     showDesktopLyric,
     setShowDesktopLyric,
     lockDesktopLyric,
+    desktopLyricError,
     setLockDesktopLyric,
   ]);
 

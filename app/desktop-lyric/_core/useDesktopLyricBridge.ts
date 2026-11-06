@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { findActiveLyricIndex, parseLyrics, type ParsedLyric } from '../../../src/core/utils/lyrics';
 import { normalizeLyricDisplayMode, type LyricDisplayMode } from '../../../src/core/utils/lyricDisplayMode';
 import { readThemePreferences } from '../../../src/core/utils/theme';
-import { invokeCommand, isTauri as detectTauri, listenEvent } from '../../../src/core/ipc';
+import { emitEventTo, invokeCommand, isTauri as detectTauri, listenEvent } from '../../../src/core/ipc';
 import type { DesktopLyricCommand, DesktopLyricPlayerState, DesktopLyricSong, DesktopLyricStyleState } from './types';
 import { readAndApplyDesktopLyricTheme } from './theme';
 
@@ -60,15 +60,15 @@ export const useDesktopLyricBridge = () => {
     if (!isTauri) return;
 
     const disposers: Array<() => void> = [];
+    const registrations: Array<Promise<void>> = [];
     let cancelled = false;
 
     const register = (pending: Promise<() => void>) => {
-      void pending
+      registrations.push(pending
         .then((dispose) => {
           if (cancelled) dispose();
           else disposers.push(dispose);
-        })
-        .catch((error) => console.error('Failed to setup desktop lyric bridge:', error));
+        }));
     };
 
     // 曲目信息（含完整 LRC）只在换歌时到达。
@@ -119,6 +119,14 @@ export const useDesktopLyricBridge = () => {
         setStyleState((current) => ({ ...current, lock: locked }));
       }),
     );
+
+    // React has committed and listeners must exist before requesting a state
+    // snapshot. This works even while macOS suspends a hidden WebView's RAF.
+    void Promise.all(registrations).then(async () => {
+      if (cancelled) return;
+      await invokeCommand('mark_desktop_lyric_ready');
+      if (!cancelled) await emitEventTo('main', 'desktop-lyric-ready', undefined);
+    }).catch((error) => console.error('Failed to setup desktop lyric bridge:', error));
 
     return () => {
       cancelled = true;

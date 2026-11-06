@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Lock } from 'lucide-react';
 import { usePlayerNowPlaying, usePlayerProgress } from '../../core/contexts/PlayerContext';
@@ -41,8 +41,11 @@ function MiniLyric({ onExpand }: { onExpand: () => void }) {
 export const TransportMiniLyric = memo(MiniLyric);
 
 function LyricToggle() {
-  const { showDesktopLyric, setShowDesktopLyric, lockDesktopLyric, setLockDesktopLyric } = useTheme();
+  const { showDesktopLyric, setShowDesktopLyric, lockDesktopLyric, setLockDesktopLyric, desktopLyricError } = useTheme();
   const { showToast } = useToast();
+  useEffect(() => {
+    if (desktopLyricError) showToast(desktopLyricError, 'error');
+  }, [desktopLyricError, showToast]);
   const state = !showDesktopLyric ? 'off' : lockDesktopLyric ? 'locked' : 'floating';
   const label = state === 'off' ? 'LRC' : state === 'floating' ? '浮动' : '锁定';
   const title = state === 'off' ? '打开桌面歌词' :
@@ -52,7 +55,7 @@ function LyricToggle() {
   const cycle = () => {
     if (state === 'off') {
       setLockDesktopLyric(false); setShowDesktopLyric(true);
-      showToast('桌面歌词已打开', 'success'); return;
+      return;
     }
     if (state === 'floating') {
       setLockDesktopLyric(true); showToast('桌面歌词已锁定（鼠标穿透）', 'success'); return;
@@ -67,7 +70,7 @@ function LyricToggle() {
       onContextMenu={(event) => {
         event.preventDefault();
         if (!showDesktopLyric) {
-          setLockDesktopLyric(false); setShowDesktopLyric(true); showToast('桌面歌词已打开', 'success'); return;
+          setLockDesktopLyric(false); setShowDesktopLyric(true); return;
         }
         const nextLock = !lockDesktopLyric;
         setLockDesktopLyric(nextLock);
