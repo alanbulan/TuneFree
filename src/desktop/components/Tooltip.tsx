@@ -32,9 +32,6 @@ const GAP = 8;
 const SHOW_DELAY_MS = 320;
 /** 视口边缘留白，用于水平方向收拢。 */
 const VIEWPORT_PADDING = 8;
-/** 翻转所需的最小可用空间。 */
-const MIN_ROOM = 32;
-
 interface Placement {
   left: number;
   top: number;
@@ -47,6 +44,7 @@ export default function Tooltip({ label, children, side = 'top', className }: To
   const anchorRef = useRef<HTMLSpanElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
   const tooltipId = useId();
+  const visible = placement !== null;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current === null) return;
@@ -66,13 +64,10 @@ export default function Tooltip({ label, children, side = 'top', className }: To
     if (!anchor) return null;
     const rect = anchor.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) return null;
-    const resolved = side === 'top'
-      ? (rect.top - GAP >= MIN_ROOM ? 'top' : 'bottom')
-      : (rect.bottom + GAP <= window.innerHeight - MIN_ROOM ? 'bottom' : 'top');
     return {
       left: rect.left + rect.width / 2,
-      top: resolved === 'top' ? rect.top - GAP : rect.bottom + GAP,
-      side: resolved,
+      top: side === 'top' ? rect.top - GAP : rect.bottom + GAP,
+      side,
     };
   }, [side]);
 
@@ -87,25 +82,37 @@ export default function Tooltip({ label, children, side = 'top', className }: To
 
   // 气泡渲染后再量一次宽度，把它收拢进视口（长文案 + 贴边按钮会溢出）。
   useLayoutEffect(() => {
-    if (!placement || !bubbleRef.current) return;
+    const anchor = anchorRef.current?.firstElementChild;
+    if (!placement || !bubbleRef.current || !anchor) return;
     const bubble = bubbleRef.current.getBoundingClientRect();
+    const rect = anchor.getBoundingClientRect();
     const half = bubble.width / 2;
     const min = half + VIEWPORT_PADDING;
     const max = window.innerWidth - half - VIEWPORT_PADDING;
     const clamped = Math.min(Math.max(placement.left, min), Math.max(min, max));
-    if (clamped !== placement.left) setPlacement({ ...placement, left: clamped });
-  }, [placement]);
+    const roomAbove = rect.top - GAP - VIEWPORT_PADDING;
+    const roomBelow = window.innerHeight - rect.bottom - GAP - VIEWPORT_PADDING;
+    const resolved = side === 'top'
+      ? (roomAbove >= bubble.height || roomAbove >= roomBelow ? 'top' : 'bottom')
+      : (roomBelow >= bubble.height || roomBelow >= roomAbove ? 'bottom' : 'top');
+    const top = resolved === 'top'
+      ? Math.max(bubble.height + VIEWPORT_PADDING, rect.top - GAP)
+      : Math.min(window.innerHeight - bubble.height - VIEWPORT_PADDING, rect.bottom + GAP);
+    if (clamped !== placement.left || top !== placement.top || resolved !== placement.side) {
+      setPlacement({ left: clamped, top, side: resolved });
+    }
+  }, [placement, side]);
 
   // 滚动或缩放后锚点会移位，继续显示会错位，直接收起。
   useEffect(() => {
-    if (!placement) return;
+    if (!visible) return;
     window.addEventListener('scroll', hide, true);
     window.addEventListener('resize', hide);
     return () => {
       window.removeEventListener('scroll', hide, true);
       window.removeEventListener('resize', hide);
     };
-  }, [placement, hide]);
+  }, [visible, hide]);
 
   useEffect(() => clearTimer, [clearTimer]);
 

@@ -15,14 +15,16 @@ export default function DesktopLyricPage() {
 
   return (
     <div
-      className="desktop-lyric-root"
+      className={`desktop-lyric-root${showToolbar ? ' is-interacting' : ''}${styleState.lock ? ' is-locked' : ''}`}
       data-tauri-drag-region
       tabIndex={styleState.lock ? -1 : 0}
       role="region"
       aria-label="桌面歌词控制区域"
       onMouseEnter={() => !styleState.lock && setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onFocusCapture={() => !styleState.lock && setIsFocusWithin(true)}
+      onMouseLeave={() => { setIsHovered(false); setIsFocusWithin(false); }}
+      onPointerDownCapture={() => setIsFocusWithin(false)}
+      onKeyDownCapture={() => !styleState.lock && setIsFocusWithin(true)}
+      onFocusCapture={(event) => !styleState.lock && event.target.matches(':focus-visible') && setIsFocusWithin(true)}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
           setIsFocusWithin(false);

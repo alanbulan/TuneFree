@@ -2,6 +2,7 @@
 
 use reqwest::Client;
 use serde_json::{json, Value};
+use tokio::task::JoinSet;
 
 use super::parse;
 use crate::recommendation::model::RecSong;
@@ -146,21 +147,18 @@ async fn search_kuwo(client: &Client, keyword: &str, limit: usize) -> Vec<RecSon
 
 /// Fetches missing covers concurrently; a failed lookup leaves `pic` unset.
 async fn fill_kuwo_covers(client: &Client, songs: &mut [RecSong]) {
-    let handles: Vec<_> = songs
+    let mut covers = JoinSet::new();
+    for (index, song) in songs
         .iter()
         .enumerate()
         .filter(|(_, song)| song.pic.is_none())
-        .map(|(index, song)| {
-            let client = client.clone();
-            let song_id = parse::value_id(&song.id);
-            (
-                index,
-                tokio::spawn(async move { fetch_kuwo_cover(&client, song_id).await }),
-            )
-        })
-        .collect();
-    for (index, handle) in handles {
-        if let Ok(pic) = handle.await {
+    {
+        let client = client.clone();
+        let song_id = parse::value_id(&song.id);
+        covers.spawn(async move { (index, fetch_kuwo_cover(&client, song_id).await) });
+    }
+    while let Some(result) = covers.join_next().await {
+        if let Ok((index, pic)) = result {
             songs[index].pic = pic;
         }
     }
@@ -195,4 +193,25 @@ async fn fetch_kuwo_cover(client: &Client, song_id: String) -> Option<String> {
 
 fn desktop_user_agent() -> &'static str {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn cancelling_cover_lookup_closes_all_pending_connections() {
+        crate::recommendation::discovery::tests::assert_pending_requests_cancelled(
+            "artistpicserver.kuwo.cn",
+            |client| async move {
+                let mut songs = parse::parse_kuwo_songs(&json!({"abslist": [
+                    {"MUSICRID": "MUSIC_1", "SONGNAME": "一", "ARTIST": "歌手"},
+                    {"MUSICRID": "MUSIC_2", "SONGNAME": "二", "ARTIST": "歌手"}
+                ]}));
+                assert_eq!(songs.len(), 2);
+                fill_kuwo_covers(&client, &mut songs).await;
+            },
+        )
+        .await;
+    }
 }

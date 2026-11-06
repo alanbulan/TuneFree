@@ -57,6 +57,7 @@ describe('原生音频元素事件', () => {
     const second = createManagedAudioElement({ ...h.options, withCors: false }) as unknown as TestAudio;
     expect(close).toHaveBeenCalledOnce(); expect(h.runtime.setAnalyser).toHaveBeenCalledWith(null);
     expect(first.pause).toHaveBeenCalledOnce(); expect(first.removeAttribute).toHaveBeenCalledWith('src');
+    expect(first.load).toHaveBeenCalledOnce();
     expect(second.crossOrigin).toBeNull(); first.dispatchEvent(new Event('timeupdate')); expect(h.sync).not.toHaveBeenCalled();
     h.refs.currentSong.current = null;
     for (const event of ['timeupdate', 'loadedmetadata', 'durationchange', 'ended']) second.dispatchEvent(new Event(event));
@@ -109,6 +110,8 @@ describe('播放器音频生命周期', () => {
     const close = vi.fn().mockResolvedValue(undefined); h.refs.audioContext.current = { close } as unknown as AudioContext;
     unmount(); expect(playSignal.aborted).toBe(true); expect(preloadSignal.aborted).toBe(true); expect(close).toHaveBeenCalledOnce();
     expect(h.refs.progressFrame.current).toBeNull();
+    expect(audio.load).toHaveBeenCalledTimes(2); expect(h.refs.audio.current).toBeNull();
+    expect(h.refs.audioContext.current).toBeNull(); expect(h.refs.handlers.current).toBeNull();
   });
 
   it('音频图只连接一次，恢复可见页面中的暂停上下文并发布媒体会话', async () => {

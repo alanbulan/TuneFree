@@ -80,5 +80,7 @@ export const LX_UPDATE_ALERT_EVENT = 'updateAlert';
 export const SANDBOX_INIT_TIMEOUT_MS = 10_000;
 /** 单个沙箱同时进行的源请求上限。 */
 export const SANDBOX_MAX_CONCURRENT_REQUESTS = 6;
+/** 异常脚本的请求洪峰不能无限积压闭包与请求体。 */
+export const SANDBOX_MAX_QUEUED_REQUESTS = 64;
 /** 保留的日志条数，供音源管理页排查。 */
 export const SANDBOX_LOG_LIMIT = 50;

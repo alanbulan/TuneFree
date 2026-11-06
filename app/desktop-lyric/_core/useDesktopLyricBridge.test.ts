@@ -223,7 +223,7 @@ describe('useDesktopLyricBridge 事件消费', () => {
     expect(ipc.invoked[1]).toEqual({
       command: 'relay_player_control', args: { action: 'adjust-lyric-size', value: 4 },
     });
-    expect(result.current.styleState.size).toBe(26);
+    expect(result.current.styleState.size).toBe(36);
   });
 
   it('卸载时释放所有事件订阅', async () => {

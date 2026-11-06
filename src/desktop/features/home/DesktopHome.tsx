@@ -7,6 +7,7 @@ import { searchSongsByContext } from '../../../core/services/contextSearch';
 import { recommendationFeedbackFromSong, saveRecommendationFeedback } from '../../../core/services/recommendation';
 import type { Song, TopList } from '../../../core/types';
 import { getMusicSourceLabel } from '../../../core/utils/musicSource';
+import { BoundedCache } from '../../../core/utils/boundedCache';
 import SongTable from '../../components/SongTable';
 import { useToast } from '../../components/ToastHost';
 import VirtualRail from '../../components/VirtualRail';
@@ -17,9 +18,9 @@ import { attachContextSearchMeta, describeContextSearchError, isCurrentContextSe
 import { isBusyError } from './recommendationJobWatcher';
 import { useRecommendationJob } from './useRecommendationJob';
 
-const topListCache = new Map<string, { lists: TopList[]; ts: number }>();
-const detailCache = new Map<string, { songs: Song[]; ts: number }>();
 const cacheTtl = 3 * 60 * 1000;
+const topListCache = new BoundedCache<string, TopList[]>(8, cacheTtl);
+const detailCache = new BoundedCache<string, Song[]>(24, cacheTtl);
 
 interface DesktopHomeProps {
   onViewChange: (view: DesktopView) => void;
@@ -138,8 +139,8 @@ export default function DesktopHome({ onViewChange, onAiBusyChange }: DesktopHom
     setSelectedTopListName(list.name);
     setBrowseError('');
     const cached = detailCache.get(key);
-    if (cached && Date.now() - cached.ts < cacheTtl) {
-      setBrowseSongs(cached.songs);
+    if (cached) {
+      setBrowseSongs(cached);
       setLoadingBrowseSongs(false);
       return;
     }
@@ -147,7 +148,7 @@ export default function DesktopHome({ onViewChange, onAiBusyChange }: DesktopHom
     try {
       const songs = await getTopListDetail(list.id, source);
       if (requestId !== detailRequestIdRef.current) return;
-      detailCache.set(key, { songs, ts: Date.now() });
+      detailCache.set(key, songs);
       setBrowseSongs(songs);
     } catch {
       if (requestId === detailRequestIdRef.current) {
@@ -163,12 +164,11 @@ export default function DesktopHome({ onViewChange, onAiBusyChange }: DesktopHom
     if (activeSource === 'recommendation' || activeSource === 'embeat') return;
     const requestId = ++requestIdRef.current;
     const cached = topListCache.get(activeSource);
-    const request = cached && Date.now() - cached.ts < cacheTtl
-      ? Promise.resolve(cached.lists) : getTopLists(activeSource);
+    const request = cached ? Promise.resolve(cached) : getTopLists(activeSource);
     void request.then((lists) => {
       if (requestId !== requestIdRef.current) return;
       setTopLists(lists);
-      topListCache.set(activeSource, { lists, ts: Date.now() });
+      if (!cached) topListCache.set(activeSource, lists);
     }).catch(() => {
       if (requestId !== requestIdRef.current) return;
       setBrowseError('该音源暂不可用，请切换其他音源。');

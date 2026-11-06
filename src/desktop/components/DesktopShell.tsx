@@ -105,13 +105,12 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
   useEffect(() => {
     if (!isTauri()) return;
 
-    let unlisten: (() => void) | null = null;
-    let disposed = false;
+    const lifecycle = { disposed: false, unlisten: null as (() => void) | null };
 
     const setupCloseListener = async () => {
       try {
-        unlisten = await getCurrentWindow().onCloseRequested((event) => {
-          if (disposed) return;
+        lifecycle.unlisten = await getCurrentWindow().onCloseRequested((event) => {
+          if (lifecycle.disposed) return;
           event.preventDefault();
           const behavior = closeBehaviorRef.current;
 
@@ -130,7 +129,7 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
             setClosePromptOpen(true);
           }
         });
-        if (disposed) { unlisten(); unlisten = null; }
+        if (lifecycle.disposed) { lifecycle.unlisten(); lifecycle.unlisten = null; }
       } catch (e) {
         console.error('Failed to listen to close requested:', e);
       }
@@ -139,8 +138,8 @@ export default function DesktopShell({ view, onViewChange }: DesktopShellProps) 
     void setupCloseListener();
 
     return () => {
-      disposed = true;
-      if (unlisten) unlisten();
+      lifecycle.disposed = true;
+      if (lifecycle.unlisten) lifecycle.unlisten();
     };
   }, [hideMainToTray, quitApplication, closeBehaviorRef, closePromptOpenRef]);
 

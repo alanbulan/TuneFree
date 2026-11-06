@@ -3,7 +3,7 @@
  * feature code never imports `@tauri-apps/api` directly (architecture guard).
  */
 
-export { getCurrentWindow } from "@tauri-apps/api/window";
+export { getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 export type { Window } from "@tauri-apps/api/window";
 export { convertFileSrc } from "@tauri-apps/api/core";
 export { getVersion } from "@tauri-apps/api/app";

@@ -20,6 +20,7 @@ const createEngine = (state: StateId, expression: ExpressionId, shape: ShapeId) 
   R, state, SHAPE_BY_ID.get(shape)?.radii ?? null,
   EXPRESSION_BY_ID.get(expression) ?? null,
 );
+const FRAME_INTERVAL_MS = 1000 / 60;
 
 /** 仅适配官方组件的时钟与指针生命周期，测量数据和形变计算仍来自上游。 */
 function useBloubFrame(state: StateId, frozen: boolean, expression: ExpressionId, shape: ShapeId, followPointer: boolean) {
@@ -39,50 +40,65 @@ function useBloubFrame(state: StateId, frozen: boolean, expression: ExpressionId
 
   useEffect(() => {
     if (frozen) return;
-    let raf = 0;
-    let last = 0;
-    let pointer: { x: number; y: number } | null = null;
-    let aiming = false;
-    let turnSince = clockRef.current;
+    const loop = { raf: 0, last: 0, pointer: null as { x: number; y: number } | null,
+      aiming: false, turnSince: clockRef.current };
+    const bounds = { rect: null as DOMRect | null };
+    const invalidateBox = () => { bounds.rect = null; };
     const onPointerMove = (event: PointerEvent) => {
-      if (event.pointerType !== 'touch') pointer = { x: event.clientX, y: event.clientY };
+      if (event.pointerType !== 'touch') {
+        loop.pointer = { x: event.clientX, y: event.clientY };
+        invalidateBox();
+      }
     };
-    const onPointerLeave = () => { pointer = null; };
+    const onPointerLeave = () => { loop.pointer = null; };
     const aim = () => {
       const clock = clockRef.current;
       if (!STATE_BY_ID.get(engine.state)?.baseFace) {
-        if (aiming) engine.setLook(null, clock, TURN_TIME);
-        aiming = false;
+        if (loop.aiming) engine.setLook(null, clock, TURN_TIME);
+        loop.aiming = false;
         return;
       }
-      const box = svgRef.current?.getBoundingClientRect();
+      bounds.rect ??= svgRef.current?.getBoundingClientRect() ?? null;
+      const box = bounds.rect;
       if (!box || box.width === 0 || box.height === 0) return;
-      if (!aiming) turnSince = clock;
+      if (!loop.aiming) loop.turnSince = clock;
       engine.setLook(lookTarget({
-        nx: pointer ? clamp((pointer.x - box.left - box.width / 2) / Math.max(1, window.innerWidth / 2), -1, 1) : 0,
-        ny: pointer ? clamp((pointer.y - box.top - box.height / 2) / Math.max(1, window.innerHeight / 2), -1, 1) : 0,
-        tour: easings.easeOutQuint(clamp((clock - turnSince) / TURN_TIME)),
-        pointer: pointer !== null,
+        nx: loop.pointer ? clamp((loop.pointer.x - box.left - box.width / 2) / Math.max(1, window.innerWidth / 2), -1, 1) : 0,
+        ny: loop.pointer ? clamp((loop.pointer.y - box.top - box.height / 2) / Math.max(1, window.innerHeight / 2), -1, 1) : 0,
+        tour: easings.easeOutQuint(clamp((clock - loop.turnSince) / TURN_TIME)),
+        pointer: loop.pointer !== null,
       }), clock);
-      aiming = true;
+      loop.aiming = true;
     };
     const tick = (ms: number) => {
+      // 120/144Hz 屏幕无需同频重建装饰 SVG；保持 60Hz，动画时钟仍按真实经过时间前进。
+      if (loop.last && ms - loop.last < FRAME_INTERVAL_MS - 1) {
+        loop.raf = window.requestAnimationFrame(tick);
+        return;
+      }
       // 沿用官方 64ms 上限，恢复窗口时不跳过一大段动画。
-      clockRef.current += last ? Math.min((ms - last) / 1000, 0.064) : 0;
-      last = ms;
+      clockRef.current += loop.last ? Math.min((ms - loop.last) / 1000, 0.064) : 0;
+      loop.last = ms;
       if (followPointer) aim();
       setFrame(engine.sample(clockRef.current));
-      raf = window.requestAnimationFrame(tick);
+      loop.raf = window.requestAnimationFrame(tick);
     };
     if (followPointer) {
       window.addEventListener('pointermove', onPointerMove, { passive: true });
       document.addEventListener('pointerleave', onPointerLeave);
+      window.addEventListener('resize', invalidateBox);
+      window.addEventListener('scroll', invalidateBox, true);
     }
-    raf = window.requestAnimationFrame(tick);
+    const observer = followPointer && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(invalidateBox) : null;
+    if (svgRef.current) observer?.observe(svgRef.current);
+    loop.raf = window.requestAnimationFrame(tick);
     return () => {
-      window.cancelAnimationFrame(raf);
+      window.cancelAnimationFrame(loop.raf);
       window.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerleave', onPointerLeave);
+      window.removeEventListener('resize', invalidateBox);
+      window.removeEventListener('scroll', invalidateBox, true);
+      observer?.disconnect();
       engine.setLook(null, clockRef.current, TURN_TIME);
     };
   }, [engine, frozen, followPointer]);

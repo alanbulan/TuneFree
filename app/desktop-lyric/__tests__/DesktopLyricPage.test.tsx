@@ -16,13 +16,20 @@ const ready = async () => { await act(async () => {}); };
 const emit = (name: string, value: unknown) => act(() => mocks.events.get(name)?.(value));
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); mocks.tauri = true; height = 420; width = 650; contentHeight = 90; mocks.events.clear();
-  mocks.invoke.mockReset().mockResolvedValue(undefined); mocks.resize.mockReset().mockResolvedValue(undefined);
+  mocks.invoke.mockReset().mockImplementation(async (command) => command === 'get_runtime_info' ? { os: 'windows', arch: 'x86_64' } : undefined); mocks.resize.mockReset().mockResolvedValue(undefined);
   mocks.listen.mockReset().mockImplementation(async (name, handler) => { mocks.events.set(name, handler); return mocks.dispose; });
+  Object.defineProperties(HTMLElement.prototype, {
+    setPointerCapture: { configurable: true, value: vi.fn() },
+    hasPointerCapture: { configurable: true, value: () => false },
+    releasePointerCapture: { configurable: true, value: vi.fn() },
+  });
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => height);
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
   vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => contentHeight);
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals();
+  for (const method of ['setPointerCapture', 'hasPointerCapture', 'releasePointerCapture']) Reflect.deleteProperty(HTMLElement.prototype, method);
+});
 const line: ParsedLyric = { time: 2, text: '歌词', words: [{ start: 2, duration: 1, text: '歌词' }],
   translation: '翻译', romanization: 'luo ma', pronunciation: '注音', extra: [{ type: 'translation', text: '第二翻译' }, { type: 'main', text: '附加' }] };
 const state = (changes: Partial<DesktopLyricPlayerState> = {}): DesktopLyricPlayerState => ({ song: null,
@@ -52,11 +59,14 @@ describe('桌面歌词窗口', () => {
     expect(screen.queryByRole('button', { name: '上一首' })).toBeNull(); fireEvent.mouseEnter(root);
     for (const name of ['上一首', '播放', '下一首', '字号放大', '字号缩小', '关闭桌面歌词']) fireEvent.click(screen.getByRole('button', { name }));
     expect(mocks.invoke.mock.calls.filter((call) => call[0] === 'relay_player_control').map((call) => call[1].action)).toEqual(['prev', 'play-pause', 'next', 'adjust-lyric-size', 'adjust-lyric-size', 'close-lyric']);
-    for (const handle of root.querySelectorAll('.desktop-lyric-resize-handle')) fireEvent.mouseDown(handle);
+    for (const handle of root.querySelectorAll('.desktop-lyric-resize-handle')) {
+      fireEvent.pointerDown(handle, { button: 0, pointerId: 1 }); await ready();
+      fireEvent.pointerUp(handle, { button: 0, pointerId: 1 });
+    }
     expect(mocks.resize.mock.calls.map((call) => call[0])).toEqual(['North', 'South', 'West', 'East', 'NorthWest', 'NorthEast', 'SouthWest', 'SouthEast']);
     mocks.resize.mockRejectedValueOnce(new Error('resize')); vi.spyOn(console, 'warn').mockImplementation(() => {});
-    fireEvent.mouseDown(screen.getByLabelText('向上调整歌词边界')); await ready(); expect(console.warn).toHaveBeenCalled();
-    fireEvent.mouseLeave(root); expect(screen.queryByRole('button', { name: '上一首' })).toBeNull(); fireEvent.focus(root);
+    fireEvent.pointerDown(screen.getByLabelText('向上调整歌词边界'), { button: 0, pointerId: 1 }); await ready(); expect(console.warn).toHaveBeenCalled();
+    fireEvent.mouseLeave(root); expect(screen.queryByRole('button', { name: '上一首' })).toBeNull(); fireEvent.focus(root); fireEvent.keyDown(root, { key: 'Tab' });
     fireEvent.blur(root, { relatedTarget: screen.getByRole('button', { name: '上一首' }) }); expect(screen.getByRole('button', { name: '上一首' })).toBeTruthy();
     fireEvent.blur(root, { relatedTarget: document.body }); expect(screen.queryByRole('button', { name: '上一首' })).toBeNull();
     fireEvent.mouseEnter(root); emit('lyric-tick', { trackKey: '', currentTime: 0, isPlaying: true }); expect(screen.getByRole('button', { name: '暂停' })).toBeTruthy();
@@ -98,8 +108,8 @@ describe('桌面歌词窗口', () => {
 
   it('无原生宿主时控件保持本地预览，主题读取在无窗口环境有默认值', async () => {
     mocks.tauri = false; const view = render(<DesktopLyricPage />); fireEvent.mouseEnter(screen.getByRole('region'));
-    fireEvent.click(screen.getByRole('button', { name: '播放' })); fireEvent.mouseDown(screen.getByLabelText('向上调整歌词边界'));
+    fireEvent.click(screen.getByRole('button', { name: '播放' })); fireEvent.pointerDown(screen.getByLabelText('向上调整歌词边界'), { button: 0, pointerId: 1 });
     expect(mocks.invoke).not.toHaveBeenCalled(); expect(mocks.resize).not.toHaveBeenCalled(); view.unmount();
-    vi.stubGlobal('window', undefined); expect(readAndApplyDesktopLyricTheme()).toEqual({ size: 22, font: 'system-ui', lock: false }); vi.unstubAllGlobals();
+    vi.stubGlobal('window', undefined); expect(readAndApplyDesktopLyricTheme()).toEqual({ size: 32, font: 'system-ui', lock: false }); vi.unstubAllGlobals();
   });
 });

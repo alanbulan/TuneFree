@@ -2,6 +2,7 @@ mod fetch;
 mod parse;
 
 use reqwest::Client;
+use tokio::task::JoinSet;
 
 use super::{catalog, llm::DiscoverySearchQuery, model::RecSong, privacy};
 
@@ -20,27 +21,25 @@ pub async fn discover_songs(
     let mut songs = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    let handles: Vec<_> = discovery_targets(queries)
-        .into_iter()
-        .enumerate()
-        .map(|(order, target)| {
-            let client = client.clone();
-            tokio::spawn(async move {
-                let found = fetch::search_source(
-                    &client,
-                    target.source,
-                    &target.query.keyword,
-                    per_source_limit,
-                )
-                .await;
-                (order, target.query.reason, found)
-            })
-        })
-        .collect();
+    // JoinSet 随父 future 释放时中止子任务，取消推荐后不会留下后台网络请求。
+    let mut searches = JoinSet::new();
+    for (order, target) in discovery_targets(queries).into_iter().enumerate() {
+        let client = client.clone();
+        searches.spawn(async move {
+            let found = fetch::search_source(
+                &client,
+                target.source,
+                &target.query.keyword,
+                per_source_limit,
+            )
+            .await;
+            (order, target.query.reason, found)
+        });
+    }
 
-    let mut batches = Vec::with_capacity(handles.len());
-    for handle in handles {
-        if let Ok(batch) = handle.await {
+    let mut batches = Vec::with_capacity(searches.len());
+    while let Some(result) = searches.join_next().await {
+        if let Ok(batch) = result {
             batches.push(batch);
         }
     }
@@ -105,6 +104,58 @@ pub fn discovery_reason(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    pub(super) async fn assert_pending_requests_cancelled<F, Fut>(host: &str, operation: F)
+    where
+        F: FnOnce(Client) -> Fut,
+        Fut: std::future::Future<Output = ()> + Send + 'static,
+    {
+        use tokio::io::AsyncReadExt;
+        use tokio::time::{timeout, Duration};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client = Client::builder()
+            .no_proxy()
+            .resolve(host, listener.local_addr().unwrap())
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let parent = tokio::spawn(operation(client));
+        let mut sockets = Vec::new();
+        for _ in 0..2 {
+            let (mut socket, _) = timeout(Duration::from_secs(2), listener.accept())
+                .await
+                .unwrap()
+                .unwrap();
+            // 暂停在 TLS 握手阶段，确保两个真实网络请求都已开始。
+            let mut hello = [0; 4096];
+            assert!(
+                timeout(Duration::from_secs(2), socket.read(&mut hello))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    > 0
+            );
+            sockets.push(socket);
+        }
+        parent.abort();
+        assert!(parent.await.unwrap_err().is_cancelled());
+        for mut socket in sockets {
+            let result = timeout(
+                Duration::from_millis(500),
+                socket.read_to_end(&mut Vec::new()),
+            )
+            .await;
+            assert!(result.is_ok(), "取消父任务后，子请求仍保持网络连接");
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelling_discovery_closes_all_pending_search_connections() {
+        assert_pending_requests_cancelled("music.163.com", |client| async move {
+            let _ = discover_songs(client, vec![query("netease"), query("netease")], 3, 6).await;
+        })
+        .await;
+    }
 
     fn query(source: &str) -> DiscoverySearchQuery {
         DiscoverySearchQuery {

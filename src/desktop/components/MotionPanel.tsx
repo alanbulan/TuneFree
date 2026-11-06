@@ -15,7 +15,13 @@ export default function MotionPanel({ transitionKey, className, children }: {
       opacity: reducedMotion ? 1 : [0.45, 1],
       y: reducedMotion ? 0 : [10, 0],
     }, { duration: reducedMotion ? 0 : 0.22, ease: [0.2, 0.8, 0.2, 1] });
-    return () => playback.stop();
+    return () => {
+      playback.stop();
+      // 中途 stop 的时间线不会 resolve finished；显式移出长期存活的 scope，
+      // 否则快速切页会一直保留旧动画、Promise 和原生 KeyframeEffect。
+      const index = scope.animations.indexOf(playback);
+      if (index >= 0) scope.animations.splice(index, 1);
+    };
   // oxlint-disable-next-line react/exhaustive-effect-dependencies -- 内容标识变化是重播动画的触发条件，不能只在挂载时播放。
   }, [animate, scope, reducedMotion, transitionKey]);
 

@@ -7,15 +7,14 @@ export function useCompanionThinking(promptBusy: boolean): boolean {
   const [recommendationBusy, setRecommendationBusy] = useState(false);
   useEffect(() => {
     if (!isTauri()) return;
-    let disposed = false;
-    let revision = 0;
+    const lifecycle = { disposed: false, revision: 0 };
     const unlisteners: Array<() => void> = [];
     const refresh = async () => {
-      if (disposed) return;
-      const version = ++revision;
+      if (lifecycle.disposed) return;
+      const version = ++lifecycle.revision;
       try {
         const job = await getLatestRecommendationJob();
-        if (!disposed && version === revision) setRecommendationBusy(job?.status === 'running');
+        if (!lifecycle.disposed && version === lifecycle.revision) setRecommendationBusy(job?.status === 'running');
       } catch {
         // 初始化完成后 recommendation-ready 会补读，桌宠不额外触发推荐任务。
       }
@@ -23,22 +22,22 @@ export function useCompanionThinking(promptBusy: boolean): boolean {
     void Promise.allSettled([
       listenEvent('recommendation-ready', () => { void refresh(); }),
       listenEvent('recommendation-job-update', (job) => {
-        if (disposed) return;
-        revision += 1;
+        if (lifecycle.disposed) return;
+        lifecycle.revision += 1;
         setRecommendationBusy(job.status === 'running' || job.status === 'pending');
       }),
     ]).then((results) => {
       for (const result of results) {
         if (result.status === 'fulfilled') {
-          if (disposed) result.value();
+          if (lifecycle.disposed) result.value();
           else unlisteners.push(result.value);
         } else console.warn('无法订阅音乐伙伴的推荐状态', result.reason);
       }
-      if (!disposed) void refresh();
+      if (!lifecycle.disposed) void refresh();
     });
     return () => {
-      disposed = true;
-      revision += 1;
+      lifecycle.disposed = true;
+      lifecycle.revision += 1;
       unlisteners.forEach((unlisten) => unlisten());
     };
   }, []);

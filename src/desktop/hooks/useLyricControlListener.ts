@@ -4,6 +4,7 @@ import { useTheme } from '../../core/contexts/ThemeContext';
 import { isTauri, listenEvent, type EventMap, type UnlistenFn } from '../../core/ipc';
 import { useToast, type ToastTone } from '../components/ToastHost';
 import type { CloseBehavior } from '../../core/contexts/DesktopPreferencesContext';
+import { clampLyricSize } from '../../core/utils/theme';
 
 interface UseLyricControlListenerOptions {
   lyricSize: number;
@@ -21,9 +22,6 @@ interface LyricControlActions {
   setShowDesktopLyric: (show: boolean) => void;
   showToast: (message: string, tone?: ToastTone) => void;
 }
-
-const LYRIC_SIZE_MIN = 14;
-const LYRIC_SIZE_MAX = 36;
 
 /**
  * Applies one `player-control` payload. The lyric window only ever sends the
@@ -51,10 +49,7 @@ const applyPlayerControl = (
       'success',
     );
   } else if (action === 'adjust-lyric-size') {
-    const nextSize = Math.max(
-      LYRIC_SIZE_MIN,
-      Math.min(LYRIC_SIZE_MAX, currentLyricSize + Number(value)),
-    );
+    const nextSize = clampLyricSize(currentLyricSize + Number(value));
     actions.setLyricSize(nextSize);
   } else if (action === 'close-lyric') {
     actions.setShowDesktopLyric(false);
@@ -126,13 +121,12 @@ export function useLyricControlListener({
   useEffect(() => {
     if (!isTauri()) return;
 
-    let controlUnlisten: UnlistenFn | null = null;
-    let lyricCloseUnlisten: UnlistenFn | null = null;
-    let cancelled = false;
+    const lifecycle = { cancelled: false,
+      controlUnlisten: null as UnlistenFn | null, lyricCloseUnlisten: null as UnlistenFn | null };
 
     const setupListener = async () => {
       try {
-        controlUnlisten = await listenEvent('player-control', (payload) => {
+        lifecycle.controlUnlisten = await listenEvent('player-control', (payload) => {
           applyPlayerControl(
             payload,
             actionsRef.current,
@@ -141,19 +135,19 @@ export function useLyricControlListener({
           );
         });
 
-        if (cancelled) {
-          controlUnlisten?.();
-          controlUnlisten = null;
+        if (lifecycle.cancelled) {
+          lifecycle.controlUnlisten?.();
+          lifecycle.controlUnlisten = null;
           return;
         }
 
-        lyricCloseUnlisten = await listenEvent('desktop-lyric-closed', () => {
+        lifecycle.lyricCloseUnlisten = await listenEvent('desktop-lyric-closed', () => {
           actionsRef.current.setShowDesktopLyric(false);
         });
 
-        if (cancelled) {
-          lyricCloseUnlisten?.();
-          lyricCloseUnlisten = null;
+        if (lifecycle.cancelled) {
+          lifecycle.lyricCloseUnlisten?.();
+          lifecycle.lyricCloseUnlisten = null;
         }
       } catch (e) {
         console.error('Failed to listen to player-control:', e);
@@ -163,9 +157,9 @@ export function useLyricControlListener({
     void setupListener();
 
     return () => {
-      cancelled = true;
-      controlUnlisten?.();
-      lyricCloseUnlisten?.();
+      lifecycle.cancelled = true;
+      lifecycle.controlUnlisten?.();
+      lifecycle.lyricCloseUnlisten?.();
     };
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps -- intentionally empty: listener registered once, reads latest via refs
 

@@ -88,7 +88,7 @@ export function DesktopLyricStage({ player, styleState }: DesktopLyricStageProps
   const contextDepth = useMemo(() => {
     if (rows.length === 0 || displayIndex < 0) return 0;
 
-    // 桌面歌词没有可见边框，用户拖的是透明窗口边界；这里用实际舞台高度计算上下文容量。
+    // 用实际舞台高度计算上下文容量，拉高窗口时同步增加可见歌词行数。
     // 旧的 6 行上限在竖向大窗口里明显太少，这里提高到上下各 14 行，并按字号压缩行预算。
     const measuredHeight = stageHeight || (typeof window !== 'undefined' ? window.innerHeight - 68 : 0);
     if (measuredHeight < 140) return 0;

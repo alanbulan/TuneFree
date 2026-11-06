@@ -47,7 +47,7 @@
   color: var(--lyric-line-color);
   background: transparent;
   font-family: var(--lyric-font-family, inherit);
-  font-size: clamp(26px, calc(var(--lyric-font-size, 22px) * 1.55), 48px);
+  font-size: clamp(26px, calc(var(--lyric-font-size, 32px) * 1.55), 48px);
   font-weight: 750;
   line-height: 1.32;
   letter-spacing: -.025em;

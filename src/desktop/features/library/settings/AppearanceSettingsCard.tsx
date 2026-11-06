@@ -4,6 +4,7 @@ import CustomSelect from '../components/CustomSelect';
 import type { SettingsViewModel } from './useSettingsViewModel';
 import { useId } from 'react';
 import MotionChoice from '../../../components/MotionChoice';
+import { LYRIC_SIZE_MAX, LYRIC_SIZE_MIN } from '../../../../core/utils/theme';
 
 const themeModes = [
   { label: '浅色模式', value: 'light' as const },
@@ -57,8 +58,8 @@ export default function AppearanceSettingsCard({ model }: { model: SettingsViewM
           <input
             type="range"
             className="settings-range"
-            min="14"
-            max="36"
+            min={LYRIC_SIZE_MIN}
+            max={LYRIC_SIZE_MAX}
             value={model.lyricSize}
             onChange={(event) => model.setLyricSize(parseInt(event.target.value))}
           />

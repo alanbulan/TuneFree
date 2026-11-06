@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { findActiveLyricIndex, parseLyrics, type ParsedLyric } from '../../../src/core/utils/lyrics';
 import { normalizeLyricDisplayMode, type LyricDisplayMode } from '../../../src/core/utils/lyricDisplayMode';
-import { readThemePreferences } from '../../../src/core/utils/theme';
+import { clampLyricSize, readThemePreferences } from '../../../src/core/utils/theme';
 import { emitEventTo, invokeCommand, isTauri as detectTauri, listenEvent } from '../../../src/core/ipc';
 import type { DesktopLyricCommand, DesktopLyricPlayerState, DesktopLyricSong, DesktopLyricStyleState } from './types';
 import { readAndApplyDesktopLyricTheme } from './theme';
@@ -212,7 +212,7 @@ export const useDesktopLyricBridge = () => {
   const adjustLyricSize = (delta: number) => {
     setStyleState((current) => ({
       ...current,
-      size: Math.max(14, Math.min(36, current.size + delta)),
+      size: clampLyricSize(current.size + delta),
     }));
     void sendCommand('adjust-lyric-size', delta);
   };

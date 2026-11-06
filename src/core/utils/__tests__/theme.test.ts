@@ -59,6 +59,21 @@ describe('normalizeLyricFont', () => {
 });
 
 describe('readThemePreferences', () => {
+  it('upgrades the old default once and preserves later font choices', () => {
+    localStorage.clear();
+    expect(readThemePreferences(localStorage).lyricSize).toBe(32);
+    localStorage.clear();
+    localStorage.setItem(THEME_STORAGE_KEYS.lyricSize, '22');
+    expect(readThemePreferences(localStorage).lyricSize).toBe(32);
+    expect(localStorage.getItem(THEME_STORAGE_KEYS.lyricSize)).toBe('32');
+    localStorage.setItem(THEME_STORAGE_KEYS.lyricSize, '22');
+    expect(readThemePreferences(localStorage).lyricSize).toBe(22);
+    localStorage.clear();
+    localStorage.setItem(THEME_STORAGE_KEYS.lyricSize, '28');
+    expect(readThemePreferences(localStorage).lyricSize).toBe(28);
+    localStorage.clear();
+  });
+
   it('falls back to defaults for tampered storage values', () => {
     const preferences = readThemePreferences(createStorage({
       [THEME_STORAGE_KEYS.mode]: 'neon',
@@ -68,7 +83,7 @@ describe('readThemePreferences', () => {
     }));
     expect(preferences.themeMode).toBe(DEFAULT_THEME_PREFERENCES.themeMode);
     expect(preferences.themeColor).toBe(DEFAULT_THEME_PREFERENCES.themeColor);
-    expect(preferences.lyricSize).toBe(36);
+    expect(preferences.lyricSize).toBe(64);
     expect(preferences.lyricFont).toBe(DEFAULT_THEME_PREFERENCES.lyricFont);
     expect(preferences.showDesktopLyric).toBe(false);
   });
@@ -112,7 +127,7 @@ describe('applyThemeVariables', () => {
 
     applyThemeVariables(element, tokens, { lyricSize: 999, lyricFont: 'x; }*{display:none}' });
 
-    expect(properties['--lyric-font-size']).toBe('36px');
+    expect(properties['--lyric-font-size']).toBe('64px');
     expect(properties['--lyric-font-family']).toBe(DEFAULT_THEME_PREFERENCES.lyricFont);
   });
 });

@@ -9,6 +9,7 @@ import {
   SANDBOX_INIT_TIMEOUT_MS,
   SANDBOX_LOG_LIMIT,
   SANDBOX_MAX_CONCURRENT_REQUESTS,
+  SANDBOX_MAX_QUEUED_REQUESTS,
   type HostToSandboxMessage,
   type LxScriptMeta,
   type LxSourceDeclaration,
@@ -112,7 +113,7 @@ export class LxSandbox {
       source: string; action: string; quality: string; startedAt: number }
   >();
   private readonly pendingRelays = new Map<string, AbortController>();
-  private queue: Array<() => void> = [];
+  private queue: Array<{ run: () => void; cancel: () => void }> = [];
   private activeRequests = 0;
   private invokeSeq = 0;
   private initedSeen = false;
@@ -204,6 +205,9 @@ export class LxSandbox {
 
   /** 中止该沙箱所有在途源请求（停用音源、重新加载时调用）。 */
   abortActiveRequests(): void {
+    const queued = this.queue;
+    this.queue = [];
+    for (const entry of queued) entry.cancel();
     for (const controller of this.pendingRelays.values()) controller.abort();
     this.pendingRelays.clear();
   }
@@ -217,7 +221,6 @@ export class LxSandbox {
       this.pendingCalls.delete(callId);
     }
     this.abortActiveRequests();
-    this.queue = [];
     if (this.worker) {
       this.worker.removeEventListener('message', this.handleWorkerMessage as EventListener);
       this.worker.removeEventListener('error', this.handleWorkerError as EventListener);
@@ -353,6 +356,10 @@ export class LxSandbox {
       this.post({ kind: 'reply', callId, error: '音源请求格式无效' });
       return;
     }
+    if (this.activeRequests >= SANDBOX_MAX_CONCURRENT_REQUESTS && this.queue.length >= SANDBOX_MAX_QUEUED_REQUESTS) {
+      this.post({ kind: 'reply', callId, error: '音源请求队列已满，请稍后重试' });
+      return;
+    }
     const host = hostOf(payload.url);
     if (host && !this.hosts.has(host)) {
       this.hosts.add(host);
@@ -386,7 +393,7 @@ export class LxSandbox {
       } finally {
         this.pendingRelays.delete(callId);
       }
-    });
+    }, () => this.post({ kind: 'reply', callId, error: '请求已取消' }));
   }
 
   /** 出站请求补上会话 cookie（不覆盖脚本显式设置的 Cookie 头）。 */
@@ -398,17 +405,17 @@ export class LxSandbox {
     return { ...payload, headers: { ...payload.headers, cookie } };
   }
 
-  private enqueue(task: () => Promise<void>): void {
+  private enqueue(task: () => Promise<void>, cancel: () => void): void {
     const run = () => {
       this.activeRequests += 1;
       void task().finally(() => {
         this.activeRequests -= 1;
         const next = this.queue.shift();
-        if (next) next();
+        if (next) next.run();
       });
     };
     if (this.activeRequests < SANDBOX_MAX_CONCURRENT_REQUESTS) run();
-    else this.queue.push(run);
+    else this.queue.push({ run, cancel });
   }
 
   private handleWorkerMessage = (event: MessageEvent): void => {

@@ -12,6 +12,10 @@ const disposeAudio = (refs: PlayerRefs): void => {
   if (audio) {
     audio.pause();
     detachAudioHandlers(audio, refs.handlers.current);
+    audio.removeAttribute("src");
+    audio.load();
+    refs.audio.current = null;
+    refs.handlers.current = null;
   }
   refs.playAbort.current?.abort();
   refs.preloadAbort.current?.abort();
@@ -20,6 +24,10 @@ const disposeAudio = (refs: PlayerRefs): void => {
     refs.progressFrame.current = null;
   }
   if (refs.audioContext.current) void refs.audioContext.current.close().catch(() => {});
+  refs.audioContext.current = null;
+  refs.sourceNode.current = null;
+  refs.analyser.current = null;
+  refs.audioContextConnected.current = false;
 };
 
 const cancelProgressFrame = (refs: PlayerRefs): void => {
