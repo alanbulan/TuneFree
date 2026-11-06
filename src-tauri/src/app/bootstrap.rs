@@ -383,6 +383,7 @@ fn build_application(context: BootstrapContext) -> tauri::App {
             updater::check_for_update,
             updater::download_and_install_update,
             system_commands::get_local_server_info,
+            system_commands::get_runtime_info,
             system_commands::mark_frontend_ready,
             recommendation_commands::log_recommendation_event,
             recommendation_commands::sync_recommendation_library,

@@ -12,13 +12,13 @@ const stripComments = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\
 const rust = stripComments([...rustTree('src-tauri/src/app'), read('src-tauri/src/recommendation/model.rs')].join('\n'));
 const commands = stripComments(read('src/core/ipc/commands.ts'));
 const types = stripComments(read('src/core/ipc/types.ts'));
-const names = ['download_song_to_local', 'sync_recommendation_library', 'mark_frontend_ready'];
+const names = ['download_song_to_local', 'sync_recommendation_library', 'mark_frontend_ready', 'get_runtime_info'];
 const check = (commandText = commands, typeText = types, rustText = rust) =>
   checkCommandShapes(rustText, commandText, typeText, names);
 
 describe('IPC 参数和数据结构门禁', () => {
   it('检查真实代码，并排除 Tauri 注入的窗口和 State 参数', () => {
-    expect(check()).toBe(10);
+    expect(check()).toBe(11);
   });
   it('参数名称或返回类型漂移时失败', () => {
     expect(() => check(commands.replace('taskId: string; metadata:', 'task_id: string; metadata:'))).toThrow(/字段不一致/);
@@ -32,5 +32,9 @@ describe('IPC 参数和数据结构门禁', () => {
   it('Rust serde 字段命名或下载元数据类型变更时失败', () => {
     expect(() => check(commands, types.replace('quality: string;', 'quality: number;'))).toThrow(/quality 不一致/);
     expect(() => check(commands, types, rust.replace('pub deadline_at: Option<i64>', 'pub deadline: Option<i64>'))).toThrow(/字段不一致/);
+  });
+  it('原生系统信息字段漂移时失败', () => {
+    expect(() => check(commands, types.replace('os: string;', 'platform: string;'))).toThrow(/RuntimeInfo 字段不一致/);
+    expect(() => check(commands, types.replace('arch: string;', 'arch: number;'))).toThrow(/RuntimeInfo.arch 不一致/);
   });
 });

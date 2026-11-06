@@ -25,6 +25,7 @@ import type {
   RecommendationJob,
   RecommendationMaintenanceStats,
   ResolvedPlayback,
+  RuntimeInfo,
 } from "./types";
 
 export interface CommandMap {
@@ -52,6 +53,7 @@ export interface CommandMap {
   check_for_update: { args: void; result: AvailableUpdate | null };
   download_and_install_update: { args: void; result: void };
   get_local_server_info: { args: void; result: LocalServerInfo };
+  get_runtime_info: { args: void; result: RuntimeInfo };
   mark_frontend_ready: { args: void; result: void };
   log_recommendation_event: {
     args: { event: RecommendationEvent };
