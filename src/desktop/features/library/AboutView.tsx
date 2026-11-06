@@ -8,6 +8,7 @@ import {
 } from '../../../core/components/Icons';
 import { GD_STUDIO_ATTRIBUTION, GD_STUDIO_RATE_LIMIT_HINT } from '../../../core/utils/musicSource';
 import { useUpdateChecker } from './hooks/useUpdateChecker';
+import { useRuntimePlatform } from './hooks/useRuntimePlatform';
 
 const buildInfo = __TUNEFREE_BUILD_INFO__;
 const versions = buildInfo.tech;
@@ -57,6 +58,7 @@ const aboutLinks = [
 export default function AboutView() {
   const { appVersion, checkingUpdate, downloadingUpdate, updateDownloadProgress, handleCheckUpdate } =
     useUpdateChecker();
+  const runtimePlatform = useRuntimePlatform();
 
   const handleOpenExternal = async (event: ReactMouseEvent<HTMLAnchorElement>, url: string) => {
     event.preventDefault();
@@ -80,7 +82,7 @@ export default function AboutView() {
           <p>轻盈、自在的桌面音乐空间。</p>
           <div className="about-meta">
             <span className="about-version">v{appVersion || buildInfo.appVersion}</span>
-            <span>Windows x64</span>
+            <span>{runtimePlatform}</span>
           </div>
         </div>
         <div className="about-hero-actions">

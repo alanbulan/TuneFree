@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IpcError } from '../../../../core/ipc';
 import { deferred } from '../../../../core/__tests__/deferred';
 import { useUpdateChecker } from '../hooks/useUpdateChecker';
+import { useRuntimePlatform } from '../hooks/useRuntimePlatform';
 import AboutView from '../AboutView';
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), toast: vi.fn(), version: vi.fn(), listen: vi.fn(), tauri: true,
@@ -13,7 +14,10 @@ vi.mock('../../../components/ToastHost', () => ({ useToast: () => ({ showToast: 
 const ready = async () => { await act(async () => {}); };
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks(); mocks.tauri = true; mocks.progress = null;
-  mocks.version.mockReset().mockResolvedValue('1.2.3'); mocks.invoke.mockReset().mockResolvedValue(null);
+  mocks.version.mockReset().mockResolvedValue('1.2.3');
+  mocks.invoke.mockReset().mockImplementation((command) => Promise.resolve(
+    command === 'get_runtime_info' ? { os: 'macos', arch: 'aarch64' } : null,
+  ));
   mocks.listen.mockReset().mockImplementation((_event, callback) => { mocks.progress = callback; return Promise.resolve(mocks.unlisten); });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
@@ -90,6 +94,7 @@ describe('版本更新生命周期', () => {
 describe('关于页', () => {
   it('技术栈由构建版本生成，外链和更新按钮连到真实视图逻辑', async () => {
     render(<AboutView />); await ready(); expect(screen.getByText('v1.2.3')).toBeTruthy();
+    expect(screen.getByText('macOS arm64')).toBeTruthy(); expect(screen.queryByText('Windows x64')).toBeNull();
     const versions = __TUNEFREE_BUILD_INFO__.tech;
     expect(screen.getByText(versions.react)).toBeTruthy(); expect(screen.getByText(versions.bloub)).toBeTruthy();
     expect(screen.getByRole('link', { name: new RegExp(`Tauri ${versions.tauri}`) })).toBeTruthy();
@@ -111,5 +116,41 @@ describe('关于页', () => {
     mocks.tauri = false; render(<AboutView />); expect(screen.getByText(`v${__TUNEFREE_BUILD_INFO__.appVersion}`)).toBeTruthy();
     const open = vi.spyOn(window, 'open').mockReturnValue(null); fireEvent.click(screen.getByRole('link', { name: /Vite/ }));
     expect(open).toHaveBeenCalledWith('https://vite.dev/', '_blank', 'noopener,noreferrer');
+  });
+});
+
+describe('原生系统信息', () => {
+  it.each([
+    ['macos', 'aarch64', 'macOS arm64'],
+    ['macos', 'x86_64', 'macOS x64'],
+    ['windows', 'x86_64', 'Windows x64'],
+    ['linux', 'aarch64', 'Linux arm64'],
+    ['linux', 'x86', 'Linux x86'],
+    ['freebsd', 'riscv64', 'freebsd riscv64'],
+  ])('显示原生返回的 %s / %s 为 %s', async (os, arch, label) => {
+    mocks.invoke.mockResolvedValue({ os, arch });
+    const { result } = renderHook(useRuntimePlatform);
+    expect(result.current).toBe('正在识别系统…'); await ready();
+    expect(mocks.invoke).toHaveBeenCalledWith('get_runtime_info'); expect(result.current).toBe(label);
+  });
+
+  it('读取失败时不猜测系统，浏览器预览不调用原生系统命令', async () => {
+    mocks.invoke.mockRejectedValueOnce(new Error('unavailable'));
+    const failed = renderHook(useRuntimePlatform); await ready();
+    expect(failed.result.current).toBe('系统信息不可用'); failed.unmount();
+    mocks.tauri = false; mocks.invoke.mockClear();
+    const browser = renderHook(useRuntimePlatform); await ready();
+    expect(browser.result.current).toBe('浏览器预览'); expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it('页面卸载后忽略迟到的系统信息与失败', async () => {
+    const info = deferred<{ os: string; arch: string }>(); mocks.invoke.mockReturnValueOnce(info.promise);
+    const resolved = renderHook(useRuntimePlatform); resolved.unmount();
+    await act(async () => info.resolve({ os: 'macos', arch: 'aarch64' }));
+    expect(resolved.result.current).toBe('正在识别系统…');
+    const failure = deferred<never>(); mocks.invoke.mockReturnValueOnce(failure.promise);
+    const rejected = renderHook(useRuntimePlatform); rejected.unmount();
+    await act(async () => failure.reject(new Error('closed')));
+    expect(rejected.result.current).toBe('正在识别系统…');
   });
 });

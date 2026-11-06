@@ -106,6 +106,7 @@ export function checkCommandShapes(rustSource, commandSource, typeSource, names)
     ['DownloadMetaEntry', 'output'], ['ResolvedPlayback', 'output'],
     ['RecommendationJob', 'output'], ['LibrarySnapshot', 'input'], ['LibraryDelta', 'input'],
     ['LlmConfigInput', 'input'], ['LlmConfigView', 'output'], ['LocalServerInfo', 'output'],
+    ['RuntimeInfo', 'output'],
   ];
   for (const [name, direction] of models) {
     const match = new RegExp(`((?:#\\[[^\\]]+\\]\\s*)+)(?:pub(?:\\([^)]*\\))?\\s+)?struct\\s+${name}\\s*\\{`).exec(rustSource);

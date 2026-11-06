@@ -22,6 +22,22 @@ pub(crate) struct LocalServerInfo {
     pub(crate) token: String,
 }
 
+/// Native OS and the architecture of the running executable, including universal macOS builds.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeInfo {
+    pub(crate) os: String,
+    pub(crate) arch: String,
+}
+
+#[tauri::command]
+pub(crate) fn get_runtime_info() -> RuntimeInfo {
+    RuntimeInfo {
+        os: std::env::consts::OS.to_string(),
+        arch: std::env::consts::ARCH.to_string(),
+    }
+}
+
 /// Application lifecycle state shared across the app.
 ///
 /// Tracks whether the app is quitting (to prevent the desktop-lyric window
@@ -175,6 +191,13 @@ mod tests {
         let json = serde_json::to_value(&info).unwrap();
         assert_eq!(json["port"], 51234);
         assert_eq!(json["token"], "abc123");
+    }
+
+    #[test]
+    fn runtime_info_reports_the_native_target() {
+        let json = serde_json::to_value(get_runtime_info()).unwrap();
+        assert_eq!(json["os"], std::env::consts::OS);
+        assert_eq!(json["arch"], std::env::consts::ARCH);
     }
 }
 

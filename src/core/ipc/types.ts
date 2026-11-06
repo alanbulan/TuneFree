@@ -17,6 +17,12 @@ export interface LocalServerInfo {
   token: string;
 }
 
+/** Mirror of `RuntimeInfo` (system_commands.rs). Architecture describes the running executable. */
+export interface RuntimeInfo {
+  os: string;
+  arch: string;
+}
+
 /** Response shape of `GET /api/allowed-hosts` on the local server. */
 export interface AllowedHostsResponse {
   hosts: string[];
