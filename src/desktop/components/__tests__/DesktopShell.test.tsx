@@ -90,7 +90,7 @@ describe('应用壳层导航与原生事件', () => {
     expect(mocks.toggle).toHaveBeenCalled(); expect(mocks.next).toHaveBeenCalledWith(true); expect(mocks.prev).toHaveBeenCalled();
     emit({ action: 'toggle-lock' }); emit({ action: 'toggle-lock' }); expect(mocks.toast).toHaveBeenLastCalledWith('桌面歌词已解锁', 'success');
     emit({ action: 'toggle-lock', value: true }); emit({ action: 'adjust-lyric-size', value: 100 });
-    expect(localStorage.getItem('tunefree_lyric_size')).toBe('36'); emit({ action: 'adjust-lyric-size', value: -100 });
+    expect(localStorage.getItem('tunefree_lyric_size')).toBe('64'); emit({ action: 'adjust-lyric-size', value: -100 });
     expect(localStorage.getItem('tunefree_lyric_size')).toBe('14'); emit({ action: 'close-lyric' });
     act(() => mocks.events.get('desktop-lyric-closed')?.(undefined as never));
   });

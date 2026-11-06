@@ -106,4 +106,20 @@ describe('Bloub 官方帧的 React 适配', () => {
     await act(async () => { document.documentElement.style.removeProperty('--ios-bg'); });
     expect(view.container.innerHTML).toContain('#f6f6f8');
   });
+
+  it('高刷新率屏幕保持最多 60Hz，静止鼠标不会逐帧测量布局', () => {
+    const sample = vi.spyOn(BotEngine.prototype, 'sample');
+    const view = render(<BloubAvatar state="idle" frozen={false} />);
+    const bounds = vi.spyOn(view.container.querySelector('svg')!, 'getBoundingClientRect').mockReturnValue({
+      left: 20, top: 20, width: 112, height: 112, right: 132, bottom: 132, x: 20, y: 20, toJSON: () => ({}),
+    });
+    sample.mockClear();
+    for (let time = 8; time <= 1000; time += 8) step(time);
+    expect(sample.mock.calls.length).toBeLessThanOrEqual(63);
+    expect(bounds).toHaveBeenCalledOnce();
+    fireEvent.pointerMove(window, { pointerType: 'mouse', clientX: 400, clientY: 200 });
+    step(1024); expect(bounds).toHaveBeenCalledTimes(2);
+    fireEvent.resize(window); step(1040); expect(bounds).toHaveBeenCalledTimes(3);
+    view.unmount(); expect(frames.size).toBe(0);
+  });
 });

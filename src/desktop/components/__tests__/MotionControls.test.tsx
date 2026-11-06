@@ -10,18 +10,21 @@ import CustomSelect from '../../features/library/components/CustomSelect';
 
 const animation = vi.hoisted(() => {
   const stop = vi.fn();
-  return { stop, animate: vi.fn(() => ({ stop })), reduced: false };
+  const playbacks: { stop: typeof stop }[] = [];
+  return { stop, playbacks, animate: vi.fn(() => {
+    const playback = { stop }; playbacks.push(playback); return playback;
+  }), reduced: false };
 });
 vi.mock('framer-motion', async (importOriginal) => {
   const original = await importOriginal<typeof import('framer-motion')>();
   const { useRef } = await import('react');
-  return { ...original, useAnimate: () => [useRef(null), animation.animate], useReducedMotion: () => animation.reduced };
+  return { ...original, useAnimate: () => [Object.assign(useRef(null), { animations: animation.playbacks }), animation.animate], useReducedMotion: () => animation.reduced };
 });
 function StatefulContent() {
   const [count, setCount] = useState(0);
   return <button onClick={() => setCount((value) => value + 1)}>计数 {count}</button>;
 }
-beforeEach(() => { vi.clearAllMocks(); animation.reduced = false; });
+beforeEach(() => { vi.clearAllMocks(); animation.playbacks.length = 0; animation.reduced = false; });
 
 describe('Motion 切换和控件交互', () => {
   it('每次切页重新播放并停止旧动画，保留子树状态', () => {
@@ -36,6 +39,19 @@ describe('Motion 切换和控件交互', () => {
     view.rerender(<MotionPanel transitionKey="settings"><StatefulContent /></MotionPanel>);
     expect(animation.animate).toHaveBeenLastCalledWith(expect.anything(), { opacity: 1, y: 0 }, expect.objectContaining({ duration: 0 }));
     view.unmount(); expect(animation.stop).toHaveBeenCalledTimes(3);
+    expect(animation.playbacks).toHaveLength(0);
+  });
+
+  it('连续切换页面不会在长期存活的动画作用域中积压旧时间线', () => {
+    const view = render(<MotionPanel transitionKey="start">页面</MotionPanel>);
+    for (let index = 0; index < 100; index += 1) {
+      view.rerender(<MotionPanel transitionKey={String(index)}>页面</MotionPanel>);
+      expect(animation.playbacks).toHaveLength(1);
+    }
+    // 自然结束时库已经移除时间线，清理不能误删其他动画。
+    animation.playbacks.length = 0;
+    view.unmount();
+    expect(animation.playbacks).toHaveLength(0);
   });
 
   it('选中指示器、折叠区的展开和退出均保留正确的可访问状态', async () => {

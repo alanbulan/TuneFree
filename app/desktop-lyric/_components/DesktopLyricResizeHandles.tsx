@@ -1,12 +1,7 @@
-import { getCurrentWindow, isTauri } from '../../../src/core/ipc';
+import type { ResizeDirection } from '../_core/resizeGeometry';
+import { useLyricWindowResize } from '../_core/useLyricWindowResize';
 
-type ResizeDirection = 'East' | 'North' | 'NorthEast' | 'NorthWest' | 'South' | 'SouthEast' | 'SouthWest' | 'West';
-
-const RESIZE_HANDLES: Array<{
-  direction: ResizeDirection;
-  className: string;
-  title: string;
-}> = [
+const RESIZE_HANDLES: Array<{ direction: ResizeDirection; className: string; title: string }> = [
   { direction: 'North', className: 'desktop-lyric-resize-n', title: '向上调整歌词边界' },
   { direction: 'South', className: 'desktop-lyric-resize-s', title: '向下调整歌词边界' },
   { direction: 'West', className: 'desktop-lyric-resize-w', title: '向左调整歌词边界' },
@@ -17,25 +12,11 @@ const RESIZE_HANDLES: Array<{
   { direction: 'SouthEast', className: 'desktop-lyric-resize-se', title: '调整右下角歌词边界' },
 ];
 
-interface DesktopLyricResizeHandlesProps {
-  disabled?: boolean;
-}
-
-export function DesktopLyricResizeHandles({ disabled = false }: DesktopLyricResizeHandlesProps) {
+export function DesktopLyricResizeHandles({ disabled = false }: { disabled?: boolean }) {
+  const { resizing, beginResize, updateResize, endResize } = useLyricWindowResize(disabled);
   if (disabled) return null;
-
-  const startResize = async (direction: ResizeDirection) => {
-    if (!isTauri()) return;
-
-    try {
-      await getCurrentWindow().startResizeDragging(direction);
-    } catch (e) {
-      console.warn('Failed to start desktop lyric resize:', e);
-    }
-  };
-
   return (
-    <div className="desktop-lyric-resize-layer" aria-hidden="true">
+    <div className="desktop-lyric-resize-layer" aria-hidden="true" data-resizing={resizing}>
       {RESIZE_HANDLES.map((handle) => (
         <button
           key={handle.direction}
@@ -43,11 +24,11 @@ export function DesktopLyricResizeHandles({ disabled = false }: DesktopLyricResi
           className={`desktop-lyric-resize-handle ${handle.className}`}
           aria-label={handle.title}
           tabIndex={-1}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void startResize(handle.direction);
-          }}
+          onPointerDown={(event) => void beginResize(event, handle.direction)}
+          onPointerMove={updateResize}
+          onPointerUp={endResize}
+          onPointerCancel={endResize}
+          onLostPointerCapture={endResize}
         />
       ))}
     </div>

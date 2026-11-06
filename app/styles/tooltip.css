@@ -5,7 +5,11 @@
 .tooltip-bubble {
   position: fixed;
   z-index: 2000;
-  max-width: 280px;
+  /* 固定元素的 auto 宽度会按锚点右侧余量收缩，贴边时挤成一字一行。 */
+  width: max-content;
+  max-width: min(280px, calc(100vw - 16px));
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
   padding: 6px 10px;
   border: 1px solid rgba(var(--accent-rgb, 250, 35, 59), 0.14);
   border-radius: 9px;

@@ -81,6 +81,33 @@ describe('首页榜单与操作', () => {
     expect(screen.getByText('该音源暂不可用，请切换其他音源。')).toBeTruthy();
   });
 
+  it('浏览大量榜单时淘汰旧缓存，命中不会续期，三分钟后重新请求', async () => {
+    const now = Date.now();
+    vi.mocked(getTopLists).mockResolvedValue(Array.from({ length: 26 }, (_, index) => ({ id: `chart-${index}`, name: `榜单 ${index}` })));
+    const selectChart = async (index: number) => {
+      fireEvent.scroll(document.querySelector('.toplist-grid')!, { target: { scrollLeft: index * 180 } });
+      fireEvent.click(screen.getByRole('button', { name: `榜单 ${index} 每日更新` })); await ready();
+    };
+    let view = renderHome(); await ready();
+    for (let index = 0; index < 26; index += 1) {
+      await selectChart(index);
+    }
+    expect(getTopListDetail).toHaveBeenCalledTimes(26);
+    await selectChart(25);
+    expect(getTopListDetail).toHaveBeenCalledTimes(26);
+    await selectChart(0);
+    expect(getTopListDetail).toHaveBeenCalledTimes(27);
+    vi.setSystemTime(now + 179_000);
+    await selectChart(25);
+    expect(getTopListDetail).toHaveBeenCalledTimes(27);
+    view.unmount(); vi.setSystemTime(now + 181_000);
+    view = renderHome(); await ready();
+    expect(getTopLists).toHaveBeenCalledTimes(2);
+    await selectChart(25);
+    expect(getTopListDetail).toHaveBeenCalledTimes(28);
+    view.unmount();
+  });
+
   it.each([[2, '夜深了'], [8, '早上好'], [12, '中午好'], [16, '下午好'], [21, '晚上好']] as const)('在 %i 时显示 %s', async (hour, greeting) => {
     vi.setSystemTime(new Date(2031, 0, ++day, hour)); renderHome(); await ready();
     expect(screen.getByRole('heading', { name: greeting })).toBeTruthy();

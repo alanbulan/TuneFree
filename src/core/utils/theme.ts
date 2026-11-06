@@ -22,6 +22,7 @@ export const THEME_STORAGE_KEYS = {
   mode: 'tunefree_theme_mode',
   color: 'tunefree_theme_color',
   lyricSize: 'tunefree_lyric_size',
+  lyricSizeRevision: 'tunefree_lyric_size_revision',
   lyricFont: 'tunefree_lyric_font',
   showDesktopLyric: 'tunefree_show_desktop_lyric',
   lockDesktopLyric: 'tunefree_lock_desktop_lyric',
@@ -29,11 +30,13 @@ export const THEME_STORAGE_KEYS = {
 
 export const DEFAULT_ACCENT_COLOR = '#fa233b';
 export const DEFAULT_DANGER_COLOR = '#fa233b';
+export const LYRIC_SIZE_MIN = 14;
+export const LYRIC_SIZE_MAX = 64;
 
 export const DEFAULT_THEME_PREFERENCES: ThemePreferences = {
   themeMode: 'system',
   themeColor: DEFAULT_ACCENT_COLOR,
-  lyricSize: 22,
+  lyricSize: 32,
   lyricFont: 'system-ui',
   showDesktopLyric: false,
   lockDesktopLyric: false,
@@ -235,7 +238,7 @@ export const normalizeLyricFont = (value: unknown): string => {
 export const clampLyricSize = (value: unknown): number => {
   const numeric = typeof value === 'number' ? value : parseInt(String(value ?? ''), 10);
   if (!Number.isFinite(numeric)) return DEFAULT_THEME_PREFERENCES.lyricSize;
-  return Math.max(14, Math.min(36, numeric));
+  return Math.max(LYRIC_SIZE_MIN, Math.min(LYRIC_SIZE_MAX, numeric));
 };
 
 export const getSystemPrefersDark = () => {
@@ -289,10 +292,19 @@ export const applyThemeVariables = (
 };
 
 export const readThemePreferences = (storage: Storage): ThemePreferences => {
+  let storedSize = storage.getItem(THEME_STORAGE_KEYS.lyricSize);
+  // 旧版默认 22px 只升级一次；之后用户主动选回 22px 时应保持原值。
+  if (storage.getItem(THEME_STORAGE_KEYS.lyricSizeRevision) !== '2') {
+    if (storedSize === '22') {
+      storedSize = String(DEFAULT_THEME_PREFERENCES.lyricSize);
+      storage.setItem(THEME_STORAGE_KEYS.lyricSize, storedSize);
+    }
+    storage.setItem(THEME_STORAGE_KEYS.lyricSizeRevision, '2');
+  }
   return {
     themeMode: normalizeThemeMode(storage.getItem(THEME_STORAGE_KEYS.mode)),
     themeColor: normalizeThemeColor(storage.getItem(THEME_STORAGE_KEYS.color)),
-    lyricSize: clampLyricSize(storage.getItem(THEME_STORAGE_KEYS.lyricSize)),
+    lyricSize: clampLyricSize(storedSize),
     lyricFont: normalizeLyricFont(storage.getItem(THEME_STORAGE_KEYS.lyricFont)),
     showDesktopLyric: storage.getItem(THEME_STORAGE_KEYS.showDesktopLyric) === 'true',
     lockDesktopLyric: storage.getItem(THEME_STORAGE_KEYS.lockDesktopLyric) === 'true',

@@ -121,9 +121,9 @@ export function useRecommendationJob(
 
   useEffect(() => {
     if (!active) return;
-    let disposed = false;
+    const lifecycle = { disposed: false };
     const unlisteners: Array<() => void> = [];
-    const reload = () => { if (!disposed) void load(); };
+    const reload = () => { if (!lifecycle.disposed) void load(); };
     if (isTauri()) {
       void Promise.allSettled([
         listenEvent('recommendation-ready', reload),
@@ -136,14 +136,14 @@ export function useRecommendationJob(
       ]).then((results) => {
         for (const result of results) {
           if (result.status === 'rejected') console.warn('订阅推荐状态失败', result.reason);
-          else if (disposed) result.value();
+          else if (lifecycle.disposed) result.value();
           else unlisteners.push(result.value);
         }
         reload();
       });
     } else reload();
     return () => {
-      disposed = true;
+      lifecycle.disposed = true;
       requestIdRef.current += 1;
       loadAbortRef.current?.abort();
       unlisteners.forEach((unlisten) => unlisten());

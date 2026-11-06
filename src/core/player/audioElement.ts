@@ -164,6 +164,7 @@ export const createManagedAudioElement = (options: CreateAudioOptions): HTMLAudi
     oldAudio.pause();
     oldAudio.removeAttribute("src");
     detachAudioHandlers(oldAudio, refs.handlers.current);
+    oldAudio.load();
   }
   resetAudioContext(runtime);
 

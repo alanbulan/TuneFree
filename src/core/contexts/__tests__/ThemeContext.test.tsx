@@ -212,7 +212,7 @@ describe('ThemeContext 主题下发', () => {
     expect(readVar('--accent')).toBe('#aabbcc');
 
     act(() => api?.setLyricSize(999));
-    expect(readVar('--lyric-font-size')).toBe('36px');
-    expect(localStorage.getItem(THEME_STORAGE_KEYS.lyricSize)).toBe('36');
+    expect(readVar('--lyric-font-size')).toBe('64px');
+    expect(localStorage.getItem(THEME_STORAGE_KEYS.lyricSize)).toBe('64');
   });
 });

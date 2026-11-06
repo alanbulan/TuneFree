@@ -114,19 +114,19 @@ export function DownloadProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!isTauri()) return;
 
-    let cancelled = false;
+    const lifecycle = { cancelled: false };
     let unlisten: UnlistenFn | undefined;
 
     void listenEvent('download-progress', (payload) => {
-      if (cancelled || !isDownloadProgressForTask(payload, activeTaskIdRef.current)) return;
+      if (lifecycle.cancelled || !isDownloadProgressForTask(payload, activeTaskIdRef.current)) return;
       setDownloadProgress(payload.progress);
     }).then((unlistenFn) => {
-      if (cancelled) unlistenFn();
+      if (lifecycle.cancelled) unlistenFn();
       else unlisten = unlistenFn;
     }).catch((error: unknown) => console.warn('订阅下载进度失败', error));
 
     return () => {
-      cancelled = true;
+      lifecycle.cancelled = true;
       unlisten?.();
     };
   }, []);

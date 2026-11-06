@@ -59,11 +59,11 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
       });
     };
     scrollActiveLyric(isInitialScroll || reducedMotion ? 'auto' : 'smooth');
-    let dimensions = `${container.clientWidth}:${container.clientHeight}:${activeEl.offsetHeight}`;
+    const measured = { dimensions: `${container.clientWidth}:${container.clientHeight}:${activeEl.offsetHeight}` };
     const observer = new ResizeObserver(() => {
       const next = `${container.clientWidth}:${container.clientHeight}:${activeEl.offsetHeight}`;
-      if (next === dimensions) return;
-      dimensions = next;
+      if (next === measured.dimensions) return;
+      measured.dimensions = next;
       scrollActiveLyric('auto');
     });
     observer.observe(container);

@@ -827,6 +827,34 @@ describe('LxSandbox', () => {
     expect(lastOf(controls.posted)).toEqual({ kind: 'reply', callId: 'r-cancel', error: '请求已取消' });
   });
 
+  it('请求洪峰保持有界队列，取消时清空等待任务，不会在后台继续发起请求', async () => {
+    const started: AbortSignal[] = [];
+    const { sandbox, controls } = await mountSandbox(undefined, {
+      relay: (_payload, signal) => new Promise((_resolve, reject) => {
+        started.push(signal!);
+        signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
+      }),
+    });
+    for (let index = 0; index < 1000; index += 1) {
+      controls.emit({ kind: 'request', callId: `burst-${index}`,
+        payload: { url: 'https://a.test/slow', method: 'GET', headers: {}, bodyBase64: '' } });
+    }
+    expect(started).toHaveLength(6);
+    expect(controls.posted.filter(message => message.kind === 'reply' && message.error?.includes('队列已满'))).toHaveLength(930);
+    sandbox.abortActiveRequests();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(started.every(signal => signal.aborted)).toBe(true);
+    expect(started).toHaveLength(6);
+    expect(controls.posted.filter(message => message.kind === 'reply')).toHaveLength(1000);
+    controls.emit({ kind: 'request', callId: 'after-cancel',
+      payload: { url: 'https://a.test/next', method: 'GET', headers: {}, bodyBase64: '' } });
+    expect(started).toHaveLength(7);
+    sandbox.dispose();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(started.every(signal => signal.aborted)).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('源请求：并发超过上限时排队执行', async () => {
     const started: string[] = [];
     const resolvers: Array<() => void> = [];

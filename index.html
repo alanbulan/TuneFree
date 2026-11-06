@@ -106,8 +106,8 @@
           root.style.setProperty('--accent-soft', 'rgba(' + accentRgb + ',.12)');
 
           var size = parseInt(read(KEYS.size), 10);
-          if (!isFinite(size)) size = 22;
-          root.style.setProperty('--lyric-font-size', Math.max(14, Math.min(36, size)) + 'px');
+          if (!isFinite(size) || (size === 22 && read('tunefree_lyric_size_revision') !== '2')) size = 32;
+          root.style.setProperty('--lyric-font-size', Math.max(14, Math.min(64, size)) + 'px');
           var font = read(KEYS.font);
           font = font && FONTS.indexOf(font.trim()) >= 0 ? font.trim() : 'system-ui';
           root.style.setProperty('--lyric-font-family', font);

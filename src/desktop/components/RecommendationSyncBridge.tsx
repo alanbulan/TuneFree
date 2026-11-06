@@ -18,29 +18,28 @@ export function RecommendationSyncBridge() {
 
   useEffect(() => {
     if (!isTauri()) return;
-    let disposed = false;
-    let availabilityRequest = 0;
+    const lifecycle = { disposed: false, availabilityRequest: 0 };
     let unlisten: (() => void) | undefined;
     const refresh = () => {
-      const request = ++availabilityRequest;
+      const request = ++lifecycle.availabilityRequest;
       syncVersionRef.current += 1;
       syncedMembershipsRef.current = null;
       void getLlmConfig().then((config) => {
-        if (disposed || request !== availabilityRequest) return;
+        if (lifecycle.disposed || request !== lifecycle.availabilityRequest) return;
         setEnabled(config.localRecommendationEnabled);
         setRevision(syncVersionRef.current);
       }).catch((error: unknown) => {
-        if (!disposed && toIpcError(error).code !== 'BUSY') console.warn('读取推荐同步状态失败', error);
+        if (!lifecycle.disposed && toIpcError(error).code !== 'BUSY') console.warn('读取推荐同步状态失败', error);
       });
     };
     window.addEventListener(RECOMMENDATION_CHANGED_EVENT, refresh);
     void listenEvent('recommendation-ready', refresh).then((dispose) => {
-      if (disposed) { dispose(); return; }
+      if (lifecycle.disposed) { dispose(); return; }
       unlisten = dispose;
       refresh();
     }).catch((error: unknown) => { console.warn('订阅推荐就绪事件失败', error); refresh(); });
     return () => {
-      disposed = true;
+      lifecycle.disposed = true;
       unlisten?.();
       window.removeEventListener(RECOMMENDATION_CHANGED_EVENT, refresh);
     };
@@ -48,9 +47,9 @@ export function RecommendationSyncBridge() {
 
   useEffect(() => {
     if (!enabled) return;
-    let cancelled = false;
+    const lifecycle = { cancelled: false };
     const syncVersion = revision;
-    const isObsolete = () => cancelled || syncVersion !== syncVersionRef.current;
+    const isObsolete = () => lifecycle.cancelled || syncVersion !== syncVersionRef.current;
     const syncedPlaylists = playlists.filter((playlist) => playlist.id !== 'favorites');
     const nextMemberships = buildRecommendationMemberships(favorites, syncedPlaylists);
     syncQueueRef.current = syncQueueRef.current
@@ -89,7 +88,7 @@ export function RecommendationSyncBridge() {
         syncedMembershipsRef.current = null;
         if (toIpcError(error).code !== 'BUSY') console.warn('曲库推荐同步失败', error);
       });
-    return () => { cancelled = true; };
+    return () => { lifecycle.cancelled = true; };
   }, [enabled, favorites, playlists, revision]);
 
   return null;

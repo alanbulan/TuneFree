@@ -149,7 +149,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // 串行同步歌词窗口显隐，避免快速关闭/重开时旧命令覆盖最新状态。
   useEffect(() => {
     if (!isTauri()) return;
-    let cancelled = false;
+    const lifecycle = { cancelled: false };
 
     desktopLyricCommandQueue.current = desktopLyricCommandQueue.current.catch(() => {}).then(async () => {
       try {
@@ -160,14 +160,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         console.error('Tauri window management failed:', err);
-        if (showDesktopLyric && !cancelled) {
+        if (showDesktopLyric && !lifecycle.cancelled) {
           setDesktopLyricError(`桌面歌词未能打开：${toIpcError(err).message}`);
           setShowDesktopLyricState(false);
           localStorage.setItem(THEME_STORAGE_KEYS.showDesktopLyric, 'false');
         }
       }
     });
-    return () => { cancelled = true; };
+    return () => { lifecycle.cancelled = true; };
   }, [showDesktopLyric]);
 
   // 锁定变化只更新焦点和鼠标穿透，不触发布局恢复或窗口显隐。
