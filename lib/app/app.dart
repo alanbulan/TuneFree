@@ -76,6 +76,7 @@ class _SystemChromeSyncState extends State<_SystemChromeSync> {
       SystemUiOverlayStyle(
         statusBarColor: colors.background,
         statusBarIconBrightness: iconBrightness,
+        statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
         systemNavigationBarColor: colors.background,
         systemNavigationBarIconBrightness: iconBrightness,
       ),
