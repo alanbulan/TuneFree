@@ -13,8 +13,7 @@ abstract class NeteaseClient {
 }
 
 final class ReactNeteaseClient implements NeteaseClient {
-  ReactNeteaseClient({required SourceHttpClient httpClient})
-    : _httpClient = httpClient;
+  ReactNeteaseClient({required this._httpClient});
 
   static const _limit = 30;
 

@@ -24,7 +24,7 @@ final appearanceControllerProvider =
     });
 
 final class AppearanceController extends ChangeNotifier {
-  AppearanceController({required AppearanceStore store}) : _store = store;
+  AppearanceController({required this._store});
 
   final AppearanceStore _store;
 

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
+    <!-- 自定义 API 可使用局域网 HTTP 服务。 -->
+    <base-config cleartextTrafficPermitted="true"/>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">kuwo.cn</domain>
     </domain-config>

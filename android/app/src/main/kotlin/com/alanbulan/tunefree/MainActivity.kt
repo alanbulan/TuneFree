@@ -11,6 +11,8 @@ import android.view.WindowManager
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodChannel
+import java.net.InetAddress
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
@@ -22,6 +24,7 @@ class MainActivity : AudioServiceActivity() {
     private var visualizer: Visualizer? = null
     private var pendingAudioSessionId: Int? = null
     private var pendingEventSink: EventChannel.EventSink? = null
+    private val pendingLocalNetworkResults = mutableListOf<MethodChannel.Result>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,6 +70,16 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            LOCAL_NETWORK_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            if (call.method == "ensureAccess") {
+                ensureLocalNetworkAccess(call.argument<String>("host").orEmpty(), result)
+            } else {
+                result.notImplemented()
+            }
+        }
         EventChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             AUDIO_SPECTRUM_CHANNEL,
@@ -94,6 +107,13 @@ class MainActivity : AudioServiceActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LOCAL_NETWORK_REQUEST_CODE) {
+            val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+            val results = pendingLocalNetworkResults.toList()
+            pendingLocalNetworkResults.clear()
+            results.forEach { it.success(granted) }
+            return
+        }
         if (requestCode != RECORD_AUDIO_REQUEST_CODE) {
             return
         }
@@ -112,6 +132,56 @@ class MainActivity : AudioServiceActivity() {
                 null,
             )
         }
+    }
+
+    private fun ensureLocalNetworkAccess(host: String, result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < 37 ||
+            checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            result.success(true)
+            return
+        }
+
+        // 私有地址和本地域名才申请权限；普通互联网 API 无需弹窗。
+        Thread {
+            val isLocal = host.equals("localhost", ignoreCase = true) ||
+                host.endsWith(".local", ignoreCase = true) ||
+                try {
+                    InetAddress.getAllByName(host).any { address ->
+                        address.isLoopbackAddress || address.isSiteLocalAddress ||
+                            address.isLinkLocalAddress || address.isMulticastAddress ||
+                            (address.address.size == 16 &&
+                                (address.address[0].toInt() and 0xfe) == 0xfc)
+                    }
+                } catch (_: Exception) {
+                    false
+                }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) {
+                    result.success(false)
+                } else if (!isLocal ||
+                    checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) ==
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    result.success(true)
+                } else {
+                    pendingLocalNetworkResults.add(result)
+                    if (pendingLocalNetworkResults.size == 1) {
+                        requestPermissions(
+                            arrayOf(Manifest.permission.ACCESS_LOCAL_NETWORK),
+                            LOCAL_NETWORK_REQUEST_CODE,
+                        )
+                    }
+                }
+            }
+        }.start()
+    }
+
+    override fun onDestroy() {
+        pendingLocalNetworkResults.forEach { it.success(false) }
+        pendingLocalNetworkResults.clear()
+        super.onDestroy()
     }
 
     private fun startVisualizerWhenAllowed(
@@ -287,6 +357,8 @@ class MainActivity : AudioServiceActivity() {
 
     companion object {
         private const val AUDIO_SPECTRUM_CHANNEL = "tunefree/audio_spectrum"
+        private const val LOCAL_NETWORK_CHANNEL = "tunefree/local_network"
+        private const val LOCAL_NETWORK_REQUEST_CODE = 9322
         private const val RECORD_AUDIO_REQUEST_CODE = 9321
         private const val BAR_COUNT = 48
         private const val FREQUENCY_DISTRIBUTION_CURVE = 0.82

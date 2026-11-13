@@ -18,14 +18,14 @@ class TechStackEntry {
 
 /// 关于页渲染的技术栈，顺序即展示顺序。
 const List<TechStackEntry> kTechStack = <TechStackEntry>[
-  TechStackEntry(name: 'Flutter', detail: '跨平台 UI 框架', version: '3.47.3'),
-  TechStackEntry(name: 'Dart', detail: '语言与运行时', version: '3.13.3'),
-  TechStackEntry(name: 'Riverpod', detail: '状态管理', version: '3.4.3'),
-  TechStackEntry(name: 'go_router', detail: '页面路由', version: '18.0.1'),
-  TechStackEntry(name: 'Material UI', detail: '组件库', version: '1.2.0'),
+  TechStackEntry(name: 'Flutter', detail: '跨平台 UI 框架', version: '3.50.0'),
+  TechStackEntry(name: 'Dart', detail: '语言与运行时', version: '3.14.0'),
+  TechStackEntry(name: 'Riverpod', detail: '状态管理', version: '3.5.0'),
+  TechStackEntry(name: 'go_router', detail: '页面路由', version: '18.1.4'),
+  TechStackEntry(name: 'Material UI', detail: '组件库', version: '1.11.0'),
   TechStackEntry(name: 'just_audio', detail: '音频播放', version: '0.10.6'),
   TechStackEntry(name: 'audio_service', detail: '后台播放与媒体会话', version: '0.18.19'),
   TechStackEntry(name: 'Dio', detail: '网络请求', version: '5.11.1'),
-  TechStackEntry(name: 'shared_preferences', detail: '本地配置', version: '2.5.5'),
+  TechStackEntry(name: 'shared_preferences', detail: '本地配置', version: '2.5.6'),
   TechStackEntry(name: 'path_provider', detail: '文件路径', version: '2.1.6'),
 ];

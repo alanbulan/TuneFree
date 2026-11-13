@@ -3,29 +3,34 @@ name: Android Release
 on:
   push:
     branches:
-      - main
       - flutter
     tags:
-      - 'v*'
+      - 'mobile-v*'
   pull_request:
     branches:
-      - main
       - flutter
   workflow_dispatch:
     inputs:
-      bump_version:
-        description: 'Auto-bump patch version and publish release'
+      release_tag:
+        description: 'Existing mobile-v* tag to publish; leave empty for a build only'
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   android:
     name: Build Android APK
     runs-on: ubuntu-latest
+    env:
+      # Public signing-certificate fingerprint from the previous official APK.
+      ANDROID_RELEASE_CERT_SHA256: 5794243c2c473cc2860c1bd56865261e0a404e67ba719244475c732fb34dfdc3
 
     steps:
       - name: Check out repository
@@ -33,53 +38,95 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Bump version
-        if: github.event.inputs.bump_version == 'true' || startsWith(github.ref, 'refs/tags/v')
-        id: bump
+      - name: Resolve version and validate release tag
+        id: release
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.release_tag }}
         run: |
-          # Read current version from pubspec.yaml
-          current=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d '\r')
-          version_name="${current%%+*}"
-          build_number="${current#*+}"
-
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            # Tag push: use tag as version
-            new_version="${GITHUB_REF_NAME#v}"
-            new_build=$((build_number + 1))
-          else
-            # workflow_dispatch bump: increment patch
-            IFS='.' read -r major minor patch <<< "$version_name"
-            new_version="${major}.${minor}.$((patch + 1))"
-            new_build=$((build_number + 1))
+          set -euo pipefail
+          current=$(sed -n 's/^version: //p' pubspec.yaml | tr -d '\r')
+          if [[ ! "$current" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)$ ]]; then
+            echo 'pubspec.yaml requires a stable version and build number.' >&2
+            exit 1
           fi
+          version="${BASH_REMATCH[1]}"
+          build="${BASH_REMATCH[2]}"
+          tag=""
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            tag="$GITHUB_REF_NAME"
+          elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && -n "$REQUESTED_TAG" ]]; then
+            tag="$REQUESTED_TAG"
+          fi
+          publish=false
+          notes=""
+          if [[ -n "$tag" ]]; then
+            if [[ "$tag" != "mobile-v$version" ]]; then
+              echo 'The mobile release tag must match the committed app version.' >&2
+              exit 1
+            fi
+            tag_commit=$(git rev-parse "refs/tags/$tag^{commit}")
+            if [[ "$tag_commit" != "$(git rev-parse HEAD)" ]]; then
+              echo 'Run the workflow on the commit referenced by the release tag.' >&2
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$tag_commit" origin/flutter; then
+              echo 'Mobile releases must come from the flutter branch.' >&2
+              exit 1
+            fi
+            notes="docs/releases/$tag.md"
+            test -s "$notes"
+            publish=true
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "notes=$notes" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
 
-          echo "version=${new_version}" >> "$GITHUB_OUTPUT"
-          echo "build=${new_build}" >> "$GITHUB_OUTPUT"
-          echo "full=${new_version}+${new_build}" >> "$GITHUB_OUTPUT"
-
-          # Update pubspec.yaml
-          sed -i "s/^version: .*/version: ${new_version}+${new_build}/" pubspec.yaml
-          echo "Bumped to ${new_version}+${new_build}"
+      - name: Require official release signing
+        if: steps.release.outputs.publish == 'true'
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for key in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!key}" ]]; then
+              echo "Missing required release signing secret: $key" >&2
+              exit 1
+            fi
+          done
 
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '25'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          # 钉死版本：之前只写 channel: stable，工具链会在无人察觉的情况下漂移
-          # （分支曾从 3.44 一路漂到 3.47.3 而没有任何记录）。
-          flutter-version: 3.47.3
+          # Keep the SDK, dependency lock and golden baselines reproducible.
+          flutter-version: 3.50.0
           cache: true
 
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
-      # 关于页的技术栈版本由 lib/core/build_info.g.dart 提供。这一步确保
-      # 「改了依赖却忘了重新生成」会明确失败，而不是让关于页悄悄显示旧版本。
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '16111833'
+          packages: 'platform-tools'
+          log-accepted-android-sdk-licenses: false
+
+      - name: Install Android SDK components
+        run: sdkmanager "platforms;android-37.2" "build-tools;37.0.0" "ndk;30.0.16248370"
+
       - name: Check generated build info is up to date
         run: dart run tool/generate_build_info.dart --check
 
@@ -92,42 +139,93 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
         env:
+          TUNEFREE_REQUIRE_RELEASE_SIGNING: ${{ steps.release.outputs.publish }}
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      - name: Prepare APK asset
+      - name: Verify official APK signature and version
+        if: steps.release.outputs.publish == 'true'
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_BUILD: ${{ steps.release.outputs.build }}
         run: |
-          version="${{ steps.bump.outputs.version }}"
-          if [ -z "$version" ]; then
+          set -euo pipefail
+          tools="$ANDROID_HOME/build-tools/37.0.0"
+          apk="build/app/outputs/flutter-apk/app-release.apk"
+          "$tools/apksigner" verify --verbose --print-certs "$apk" | tee build/apk-signature.txt
+          grep -Fq "certificate SHA-256 digest: $ANDROID_RELEASE_CERT_SHA256" build/apk-signature.txt
+          "$tools/aapt" dump badging "$apk" > build/apk-badging.txt
+          grep -Fq "package: name='com.alanbulan.tunefree' versionCode='$RELEASE_BUILD' versionName='$RELEASE_VERSION'" build/apk-badging.txt
+          grep -Fxq "targetSdkVersion:'37'" build/apk-badging.txt
+
+      - name: Prepare APK and checksum assets
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          PUBLISH: ${{ steps.release.outputs.publish }}
+        run: |
+          set -euo pipefail
+          version="$RELEASE_VERSION"
+          if [[ "$PUBLISH" != true ]]; then
             version="snapshot-${GITHUB_SHA::7}"
           fi
-          cp build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/tunefree-${version}.apk"
-          echo "APK_PATH=build/app/outputs/flutter-apk/tunefree-${version}.apk" >> "$GITHUB_ENV"
+          mkdir -p build/release-assets
+          cp build/app/outputs/flutter-apk/app-release.apk "build/release-assets/tunefree-$version.apk"
+          cd build/release-assets
+          sha256sum "tunefree-$version.apk" > SHA256SUMS
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: tunefree-android-apk
-          path: ${{ env.APK_PATH }}
+          path: build/release-assets/*
+          if-no-files-found: error
 
-      - name: Commit version bump and tag
-        if: steps.bump.outputs.version != ''
+      - name: Check release has not already been published
+        if: steps.release.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pubspec.yaml
-          git commit -m "release: v${{ steps.bump.outputs.version }} [skip ci]"
-          git tag "v${{ steps.bump.outputs.version }}"
-          git push origin HEAD --tags
+          set -euo pipefail
+          if release=$(gh release view "$RELEASE_TAG" --json isDraft); then
+            test "$(jq -r '.isDraft' <<< "$release")" = true
+          fi
 
-      - name: Publish GitHub Release
-        if: steps.bump.outputs.version != ''
+      - name: Upload to draft GitHub Release
+        if: steps.release.outputs.publish == 'true'
+        id: draft
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.bump.outputs.version }}
-          name: TuneFree Mobile v${{ steps.bump.outputs.version }}
-          files: ${{ env.APK_PATH }}
-          generate_release_notes: true
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: TuneFree Mobile v${{ steps.release.outputs.version }}
+          body_path: ${{ steps.release.outputs.notes }}
+          draft: true
+          prerelease: false
+          make_latest: 'false'
+          fail_on_unmatched_files: true
+          files: build/release-assets/*
+
+      - name: Verify uploaded assets and publish
+        if: steps.release.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          RELEASE_ID: ${{ steps.draft.outputs.id }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > build/github-release.json
+          jq -e --arg apk "tunefree-$RELEASE_VERSION.apk" \
+            '[.assets[] | select((.name == $apk or .name == "SHA256SUMS") and .size > 0)] | length == 2' \
+            build/github-release.json
+          gh release download "$RELEASE_TAG" --dir build/uploaded-assets
+          (cd build/uploaded-assets && sha256sum --check SHA256SUMS)
+          cmp "build/release-assets/tunefree-$RELEASE_VERSION.apk" "build/uploaded-assets/tunefree-$RELEASE_VERSION.apk"
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            -F draft=false -F prerelease=false -f make_latest=false

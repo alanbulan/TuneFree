@@ -66,10 +66,9 @@ final class NeteaseLyricTracks {
 
 final class NeteaseLyricClient {
   NeteaseLyricClient({
-    required Dio dio,
-    String apiBase = defaultNeteaseLyricApiBase,
-  }) : _dio = dio,
-       _apiBase = apiBase;
+    required this._dio,
+    this._apiBase = defaultNeteaseLyricApiBase,
+  });
 
   final Dio _dio;
   final String _apiBase;

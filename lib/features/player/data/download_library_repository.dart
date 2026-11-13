@@ -56,19 +56,13 @@ const Duration _trashMaxAge = Duration(days: 7);
 
 class DownloadLibraryRepository {
   const DownloadLibraryRepository({
-    required DownloadRecordStore recordStore,
-    required Future<bool> Function(String path) fileExists,
-    required Future<void> Function(String path) deleteFile,
-    required Future<String> Function() trashDirectoryPath,
-    required Future<void> Function({required String from, required String to})
-    moveFile,
-    required Future<List<String>> Function(String directory) listFiles,
-  }) : _recordStore = recordStore,
-       _fileExists = fileExists,
-       _deleteFile = deleteFile,
-       _trashDirectoryPath = trashDirectoryPath,
-       _moveFile = moveFile,
-       _listFiles = listFiles;
+    required this._recordStore,
+    required this._fileExists,
+    required this._deleteFile,
+    required this._trashDirectoryPath,
+    required this._moveFile,
+    required this._listFiles,
+  });
 
   final DownloadRecordStore _recordStore;
   final Future<bool> Function(String path) _fileExists;
