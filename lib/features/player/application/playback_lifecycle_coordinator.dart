@@ -47,20 +47,14 @@ final class PlaybackLifecycleCoordinator {
   PlaybackLifecycleCoordinator({
     required Stream<MediaSessionRemoteCommand> remoteCommands,
     required PlaybackLifecycleEventSource eventSource,
-    required PlaybackStateReader isPlaying,
-    required PlaybackAction onPlay,
-    required PlaybackAction onPause,
-    required PlaybackAction onStop,
-    required PlaybackAction onSkipNext,
-    required PlaybackAction onSkipPrevious,
-    required PlaybackSeekAction onSeek,
-  }) : _isPlaying = isPlaying,
-       _onPlay = onPlay,
-       _onPause = onPause,
-       _onStop = onStop,
-       _onSkipNext = onSkipNext,
-       _onSkipPrevious = onSkipPrevious,
-       _onSeek = onSeek {
+    required this._isPlaying,
+    required this._onPlay,
+    required this._onPause,
+    required this._onStop,
+    required this._onSkipNext,
+    required this._onSkipPrevious,
+    required this._onSeek,
+  }) {
     _subscriptions.addAll([
       remoteCommands.listen(
         (command) => _enqueue(() => _handleRemoteCommand(command)),

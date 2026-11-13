@@ -4,8 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 // Riverpod 3 把 ChangeNotifierProvider 移出了主流出口，只在 legacy.dart 里提供。
 import 'package:flutter_riverpod/legacy.dart';
 
-import '../../../core/network/source_http_client.dart';
-import '../../../core/network/tune_free_http_client.dart';
+import '../../../core/network/music_api_providers.dart';
 import '../../../core/source_clients/kuwo_client.dart';
 import '../../../core/source_clients/netease_client.dart';
 import '../../../core/source_clients/qq_client.dart';
@@ -14,26 +13,20 @@ import '../data/remote_top_list_repository.dart';
 import '../data/top_list_repository.dart';
 import 'home_controller.dart';
 
-final _sourceHttpClientProvider = Provider<SourceHttpClient>((ref) {
-  final libraryController = ref.watch(libraryControllerProvider);
-  return SourceHttpClient(
-    httpClient: TuneFreeHttpClient(),
-    corsProxyProvider: () => libraryController.state.corsProxy,
+final _neteaseClientProvider = Provider<NeteaseClient>((ref) {
+  return ReactNeteaseClient(
+    httpClient: ref.watch(musicSourceHttpClientProvider),
   );
 });
 
-final _neteaseClientProvider = Provider<NeteaseClient>((ref) {
-  return ReactNeteaseClient(httpClient: ref.watch(_sourceHttpClientProvider));
-});
-
 final _qqClientProvider = Provider<QqClient>((ref) {
-  return ReactQqClient(httpClient: ref.watch(_sourceHttpClientProvider));
+  return ReactQqClient(httpClient: ref.watch(musicSourceHttpClientProvider));
 });
 
 final _kuwoClientProvider = Provider<KuwoClient>((ref) {
-  final libraryController = ref.watch(libraryControllerProvider);
+  final libraryController = ref.watch(libraryControllerProvider.notifier);
   return ReactKuwoClient(
-    httpClient: ref.watch(_sourceHttpClientProvider),
+    httpClient: ref.watch(musicSourceHttpClientProvider),
     corsProxyProvider: () => libraryController.state.corsProxy,
   );
 });

@@ -2,8 +2,7 @@ import java.util.Base64
 
 plugins {
     id("com.android.application")
-    id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    // The Flutter Gradle Plugin must be applied after the Android Gradle plugin.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -18,6 +17,10 @@ val hasReleaseSigning =
         !releaseKeyAlias.isNullOrBlank() &&
         !releaseKeyPassword.isNullOrBlank()
 
+if (System.getenv("TUNEFREE_REQUIRE_RELEASE_SIGNING") == "true" && !hasReleaseSigning) {
+    throw GradleException("Official Android releases require all four ANDROID signing secrets.")
+}
+
 if (hasReleaseSigning) {
     releaseKeystoreFile.parentFile.mkdirs()
     releaseKeystoreFile.writeBytes(Base64.getDecoder().decode(releaseKeystoreBase64!!))
@@ -25,16 +28,14 @@ if (hasReleaseSigning) {
 
 android {
     namespace = "com.alanbulan.tunefree"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    compileSdk = 37
+    compileSdkMinor = 2
+    buildToolsVersion = "37.0.0"
+    ndkVersion = "30.0.16248370"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
     defaultConfig {
@@ -43,7 +44,7 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 37
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -65,6 +66,12 @@ android {
                 if (hasReleaseSigning) "release" else "debug"
             )
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 

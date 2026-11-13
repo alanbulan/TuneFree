@@ -42,7 +42,7 @@ const List<_Entry> _curated = <_Entry>[
 ];
 
 /// Flutter / Dart 不在 pubspec.lock 里（lock 只锁依赖），改从 SDK 自己问。
-/// 两个 workflow 都把 Flutter 钉死在 3.47.3，所以这里的结果是可复现的。
+/// 两个 workflow 都把 Flutter 钉死在 3.50.0，所以这里的结果是可复现的。
 Future<List<(String, String, String)>> _sdkEntries() async {
   final result = await Process.run(
     'flutter',

@@ -34,16 +34,9 @@ const _fallbackSong = Song(
 
 final class FakeSearchRepository implements RemoteSearchRepository {
   FakeSearchRepository({
-    Future<List<Song>> Function(String keyword, {required int page})?
-    aggregateSearch,
-    Future<List<Song>> Function(
-      String keyword, {
-      required String source,
-      required int page,
-    })?
-    singleSearch,
-  }) : _aggregateSearch = aggregateSearch,
-       _singleSearch = singleSearch;
+    this._aggregateSearch,
+    this._singleSearch,
+  });
 
   final Future<List<Song>> Function(String keyword, {required int page})?
   _aggregateSearch;

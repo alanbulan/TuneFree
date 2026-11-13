@@ -76,12 +76,10 @@ final class JustAudioPlayerAdapter implements AudioPlayerAdapter {
 
 final class JustAudioPlayerEngine implements PlayerEngine {
   JustAudioPlayerEngine._({
-    required MediaSessionAdapter mediaSessionAdapter,
-    AudioPlayerAdapter? audioPlayer,
-    bool testMode = false,
-  }) : _mediaSessionAdapter = mediaSessionAdapter,
-       _audioPlayer = audioPlayer,
-       _testMode = testMode {
+    required this._mediaSessionAdapter,
+    this._audioPlayer,
+    this._testMode = false,
+  }) {
     if (!_testMode && _audioPlayer != null) {
       _bindAudioPlayerStreams();
     }

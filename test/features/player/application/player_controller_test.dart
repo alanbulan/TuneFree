@@ -17,9 +17,7 @@ import 'package:tunefree/features/search/application/search_providers.dart';
 import 'package:tunefree/features/search/data/remote_search_repository.dart';
 
 class FakePlayerEngine implements PlayerEngine {
-  FakePlayerEngine({Completer<void>? loadCompleter, int? delayedLoadCall})
-    : _loadCompleter = loadCompleter,
-      _delayedLoadCall = delayedLoadCall;
+  FakePlayerEngine({this._loadCompleter, this._delayedLoadCall});
 
   final _controller = StreamController<PlayerEngineSnapshot>.broadcast();
   final Completer<void>? _loadCompleter;
@@ -957,6 +955,11 @@ void main() {
         playerPreferencesStoreProvider.overrideWithValue(
           TestPlayerPreferencesStore(),
         ),
+        songResolutionRepositoryProvider.overrideWithValue(
+          SongResolutionRepository.test(
+            resolveSongValue: (song, _) async => song,
+          ),
+        ),
         localPlaybackResolverProvider.overrideWithValue(
           LocalPlaybackResolver(
             recordsForSong: (songKey) async => const <DownloadRecord>[],
@@ -1157,37 +1160,34 @@ void main() {
     },
   );
 
-  test(
-    'setPlaybackQuality forwards async engine errors without reverting local state',
-    () async {
-      final fakeEngine = FakePlayerEngine()
-        ..setAudioQualityError = StateError('quality failed');
-      final container = ProviderContainer(
-        overrides: [
-          playerEngineProvider.overrideWithValue(fakeEngine),
-          mediaSessionAdapterProvider.overrideWithValue(
-            NoopMediaSessionAdapter(),
-          ),
-          playerPreferencesStoreProvider.overrideWithValue(
-            TestPlayerPreferencesStore(),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
+  test('setPlaybackQuality forwards async engine errors without reverting local state', () async {
+    final fakeEngine = FakePlayerEngine()
+      ..setAudioQualityError = StateError('quality failed');
+    final container = ProviderContainer(
+      overrides: [
+        playerEngineProvider.overrideWithValue(fakeEngine),
+        mediaSessionAdapterProvider.overrideWithValue(
+          NoopMediaSessionAdapter(),
+        ),
+        playerPreferencesStoreProvider.overrideWithValue(
+          TestPlayerPreferencesStore(),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
 
-      final controller = container.read(playerControllerProvider.notifier);
+    final controller = container.read(playerControllerProvider.notifier);
 
-      await expectLater(
-        controller.setPlaybackQuality(AudioQuality.flac),
-        throwsA(isA<StateError>()),
-      );
+    await expectLater(
+      controller.setPlaybackQuality(AudioQuality.flac),
+      throwsA(isA<StateError>()),
+    );
 
-      expect(
-        container.read(playerControllerProvider).playbackQuality,
-        AudioQuality.flac,
-      );
-    },
-  );
+    expect(
+      container.read(playerControllerProvider).playbackQuality,
+      AudioQuality.flac,
+    );
+  });
 
   test(
     'controller clears currentTrack when engine snapshot clears currentSong',
@@ -1235,61 +1235,58 @@ void main() {
     },
   );
 
-  test(
-    'clearQueue ignores stale engine snapshots that still reference the cleared song',
-    () async {
-      final fakeEngine = FakePlayerEngine();
-      final store = TestPlayerPreferencesStore();
-      final container = ProviderContainer(
-        overrides: [
-          playerEngineProvider.overrideWithValue(fakeEngine),
-          mediaSessionAdapterProvider.overrideWithValue(
-            NoopMediaSessionAdapter(),
-          ),
-          playerPreferencesStoreProvider.overrideWithValue(store),
-          localPlaybackResolverProvider.overrideWithValue(
-            LocalPlaybackResolver(
-              recordsForSong: (songKey) async => const <DownloadRecord>[],
-              fileExists: (path) async => false,
-              removeRecord: ({required songKey, required quality}) async {},
-            ),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
-
-      const track = PlayerTrack(
-        id: 'stale-track',
-        source: 'demo',
-        title: 'Stale Track',
-        artist: 'TuneFree',
-      );
-
-      final controller = container.read(playerControllerProvider.notifier);
-
-      await controller.openTrack(track, queue: const [track]);
-      await Future<void>.delayed(Duration.zero);
-      await controller.clearQueue();
-      await Future<void>.delayed(Duration.zero);
-
-      fakeEngine._controller.add(
-        fakeEngine.latestSnapshot.copyWith(
-          currentSong: Song(
-            id: 'stale-track',
-            name: 'Stale Track',
-            artist: 'TuneFree',
-            source: MusicSource('demo'),
+  test('clearQueue ignores stale engine snapshots that still reference the cleared song', () async {
+    final fakeEngine = FakePlayerEngine();
+    final store = TestPlayerPreferencesStore();
+    final container = ProviderContainer(
+      overrides: [
+        playerEngineProvider.overrideWithValue(fakeEngine),
+        mediaSessionAdapterProvider.overrideWithValue(
+          NoopMediaSessionAdapter(),
+        ),
+        playerPreferencesStoreProvider.overrideWithValue(store),
+        localPlaybackResolverProvider.overrideWithValue(
+          LocalPlaybackResolver(
+            recordsForSong: (songKey) async => const <DownloadRecord>[],
+            fileExists: (path) async => false,
+            removeRecord: ({required songKey, required quality}) async {},
           ),
         ),
-      );
-      await Future<void>.delayed(Duration.zero);
+      ],
+    );
+    addTearDown(container.dispose);
 
-      final state = container.read(playerControllerProvider);
-      expect(state.currentTrack, isNull);
-      expect(state.queue, isEmpty);
-      expect(store.currentSong, isNull);
-      expect(store.queue, isEmpty);
-      expect(fakeEngine.clearCalls, 1);
-    },
-  );
+    const track = PlayerTrack(
+      id: 'stale-track',
+      source: 'demo',
+      title: 'Stale Track',
+      artist: 'TuneFree',
+    );
+
+    final controller = container.read(playerControllerProvider.notifier);
+
+    await controller.openTrack(track, queue: const [track]);
+    await Future<void>.delayed(Duration.zero);
+    await controller.clearQueue();
+    await Future<void>.delayed(Duration.zero);
+
+    fakeEngine._controller.add(
+      fakeEngine.latestSnapshot.copyWith(
+        currentSong: Song(
+          id: 'stale-track',
+          name: 'Stale Track',
+          artist: 'TuneFree',
+          source: MusicSource('demo'),
+        ),
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    final state = container.read(playerControllerProvider);
+    expect(state.currentTrack, isNull);
+    expect(state.queue, isEmpty);
+    expect(store.currentSong, isNull);
+    expect(store.queue, isEmpty);
+    expect(fakeEngine.clearCalls, 1);
+  });
 }

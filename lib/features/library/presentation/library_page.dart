@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart';
+
 import '../../../shared/theme/tune_free_palette.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:go_router/go_router.dart';
@@ -12,7 +14,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/build_info.g.dart';
 import '../../../core/models/playlist.dart';
 import '../../../core/models/song.dart';
-import '../../../core/network/source_http_client.dart';
+import '../../../core/network/music_api_controller.dart';
+import '../../../core/network/music_api_providers.dart';
 import '../../../core/network/tune_free_http_client.dart';
 import '../../../core/source_clients/kuwo_client.dart';
 import '../../../core/source_clients/netease_client.dart';
@@ -30,6 +33,7 @@ import 'widgets/library_backup_transfer.dart';
 import 'widgets/library_playlist_grid.dart';
 import 'widgets/library_song_tile.dart';
 import 'widgets/library_tab_switcher.dart';
+import 'widgets/music_api_settings_card.dart';
 import 'widgets/settings_card.dart';
 
 abstract class AboutLinkLauncher {
@@ -53,19 +57,10 @@ final appUpdateServiceProvider = Provider<AppUpdateService>((ref) {
   return AppUpdateService(httpClient: TuneFreeHttpClient());
 });
 
-final _playlistImportSourceHttpClientProvider = Provider<SourceHttpClient>((
-  ref,
-) {
-  final libraryController = ref.watch(libraryControllerProvider);
-  return SourceHttpClient(
-    httpClient: TuneFreeHttpClient(),
-    corsProxyProvider: () => libraryController.state.corsProxy,
-  );
-});
-
 final playlistImportClientProvider = Provider<PlaylistImportClient>((ref) {
-  final sourceHttpClient = ref.watch(_playlistImportSourceHttpClientProvider);
-  final libraryController = ref.watch(libraryControllerProvider);
+  final sourceHttpClient = ref.watch(musicSourceHttpClientProvider);
+  final libraryController = ref.watch(libraryControllerProvider.notifier);
+  final apiController = ref.watch(musicApiControllerProvider.notifier);
   return CompositePlaylistImportClient(
     primary: DirectPlaylistImportClient(
       neteaseClient: ReactNeteaseClient(httpClient: sourceHttpClient),
@@ -75,7 +70,10 @@ final playlistImportClientProvider = Provider<PlaylistImportClient>((ref) {
         corsProxyProvider: () => libraryController.state.corsProxy,
       ),
     ),
-    fallback: TunehubPlaylistImportClient(httpClient: TuneFreeHttpClient()),
+    fallback: TunehubPlaylistImportClient(
+      httpClient: ref.watch(musicApiHttpClientProvider),
+      settingsLoader: () => apiController.ready,
+    ),
   );
 });
 
@@ -199,6 +197,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         onSongTap: (song) =>
             _playSongQueue(song: song, queueSongs: selectedPlaylist.songs),
       ),
+      'sources' => const MusicApiSettingsCard(
+        key: ValueKey<String>('library-tab-sources'),
+      ),
       'manage' => _ManageTab(
         key: const ValueKey<String>('library-tab-manage'),
         state: state,
@@ -249,9 +250,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('已创建歌单「$name」')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('已创建歌单「$name」')));
   }
 
   Future<void> _handleImportPlaylist() async {
@@ -279,23 +279,20 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('成功导入歌单「${playlist.name}」')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('成功导入歌单「${playlist.name}」')));
     } on PlaylistImportException catch (error) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(_importErrorMessage(error))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_importErrorMessage(error))));
     } catch (_) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('导入失败，请稍后重试')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('导入失败，请稍后重试')));
     } finally {
       if (mounted) {
         final navigator = Navigator.of(context, rootNavigator: true);
@@ -326,9 +323,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('已重命名为「$name」')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('已重命名为「$name」')));
   }
 
   Future<void> _handleDeletePlaylist(Playlist playlist) async {
@@ -471,16 +467,14 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('检查更新失败，请稍后重试')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('检查更新失败，请稍后重试')));
     } catch (_) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('检查更新失败，请稍后重试')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('检查更新失败，请稍后重试')));
     } finally {
       if (mounted) {
         setState(() {
@@ -539,17 +533,15 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       final result = await OpenFilex.open(filePath);
       if (result.type != ResultType.done) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('无法打开安装包，请手动安装')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('无法打开安装包，请手动安装')));
         await ref.read(aboutLinkLauncherProvider).launch(downloadUri);
       }
     } catch (_) {
       if (!mounted) return;
       Navigator.of(context).pop(); // close progress dialog
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('下载失败，正在跳转浏览器...')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('下载失败，正在跳转浏览器...')));
       await ref.read(aboutLinkLauncherProvider).launch(downloadUri);
     }
   }
@@ -1186,23 +1178,20 @@ class _ManageTabState extends State<_ManageTab> {
       if (!context.mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('备份文件已下载')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('备份文件已下载')));
     } on UnsupportedError catch (_) {
       if (!context.mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('当前平台暂不支持导出备份文件')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('当前平台暂不支持导出备份文件')));
     } catch (_) {
       if (!context.mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('导出失败，请稍后重试')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('导出失败，请稍后重试')));
     } finally {
       if (mounted) {
         setState(() => _isExportingJson = false);
@@ -1234,9 +1223,8 @@ class _ManageTabState extends State<_ManageTab> {
       if (!context.mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('导入失败，请检查 JSON 文件格式')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('导入失败，请检查 JSON 文件格式')));
       return;
     }
 
@@ -1260,9 +1248,8 @@ class _ManageTabState extends State<_ManageTab> {
       if (!context.mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('导入失败，请稍后重试')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('导入失败，请稍后重试')));
     } finally {
       if (mounted) {
         setState(() => _isImportingJson = false);
@@ -1277,16 +1264,14 @@ class _ManageTabState extends State<_ManageTab> {
       return await widget.backupTransfer.pickJsonFileBytes();
     } on UnsupportedError catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('当前平台暂不支持导入备份文件')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('当前平台暂不支持导入备份文件')));
       }
       return null;
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('导入失败，请稍后重试')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('导入失败，请稍后重试')));
       }
       return null;
     } finally {
@@ -1400,9 +1385,8 @@ class _ManageTabState extends State<_ManageTab> {
                   if (!context.mounted) {
                     return;
                   }
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('设置已保存')));
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(const SnackBar(content: Text('设置已保存')));
                 },
                 style: FilledButton.styleFrom(
                   backgroundColor: colors.accent,
@@ -1735,7 +1719,7 @@ class _AboutTab extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '网易云、QQ音乐、酷我音乐使用直连接口；JOOX 扩展音源与播放解析由 GD音乐台 (music.gdstudio.xyz) 提供。',
+                '默认使用网易云、QQ音乐、酷我音乐直连接口；JOOX 扩展音源与播放解析由 GD音乐台 (music.gdstudio.xyz) 提供。你也可以在「音源」页签更换兼容服务。',
                 style: TextStyle(
                   fontSize: 14,
                   color: colors.textMuted,
@@ -1744,7 +1728,7 @@ class _AboutTab extends StatelessWidget {
               ),
               SizedBox(height: 8),
               Text(
-                '播放地址、歌词和封面通过 music-api.gdstudio.xyz/api.php 解析。GD 音乐台为公开接口，建议控制请求频率：5 分钟内不超过 50 次请求。',
+                '默认播放地址、歌词和封面通过 music-api.gdstudio.xyz/api.php 解析。自定义音源保存后即刻生效。GD 音乐台为公开接口，建议控制请求频率：5 分钟内不超过 50 次请求。',
                 style: TextStyle(
                   fontSize: 12,
                   color: colors.textTertiary,
@@ -1775,8 +1759,10 @@ class _AboutTab extends StatelessWidget {
               const SizedBox(height: 12),
               _LinkRow(
                 title: 'GitHub 仓库',
-                subtitle: 'alanbulan/TuneFree_Mobile',
-                uri: Uri.parse('https://github.com/alanbulan/TuneFree_Mobile'),
+                subtitle: 'alanbulan/TuneFree',
+                uri: Uri.parse(
+                  'https://github.com/alanbulan/TuneFree/tree/flutter',
+                ),
                 linkLauncher: linkLauncher,
               ),
             ],

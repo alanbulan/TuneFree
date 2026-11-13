@@ -7,12 +7,12 @@ import 'tune_free_http_client.dart';
 final class SourceHttpClient {
   SourceHttpClient({
     required TuneFreeHttpClient httpClient,
-    String Function()? corsProxyProvider,
-    Duration timeout = const Duration(seconds: 12),
-  }) : _dio = httpClient.dio,
-       _corsProxyProvider = corsProxyProvider,
-       _timeout = timeout;
+    this._corsProxyProvider,
+    this._timeout = const Duration(seconds: 12),
+  }) : _httpClient = httpClient,
+       _dio = httpClient.dio;
 
+  final TuneFreeHttpClient _httpClient;
   final Dio _dio;
   final String Function()? _corsProxyProvider;
   final Duration _timeout;
@@ -20,24 +20,53 @@ final class SourceHttpClient {
   Future<dynamic> getJson(
     Uri uri, {
     bool proxyFirst = false,
+    bool includeProxyFallback = true,
     bool allowSingleQuoteJson = false,
     Map<String, String>? headers,
   }) async {
-    final text = await getText(uri, proxyFirst: proxyFirst, headers: headers);
+    final text = await getText(
+      uri,
+      proxyFirst: proxyFirst,
+      includeProxyFallback: includeProxyFallback,
+      headers: headers,
+    );
     return parseJsonLike(text, allowSingleQuoteJson: allowSingleQuoteJson);
   }
 
   Future<String> getText(
     Uri uri, {
     bool proxyFirst = false,
+    bool includeProxyFallback = true,
     Map<String, String>? headers,
   }) {
     return _requestText(
       uri,
       proxyFirst: proxyFirst,
+      includeProxyFallback: includeProxyFallback,
       request: (requestUri) =>
           _dio.getUri<String>(requestUri, options: _options(headers: headers)),
     );
+  }
+
+  Future<dynamic> postFormJson(
+    Uri uri, {
+    required Map<String, String> data,
+  }) async {
+    final text = await _requestText(
+      uri,
+      proxyFirst: false,
+      includeProxyFallback: false,
+      request: (requestUri) => _dio.postUri<String>(
+        requestUri,
+        data: data,
+        options: _options(
+          headers: <String, String>{
+            Headers.contentTypeHeader: Headers.formUrlEncodedContentType,
+          },
+        ),
+      ),
+    );
+    return parseJsonLike(text);
   }
 
   Future<dynamic> postJson(
@@ -76,6 +105,8 @@ final class SourceHttpClient {
       includeProxyFallback: includeProxyFallback,
     )) {
       try {
+        // 等待用户处理系统授权弹窗不计入 HTTP 超时。
+        await _httpClient.ensureNetworkAccess(requestUri);
         final response = await request(requestUri).timeout(_timeout);
         final data = response.data;
         if (data != null) {
@@ -87,7 +118,10 @@ final class SourceHttpClient {
         lastError = error;
       }
     }
-    throw StateError('Source request failed for $uri: $lastError');
+    if (lastError != null) {
+      throw lastError;
+    }
+    throw StateError('Source request failed');
   }
 
   Iterable<Uri> _candidateUris(

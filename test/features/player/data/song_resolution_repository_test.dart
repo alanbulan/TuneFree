@@ -13,6 +13,7 @@ import 'package:tunefree/features/player/data/song_resolution_repository.dart';
 
 final class _FakeGdStudioAdapter implements HttpClientAdapter {
   final List<Uri> requestedUris = <Uri>[];
+  final List<Map<String, String>> requestedParameters = [];
 
   @override
   Future<ResponseBody> fetch(
@@ -20,7 +21,23 @@ final class _FakeGdStudioAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
+    if (options.uri.path == '/time') {
+      return ResponseBody.fromString('1783745000', 200);
+    }
     requestedUris.add(options.uri);
+    final Map<String, String> parameters;
+    if (options.method == 'POST') {
+      final bytes = <int>[];
+      if (requestStream != null) {
+        await for (final chunk in requestStream) {
+          bytes.addAll(chunk);
+        }
+      }
+      parameters = Uri.splitQueryString(utf8.decode(bytes));
+    } else {
+      parameters = options.uri.queryParameters;
+    }
+    requestedParameters.add(parameters);
     if (options.uri.host == 'antiserver.kuwo.cn') {
       return _jsonResponse(<String, dynamic>{
         'url': 'http://antiserver.kuwo.cn/kuwo-song.mp3',
@@ -36,8 +53,8 @@ final class _FakeGdStudioAdapter implements HttpClientAdapter {
       });
     }
 
-    final type = options.uri.queryParameters['types'];
-    final source = options.uri.queryParameters['source'];
+    final type = parameters['types'];
+    final source = parameters['source'];
     final body = switch ((source, type)) {
       ('kuwo', 'url') => <String, dynamic>{'url': ''},
       ('kuwo', 'lyric') => <String, dynamic>{},
@@ -199,12 +216,19 @@ void main() {
       adapter.requestedUris.any((uri) => uri.path.contains('/v1/parse')),
       isFalse,
     );
-    expect(adapter.requestedUris.first.queryParameters, <String, String>{
-      'types': 'url',
-      'source': 'netease',
-      'id': 'url-id',
-      'br': '740',
-    });
+    expect(
+      adapter.requestedParameters.first['s'],
+      matches(RegExp(r'^[0-9A-F]{8}$')),
+    );
+    expect(
+      Map<String, String>.of(adapter.requestedParameters.first)..remove('s'),
+      <String, String>{
+        'types': 'url',
+        'source': 'netease',
+        'id': 'url-id',
+        'br': '740',
+      },
+    );
   });
 
   test(
@@ -232,10 +256,10 @@ void main() {
         'https://image.joox.com/JOOXcover/0/joox-pic/500',
       );
       expect(
-        adapter.requestedUris.map((uri) => uri.queryParameters['types']),
+        adapter.requestedParameters.map((parameters) => parameters['types']),
         isNot(contains('pic')),
       );
-      expect(adapter.requestedUris.first.queryParameters['br'], '320');
+      expect(adapter.requestedParameters.first['br'], '320');
     },
   );
 

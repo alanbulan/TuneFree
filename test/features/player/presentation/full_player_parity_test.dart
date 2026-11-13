@@ -5,7 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:golden_toolkit/golden_toolkit.dart';
+import 'package:alchemist/alchemist.dart';
 import 'package:tunefree/app/app.dart';
 import 'package:tunefree/app/router/app_router.dart';
 import 'package:tunefree/core/models/audio_quality.dart';
@@ -245,14 +245,13 @@ final class _TestHttpClientResponse extends Stream<List<int>>
     void Function()? onDone,
     bool? cancelOnError,
   }) {
-    return Stream<List<int>>.fromIterable(<List<int>>[
-      _transparentImageBytes,
-    ]).listen(
-      onData,
-      onError: onError,
-      onDone: onDone,
-      cancelOnError: cancelOnError,
-    );
+    return Stream<List<int>>.fromIterable(<List<int>>[_transparentImageBytes])
+        .listen(
+          onData,
+          onError: onError,
+          onDone: onDone,
+          cancelOnError: cancelOnError,
+        );
   }
 
   @override
@@ -1648,99 +1647,99 @@ void main() {
     },
   );
 
-  testGoldens('full player parity state matches golden with more sheet open', (
-    tester,
-  ) async {
-    final storage = TestPlayerLibraryStorage(
-      favorites: const <Song>[
-        Song(
-          id: 'track-1',
-          name: '第一首',
-          artist: '歌手甲',
-          source: MusicSource.netease,
-        ),
-      ],
-      playlists: const <Playlist>[
-        Playlist(
-          id: 'playlist-1',
-          name: '收藏歌单',
-          createTime: 1713200000000,
-          songs: <Song>[],
-        ),
-      ],
-    );
-    final engine = JustAudioPlayerEngine.test();
-    addTearDown(engine.dispose);
+  goldenTest(
+    'full player parity state matches golden with more sheet open',
+    fileName: 'full_player_parity_more_sheet',
+    constraints: const BoxConstraints.tightFor(width: 430, height: 932),
+    builder: () {
+      final storage = TestPlayerLibraryStorage(
+        favorites: const <Song>[
+          Song(
+            id: 'track-1',
+            name: '第一首',
+            artist: '歌手甲',
+            source: MusicSource.netease,
+          ),
+        ],
+        playlists: const <Playlist>[
+          Playlist(
+            id: 'playlist-1',
+            name: '收藏歌单',
+            createTime: 1713200000000,
+            songs: <Song>[],
+          ),
+        ],
+      );
+      final engine = JustAudioPlayerEngine.test();
+      addTearDown(engine.dispose);
 
-    final container = ProviderContainer(
-      overrides: [
-        libraryStorageProvider.overrideWithValue(storage),
-        playerEngineProvider.overrideWithValue(engine),
-        playerPreferencesStoreProvider.overrideWithValue(
-          TestPlayerPreferencesStore(),
-        ),
-        localPlaybackResolverProvider.overrideWithValue(
-          _noopLocalPlaybackResolver(),
-        ),
-        songResolutionRepositoryProvider.overrideWithValue(
-          SongResolutionRepository.test(
-            resolveSongValue: (song, quality) async => song.copyWith(
-              url: 'https://example.com/${song.id}-$quality.mp3',
+      final container = ProviderContainer(
+        overrides: [
+          libraryStorageProvider.overrideWithValue(storage),
+          downloadLibraryRepositoryProvider.overrideWithValue(
+            _noopDownloadLibraryRepository(),
+          ),
+          appearanceStoreProvider.overrideWithValue(InMemoryAppearanceStore()),
+          playerEngineProvider.overrideWithValue(engine),
+          playerPreferencesStoreProvider.overrideWithValue(
+            TestPlayerPreferencesStore(),
+          ),
+          localPlaybackResolverProvider.overrideWithValue(
+            _noopLocalPlaybackResolver(),
+          ),
+          songResolutionRepositoryProvider.overrideWithValue(
+            SongResolutionRepository.test(
+              resolveSongValue: (song, quality) async => song.copyWith(
+                url: 'https://example.com/${song.id}-$quality.mp3',
+              ),
             ),
           ),
-        ),
-      ],
-    );
-    addTearDown(container.dispose);
+        ],
+      );
+      addTearDown(container.dispose);
 
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const TuneFreeApp(),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final controller = container.read(playerControllerProvider.notifier);
-    const firstTrack = PlayerTrack(
-      id: 'track-1',
-      source: 'netease',
-      title: '第一首',
-      artist: '歌手甲',
-    );
-    const secondTrack = PlayerTrack(
-      id: 'track-2',
-      source: 'qq',
-      title: '第二首',
-      artist: '歌手乙',
-    );
-    await controller.openTrack(
-      firstTrack,
-      queue: const <PlayerTrack>[firstTrack, secondTrack],
-    );
-    await tester.pumpAndSettle();
-
-    controller.expand();
-    controller.setPlaybackQuality(AudioQuality.flac);
-    controller.setDownloadQuality(AudioQuality.flac24bit);
-    controller.setShowMore(true);
-    await tester.pumpAndSettle();
-
-    await tester.pumpWidgetBuilder(
-      TuneFreeGoldenTestApp(
+      return TuneFreeGoldenTestApp(
         child: SizedBox.expand(
           child: UncontrolledProviderScope(
             container: container,
             child: const Stack(children: [FullPlayerSheet()]),
           ),
         ),
-      ),
-      surfaceSize: const Size(430, 932),
-    );
-    await tester.pumpAndSettle();
+      );
+    },
+    pumpBeforeTest: (tester) async {
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(FullPlayerSheet)),
+      );
+      final controller = container.read(playerControllerProvider.notifier);
+      const firstTrack = PlayerTrack(
+        id: 'track-1',
+        source: 'netease',
+        title: '第一首',
+        artist: '歌手甲',
+      );
+      const secondTrack = PlayerTrack(
+        id: 'track-2',
+        source: 'qq',
+        title: '第二首',
+        artist: '歌手乙',
+      );
+      await controller.openTrack(
+        firstTrack,
+        queue: const <PlayerTrack>[firstTrack, secondTrack],
+      );
+      await tester.pumpAndSettle();
 
-    await screenMatchesGolden(tester, 'full_player_parity_more_sheet');
-  }, tags: 'golden');
+      controller.expand();
+      controller.setPlaybackQuality(AudioQuality.flac);
+      controller.setDownloadQuality(AudioQuality.flac24bit);
+      controller.setShowMore(true);
+      await tester.pumpAndSettle();
+
+      await precacheImages(tester);
+    },
+  );
 
   testWidgets(
     'mini and full player controls advance queue, toggle mode, and favorite tracks',

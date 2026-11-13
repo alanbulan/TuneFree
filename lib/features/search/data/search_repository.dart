@@ -5,16 +5,12 @@ typedef SearchFunction = Future<List<Song>> Function(String keyword, int page);
 
 final class SearchRepository implements RemoteSearchRepository {
   SearchRepository({
-    required SearchFunction neteaseSearch,
-    required SearchFunction qqSearch,
-    required SearchFunction kuwoSearch,
-    SearchFunction? jooxSearch,
-    SearchFunction? bilibiliSearch,
-  }) : _neteaseSearch = neteaseSearch,
-       _qqSearch = qqSearch,
-       _kuwoSearch = kuwoSearch,
-       _jooxSearch = jooxSearch,
-       _bilibiliSearch = bilibiliSearch;
+    required this._neteaseSearch,
+    required this._qqSearch,
+    required this._kuwoSearch,
+    this._jooxSearch,
+    this._bilibiliSearch,
+  });
 
   SearchRepository.test({
     required SearchFunction neteaseSearch,
