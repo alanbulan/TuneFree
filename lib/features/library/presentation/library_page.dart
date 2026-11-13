@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../shared/theme/tune_free_palette.dart';
@@ -407,6 +409,26 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
 
   Future<void> _handleCheckUpdate() async {
     if (_isCheckingUpdate) {
+      return;
+    }
+
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      try {
+        final opened = await ref
+            .read(aboutLinkLauncherProvider)
+            .launch(
+              Uri.parse('https://github.com/alanbulan/TuneFree/releases'),
+            );
+        if (!opened && mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('无法打开发布记录，请稍后重试')));
+        }
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('无法打开发布记录，请稍后重试')));
+        }
+      }
       return;
     }
 
@@ -1641,6 +1663,7 @@ class _AboutTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = TuneFreeColors.of(context);
+    final isIOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1656,7 +1679,9 @@ class _AboutTab extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                '一个高颜值的 Flutter Android 音乐播放器',
+                isIOS
+                    ? '一个高颜值的 Flutter iOS 音乐播放器'
+                    : '一个高颜值的 Flutter Android 音乐播放器',
                 style: TextStyle(fontSize: 13, color: colors.textMuted),
                 textAlign: TextAlign.center,
               ),
@@ -1664,38 +1689,45 @@ class _AboutTab extends StatelessWidget {
               _VersionUpdateBadge(
                 isCheckingUpdate: isCheckingUpdate,
                 onCheckUpdate: onCheckUpdate,
+                isIOS: isIOS,
               ),
             ],
           ),
         ),
         const SizedBox(height: 14),
-        const _AboutCard(
+        _AboutCard(
           title: '功能特性',
           child: Column(
             children: [
-              _FeatureRow(
+              const _FeatureRow(
                 index: '1',
                 title: '多源聚合搜索',
                 subtitle: '支持网易云、QQ音乐、酷我音乐，以及 JOOX 扩展音源',
               ),
-              SizedBox(height: 10),
-              _FeatureRow(
+              const SizedBox(height: 10),
+              const _FeatureRow(
                 index: '2',
                 title: '无损音质播放',
                 subtitle: '支持 128k / 320k / FLAC / Hi-Res',
               ),
-              SizedBox(height: 10),
+              const SizedBox(height: 10),
               _FeatureRow(
                 index: '3',
-                title: '实时音频可视化',
-                subtitle: 'Android 原生频谱数据驱动 Flutter 播放动效',
+                title: isIOS ? '后台播放与系统控制' : '实时音频可视化',
+                subtitle: isIOS
+                    ? '切换应用后继续播放，支持系统播放与暂停'
+                    : 'Android 原生频谱数据驱动 Flutter 播放动效',
               ),
-              SizedBox(height: 10),
-              _FeatureRow(index: '4', title: '逐行滚动歌词', subtitle: '支持双语歌词翻译显示'),
-              SizedBox(height: 10),
+              const SizedBox(height: 10),
+              const _FeatureRow(
+                index: '4',
+                title: '逐行滚动歌词',
+                subtitle: '支持双语歌词翻译显示',
+              ),
+              const SizedBox(height: 10),
               _FeatureRow(
                 index: '5',
-                title: 'Android 离线体验',
+                title: isIOS ? '离线音乐' : 'Android 离线体验',
                 subtitle: '下载到本地，优先使用离线音频播放',
               ),
             ],
@@ -1830,10 +1862,12 @@ class _VersionUpdateBadge extends StatelessWidget {
   const _VersionUpdateBadge({
     required this.isCheckingUpdate,
     required this.onCheckUpdate,
+    required this.isIOS,
   });
 
   final bool isCheckingUpdate;
   final Future<void> Function() onCheckUpdate;
+  final bool isIOS;
 
   @override
   Widget build(BuildContext context) {
@@ -1875,7 +1909,7 @@ class _VersionUpdateBadge extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  isCheckingUpdate ? '检查中' : '更新',
+                  isIOS ? '发布记录' : (isCheckingUpdate ? '检查中' : '更新'),
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,

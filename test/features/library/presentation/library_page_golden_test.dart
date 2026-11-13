@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -581,6 +583,44 @@ void main() {
       expect(playerState.queue.map((song) => song.name).toList(), [
         '海与你',
         '晴天',
+      ]);
+    },
+  );
+
+  testWidgets(
+    'iOS about opens release history instead of the Android APK updater',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final linkLauncher = TestAboutLinkLauncher();
+      final container = ProviderContainer(
+        overrides: [
+          libraryStorageProvider.overrideWithValue(TestLibraryStorage()),
+          aboutLinkLauncherProvider.overrideWithValue(linkLauncher),
+          appUpdateServiceProvider.overrideWith((ref) {
+            throw StateError('The Android updater must not run on iOS.');
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: LibraryPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('关于'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Flutter iOS'), findsOneWidget);
+      expect(find.text('后台播放与系统控制'), findsOneWidget);
+      expect(find.text('离线音乐'), findsOneWidget);
+      expect(find.text('Android 离线体验'), findsNothing);
+      expect(find.text('发布记录'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('about-check-update-button')));
+      await tester.pumpAndSettle();
+      expect(linkLauncher.launchedUris, [
+        Uri.parse('https://github.com/alanbulan/TuneFree/releases'),
       ]);
     },
   );
