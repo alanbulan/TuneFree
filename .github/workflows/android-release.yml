@@ -117,6 +117,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get --enforce-lockfile
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Install Android SDK components
         run: sdkmanager "platforms;android-37.2" "build-tools;37.0.0" "ndk;30.0.16248370"
 
