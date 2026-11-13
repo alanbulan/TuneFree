@@ -80,13 +80,19 @@ void main() {
         () =>
             find.byKey(const Key('music-api-url-field')).evaluate().isNotEmpty,
       );
+      await tester.pumpAndSettle();
       await binding.takeScreenshot('ios-sources-light');
 
       await appearance.setThemeMode(ThemeModeSetting.dark);
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+      expect(
+        Theme.of(tester.element(find.byKey(const Key('music-api-url-field'))))
+            .brightness,
+        Brightness.dark,
+      );
       await binding.takeScreenshot('ios-sources-dark');
       await appearance.setThemeMode(ThemeModeSetting.light);
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const Key('music-api-url-field')),
         '$fixtureBase/v1/api.php',
@@ -127,10 +133,7 @@ void main() {
       final restoredApi = container.read(musicApiControllerProvider.notifier);
       expect(await restoredApi.ready, saved);
       // Wait for the save feedback to leave the bottom navigation unobstructed.
-      await waitFor(
-        tester,
-        () => find.byType(SnackBar).evaluate().isEmpty,
-      );
+      await waitFor(tester, () => find.byType(SnackBar).evaluate().isEmpty);
       await binding.takeScreenshot('ios-source-saved');
 
       await tester.tap(find.byKey(const Key('shell-nav-搜索')));
@@ -179,7 +182,8 @@ void main() {
       player.setShowLyrics(true);
       await waitFor(
         tester,
-        () => find.byKey(const Key('player-lyrics-panel')).evaluate().isNotEmpty,
+        () =>
+            find.byKey(const Key('player-lyrics-panel')).evaluate().isNotEmpty,
       );
       await tester.pumpAndSettle();
       await binding.takeScreenshot('ios-lyrics');
@@ -205,7 +209,7 @@ void main() {
       await tester.tap(find.byKey(const Key('shell-nav-我的')));
       await waitFor(tester, () => find.text('关于').evaluate().isNotEmpty);
       await tester.tap(find.text('关于'));
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
       expect(find.text('发布记录'), findsOneWidget);
       expect(find.text('Android 离线体验'), findsNothing);
       await binding.takeScreenshot('ios-about');
