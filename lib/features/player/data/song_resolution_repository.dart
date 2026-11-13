@@ -4,6 +4,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/song.dart';
+import '../../../core/network/gd_studio_api_client.dart';
+import '../../../core/network/music_api_controller.dart';
+import '../../../core/network/music_api_providers.dart';
+import '../../../core/network/music_api_settings.dart';
+import '../../../core/network/source_http_client.dart';
 import '../../../core/network/tune_free_http_client.dart';
 import '../../../core/utils/lyric_document.dart';
 import '../../../core/utils/yrc_parser.dart';
@@ -11,11 +16,12 @@ import 'netease_lyric_client.dart';
 
 typedef SongResolver = Future<Song> Function(Song song, String quality);
 
-const defaultGdStudioApiBase = 'https://music-api.gdstudio.xyz/api.php';
+const defaultGdStudioApiBase = defaultMusicApiBase;
 
 final songResolutionClientProvider = Provider<SongResolutionClient>((ref) {
   return GdStudioSongResolutionClient(
-    httpClient: TuneFreeHttpClient(),
+    httpClient: ref.watch(musicApiHttpClientProvider),
+    apiClient: ref.watch(gdStudioApiClientProvider),
     lyricLoader: ref.watch(neteaseLyricLoaderProvider),
   );
 });
@@ -23,8 +29,10 @@ final songResolutionClientProvider = Provider<SongResolutionClient>((ref) {
 final songResolutionRepositoryProvider = Provider<SongResolutionRepository>((
   ref,
 ) {
+  final controller = ref.watch(musicApiControllerProvider.notifier);
   return SongResolutionRepository(
     client: ref.watch(songResolutionClientProvider),
+    configurationKey: () => _apiCacheKey(controller.settings),
   );
 });
 
@@ -33,18 +41,27 @@ abstract interface class SongResolutionClient {
 }
 
 final class SongResolutionRepository {
-  SongResolutionRepository({required SongResolutionClient client})
-    : this.test(resolveSongValue: client.resolveSong);
+  SongResolutionRepository({
+    required SongResolutionClient client,
+    String Function()? configurationKey,
+  }) : this.test(
+         resolveSongValue: client.resolveSong,
+         configurationKey: configurationKey,
+       );
 
-  SongResolutionRepository.test({required SongResolver resolveSongValue})
-    : _resolveSongValue = resolveSongValue;
+  SongResolutionRepository.test({
+    required this._resolveSongValue,
+    this._configurationKey,
+  });
 
   final SongResolver _resolveSongValue;
+  final String Function()? _configurationKey;
   final Map<String, Future<Song>> _pendingResolutions =
       <String, Future<Song>>{};
 
   Future<Song> resolveSong(Song song, {required String quality}) {
-    final cacheKey = _resolutionCacheKey(song, quality);
+    final cacheKey =
+        '${_configurationKey?.call() ?? ''}:${_resolutionCacheKey(song, quality)}';
     final pendingResolution = _pendingResolutions[cacheKey];
     if (pendingResolution != null) {
       return pendingResolution;
@@ -62,16 +79,23 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
   GdStudioSongResolutionClient({
     required TuneFreeHttpClient httpClient,
     String apiBase = defaultGdStudioApiBase,
-    NeteaseLyricLoader? lyricLoader,
+    this._lyricLoader,
+    GdStudioApiClient? apiClient,
   }) : _dio = httpClient.dio,
-       _apiBase = apiBase,
-       _lyricLoader = lyricLoader;
+       _apiClient =
+           apiClient ??
+           GdStudioApiClient(
+             httpClient: SourceHttpClient(httpClient: httpClient),
+             settingsLoader: () async => MusicApiSettings(
+               musicApiBase: normalizeMusicApiUrl(apiBase, defaultMusicApiBase),
+             ),
+           );
 
   static const _urlCacheTtl = Duration(minutes: 5);
   static const _maxCacheEntries = 80;
 
   final Dio _dio;
-  final String _apiBase;
+  final GdStudioApiClient _apiClient;
   final NeteaseLyricLoader? _lyricLoader;
   final Map<String, _CachedResolution<String>> _urlCache =
       <String, _CachedResolution<String>>{};
@@ -90,17 +114,20 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
 
   @override
   Future<Song> resolveSong(Song song, String quality) async {
+    final settings = await _apiClient.loadSettings();
     final source = song.source.wireValue;
     final urlFuture = _loadUrl(
       source: source,
       id: _requestId(song.urlId, song.id),
       quality: quality,
+      settings: settings,
     );
     final lyricsFuture = _loadLyrics(
       source: source,
       id: _requestId(song.lyricId, song.id),
+      settings: settings,
     );
-    final pictureFuture = _loadPicture(song);
+    final pictureFuture = _loadPicture(song, settings);
 
     final resolvedUrl = await urlFuture;
     if (resolvedUrl == null) {
@@ -121,8 +148,9 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
     required String source,
     required String id,
     required String quality,
+    required MusicApiSettings settings,
   }) async {
-    final cacheKey = '$source:$id:$quality';
+    final cacheKey = '${_apiCacheKey(settings)}:$source:$id:$quality';
     final cachedUrl = _freshCachedValue(_urlCache[cacheKey]);
     if (cachedUrl != null) {
       return cachedUrl;
@@ -134,7 +162,7 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
         'source': source,
         'id': id,
         'br': _normalizeBitrate(quality),
-      });
+      }, settings);
       final resolvedUrl = _fixUrl(_readString(payload?['url']));
       if (resolvedUrl != null) {
         if (source != 'kuwo') {
@@ -144,7 +172,7 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
       }
     } catch (_) {}
 
-    if (source == 'kuwo') {
+    if (source == 'kuwo' && !settings.usesCustomMusicApi) {
       return _loadKuwoUrl(id);
     }
 
@@ -154,8 +182,9 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
   Future<String?> _loadLyrics({
     required String source,
     required String id,
+    required MusicApiSettings settings,
   }) async {
-    final cacheKey = '$source:$id';
+    final cacheKey = '${_apiCacheKey(settings)}:$source:$id';
     final cachedLyrics = _lyricsCache[cacheKey];
     if (cachedLyrics != null) {
       return cachedLyrics.isEmpty ? null : cachedLyrics;
@@ -164,13 +193,15 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
     try {
       // 网易的扩展轨要和主歌词并行取：它是第二个 HTTP 往返，串行会白白拖慢
       // 每一次歌词加载，而中文歌那边多半是空的。
-      final tracksFuture = _loadNeteaseTracks(source, id);
+      final tracksFuture = settings.usesCustomMusicApi
+          ? Future<NeteaseLyricTracks?>.value(null)
+          : _loadNeteaseTracks(source, id);
 
       final payload = await _getGdStudioData(<String, String>{
         'types': 'lyric',
         'source': source,
         'id': id,
-      });
+      }, settings);
       final main = _readString(payload?['lyric']);
       final translated = _readString(payload?['tlyric']);
       final tracks = await tracksFuture;
@@ -186,7 +217,7 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
       }
     } catch (_) {}
 
-    if (source == 'kuwo') {
+    if (source == 'kuwo' && !settings.usesCustomMusicApi) {
       final resolvedLyrics = await _loadKuwoLyrics(id);
       if (resolvedLyrics != null && resolvedLyrics.isNotEmpty) {
         _cacheString(_lyricsCache, cacheKey, resolvedLyrics);
@@ -326,9 +357,10 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
     return '[${minutes.toString().padLeft(2, '0')}:${wholeSeconds.toString().padLeft(2, '0')}.${centiseconds.toString().padLeft(2, '0')}]$text';
   }
 
-  Future<String?> _loadPicture(Song song) async {
+  Future<String?> _loadPicture(Song song, MusicApiSettings settings) async {
     final existingPicture = _fixUrl(song.pic);
-    if (existingPicture != null) {
+    if (existingPicture != null &&
+        (!settings.usesCustomMusicApi || song.picId == null)) {
       return existingPicture;
     }
 
@@ -338,13 +370,13 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
     }
 
     final source = song.source.wireValue;
-    final cacheKey = '$source:$picId:500';
+    final cacheKey = '${_apiCacheKey(settings)}:$source:$picId:500';
     final cachedPicture = _pictureCache[cacheKey];
     if (cachedPicture != null) {
       return cachedPicture;
     }
 
-    if (source == 'joox') {
+    if (source == 'joox' && !settings.usesCustomMusicApi) {
       final jooxPicture = _fixUrl(
         'https://image.joox.com/JOOXcover/0/$picId/500',
       );
@@ -360,7 +392,7 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
         'source': source,
         'id': picId,
         'size': '500',
-      });
+      }, settings);
       final resolvedPicture = _fixUrl(_readString(payload?['url']));
       if (resolvedPicture != null) {
         _cacheString(_pictureCache, cacheKey, resolvedPicture);
@@ -373,12 +405,12 @@ final class GdStudioSongResolutionClient implements SongResolutionClient {
 
   Future<Map<String, dynamic>?> _getGdStudioData(
     Map<String, String> queryParameters,
+    MusicApiSettings settings,
   ) async {
-    final response = await _dio.getUri<dynamic>(
-      _buildGdStudioUri(apiBase: _apiBase, queryParameters: queryParameters),
-      options: Options(responseType: ResponseType.plain),
+    final rawPayload = await _apiClient.request(
+      queryParameters,
+      settings: settings,
     );
-    final rawPayload = response.data;
     if (rawPayload is String && _looksLikeRateLimitResponse(rawPayload)) {
       throw StateError('GD Studio rate limit response.');
     }
@@ -394,23 +426,8 @@ String _resolutionCacheKey(Song song, String quality) {
   return '${song.source.wireValue}:${song.id}:${song.urlId ?? ''}:${song.lyricId ?? ''}:${song.picId ?? ''}:$quality';
 }
 
-Uri _buildGdStudioUri({
-  required String apiBase,
-  required Map<String, String> queryParameters,
-}) {
-  final baseUri = Uri.parse(_normalizeApiBase(apiBase));
-  return baseUri.replace(
-    queryParameters: <String, String>{
-      ...baseUri.queryParameters,
-      ...queryParameters,
-    },
-  );
-}
-
-String _normalizeApiBase(String value) {
-  final trimmedValue = value.trim();
-  return trimmedValue.isEmpty ? defaultGdStudioApiBase : trimmedValue;
-}
+String _apiCacheKey(MusicApiSettings settings) =>
+    '${settings.requestMode.name}:${settings.musicApiBase}';
 
 String _requestId(String? preferredId, String fallbackId) {
   final trimmedId = preferredId?.trim();

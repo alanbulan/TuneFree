@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 
 import '../../../core/models/music_source.dart';
 import '../../../core/models/song.dart';
+import '../../../core/network/gd_studio_api_client.dart';
+import '../../../core/network/music_api_settings.dart';
 import '../../../core/network/tune_free_http_client.dart';
 import '../../../core/source_clients/kuwo_client.dart';
 import '../../../core/source_clients/netease_client.dart';
@@ -16,7 +18,7 @@ typedef PlaylistImportLoader =
 typedef PlaylistImportPayloadLoader =
     Future<PlaylistImportPayload?> Function(String source, String id);
 
-const defaultTunehubApiBase = 'https://tunehub.sayqz.com/api';
+const defaultTunehubApiBase = defaultPlaylistApiBase;
 const _placeholderTuneFreeApiBase = 'https://api.tune-free.example';
 const Set<String> _forbiddenRequestHeaders = <String>{
   'user-agent',
@@ -69,12 +71,10 @@ final class PlaylistImportInput {
 
 final class DirectPlaylistImportClient implements PlaylistImportClient {
   const DirectPlaylistImportClient({
-    required NeteaseClient neteaseClient,
-    required QqClient qqClient,
-    required KuwoClient kuwoClient,
-  }) : _neteaseClient = neteaseClient,
-       _qqClient = qqClient,
-       _kuwoClient = kuwoClient;
+    required this._neteaseClient,
+    required this._qqClient,
+    required this._kuwoClient,
+  });
 
   final NeteaseClient _neteaseClient;
   final QqClient _qqClient;
@@ -96,10 +96,9 @@ final class DirectPlaylistImportClient implements PlaylistImportClient {
 
 final class CompositePlaylistImportClient implements PlaylistImportClient {
   const CompositePlaylistImportClient({
-    required PlaylistImportClient primary,
-    required PlaylistImportClient fallback,
-  }) : _primary = primary,
-       _fallback = fallback;
+    required this._primary,
+    required this._fallback,
+  });
 
   final PlaylistImportClient _primary;
   final PlaylistImportClient _fallback;
@@ -139,22 +138,27 @@ final class CompositePlaylistImportClient implements PlaylistImportClient {
 
 final class TunehubPlaylistImportClient implements PlaylistImportClient {
   TunehubPlaylistImportClient({
-    required TuneFreeHttpClient httpClient,
+    required this._httpClient,
     String Function()? apiBaseProvider,
-  }) : _httpClient = httpClient,
-       _apiBaseProvider = apiBaseProvider ?? (() => '');
+    this._settingsLoader,
+  }) : _apiBaseProvider = apiBaseProvider ?? (() => '');
 
   final TuneFreeHttpClient _httpClient;
   final String Function() _apiBaseProvider;
+  final MusicApiSettingsLoader? _settingsLoader;
 
   @override
   Future<PlaylistImportPayload?> importPlaylist(
     String source,
     String id,
   ) async {
-    final apiBase = _normalizeApiBase(_apiBaseProvider());
-    final methodResponse = await _httpClient.dio.get<Map<String, dynamic>>(
-      '$apiBase/v1/methods/$source/playlist',
+    final settings = await _settingsLoader?.call();
+    final apiBase = _normalizeApiBase(
+      settings?.playlistApiBase ?? _apiBaseProvider(),
+    );
+    final baseUri = Uri.parse(apiBase);
+    final methodResponse = await _httpClient.dio.getUri<Map<String, dynamic>>(
+      baseUri.replace(path: '${baseUri.path}/v1/methods/$source/playlist'),
     );
     final methodData = _readMap(methodResponse.data?['data']);
     if (methodData == null) {
@@ -219,8 +223,8 @@ final class PlaylistImportRepository {
        );
 
   PlaylistImportRepository.payloadLoader({
-    required PlaylistImportPayloadLoader importPlaylist,
-  }) : _importPlaylist = importPlaylist;
+    required this._importPlaylist,
+  });
 
   PlaylistImportRepository.test({
     PlaylistImportPayloadLoader? importPlaylist,

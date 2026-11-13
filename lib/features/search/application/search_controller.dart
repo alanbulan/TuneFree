@@ -18,8 +18,7 @@ const _gdStudioRateLimitHint = '5 分钟内不超过 50 次请求';
 const _querySettleDelay = Duration(milliseconds: 800);
 
 final class SearchController extends ChangeNotifier {
-  SearchController({required RemoteSearchRepository repository})
-    : _repository = repository;
+  SearchController({required this._repository});
 
   final RemoteSearchRepository _repository;
 

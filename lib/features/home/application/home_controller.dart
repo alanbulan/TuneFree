@@ -6,8 +6,7 @@ import '../data/remote_top_list_repository.dart';
 import 'home_state.dart';
 
 final class HomeController extends ChangeNotifier {
-  HomeController({required RemoteTopListRepository repository})
-    : _repository = repository;
+  HomeController({required this._repository});
 
   static const _cacheTtl = Duration(minutes: 3);
 

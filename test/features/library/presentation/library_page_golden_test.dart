@@ -6,9 +6,10 @@ import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:golden_toolkit/golden_toolkit.dart';
+import 'package:alchemist/alchemist.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tunefree/core/build_info.g.dart';
+import 'package:tunefree/core/network/music_api_controller.dart';
 import 'package:tunefree/core/models/audio_quality.dart';
 import 'package:tunefree/core/models/music_source.dart';
 import 'package:tunefree/core/models/playlist.dart';
@@ -375,14 +376,13 @@ final class _TestHttpClientResponse extends Stream<List<int>>
     void Function()? onDone,
     bool? cancelOnError,
   }) {
-    return Stream<List<int>>.fromIterable(<List<int>>[
-      _transparentImageBytes,
-    ]).listen(
-      onData,
-      onError: onError,
-      onDone: onDone,
-      cancelOnError: cancelOnError,
-    );
+    return Stream<List<int>>.fromIterable(<List<int>>[_transparentImageBytes])
+        .listen(
+          onData,
+          onError: onError,
+          onDone: onDone,
+          cancelOnError: cancelOnError,
+        );
   }
 
   @override
@@ -436,6 +436,67 @@ void main() {
     artist: '备份歌手',
     source: MusicSource.kuwo,
   );
+
+  testWidgets('source settings have a dedicated tab and survive reopening', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final engine = JustAudioPlayerEngine.test();
+    addTearDown(engine.dispose);
+    final container = ProviderContainer(
+      overrides: [
+        libraryStorageProvider.overrideWithValue(TestLibraryStorage()),
+        playerEngineProvider.overrideWithValue(engine),
+        playerPreferencesStoreProvider.overrideWithValue(
+          TestPlayerPreferencesStore(),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: LibraryPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('音源'));
+    await tester.pumpAndSettle();
+    expect(find.text('音乐接口'), findsOneWidget);
+    expect(find.text('歌单接口'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('music-api-url-field')),
+      'https://tabs.example/api.php',
+    );
+    final save = find.byKey(const Key('music-api-save-button'));
+    await tester.ensureVisible(save);
+    await tester.pumpAndSettle();
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(
+      container.read(musicApiControllerProvider).settings.musicApiBase,
+      'https://tabs.example/api.php',
+    );
+    await tester.ensureVisible(find.text('管理'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('管理'));
+    await tester.pumpAndSettle();
+    expect(find.text('音乐接口'), findsNothing);
+    expect(find.text('外观'), findsOneWidget);
+    await tester.tap(find.text('音源'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('music-api-url-field')))
+          .controller!
+          .text,
+      'https://tabs.example/api.php',
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   final downloadedSong = DownloadedTrackItem(
     songKey: 'netease:dl-1',
@@ -648,7 +709,7 @@ void main() {
       expect(linkLauncher.launchedUris, <Uri>[
         Uri.parse('https://music.gdstudio.xyz/'),
         Uri.parse('https://music.alanbulan.space'),
-        Uri.parse('https://github.com/alanbulan/TuneFree_Mobile'),
+        Uri.parse('https://github.com/alanbulan/TuneFree/tree/flutter'),
       ]);
     },
   );
@@ -986,47 +1047,45 @@ void main() {
     },
   );
 
-  testGoldens('library page rendered favorites state matches golden', (
-    tester,
-  ) async {
-    final storage = TestLibraryStorage(
-      favorites: const <Song>[favoriteSong, queuedSong],
-      playlists: const <Playlist>[
-        Playlist(
-          id: 'playlist-1',
-          name: '收藏歌单',
-          createTime: 1713200000000,
-          songs: <Song>[favoriteSong],
-        ),
-      ],
-    );
-    final engine = JustAudioPlayerEngine.test();
-    addTearDown(engine.dispose);
+  goldenTest(
+    'library page rendered favorites state matches golden',
+    fileName: 'library_page_favorites',
+    constraints: const BoxConstraints.tightFor(width: 430, height: 932),
+    builder: () {
+      final storage = TestLibraryStorage(
+        favorites: const <Song>[favoriteSong, queuedSong],
+        playlists: const <Playlist>[
+          Playlist(
+            id: 'playlist-1',
+            name: '收藏歌单',
+            createTime: 1713200000000,
+            songs: <Song>[favoriteSong],
+          ),
+        ],
+      );
+      final engine = JustAudioPlayerEngine.test();
+      addTearDown(engine.dispose);
 
-    final container = ProviderContainer(
-      overrides: [
-        libraryStorageProvider.overrideWithValue(storage),
-        playerEngineProvider.overrideWithValue(engine),
-        playerPreferencesStoreProvider.overrideWithValue(
-          TestPlayerPreferencesStore(),
-        ),
-      ],
-    );
-    addTearDown(container.dispose);
+      final container = ProviderContainer(
+        overrides: [
+          libraryStorageProvider.overrideWithValue(storage),
+          playerEngineProvider.overrideWithValue(engine),
+          playerPreferencesStoreProvider.overrideWithValue(
+            TestPlayerPreferencesStore(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
 
-    await tester.pumpWidgetBuilder(
-      TuneFreeGoldenTestApp(
+      return TuneFreeGoldenTestApp(
         child: UncontrolledProviderScope(
           container: container,
           child: const LibraryPage(),
         ),
-      ),
-      surfaceSize: const Size(430, 932),
-    );
-    await tester.pumpAndSettle();
-
-    await screenMatchesGolden(tester, 'library_page_favorites');
-  }, tags: 'golden');
+      );
+    },
+    pumpBeforeTest: precacheImages,
+  );
 
   testWidgets(
     'library manage tab exports to a file and imports from a picked backup file',

@@ -22,8 +22,7 @@ final similarRadioRepositoryProvider = Provider<SimilarRadioRepository>((ref) {
 /// 语义是「同歌手」而不是「相似」—— 对音源受限的客户端来说这是最接近、并且
 /// 不需要引入任何新接口的版本。
 final class SimilarRadioRepository {
-  SimilarRadioRepository({required RemoteSearchRepository search})
-    : _search = search;
+  SimilarRadioRepository({required this._search});
 
   final RemoteSearchRepository _search;
 

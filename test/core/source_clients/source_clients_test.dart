@@ -200,6 +200,9 @@ final class _FakeSourceAdapter implements HttpClientAdapter {
     }
 
     if (targetUri.host == 'music-api.gdstudio.xyz') {
+      if (targetUri.path == '/time') {
+        return _textResponse('1783745000');
+      }
       return _jsonResponse([
         {
           'id': 'joox-id',
@@ -248,7 +251,10 @@ final class _FakeSourceAdapter implements HttpClientAdapter {
     if (bytes.isEmpty) {
       return null;
     }
-    return jsonDecode(utf8.decode(bytes));
+    final text = utf8.decode(bytes);
+    return text.startsWith('{') || text.startsWith('[')
+        ? jsonDecode(text)
+        : Uri.splitQueryString(text);
   }
 
   static ResponseBody _jsonResponse(Object body, {int statusCode = 200}) {
@@ -369,8 +375,18 @@ void main() {
 
       final songs = await client.search('joox', 'joox', 3);
 
+      final request = adapter.requests.last;
       expect(
-        adapter.requests.single.targetUri.queryParameters,
+        adapter.requests.where((item) => item.targetUri.path == '/time'),
+        hasLength(1),
+      );
+      expect(request.method, 'POST');
+      expect(
+        request.body,
+        containsPair('s', matches(RegExp(r'^[0-9A-F]{8}$'))),
+      );
+      expect(
+        Map<String, dynamic>.from(request.body! as Map)..remove('s'),
         <String, String>{
           'types': 'search',
           'source': 'joox',

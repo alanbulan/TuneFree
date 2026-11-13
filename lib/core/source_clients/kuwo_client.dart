@@ -14,10 +14,9 @@ abstract class KuwoClient {
 
 final class ReactKuwoClient implements KuwoClient {
   ReactKuwoClient({
-    required SourceHttpClient httpClient,
-    String Function()? corsProxyProvider,
-  }) : _httpClient = httpClient,
-       _corsProxyProvider = corsProxyProvider;
+    required this._httpClient,
+    this._corsProxyProvider,
+  });
 
   static const _limit = 30;
   static const _popularCharts = <({String id, String name})>[

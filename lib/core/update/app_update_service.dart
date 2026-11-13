@@ -53,12 +53,11 @@ final class AppUpdateException implements Exception {
 
 final class AppUpdateService {
   AppUpdateService({
-    required TuneFreeHttpClient httpClient,
+    required this._httpClient,
     PackageInfoLoader? packageInfoLoader,
     this.repositoryOwner = 'alanbulan',
-    this.repositoryName = 'TuneFree_Mobile',
-  }) : _httpClient = httpClient,
-       _packageInfoLoader = packageInfoLoader ?? PackageInfo.fromPlatform;
+    this.repositoryName = 'TuneFree',
+  }) : _packageInfoLoader = packageInfoLoader ?? PackageInfo.fromPlatform;
 
   final TuneFreeHttpClient _httpClient;
   final PackageInfoLoader _packageInfoLoader;
@@ -80,18 +79,27 @@ final class AppUpdateService {
 
   Future<AppUpdateRelease> fetchLatestRelease() async {
     try {
-      final response = await _httpClient.dio.getUri<Object?>(
-        Uri.https(
-          'api.github.com',
-          '/repos/$repositoryOwner/$repositoryName/releases/latest',
-        ),
-        options: Options(
-          headers: const <String, String>{
-            'Accept': 'application/vnd.github+json',
-          },
-        ),
-      );
-      return parseLatestRelease(_readResponseMap(response.data));
+      // 桌面与移动端共用仓库，/latest 由桌面更新器使用。
+      // 扫描公开版本，只从稳定版本的 APK 中选取最高版本，兼容旧 v* 标签。
+      final releases = <dynamic>[];
+      for (var page = 1; ; page += 1) {
+        final response = await _httpClient.dio.getUri<Object?>(
+          Uri.https(
+            'api.github.com',
+            '/repos/$repositoryOwner/$repositoryName/releases',
+            <String, String>{'per_page': '100', 'page': '$page'},
+          ),
+          options: Options(
+            headers: const <String, String>{
+              'Accept': 'application/vnd.github+json',
+            },
+          ),
+        );
+        final items = _readResponseList(response.data);
+        releases.addAll(items);
+        if (items.length < 100) break;
+      }
+      return parseLatestAndroidRelease(releases);
     } catch (error) {
       if (error is AppUpdateException) {
         rethrow;
@@ -100,10 +108,41 @@ final class AppUpdateService {
     }
   }
 
+  static AppUpdateRelease parseLatestAndroidRelease(List<dynamic> releases) {
+    AppUpdateRelease? latest;
+    for (final item in releases) {
+      if (item is! Map) continue;
+      final json = Map<String, dynamic>.from(item);
+      if (json['draft'] == true || json['prerelease'] == true) continue;
+      final tag = json['tag_name'];
+      if (tag is! String ||
+          !RegExp(r'^(?:mobile-)?[vV]?\d+\.\d+\.\d+$').hasMatch(tag.trim()) ||
+          _readApkAssetUri(json['assets']) == null) {
+        continue;
+      }
+      try {
+        final release = parseLatestRelease(json);
+        if (latest == null || isVersionNewer(release.version, latest.version)) {
+          latest = release;
+        }
+      } on AppUpdateException {
+        // 不完整的发布条目不应阻止其他可用 Android 版本。
+      }
+    }
+    if (latest == null) {
+      throw const AppUpdateException('No stable Android release with an APK.');
+    }
+    return latest;
+  }
+
   static AppUpdateRelease parseLatestRelease(Map<String, dynamic> json) {
     final rawTag = json['tag_name'];
     final releaseUrl = Uri.tryParse(json['html_url'] as String? ?? '');
-    if (rawTag is! String || rawTag.trim().isEmpty || releaseUrl == null) {
+    if (rawTag is! String ||
+        rawTag.trim().isEmpty ||
+        releaseUrl == null ||
+        releaseUrl.host.isEmpty ||
+        (releaseUrl.scheme != 'https' && releaseUrl.scheme != 'http')) {
       throw const AppUpdateException('Invalid GitHub release payload.');
     }
 
@@ -119,6 +158,9 @@ final class AppUpdateService {
 
   static String normalizeVersion(String value) {
     var normalized = value.trim();
+    if (normalized.startsWith('mobile-')) {
+      normalized = normalized.substring('mobile-'.length);
+    }
     if (normalized.startsWith('v') || normalized.startsWith('V')) {
       normalized = normalized.substring(1);
     }
@@ -144,21 +186,11 @@ final class AppUpdateService {
     return false;
   }
 
-  static Map<String, dynamic> _readResponseMap(Object? data) {
-    if (data is Map<String, dynamic>) {
-      return data;
-    }
-    if (data is Map) {
-      return Map<String, dynamic>.from(data);
-    }
+  static List<dynamic> _readResponseList(Object? data) {
+    if (data is List) return data;
     if (data is String) {
       final decoded = jsonDecode(data);
-      if (decoded is Map<String, dynamic>) {
-        return decoded;
-      }
-      if (decoded is Map) {
-        return Map<String, dynamic>.from(decoded);
-      }
+      if (decoded is List) return decoded;
     }
     throw const AppUpdateException('Invalid GitHub release payload.');
   }
@@ -178,7 +210,9 @@ final class AppUpdateService {
         continue;
       }
       final uri = Uri.tryParse(url);
-      if (uri != null) {
+      if (uri != null &&
+          uri.host.isNotEmpty &&
+          (uri.scheme == 'https' || uri.scheme == 'http')) {
         return uri;
       }
     }
@@ -186,9 +220,11 @@ final class AppUpdateService {
   }
 
   static List<int> _parseVersionParts(String value) {
-    final normalized = normalizeVersion(
-      value,
-    ).split('+').first.split('-').first;
+    final normalized = normalizeVersion(value)
+        .split('+')
+        .first
+        .split('-')
+        .first;
     return normalized
         .split('.')
         .map((part) => int.tryParse(part) ?? 0)

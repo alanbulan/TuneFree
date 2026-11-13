@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:golden_toolkit/golden_toolkit.dart';
+import 'package:alchemist/alchemist.dart';
 import 'package:tunefree/shared/theme/tune_free_palette.dart';
 import 'package:tunefree/shared/theme/tune_free_spacing.dart';
 import 'package:tunefree/shared/theme/tune_free_text_styles.dart';
@@ -14,21 +14,22 @@ import 'package:tunefree/shared/widgets/tune_free_loading_tile.dart';
 import 'tune_free_golden_test_app.dart';
 
 void main() {
-  testGoldens('shared parity harness matches the reference golden', (
-    tester,
-  ) async {
-    final homeReferenceBytes = File(
-      'test/shared/reference/home_reference.png',
-    ).readAsBytesSync();
-    final searchReferenceBytes = File(
-      'test/shared/reference/search_reference.png',
-    ).readAsBytesSync();
-    final playerReferenceBytes = File(
-      'test/shared/reference/player_reference.png',
-    ).readAsBytesSync();
+  goldenTest(
+    'shared parity harness matches the reference golden',
+    fileName: 'shared_theme_parity_harness',
+    constraints: const BoxConstraints.tightFor(width: 460, height: 1040),
+    builder: () {
+      final homeReferenceBytes = File(
+        'test/shared/reference/home_reference.png',
+      ).readAsBytesSync();
+      final searchReferenceBytes = File(
+        'test/shared/reference/search_reference.png',
+      ).readAsBytesSync();
+      final playerReferenceBytes = File(
+        'test/shared/reference/player_reference.png',
+      ).readAsBytesSync();
 
-    await tester.pumpWidgetBuilder(
-      TuneFreeGoldenTestApp(
+      return TuneFreeGoldenTestApp(
         child: Align(
           alignment: Alignment.topCenter,
           child: RepaintBoundary(
@@ -124,19 +125,13 @@ void main() {
             ),
           ),
         ),
-      ),
-      surfaceSize: const Size(460, 1040),
-    );
-
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('shared-theme-harness')), findsOneWidget);
-    await screenMatchesGolden(
-      tester,
-      'shared_theme_parity_harness',
-      customPump: (tester) => tester.pump(),
-    );
-  }, tags: 'golden');
+      );
+    },
+    pumpBeforeTest: (tester) async {
+      await precacheImages(tester);
+      expect(find.byKey(const Key('shared-theme-harness')), findsOneWidget);
+    },
+  );
 }
 
 class _ReferenceThumbnail extends StatelessWidget {
