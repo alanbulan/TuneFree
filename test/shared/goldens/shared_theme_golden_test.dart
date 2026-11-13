@@ -154,7 +154,12 @@ class _ReferenceThumbnail extends StatelessWidget {
             borderRadius: BorderRadius.circular(TuneFreeSpacing.chipRadius),
             child: AspectRatio(
               aspectRatio: 272 / 529,
-              child: Image.memory(bytes, fit: BoxFit.cover),
+              // 固定参考图不参与插值，避免 ARM / x64 的图片缩放产生 ±1 色值差。
+              child: Image.memory(
+                bytes,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.none,
+              ),
             ),
           ),
         ],
