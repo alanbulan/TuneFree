@@ -155,10 +155,14 @@ final class PlayerControllerNotifier extends Notifier<PlayerState>
   }
 }
 
-typedef PlayerSongResolver =
-    Future<Song> Function(Song song, AudioQuality quality);
-typedef PlayerFallbackSongSearch =
-    Future<List<Song>> Function(String keyword, String source);
+typedef PlayerSongResolver = Future<Song> Function(
+  Song song,
+  AudioQuality quality,
+);
+typedef PlayerFallbackSongSearch = Future<List<Song>> Function(
+  String keyword,
+  String source,
+);
 
 mixin _PlayerControllerRuntimeApi {
   late final PlayerEngine _engine;
@@ -1065,15 +1069,14 @@ mixin _PlayerControllerRuntimeApi {
   }
 
   bool _canResolveSong(Song song) {
-    final url = song.url;
-    if (url != null && url.isNotEmpty) {
+    if (song.url case final url? when url.startsWith('file:')) {
       return false;
     }
-
     if (song.id.startsWith('temp-') || song.id.startsWith('temp_')) {
       return false;
     }
 
+    // 队列和收藏会保留已解析 URL；重播时仍需按当前音源和音质获取地址。
     return _gdStudioResolvableSources.contains(song.source.wireValue);
   }
 

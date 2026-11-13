@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+
 import '../../../../shared/theme/tune_free_palette.dart';
 
 class LibraryTabSwitcher extends StatelessWidget {
@@ -11,7 +12,13 @@ class LibraryTabSwitcher extends StatelessWidget {
   final String activeTab;
   final ValueChanged<String> onChanged;
 
-  static const tabs = <String>['favorites', 'playlists', 'manage', 'about'];
+  static const tabs = <String>[
+    'favorites',
+    'playlists',
+    'sources',
+    'manage',
+    'about',
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -60,6 +67,7 @@ class LibraryTabSwitcher extends StatelessWidget {
                           final label = switch (tab) {
                             'favorites' => '收藏',
                             'playlists' => '歌单',
+                            'sources' => '音源',
                             'manage' => '管理',
                             _ => '关于',
                           };

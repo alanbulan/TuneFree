@@ -23,14 +23,11 @@ class DownloadResult {
 
 class PlayerDownloadManager {
   const PlayerDownloadManager({
-    required Future<List<int>> Function(String url) httpBytes,
-    required DownloadFileStore fileStore,
-    required DownloadRecordStore recordStore,
-    required SongResolutionRepository songResolutionRepository,
-  }) : _httpBytes = httpBytes,
-       _fileStore = fileStore,
-       _recordStore = recordStore,
-       _songResolutionRepository = songResolutionRepository;
+    required this._httpBytes,
+    required this._fileStore,
+    required this._recordStore,
+    required this._songResolutionRepository,
+  });
 
   final Future<List<int>> Function(String url) _httpBytes;
   final DownloadFileStore _fileStore;
@@ -38,15 +35,13 @@ class PlayerDownloadManager {
   final SongResolutionRepository _songResolutionRepository;
 
   Future<DownloadResult> downloadSong(Song song, AudioQuality quality) async {
-    final resolvedSong = await _resolveSongIfNeeded(song, quality);
-
     final existingRecord = await _recordStore.load(
-      songKey: resolvedSong.key,
+      songKey: song.key,
       quality: quality.wireValue,
     );
     if (existingRecord != null) {
       return DownloadResult(
-        song: resolvedSong,
+        song: song,
         quality: quality,
         fileName: existingRecord.fileName,
         filePath: existingRecord.filePath,
@@ -54,6 +49,11 @@ class PlayerDownloadManager {
       );
     }
 
+    // 播放中的 URL 可能来自旧音源或另一档音质，新下载按当前配置重新解析。
+    final resolvedSong = await _songResolutionRepository.resolveSong(
+      song,
+      quality: quality.wireValue,
+    );
     final url = resolvedSong.url;
     if (url == null || url.isEmpty) {
       throw StateError('download URL missing after resolution');
@@ -101,16 +101,5 @@ class PlayerDownloadManager {
       await _fileStore.deleteTemporaryFile(target.temporaryFile);
       rethrow;
     }
-  }
-
-  Future<Song> _resolveSongIfNeeded(Song song, AudioQuality quality) {
-    final url = song.url;
-    if (url != null && url.isNotEmpty) {
-      return Future<Song>.value(song);
-    }
-    return _songResolutionRepository.resolveSong(
-      song,
-      quality: quality.wireValue,
-    );
   }
 }

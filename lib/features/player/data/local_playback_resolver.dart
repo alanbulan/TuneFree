@@ -18,17 +18,10 @@ class LocalPlaybackMatch {
 
 class LocalPlaybackResolver {
   const LocalPlaybackResolver({
-    required Future<List<DownloadRecord>> Function(String songKey)
-    recordsForSong,
-    required Future<bool> Function(String path) fileExists,
-    required Future<void> Function({
-      required String songKey,
-      required String quality,
-    })
-    removeRecord,
-  }) : _recordsForSong = recordsForSong,
-       _fileExists = fileExists,
-       _removeRecord = removeRecord;
+    required this._recordsForSong,
+    required this._fileExists,
+    required this._removeRecord,
+  });
 
   final Future<List<DownloadRecord>> Function(String songKey) _recordsForSong;
   final Future<bool> Function(String path) _fileExists;

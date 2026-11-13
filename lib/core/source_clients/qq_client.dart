@@ -13,8 +13,7 @@ abstract class QqClient {
 }
 
 final class ReactQqClient implements QqClient {
-  ReactQqClient({required SourceHttpClient httpClient})
-    : _httpClient = httpClient;
+  ReactQqClient({required this._httpClient});
 
   static const _limit = 30;
   static const _musicuUri = 'https://u.y.qq.com/cgi-bin/musicu.fcg';

@@ -19,10 +19,9 @@ class DownloadFileTarget {
 
 class DownloadFileStore {
   DownloadFileStore._({
-    required Directory rootDirectory,
-    bool deleteRootOnDispose = false,
-  }) : _rootDirectory = rootDirectory,
-       _deleteRootOnDispose = deleteRootOnDispose;
+    required this._rootDirectory,
+    this._deleteRootOnDispose = false,
+  });
 
   factory DownloadFileStore.real() {
     return DownloadFileStore._(rootDirectory: Directory('.'));

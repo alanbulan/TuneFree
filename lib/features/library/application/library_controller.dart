@@ -44,10 +44,9 @@ final libraryControllerProvider = ChangeNotifierProvider<LibraryController>((
 
 final class LibraryController extends ChangeNotifier {
   LibraryController({
-    required LibraryStorage storage,
-    required DownloadLibraryRepository downloadLibraryRepository,
-  }) : _storage = storage,
-       _downloadLibraryRepository = downloadLibraryRepository;
+    required this._storage,
+    required this._downloadLibraryRepository,
+  });
 
   final LibraryStorage _storage;
   final DownloadLibraryRepository _downloadLibraryRepository;

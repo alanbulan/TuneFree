@@ -46,9 +46,9 @@ final playerDownloadServiceProvider = Provider<PlayerDownloadService>((ref) {
 
 class PlayerDownloadService {
   const PlayerDownloadService._({
-    required PlayerDownloadManager manager,
+    required this._manager,
     this.downloadOverride,
-  }) : _manager = manager;
+  });
 
   factory PlayerDownloadService.real({
     required PlayerDownloadManager manager,
