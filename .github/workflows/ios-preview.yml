@@ -1,0 +1,124 @@
+name: iOS Preview
+
+on:
+  push:
+    branches: [flutter]
+  pull_request:
+    branches: [flutter]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    name: Build and run iOS preview
+    runs-on: xcode-27
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+      IOS_PREVIEW_OUTPUT: build/ios-preview/screenshots
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.50.0
+          cache: true
+
+      - name: Inspect iOS toolchain
+        run: |
+          xcodebuild -version
+          pod --version
+          xcrun simctl list runtimes
+
+      - name: Install locked dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Check code and build information
+        run: |
+          dart run tool/generate_build_info.dart --check
+          flutter analyze
+
+      - name: Build simulator app
+        run: flutter build ios --simulator --debug
+
+      - name: Start iOS simulator
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available --json > build/ios-devices.json
+          device=$(python3 - <<'PY'
+          import json
+          data = json.load(open('build/ios-devices.json'))
+          devices = [d for runtime, items in data['devices'].items()
+                     if 'iOS-27-2' in runtime for d in items
+                     if d.get('isAvailable') and d['name'].startswith('iPhone')]
+          if not devices:
+              raise SystemExit('The runner needs an iOS 27.2 iPhone simulator.')
+          print(devices[0]['udid'])
+          PY
+          )
+          echo "udid=$device" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl status_bar "$device" override --time '9:41' \
+            --batteryState charged --batteryLevel 100 --wifiMode active --wifiBars 3
+
+      - name: Run iOS source and playback smoke test
+        env:
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tool/ios_api_fixture.py --log build/ios-fixture.jsonl > build/ios-fixture.log 2>&1 &
+          fixture_pid=$!
+          trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8765/v1/time > /dev/null; then break; fi
+            sleep 1
+          done
+          flutter drive --driver=test_driver/ios_smoke_driver.dart \
+            --target=integration_test/ios_smoke_test.dart -d "$SIMULATOR_UDID" \
+            --dart-define=IOS_SMOKE_API_BASE=http://127.0.0.1:8765
+
+      - name: Rebuild production simulator entrypoint
+        run: flutter build ios --simulator --debug --target=lib/main.dart
+
+      - name: Build unsigned device release
+        run: flutter build ios --release --no-codesign --target=lib/main.dart
+
+      - name: Package verified iOS bundles
+        run: python3 tool/package_ios_preview.py
+
+      - name: Upload iOS bundles and checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: tunefree-ios-preview
+          path: build/ios-preview/assets/*
+          if-no-files-found: error
+
+      - name: Upload simulator screenshots and test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tunefree-ios-smoke-evidence
+          path: |
+            build/ios-preview/screenshots/*
+            build/ios-fixture.jsonl
+            build/ios-fixture.log
+          if-no-files-found: warn
+
+      - name: Stop simulator
+        if: always() && steps.simulator.outputs.udid != ''
+        env:
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
+        run: xcrun simctl shutdown "$SIMULATOR_UDID"
