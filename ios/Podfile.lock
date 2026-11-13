@@ -7,6 +7,8 @@ PODS:
   - file_selector_ios (0.0.1):
     - Flutter
   - Flutter (1.0.0)
+  - integration_test (0.0.1):
+    - Flutter
   - just_audio (0.0.1):
     - Flutter
     - FlutterMacOS
@@ -30,6 +32,7 @@ DEPENDENCIES:
   - audio_session (from `.symlinks/plugins/audio_session/ios`)
   - file_selector_ios (from `.symlinks/plugins/file_selector_ios/ios`)
   - Flutter (from `Flutter`)
+  - integration_test (from `.symlinks/plugins/integration_test/ios`)
   - just_audio (from `.symlinks/plugins/just_audio/darwin`)
   - open_filex (from `.symlinks/plugins/open_filex/ios`)
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
@@ -47,6 +50,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/file_selector_ios/ios"
   Flutter:
     :path: Flutter
+  integration_test:
+    :path: ".symlinks/plugins/integration_test/ios"
   just_audio:
     :path: ".symlinks/plugins/just_audio/darwin"
   open_filex:
@@ -67,6 +72,7 @@ SPEC CHECKSUMS:
   audio_session: 9bb7f6c970f21241b19f5a3658097ae459681ba0
   file_selector_ios: fb1dd93b450e9c1ac595c0c8cf29cc855ea24d61
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
+  integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
   just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed
   open_filex: 525447cf3ea460135263a2634042c08479b34502
   package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499

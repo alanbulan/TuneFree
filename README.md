@@ -213,6 +213,15 @@ flutter build apk --release
 
 移动端采用 `mobile-v*` 标签，与桌面端 `v*` 标签并存；仓库的 Latest 保留给桌面更新器，Android 客户端从公开发布列表中筛选带 APK 的稳定版本。最新 Android 发布说明见 [v1.0.8](docs/releases/mobile-v1.0.8.md)。
 
+### iOS 预览与签名准备
+
+```bash
+flutter build ios --simulator --debug
+flutter build ios --release --no-codesign
+```
+
+`iOS Preview` 工作流在 Xcode 27.2 的 iPhone 模拟器实际运行音源与原生播放检查，上传模拟器应用、未签名真机 Release 应用、校验文件与界面截图。iOS 入口已采用 UIScene；最低 iOS 15.0。真机 IPA／TestFlight 需要 Apple 开发者签名及 App Store Connect 配置，使用方法见 [iOS 预览与发布](docs/ios-preview.md)。
+
 ## 📁 目录结构
 
 ```text
