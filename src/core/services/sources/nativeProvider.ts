@@ -35,6 +35,7 @@ export const nativeProvider: MusicProvider = {
       request.platform,
       request.quality,
       request.signal,
+      request.strMediaMid,
     );
     if (!raw) return null;
     return normalizeMusicUrl(raw) || raw;

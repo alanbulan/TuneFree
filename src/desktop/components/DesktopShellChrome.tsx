@@ -2,7 +2,7 @@ import { useId, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BoxesIcon, DownloadIcon, HeartIcon, HomeIcon, InfoIcon, LibraryIcon, SearchIcon,
   SettingsIcon, SidebarCollapseIcon, SidebarExpandIcon } from '../../core/components/Icons';
-import { Laptop, Moon, Sun } from 'lucide-react';
+import { CircleUserRound, Laptop, Moon, Sun } from 'lucide-react';
 import { useTheme } from '../../core/contexts/ThemeContext';
 import { getCurrentWindow, isTauri } from '../../core/ipc';
 import type { DesktopView } from '../types';
@@ -16,14 +16,15 @@ const navItems: { view: DesktopView; label: string; icon: React.ReactNode }[] = 
   { view: 'playlists', label: '歌单', icon: <LibraryIcon size={17} /> },
   { view: 'downloads', label: '下载', icon: <DownloadIcon size={17} /> },
   { view: 'sources', label: '音源', icon: <BoxesIcon size={17} /> },
+  { view: 'accounts', label: '账号', icon: <CircleUserRound size={17} /> },
   { view: 'settings', label: '设置', icon: <SettingsIcon size={17} /> },
   { view: 'about', label: '关于', icon: <InfoIcon size={17} /> },
 ];
 
 const navGroups = [
   { label: '发现', items: navItems.slice(0, 2) },
-  { label: '音乐库', items: navItems.slice(2, 6) },
-  { label: '', items: navItems.slice(6) },
+  { label: '音乐库', items: navItems.slice(2, 7) },
+  { label: '', items: navItems.slice(7) },
 ];
 
 const handleWindowControl = async (action: 'minimize' | 'maximize' | 'close') => {

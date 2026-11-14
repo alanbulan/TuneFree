@@ -22,6 +22,7 @@ export const fetchNativeUrl = async (
   platform: string,
   quality: string,
   signal?: AbortSignal,
+  mediaMid?: string,
 ): Promise<string | null> => {
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort(signal?.reason);
@@ -30,7 +31,7 @@ export const fetchNativeUrl = async (
   const timeoutId = setTimeout(() => controller.abort(), NATIVE_URL_TIMEOUT_MS);
   try {
     const resp = await fetch(
-      `${API_PREFIX}/api/url?platform=${encodeURIComponent(platform)}&id=${encodeURIComponent(id)}&quality=${encodeURIComponent(quality)}`,
+      `${API_PREFIX}/api/url?platform=${encodeURIComponent(platform)}&id=${encodeURIComponent(id)}&quality=${encodeURIComponent(quality)}${mediaMid ? `&mediaMid=${encodeURIComponent(mediaMid)}` : ''}`,
       { signal: controller.signal, headers: buildLocalServerHeaders() },
     );
     const data = await readJsonBody(resp);

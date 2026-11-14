@@ -24,6 +24,7 @@ const IPC_ERROR_CODES = [
   "LLM_CONFIG_INVALID",
   "LLM_REQUEST_FAILED",
   "CREDENTIAL_UNAVAILABLE",
+  "AUTH_REQUIRED",
 ] as const;
 
 export type IpcErrorCode = (typeof IPC_ERROR_CODES)[number];
