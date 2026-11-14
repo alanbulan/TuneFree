@@ -25,6 +25,7 @@ const viewPaths: Record<DesktopView, string> = {
   playlists: '/library/playlists',
   downloads: '/library/downloads',
   sources: '/library/sources',
+  accounts: '/library/accounts',
   settings: '/library/settings',
   about: '/library/about',
 };
@@ -36,6 +37,7 @@ const getViewFromPath = (fallback: DesktopView): DesktopView => {
   if (path.startsWith('/library/playlists')) return 'playlists';
   if (path.startsWith('/library/downloads')) return 'downloads';
   if (path.startsWith('/library/sources')) return 'sources';
+  if (path.startsWith('/library/accounts')) return 'accounts';
   if (path.startsWith('/library/settings')) return 'settings';
   if (path.startsWith('/library/about')) return 'about';
   if (path.startsWith('/library')) return 'favorites';

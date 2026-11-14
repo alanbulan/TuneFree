@@ -41,6 +41,8 @@ Mac 包采用 ad-hoc 本地签名，尚未进行 Apple Developer ID 签名与公
 
 **Bloub 音乐伙伴**复用上游 TypeScript 动画核心，通过项目维护的 React 适配层随播放与推荐状态变化。来源和许可见 [vendor/bloub](./vendor/bloub/README.md)。
 
+平台账号功能在 [Issue #11](https://github.com/alanbulan/TuneFree/issues/11) 对应开发分支中提供：音乐库新增「账号」，连接网易云 / QQ 音乐、查看个人歌单并导入本地副本。会话由原生层保存到系统凭据存储。真实账号与 Windows 运行验收仍待完成，当前正式版本尚未包含；范围、原型和检查证据见[平台账号开发计划](./docs/platform-accounts-plan.md)。
+
 ## 技术栈
 
 ![Tauri](https://img.shields.io/badge/Tauri-2-24c8d8?style=flat-square&logo=tauri&logoColor=white)
