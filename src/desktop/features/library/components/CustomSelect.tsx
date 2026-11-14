@@ -5,13 +5,15 @@ import Tooltip from '../../../components/Tooltip';
 
 interface CustomSelectProps {
   id?: string;
+  ariaLabel?: string;
+  size?: 'default' | 'compact';
   value: string;
   options: readonly { label: string; value: string; disabled?: boolean }[];
   onChange: (value: string) => void;
   disabled?: boolean;
 }
 
-export default function CustomSelect({ id, value, options, onChange, disabled }: CustomSelectProps) {
+export default function CustomSelect({ id, ariaLabel, size = 'default', value, options, onChange, disabled }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [menuBounds, setMenuBounds] = useState({ upwards: false, maxHeight: 320 });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,7 +51,7 @@ export default function CustomSelect({ id, value, options, onChange, disabled }:
   }, []);
 
   return (
-    <div ref={containerRef} className="custom-select-container" onBlur={(event) => {
+    <div ref={containerRef} className={`custom-select-container${size === 'compact' ? ' is-compact' : ''}`} onBlur={(event) => {
       if (!event.currentTarget.contains(event.relatedTarget)) setIsOpen(false);
     }} onKeyDown={(event) => {
       if (event.key === 'Escape' && isOpen) {
@@ -74,6 +76,7 @@ export default function CustomSelect({ id, value, options, onChange, disabled }:
         className="custom-select-trigger"
         disabled={disabled}
         onClick={() => isOpen ? setIsOpen(false) : openMenu()}
+        aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-controls={isOpen ? listboxId : undefined}
@@ -98,7 +101,7 @@ export default function CustomSelect({ id, value, options, onChange, disabled }:
       <AnimatePresence>
       {isOpen && (
         <motion.div className={`custom-select-options${menuBounds.upwards ? ' opens-upwards' : ''}`} role="listbox"
-          id={listboxId} aria-labelledby={id} style={{ maxHeight: menuBounds.maxHeight }}
+          id={listboxId} aria-label={ariaLabel} aria-labelledby={ariaLabel ? undefined : id} style={{ maxHeight: menuBounds.maxHeight }}
           initial={{ opacity: 0, y: -6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -6, scale: 0.98 }} transition={{ duration: 0.16 }}>
           {options.map((option) => (

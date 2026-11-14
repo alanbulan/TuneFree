@@ -22,7 +22,7 @@ const harness = (current = song('a')) => {
     showPlayerNotice: vi.fn(), logEarlySkipIfNeeded: vi.fn(), startPlaybackSession: vi.fn(),
     logPlaybackEvent: vi.fn(), resetPlaybackState: vi.fn(),
   } as unknown as RecommendationPlayback;
-  const resolver = { preloadNextSong: vi.fn() } as unknown as SongResolver;
+  const resolver = { preloadNextSong: vi.fn(), getParsedSongCacheKey: vi.fn(() => 'current-account') } as unknown as SongResolver;
   const recovery = { evictActiveParsedSong: vi.fn() } as unknown as ReturnType<typeof usePlaybackRecovery>;
   const mount = () => renderHook(() => usePlaybackControls(double.runtime, audio, resolver, recommendation, recovery));
   return { ...double, audioLifecycle: audio, recommendation, resolver, recovery, mount };
@@ -32,6 +32,14 @@ beforeEach(() => { vi.spyOn(console, 'error').mockImplementation(() => {}); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('播放控制的真实状态边界', () => {
+  it('账号切换后继续播放重新解析，禁止复用旧会话链接', async () => {
+    const h = harness(); h.audio.src = 'https://audio.test/previous-account.mp3';
+    h.refs.activeParsedCacheKey.current = 'previous-account';
+    const { result } = h.mount();
+    await act(() => result.current.resumePlayback());
+    expect(h.refs.playSong.current).toHaveBeenCalledWith(song('a'));
+    expect(h.audio.play).not.toHaveBeenCalled();
+  });
   it('暂停使在途请求失效，继续播放同步媒体会话与预加载', async () => {
     const h = harness(); h.audio.src = 'https://audio.test/a.mp3';
     const { result } = h.mount();

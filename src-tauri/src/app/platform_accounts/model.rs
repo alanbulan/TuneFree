@@ -6,13 +6,25 @@ use crate::app::error::{CommandError, CommandResult, ErrorCode};
 pub(super) enum Platform {
     Netease,
     Qq,
+    Kuwo,
 }
 
 impl Platform {
+    pub const ALL: [Self; 3] = [Self::Netease, Self::Qq, Self::Kuwo];
+
+    pub fn index(self) -> usize {
+        match self {
+            Self::Netease => 0,
+            Self::Qq => 1,
+            Self::Kuwo => 2,
+        }
+    }
+
     pub fn parse(value: &str) -> CommandResult<Self> {
         match value {
             "netease" => Ok(Self::Netease),
             "qq" => Ok(Self::Qq),
+            "kuwo" => Ok(Self::Kuwo),
             _ => Err(CommandError::new(
                 ErrorCode::UnsupportedPlatform,
                 "该平台暂不支持账号登录",
@@ -24,6 +36,7 @@ impl Platform {
         match self {
             Self::Netease => "netease",
             Self::Qq => "qq",
+            Self::Kuwo => "kuwo",
         }
     }
 
@@ -31,11 +44,20 @@ impl Platform {
         match self {
             Self::Netease => "https://music.163.com/#/my/",
             Self::Qq => "https://y.qq.com/portal/profile.html",
+            Self::Kuwo => "https://www.kuwo.cn/?login=open",
         }
     }
 
     pub fn window_label(self) -> String {
         format!("platform-login-{}", self.name())
+    }
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Netease => "TuneFree · 网易云账号登录",
+            Self::Qq => "TuneFree · QQ 音乐账号登录",
+            Self::Kuwo => "TuneFree · 酷我音乐账号登录",
+        }
     }
 }
 
@@ -109,6 +131,40 @@ pub struct PlatformPlaylistSong {
 pub struct PlatformPlaylistImport {
     pub name: String,
     pub songs: Vec<PlatformPlaylistSong>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformPlaylistPreview {
+    pub name: String,
+    pub songs: Vec<PlatformPlaylistSong>,
+    pub total: usize,
+    pub page: usize,
+    pub page_size: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformAccountPlayback {
+    pub url: Option<String>,
+    pub quality: Option<String>,
+    pub state: String,
+    pub message: Option<String>,
+}
+
+pub(super) const PREVIEW_PAGE_SIZE: usize = 20;
+pub(super) fn preview_offset(page: usize) -> CommandResult<usize> {
+    if !(1..=500).contains(&page) {
+        return Err(CommandError::invalid_argument("歌曲页码不正确"));
+    }
+    Ok((page - 1) * PREVIEW_PAGE_SIZE)
+}
+
+pub(super) fn integer(value: &serde_json::Value) -> Option<usize> {
+    value
+        .as_u64()
+        .and_then(|number| number.try_into().ok())
+        .or_else(|| value.as_str()?.parse().ok())
 }
 
 pub(super) fn auth_required() -> CommandError {

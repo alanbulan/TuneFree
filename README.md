@@ -205,12 +205,14 @@ flowchart LR
 
 | 展示来源 | 搜索 | 播放解析 |
 | --- | --- | --- |
-| 网易云 | 原生前端服务与聚合搜索 | Tauri 本地服务优先，按现有链路解析 |
-| QQ 音乐 | 原生前端服务与聚合搜索 | 本地服务支持 `qq` / `tencent` 别名 |
-| 酷我音乐 | 原生前端服务与聚合搜索 | Tauri 本地服务解析 |
+| 网易云 | 原生前端服务与聚合搜索 | 已连接网易云账号优先，随后现有音源与匿名解析 |
+| QQ 音乐 | 原生前端服务与聚合搜索 | 已连接 QQ 账号优先，按实际 file MID / 账号音质授权解析 |
+| 酷我音乐 | 原生前端服务与聚合搜索 | 已连接酷我账号优先，使用官网会话解析 |
 | JOOX | GD Music 公开 API | GD Music 解析链路；需主动开启并受接口频率限制 |
 
-项目源码采用 [MIT License](./LICENSE)。Bloub 动画核心来自 [jeremy-prt/bloub](https://github.com/jeremy-prt/bloub)，沿用其 MIT 许可；本项目维护 React 适配层，上游没有官方 React 组件。
+平台账号还支持个人歌单分页、歌曲预览、直接播放和跨页批量导入，详见[开发计划与界面](docs/platform-accounts-plan.md)。
+
+项目自有源码采用 [MIT License](./LICENSE)。平台账号协议改编包含 MIT 与 Apache-2.0 组件，固定提交、修改说明与许可副本见[平台账号开源参考](docs/platform-account-references.md)。Bloub 动画核心来自 [jeremy-prt/bloub](https://github.com/jeremy-prt/bloub)，沿用其 MIT 许可；本项目维护 React 适配层，上游没有官方 React 组件。
 
 音乐内容及元数据来自第三方服务，本仓库不托管音频资源。GD Music API 由 **GD音乐台（[music.gdstudio.xyz](https://music.gdstudio.xyz/)）** 提供，使用时须遵守其 CC BY-NC 4.0 与非商业使用要求。第三方内容的版权、可用性与使用限制以对应服务条款为准。
 

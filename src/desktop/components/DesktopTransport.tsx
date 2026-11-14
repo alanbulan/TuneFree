@@ -28,6 +28,7 @@ import ConnectedProgressSlider from './ConnectedProgressSlider';
 import { useSongDownload } from '../hooks/useSongDownload';
 import QualitySelector from './QualitySelector';
 import Tooltip from './Tooltip';
+import PlaybackOriginLabel from './PlaybackOriginLabel';
 import {
   attachRecommendationMeta,
   getSimilarSongs,
@@ -117,6 +118,7 @@ export default function DesktopTransport({ onExpand, suspended = false }: Deskto
         <span className="transport-info">
           <span className="transport-title">{currentSong?.name || '选择一首音乐开始'}</span>
           <span className="transport-artist">{currentSong?.artist || '从发现或收藏中选一首'}</span>
+          <PlaybackOriginLabel />
         </span>
       </button>
 

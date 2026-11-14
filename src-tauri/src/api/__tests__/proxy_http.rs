@@ -51,7 +51,6 @@ async fn proxy_streams_partial_content_and_limits_forwarded_headers() {
             .build()
             .unwrap();
         let state = ServerState {
-            accounts: Default::default(),
             api_client: client.clone(),
             proxy_client: client.clone(),
             source_proxy_client: client,
@@ -88,7 +87,6 @@ async fn proxy_streams_partial_content_and_limits_forwarded_headers() {
 async fn proxy_rejects_invalid_targets_and_preflight_does_not_contact_upstream() {
     let client = reqwest::Client::new();
     let state = ServerState {
-        accounts: Default::default(),
         api_client: client.clone(),
         proxy_client: client.clone(),
         source_proxy_client: client,

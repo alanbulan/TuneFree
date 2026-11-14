@@ -4,11 +4,12 @@ import type { PlatformAccount, PlatformPlaylistImport } from '../../../../../cor
 import { deferred } from '../../../../../core/__tests__/deferred';
 import AccountsView from '../../AccountsView';
 
-const mocks = vi.hoisted(() => ({ native: true, list: vi.fn(), start: vi.fn(), finish: vi.fn(), cancel: vi.fn(), refresh: vi.fn(), logout: vi.fn(), playlists: vi.fn(), import: vi.fn(), create: vi.fn(), confirm: vi.fn(), toast: vi.fn(), local: [] as { name: string }[] }));
-vi.mock('../../../../../core/ipc', async (original) => ({ ...await original<typeof import('../../../../../core/ipc')>(), isTauri: () => mocks.native }));
+const mocks = vi.hoisted(() => ({ native: true, list: vi.fn(), start: vi.fn(), finish: vi.fn(), cancel: vi.fn(), refresh: vi.fn(), logout: vi.fn(), playlists: vi.fn(), preview: vi.fn(), listen: vi.fn(), play: vi.fn(), import: vi.fn(), create: vi.fn(), confirm: vi.fn(), toast: vi.fn(), local: [] as { name: string }[] }));
+vi.mock('../../../../../core/ipc', async (original) => ({ ...await original<typeof import('../../../../../core/ipc')>(), isTauri: () => mocks.native, listenEvent: mocks.listen }));
 vi.mock('../../../../../core/services/platformAccounts', async (original) => ({ ...await original<typeof import('../../../../../core/services/platformAccounts')>(),
-  platformAccounts: { list: mocks.list, start: mocks.start, finish: mocks.finish, cancel: mocks.cancel, refresh: mocks.refresh, logout: mocks.logout, playlists: mocks.playlists, import: mocks.import } }));
-vi.mock('../../../../../core/contexts/LibraryContext', () => ({ useLibrary: () => ({ playlists: mocks.local, createPlaylist: mocks.create }) }));
+  platformAccounts: { list: mocks.list, start: mocks.start, finish: mocks.finish, cancel: mocks.cancel, refresh: mocks.refresh, logout: mocks.logout, playlists: mocks.playlists, import: mocks.import, preview: mocks.preview } }));
+vi.mock('../../../../../core/contexts/PlayerContext', () => ({ usePlayerActions: () => ({ playQueue: mocks.play }), usePlayerNowPlaying: () => ({ currentSong: null, isPlaying: false }) }));
+vi.mock('../../../../../core/contexts/LibraryContext', () => ({ useLibrary: () => ({ playlists: mocks.local, createPlaylist: mocks.create, isFavorite: () => false, toggleFavorite: vi.fn() }) }));
 vi.mock('../../../../components/DialogHost', () => ({ useDesktopDialog: () => ({ confirmDialog: mocks.confirm }) }));
 vi.mock('../../../../components/ToastHost', () => ({ useToast: () => ({ showToast: mocks.toast }) }));
 const account: PlatformAccount = { platform: 'netease', userId: '123', nickname: 'fixture', avatarUrl: 'https://p1.music.126.net/avatar.jpg', state: 'connected', connectedAt: 1 };
@@ -24,10 +25,53 @@ beforeEach(() => {
   mocks.refresh.mockReset().mockResolvedValue(account); mocks.logout.mockReset().mockResolvedValue(undefined);
   mocks.playlists.mockReset().mockResolvedValue(lists); mocks.import.mockReset().mockResolvedValue(payload);
   mocks.create.mockReset().mockReturnValue(true); mocks.confirm.mockReset().mockResolvedValue(true);
+  mocks.listen.mockReset().mockResolvedValue(vi.fn());
+  mocks.preview.mockReset().mockResolvedValue({ ...payload, total: 1, page: 1, pageSize: 20 });
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('desktop account page', () => {
+  it('explains why a system credential read is still waiting', async () => {
+    vi.useFakeTimers(); const pending = deferred<PlatformAccount[]>(); mocks.list.mockReturnValueOnce(pending.promise);
+    render(<AccountsView />); await settle(); await act(async () => vi.advanceTimersByTimeAsync(8000));
+    expect(screen.getByText(/系统凭据存储正在等待响应/)).toBeTruthy();
+    await act(async () => pending.resolve([account]));
+    expect(screen.queryByText(/系统凭据存储正在等待响应/)).toBeNull();
+  });
+  it('opens the shared preview and imports after closing it', async () => {
+    render(<AccountsView />); await settle();
+    click('预览 我的歌单'); await settle();
+    expect(screen.getByRole('dialog', { name: '我的歌单' })).toBeTruthy();
+    click('关闭'); await settle(); expect(screen.queryByRole('dialog')).toBeNull();
+    click('预览 我的歌单'); await settle(); click('导入这个歌单'); await settle();
+    expect(screen.queryByRole('dialog')).toBeNull(); expect(mocks.create).toHaveBeenCalledOnce();
+  });
+
+  it('reloads a native account change without interfering with an in-progress login', async () => {
+    let changed!: () => void; const unlisten = vi.fn();
+    mocks.listen.mockImplementation(async (_event, listener) => { changed = listener; return unlisten; });
+    const view = render(<AccountsView />); await settle();
+    mocks.list.mockResolvedValueOnce([{ ...account, state: 'expired' }]);
+    await act(async () => changed());
+    expect(screen.getByText('需要重新登录')).toBeTruthy();
+    const pending = deferred<{ platform: string; attemptId: string; startedAt: number }>();
+    mocks.start.mockReturnValueOnce(pending.promise); click('重新登录'); await settle();
+    await act(async () => changed());
+    const calls = mocks.list.mock.calls.length;
+    await act(async () => pending.resolve({ platform: 'netease', attemptId: 'latest', startedAt: 1 }));
+    expect(screen.getByRole('region', { name: '网易云音乐登录引导' })).toBeTruthy();
+    expect(mocks.list).toHaveBeenCalledTimes(calls + 1);
+    click('取消登录'); await settle();
+    mocks.list.mockRejectedValueOnce(new Error('account snapshot failed')); await act(async () => changed());
+    expect(screen.getByText('account snapshot failed')).toBeTruthy();
+    view.unmount(); expect(unlisten).toHaveBeenCalledOnce();
+  });
+
+  it('unsubscribes even when the event listener attaches after leaving the page', async () => {
+    const subscription = deferred<() => void>(); const unlisten = vi.fn(); mocks.listen.mockReturnValueOnce(subscription.promise);
+    const view = render(<AccountsView />); await settle(); view.unmount();
+    await act(async () => subscription.resolve(unlisten)); expect(unlisten).toHaveBeenCalledOnce();
+  });
   it('imports a complete native playlist and confirms duplicate local copies', async () => {
     const view = render(<AccountsView />); await settle();
     expect(screen.getByText('fixture')).toBeTruthy();
@@ -47,6 +91,7 @@ describe('desktop account page', () => {
     mocks.import.mockRejectedValueOnce(new Error('incomplete batch'));
     fireEvent.click(screen.getAllByRole('button', { name: '导入到本地' })[0]); await settle();
     expect(mocks.toast).toHaveBeenLastCalledWith('incomplete batch', 'error');
+    click('重试失败（1）'); await settle(); expect(mocks.create).toHaveBeenCalledOnce();
     mocks.import.mockRejectedValueOnce({ code: 'AUTH_REQUIRED', message: '已失效' });
     fireEvent.click(screen.getAllByRole('button', { name: '导入到本地' })[0]); await settle();
     expect(screen.getByText('需要重新登录')).toBeTruthy(); expect(screen.getByRole('alert').textContent).toContain('连接已失效');
@@ -57,7 +102,10 @@ describe('desktop account page', () => {
     const view = render(<AccountsView />); await settle();
     const pending = deferred<PlatformPlaylistImport>(); mocks.import.mockReturnValueOnce(pending.promise);
     fireEvent.click(screen.getAllByRole('button', { name: '导入到本地' })[0]); await settle();
-    fireEvent.change(screen.getByRole('combobox', { name: '查看哪个平台的歌单' }), { target: { value: 'qq' } }); await settle();
+    click('查看哪个平台的歌单');
+    fireEvent.click(screen.getByRole('option', { name: 'QQ 音乐' })); await settle();
+    expect(screen.getByRole('heading', { name: 'QQ 音乐的歌单' })).toBeTruthy();
+    expect(mocks.playlists).toHaveBeenLastCalledWith('qq');
     await act(async () => pending.resolve(payload)); expect(mocks.create).not.toHaveBeenCalled();
     const next = deferred<PlatformPlaylistImport>(); mocks.import.mockReturnValueOnce(next.promise);
     fireEvent.click(screen.getAllByRole('button', { name: '导入到本地' })[0]); await settle(); view.unmount();
@@ -69,7 +117,8 @@ describe('desktop account page', () => {
     render(<AccountsView />); await settle();
     const previous = deferred<PlatformPlaylistImport>(); mocks.import.mockReturnValueOnce(previous.promise);
     fireEvent.click(screen.getAllByRole('button', { name: '导入到本地' })[0]); await settle();
-    fireEvent.change(screen.getByRole('combobox', { name: '查看哪个平台的歌单' }), { target: { value: 'qq' } }); await settle();
+    click('查看哪个平台的歌单');
+    fireEvent.click(screen.getByRole('option', { name: 'QQ 音乐' })); await settle();
     const current = deferred<PlatformPlaylistImport>(); mocks.import.mockReturnValueOnce(current.promise);
     fireEvent.click(screen.getAllByRole('button', { name: '导入到本地' })[0]); await settle();
     expect(mocks.import).toHaveBeenLastCalledWith('qq', '42');

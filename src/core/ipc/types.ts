@@ -277,7 +277,7 @@ export interface RecommendationMaintenanceStats {
   llmCacheEntries: number;
 }
 
-export type AccountPlatform = 'netease' | 'qq';
+export type AccountPlatform = 'netease' | 'qq' | 'kuwo';
 
 /** Session cookies stay in Rust and the OS vault; views receive public fields only. */
 export interface PlatformAccount {
@@ -322,4 +322,22 @@ export interface PlatformPlaylistSong {
 export interface PlatformPlaylistImport {
   name: string;
   songs: PlatformPlaylistSong[];
+  unavailableCount?: number;
+}
+
+/** A bounded song page; preview never writes to the local library. */
+export interface PlatformPlaylistPreview {
+  name: string;
+  songs: PlatformPlaylistSong[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** Native account resolver result; contains no session or account identity. */
+export interface PlatformAccountPlayback {
+  url: string | null;
+  quality: string | null;
+  state: 'connected' | 'unavailable' | 'expired' | 'not_connected';
+  message: string | null;
 }

@@ -21,6 +21,15 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('native account lifecycle', () => {
+  it('shows a system credential wait after eight seconds and keeps waiting for the original read', async () => {
+    vi.useFakeTimers(); const pending = deferred<PlatformAccount[]>(); mocks.list.mockReturnValueOnce(pending.promise);
+    const view = renderHook(usePlatformAccounts); await settle();
+    expect(view.result.current.credentialWaiting).toBe(false);
+    await act(async () => vi.advanceTimersByTimeAsync(8000));
+    expect(view.result.current.credentialWaiting).toBe(true); expect(mocks.list).toHaveBeenCalledOnce();
+    await act(async () => pending.resolve([account]));
+    expect(view.result.current.loading).toBe(false); expect(view.result.current.accounts).toEqual([account]);
+  });
   it('connects, checks, refreshes and logs out without storing credentials in browser data', async () => {
     const { result } = renderHook(usePlatformAccounts); await settle();
     await act(async () => result.current.start('netease'));

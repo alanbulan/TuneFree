@@ -25,8 +25,8 @@ export function AccountCards({ accounts, busy, busyPlatform, native, onConnect, 
           <span className="account-avatar">{account?.avatarUrl
             ? <img src={account.avatarUrl} alt="" referrerPolicy="no-referrer" />
             : <CircleUserRound size={38} aria-hidden="true" />}</span>
-          <div><h3>{account?.nickname || '让你的歌单住进来'}</h3>
-            <p>{account ? '查看创建和收藏的歌单' : '使用平台官网完成登录'}</p></div>
+          <div><h3>{account?.nickname || '连接你的音乐账号'}</h3>
+            <p>{state === 'expired' ? '重新登录后继续使用账号播放' : account ? '播放优先使用这个账号' : '登录后直接播放、浏览个人歌单'}</p></div>
         </div>
         <div className="account-card-actions">
           {account && state !== 'expired' ? <>

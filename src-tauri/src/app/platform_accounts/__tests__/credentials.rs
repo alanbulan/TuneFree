@@ -78,14 +78,25 @@ fn malformed_or_cross_platform_stored_cookie_is_rejected() {
 #[ignore = "writes isolated test sessions to the system credential store"]
 fn native_account_session_store_round_trip() {
     let result = (|| {
-        for platform in [Platform::Netease, Platform::Qq] {
-            let session = if platform == Platform::Netease {
-                session()
-            } else {
-                super::super::qq::parse_account(
+        for platform in Platform::ALL {
+            let session = match platform {
+                Platform::Netease => session(),
+                Platform::Qq => super::super::qq::parse_account(
                     serde_json::json!({"info":{"nick":"fixture","encryptUin":"test-euin"}}),
                     "qqmusic_uin=123; qqmusic_key=test-session",
-                )?
+                )?,
+                Platform::Kuwo => Session {
+                    account: super::super::model::PlatformAccount {
+                        platform: "kuwo".into(),
+                        user_id: "123".into(),
+                        nickname: "fixture".into(),
+                        avatar_url: None,
+                        state: "connected".into(),
+                        connected_at: 1,
+                    },
+                    cookie: "userid=123; sid=test-session".into(),
+                    encrypted_user_id: None,
+                },
             };
             save_verified(&SystemCredentials, platform, &session)?;
             let raw = SystemCredentials.load(platform)?.unwrap();
@@ -99,7 +110,7 @@ fn native_account_session_store_round_trip() {
         }
         Ok::<(), CommandError>(())
     })();
-    for platform in [Platform::Netease, Platform::Qq] {
+    for platform in Platform::ALL {
         let _ = SystemCredentials.delete(platform);
     }
     result.unwrap();

@@ -86,7 +86,7 @@ pub(super) fn qq_data(value: Value) -> CommandResult<Value> {
     let codes = [value["code"].as_i64(), value["req"]["code"].as_i64()];
     if codes
         .iter()
-        .any(|code| matches!(code, Some(1000 | 2000 | 2001 | 10004)))
+        .any(|code| matches!(code, Some(1000 | 2000 | 2001 | 10004 | 104009)))
     {
         return Err(super::model::auth_required());
     }
@@ -94,6 +94,33 @@ pub(super) fn qq_data(value: Value) -> CommandResult<Value> {
         return Err(invalid_response());
     }
     Ok(value["req"]["data"].clone())
+}
+
+pub(super) async fn qq_signed(
+    client: &Client,
+    cookie: &str,
+    module: &str,
+    method: &str,
+    param: Value,
+    comm: Option<Value>,
+) -> CommandResult<Value> {
+    let body =
+        serde_json::json!({"comm":comm.unwrap_or_else(|| super::cookies::qq_request_comm(cookie)),
+        "req":{"module":module,"method":method,"param":param}})
+        .to_string();
+    let response = client
+        .post("https://u.y.qq.com/cgi-bin/musics.fcg")
+        .query(&[("sign", super::qq_sign::sign(&body))])
+        .header("Cookie", cookie)
+        .header("Referer", "https://y.qq.com/")
+        .header("Origin", "https://y.qq.com")
+        .header("Content-Type", "application/json")
+        .header("User-Agent", "Mozilla/5.0")
+        .body(body)
+        .send()
+        .await
+        .map_err(|_| CommandError::network("QQ 音乐账号解析失败，请稍后重试"))?;
+    qq_data(read_response(response).await?)
 }
 
 #[cfg(test)]

@@ -43,6 +43,18 @@ fn aes128_ecb_encrypt(data: &[u8], key: &[u8]) -> Vec<u8> {
     encrypted
 }
 
+pub(crate) fn eapi_parameters(path: &str, payload: &str) -> String {
+    let digest = format!(
+        "{:x}",
+        md5::compute(format!("nobody{path}use{payload}md5forencrypt"))
+    );
+    let target = format!("{path}-{EAPI_SEPARATOR}-{payload}-{EAPI_SEPARATOR}-{digest}");
+    aes128_ecb_encrypt(target.as_bytes(), EAPI_AES_KEY)
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect()
+}
+
 /// Unit-struct provider for the Netease Cloud Music platform.
 pub struct NeteaseProvider;
 

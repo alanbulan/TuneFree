@@ -24,7 +24,6 @@ pub const LOCAL_TOKEN_HEADER: &str = "x-tunefree-token";
 /// audio streams are not terminated mid-playback.
 #[derive(Clone)]
 pub struct ServerState {
-    pub(crate) accounts: crate::app::platform_accounts::PlatformAccountState,
     pub api_client: Client,
     pub proxy_client: Client,
     /// 自定义音源专用的转发客户端：目标为任意公网主机，
@@ -97,27 +96,16 @@ async fn handle_url(
 
     match crate::api::get_provider(&query.platform) {
         Some(provider) => {
-            let cookie = state.accounts.playback_cookie(&query.platform).await;
-            let result = match (query.platform.as_str(), cookie.as_deref()) {
-                ("netease", Some(cookie)) => {
-                    crate::api::netease::get_netease_url_with_cookie(
-                        state.accounts.http_client(),
-                        &query.id,
-                        &quality,
-                        cookie,
-                    )
-                    .await
-                }
-                ("qq" | "tencent", cookie) => {
+            // Authenticated playback is handled once by the account IPC before
+            // providers run. This fallback must never retry a weaker protocol
+            // with the same private session after the account path rejected it.
+            let result = match query.platform.as_str() {
+                "qq" | "tencent" => {
                     crate::api::qq::get_qq_url_with_cookie(
-                        if cookie.is_some() {
-                            state.accounts.http_client()
-                        } else {
-                            &state.api_client
-                        },
+                        &state.api_client,
                         &query.id,
                         &quality,
-                        cookie,
+                        None,
                         query.media_mid.as_deref(),
                     )
                     .await

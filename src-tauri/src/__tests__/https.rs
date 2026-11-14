@@ -3,13 +3,15 @@ use serde_json::Value;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 
-pub(crate) const HOSTS: [&str; 6] = [
+pub(crate) const HOSTS: [&str; 8] = [
     "music.163.com",
     "interface3.music.163.com",
     "u.y.qq.com",
     "search.kuwo.cn",
     "artistpicserver.kuwo.cn",
     "mobi.kuwo.cn",
+    "www.kuwo.cn",
+    "nplserver.kuwo.cn",
 ];
 
 pub(crate) struct HttpsServer {

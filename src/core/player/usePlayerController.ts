@@ -60,8 +60,9 @@ export const usePlayerController = (): PlayerController => {
     currentSong: runtime.currentSong,
     isPlaying: runtime.isPlaying,
     isLoading: runtime.isLoading,
+    playbackOrigin: runtime.playbackOrigin,
     isNearEnd,
-  }), [isNearEnd, runtime.currentSong, runtime.isLoading, runtime.isPlaying]);
+  }), [isNearEnd, runtime.currentSong, runtime.isLoading, runtime.isPlaying, runtime.playbackOrigin]);
   const queueStateValue = useMemo(() => ({
     queue: runtime.queue, playMode: runtime.playMode,
   }), [runtime.playMode, runtime.queue]);

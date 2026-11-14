@@ -27,6 +27,17 @@ const parsedFor = (id: string, patch: Partial<ParsedSongData> = {}): ParsedSongD
 });
 
 describe('音频播放失败的收敛', () => {
+  it('只有实际开始播放后才显示账号来源和实际音质，解析失败保留账号原因', async () => {
+    const h = createHarness(); const first = startPlayback(h, song('account')); await flushMicrotasks();
+    expect(h.double.runtime.setPlaybackOrigin).toHaveBeenLastCalledWith(null);
+    h.pending[0].resolve({ parsed: parsedFor('account', { playbackAccount: 'qq', playbackQuality: '128k' }), cacheKey: 'account-generation' });
+    await first.done;
+    expect(h.double.runtime.setPlaybackOrigin).toHaveBeenLastCalledWith({ source: 'qq', kind: 'account', quality: '128k' });
+    const second = startPlayback(h, song('expired')); await flushMicrotasks();
+    h.pending[1].resolve({ parsed: parsedFor('expired', { url: null, playbackNotice: '账号登录已失效' }), cacheKey: null });
+    await second.done; h.runRecovery.mock.calls[0][0].onGiveUp();
+    expect(h.showPlayerNotice).toHaveBeenCalledWith('账号登录已失效', 'error', 'playbackFailed');
+  });
   it.each(['AbortError', 'NotAllowedError', 'NotSupportedError', '普通失败'])('%s 走对应恢复路径', async (kind) => {
     const h = createHarness(); h.double.audio.play.mockRejectedValueOnce(new DOMException('source failed', kind));
     const playback = startPlayback(h, song('a')); await flushMicrotasks(); h.pending[0].resolve({ parsed: parsedFor('a'), cacheKey: null }); await playback.done;
@@ -44,7 +55,7 @@ describe('音频播放失败的收敛', () => {
   it('没有可用地址且恢复耗尽时清理状态并给出提示', async () => {
     const h = createHarness(); const playback = startPlayback(h, song('a')); await flushMicrotasks();
     h.pending[0].resolve({ parsed: null, cacheKey: null }); await playback.done; h.runRecovery.mock.calls[0][0].onGiveUp();
-    expect(h.clearActiveAudioSource).toHaveBeenCalled(); expect(h.double.setIsPlaying).toHaveBeenLastCalledWith(false); expect(h.showPlayerNotice).toHaveBeenCalledWith('未获取到可用播放地址，请在音源页查看解析失败原因', 'error', 'playbackFailed');
+    expect(h.clearActiveAudioSource).toHaveBeenCalled(); expect(h.double.setIsPlaying).toHaveBeenLastCalledWith(false); expect(h.showPlayerNotice).toHaveBeenCalledWith('未获取到可用播放地址，请检查账号连接或音源状态', 'error', 'playbackFailed');
     h.runRecovery.mock.calls[0][0].onGiveUp('连续失败'); expect(h.showPlayerNotice).toHaveBeenLastCalledWith('连续失败', 'error', 'playbackFailed');
   });
 });

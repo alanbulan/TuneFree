@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { ensureMusicSourcesInitialized } from '../../core/services/sources/manager';
-import { isTauri } from '../../core/ipc';
+import { isTauri, listenEvent } from '../../core/ipc';
+import { invalidatePlayback } from '../../core/services/sources/generation';
 
 /**
  * 自定义音源的运行时宿主：应用启动后拉起已启用音源的沙箱（Worker）。
@@ -15,6 +16,20 @@ export function MusicSourceRuntime() {
     void ensureMusicSourcesInitialized().catch((error: unknown) => {
       console.warn('[Sources] 音源初始化失败：', error);
     });
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    const subscription: { unlisten?: () => void } = {};
+    const subscribe = async () => {
+      try {
+        const next = await listenEvent('platform-account-changed', invalidatePlayback);
+        if (disposed) next(); else subscription.unlisten = next;
+      } catch { /* Native events may be unavailable in a browser preview. */ }
+    };
+    void subscribe();
+    return () => { disposed = true; subscription.unlisten?.(); };
   }, []);
 
   return null;

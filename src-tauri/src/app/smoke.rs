@@ -20,6 +20,30 @@ pub(crate) fn data_dir() -> Option<PathBuf> {
     CONFIG.get().map(|config| config.dir.clone())
 }
 
+/// Startup diagnostics contain only isolated renderer state, never user data.
+pub(crate) fn observe(app: &tauri::App) {
+    use tauri::Manager;
+    if !is_enabled() {
+        return;
+    }
+    let Some(window) = app.get_webview_window("main") else {
+        log::error!("冒烟启动：缺少主窗口");
+        return;
+    };
+    tauri::async_runtime::spawn(async move {
+        for _ in 0..3 {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            let result = window.eval_with_callback(
+                "JSON.stringify({readyState:document.readyState,rootChildren:document.getElementById('root')?.childElementCount??-1,native:!!window.__TAURI_INTERNALS__,visible:document.visibilityState,scripts:document.scripts.length})",
+                |state| log::info!("冒烟渲染状态：{state}"),
+            );
+            if let Err(error) = result {
+                log::warn!("冒烟启动：读取渲染状态失败：{error}");
+            }
+        }
+    });
+}
+
 pub(crate) fn configure<R: tauri::Runtime>(context: &mut tauri::Context<R>) -> CommandResult<()> {
     let Some(marker) = std::env::var_os("TUNEFREE_SMOKE_MARKER") else {
         return Ok(());
@@ -52,8 +76,8 @@ pub(crate) fn configure<R: tauri::Runtime>(context: &mut tauri::Context<R>) -> C
     }
     for window in &mut context.config_mut().app.windows {
         window.data_directory = Some(webview_dir.clone());
-        // WKWebView 隐藏时会暂停 requestAnimationFrame；就绪确认依赖首帧，
-        // 因此 macOS 验收必须显示主窗口，并用非持久化 WebView 隔离用户数据。
+        // macOS 显示隔离窗口以便观察；前端对被遮挡的 WKWebView 仍确认 DOM
+        // 已挂载，不依赖可能暂停的首帧。非持久化 WebView 隔离用户数据。
         window.visible = cfg!(target_os = "macos") && window.label == "main";
         #[cfg(target_os = "macos")]
         {

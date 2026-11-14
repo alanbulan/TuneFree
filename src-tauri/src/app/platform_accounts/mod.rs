@@ -2,9 +2,14 @@ mod commands;
 mod cookies;
 mod credentials;
 mod http;
+mod kuwo;
+mod login_window;
 mod model;
 mod netease;
+mod playback;
+mod preview;
 mod qq;
+mod qq_sign;
 
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -25,7 +30,8 @@ struct Inner {
     sessions: Mutex<HashMap<Platform, Session>>,
     attempts: Mutex<HashMap<Platform, PlatformLoginAttempt>>,
     operations: tokio::sync::Mutex<()>,
-    revisions: [AtomicU64; 2],
+    revisions: [AtomicU64; 3],
+    app: Mutex<Option<tauri::AppHandle>>,
     client: reqwest::Client,
 }
 
@@ -39,7 +45,8 @@ impl Default for PlatformAccountState {
             sessions: Mutex::new(HashMap::new()),
             attempts: Mutex::new(HashMap::new()),
             operations: tokio::sync::Mutex::new(()),
-            revisions: [AtomicU64::new(0), AtomicU64::new(0)],
+            revisions: [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)],
+            app: Mutex::new(None),
             client: http::client(),
         }))
     }
@@ -47,11 +54,23 @@ impl Default for PlatformAccountState {
 
 impl PlatformAccountState {
     fn revision(&self, platform: Platform) -> u64 {
-        self.0.revisions[usize::from(platform == Platform::Qq)].load(Ordering::SeqCst)
+        self.0.revisions[platform.index()].load(Ordering::SeqCst)
     }
 
     fn invalidate(&self, platform: Platform) {
-        self.0.revisions[usize::from(platform == Platform::Qq)].fetch_add(1, Ordering::SeqCst);
+        self.0.revisions[platform.index()].fetch_add(1, Ordering::SeqCst);
+        if let Some(app) = self.0.app.lock().as_ref() {
+            use tauri::Emitter;
+            let _ = app.emit_to(
+                "main",
+                "platform-account-changed",
+                serde_json::json!({"platform": platform.name()}),
+            );
+        }
+    }
+
+    pub(crate) fn attach_app(&self, app: tauri::AppHandle) {
+        *self.0.app.lock() = Some(app);
     }
 
     fn check_revision(&self, platform: Platform, revision: u64) -> CommandResult<()> {
@@ -72,7 +91,7 @@ impl PlatformAccountState {
         }
         let loaded = blocking(|| {
             let mut sessions = HashMap::new();
-            for platform in [Platform::Netease, Platform::Qq] {
+            for platform in Platform::ALL {
                 if let Some(raw) = SystemCredentials.load(platform)? {
                     let mut session: Session = serde_json::from_str(&raw).map_err(|_| {
                         CommandError::internal("已保存的登录会话损坏，请退出登录后重试")
@@ -117,8 +136,12 @@ impl PlatformAccountState {
         if error.code == crate::app::error::ErrorCode::AuthRequired
             && self.revision(platform) == revision
         {
-            if let Some(session) = sessions.get_mut(&platform) {
+            if let Some(session) = sessions
+                .get_mut(&platform)
+                .filter(|session| session.account.state != "expired")
+            {
                 session.account.state = "expired".into();
+                self.invalidate(platform);
             }
         }
     }
@@ -131,23 +154,6 @@ impl PlatformAccountState {
             .filter(|attempt| attempt.attempt_id == id)
             .cloned()
             .ok_or_else(|| CommandError::cancelled("这次登录已经结束，请重新连接"))
-    }
-
-    pub(crate) async fn playback_cookie(&self, platform: &str) -> Option<String> {
-        let platform = Platform::parse(if platform == "tencent" {
-            "qq"
-        } else {
-            platform
-        })
-        .ok()?;
-        self.session(platform)
-            .await
-            .ok()
-            .map(|(session, _)| session.cookie)
-    }
-
-    pub(crate) fn http_client(&self) -> &reqwest::Client {
-        &self.0.client
     }
 }
 
@@ -167,6 +173,7 @@ async fn fetch_account(
     match platform {
         Platform::Netease => netease::account(client, cookie).await,
         Platform::Qq => qq::account(client, cookie).await,
+        Platform::Kuwo => kuwo::account(client, cookie).await,
     }
 }
 

@@ -13,21 +13,26 @@ async fn invalidation_cancels_late_account_operations_and_expired_sessions_canno
     state.0.sessions.lock().insert(Platform::Netease, session);
     let (_, revision) = state.session(Platform::Netease).await.unwrap();
     assert_eq!(
-        state.playback_cookie("netease").await.as_deref(),
-        Some("MUSIC_U=fixture")
+        state
+            .session(Platform::Netease)
+            .await
+            .unwrap()
+            .0
+            .cookie
+            .as_str(),
+        "MUSIC_U=fixture"
     );
     state.invalidate(Platform::Netease);
     assert!(state.check_revision(Platform::Netease, revision).is_err());
     // A rejected old request cannot expire a newly connected session.
     state.expire(Platform::Netease, revision, &model::auth_required());
-    assert!(state.playback_cookie("netease").await.is_some());
+    assert!(state.session(Platform::Netease).await.is_ok());
     state.expire(
         Platform::Netease,
         state.revision(Platform::Netease),
         &model::auth_required(),
     );
-    assert!(state.playback_cookie("netease").await.is_none());
-    assert!(state.playback_cookie("unsupported").await.is_none());
+    assert!(state.session(Platform::Netease).await.is_err());
 }
 
 #[test]

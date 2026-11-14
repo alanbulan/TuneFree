@@ -205,3 +205,66 @@ async fn qq_reads_all_song_pages_and_rejects_changed_or_incomplete_totals() {
             .is_err());
     }
 }
+
+#[tokio::test]
+async fn qq_restores_canonical_encrypted_identity_from_the_liked_playlist() {
+    let mut session = qq_session();
+    session.encrypted_user_id = None;
+    let server = HttpsServer::start(json!([
+        qq_reply(
+            json!({"v_playlist":[{"tid":456,"dirId":201,"dirName":"liked","songNum":6}],"bFinish":true})
+        ),
+        qq_reply(
+            json!({"encrypt_login":"canonical-login-id","dirinfo":{"encrypt_uin":"canonical-login-id"}})
+        ),
+        qq_reply(json!({"v_list":[],"hasmore":0,"total":0}))
+    ]));
+    let result = qq::playlists(&server.client, &session).await.unwrap();
+    assert_eq!(result[0].id, "liked");
+    let calls = server.calls();
+    let detail: Value = serde_json::from_str(calls[1]["body"].as_str().unwrap()).unwrap();
+    let collected: Value = serde_json::from_str(calls[2]["body"].as_str().unwrap()).unwrap();
+    assert_eq!(detail["req"]["param"]["dirid"], 201);
+    assert_eq!(collected["req"]["param"]["uin"], "canonical-login-id");
+}
+
+#[tokio::test]
+async fn previews_only_the_requested_twenty_songs_on_each_platform() {
+    let ids: Vec<_> = (1..=45).map(|id| json!({"id":id})).collect();
+    let songs: Vec<_> = (21..=40).rev().map(netease_song).collect();
+    let server = HttpsServer::start(json!([
+        reply(
+            "music.163.com",
+            "/api/v6/playlist/detail",
+            json!({"code":200,"playlist":{"name":"preview","trackIds":ids,"trackCount":45,"tracks":[]}})
+        ),
+        reply(
+            "music.163.com",
+            "/api/v3/song/detail",
+            json!({"code":200,"songs":songs})
+        )
+    ]));
+    let result = preview::netease(&server.client, &netease_session(), "42", 2)
+        .await
+        .unwrap();
+    assert_eq!(result.songs.len(), 20);
+    assert_eq!(result.songs[0].id, "21");
+    assert_eq!(server.calls()[0]["query"]["n"], "20");
+    let detail: Value =
+        serde_json::from_str(server.calls()[1]["query"]["c"].as_str().unwrap()).unwrap();
+    assert_eq!(detail.as_array().unwrap().len(), 20);
+    let songs: Vec<_> = (21..=40).map(qq_song).collect();
+    let server = HttpsServer::start(json!([qq_reply(
+        json!({"dirinfo":{"title":"preview"},"songlist":songs,"total_song_num":45,"hasmore":1})
+    )]));
+    let result = preview::qq(&server.client, &qq_session(), "42", 2)
+        .await
+        .unwrap();
+    assert_eq!(result.songs.len(), 20);
+    let request: Value = serde_json::from_str(server.calls()[0]["body"].as_str().unwrap()).unwrap();
+    assert_eq!(request["req"]["param"]["song_begin"], 20);
+    assert_eq!(request["req"]["param"]["song_num"], 20);
+    assert!(preview::qq(&server.client, &qq_session(), "42", 0)
+        .await
+        .is_err());
+}

@@ -37,6 +37,11 @@ fn extracts_qq_music_identity_and_token_without_accepting_qq_only_login() {
     assert_eq!(comm["uin"], 1234);
     assert_eq!(comm["authst"], "W_X_fixture");
     assert_eq!(comm["tmeLoginType"], 1);
+    let comm =
+        qq_request_comm("qqmusic_uin=1234; qqmusic_key=W_X_fixture; login_type=2; tmeLoginType=1");
+    assert_eq!(comm["tmeLoginType"], 1);
+    let comm = qq_request_comm("qqmusic_uin=1234; qqmusic_key=Q_H_fixture; login_type=1");
+    assert_eq!(comm["tmeLoginType"], 2);
     assert_eq!(
         qq_user_id("qqmusic_uin=oops; uin=o00001234"),
         Some("1234".into())
@@ -59,6 +64,9 @@ fn login_navigation_requires_https_and_exact_platform_hosts() {
     for raw in [
         "https://y.qq.com/",
         "https://xui.ptlogin2.qq.com/",
+        "https://ssl.ptlogin2.graph.qq.com/check_sig?uin=123&ptsigx=fixture",
+        "https://graph.qq.com/oauth2.0/authorize",
+        "https://y.qq.com/portal/wx_redirect.html?login_type=1&code=fixture",
         "https://open.weixin.qq.com/",
     ] {
         assert!(login_navigation(
@@ -69,6 +77,8 @@ fn login_navigation_requires_https_and_exact_platform_hosts() {
     for raw in [
         "http://y.qq.com/",
         "https://y.qq.com.evil.test/",
+        "https://ssl.ptlogin2.graph.qq.com.evil.test/check_sig",
+        "mqqapi://forward/url?src_type=web",
         "https://y.qq.com:8443/",
         "https://user:pass@y.qq.com/",
         "file:///tmp/secret",
@@ -77,5 +87,50 @@ fn login_navigation_requires_https_and_exact_platform_hosts() {
             Platform::Qq,
             &url::Url::parse(raw).unwrap()
         ));
+    }
+}
+
+#[test]
+fn kuwo_only_collects_music_session_and_upgrades_known_oauth_callbacks() {
+    assert!(!has_session(
+        Platform::Kuwo,
+        "userid=123; kw_token=anonymous"
+    ));
+    assert!(has_session(
+        Platform::Kuwo,
+        "userid=123; sid=private_suffix"
+    ));
+    assert_eq!(
+        kuwo_session_id("userid=123; sid=private_suffix"),
+        Some("private")
+    );
+    let result = collect(
+        Platform::Kuwo,
+        vec![
+            cookie("userid", "123", ".kuwo.cn"),
+            cookie("sid", "private", ".kuwo.cn"),
+            cookie("sid", "evil", "evil.kuwo.cn"),
+            cookie("qqmusic_key", "QQ-session", ".qq.com"),
+        ],
+    );
+    assert_eq!(result, "sid=private; userid=123");
+    for path in [
+        "/US/platform/qq.jsp",
+        "/US/platform/WeixinCallback.jsp",
+        "/US_NEW/kuwo/login_by_qq_web",
+        "/US_NEW/kuwo/login_by_weixin_web",
+    ] {
+        let url = url::Url::parse(&format!("http://i.kuwo.cn{path}?code=private")).unwrap();
+        let upgraded = https_callback(Platform::Kuwo, &url).unwrap();
+        assert_eq!(upgraded.scheme(), "https");
+        assert_eq!(upgraded.query(), Some("code=private"));
+        assert!(login_navigation(Platform::Kuwo, &upgraded));
+    }
+    for raw in [
+        "http://evil.test/US/platform/qq.jsp",
+        "http://i.kuwo.cn/other",
+        "http://i.kuwo.cn:8080/US/platform/qq.jsp",
+    ] {
+        assert!(https_callback(Platform::Kuwo, &url::Url::parse(raw).unwrap()).is_none());
     }
 }

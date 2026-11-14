@@ -13,7 +13,7 @@ const viewMeta: Record<LibraryView, { description: string; title: string }> = {
   playlists: { description: '为不同的心情，收藏不同的声音。', title: '我的歌单' },
   downloads: { description: '保存到本地，随时都能听。', title: '下载' },
   sources: { description: '管理你的音乐来源。', title: '音源' },
-  accounts: { description: '连接你的音乐账号，把喜欢的歌单带到这里。', title: '平台账号' },
+  accounts: { description: '用自己的音乐账号听歌，喜欢的歌单也在这里。', title: '平台账号' },
   settings: { description: '让 TuneFree 更合你的习惯。', title: '设置' },
   about: { description: '版本信息、技术栈与开源致谢。', title: '关于' },
 };
