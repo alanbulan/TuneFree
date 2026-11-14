@@ -210,6 +210,7 @@ impl TestServer {
         // intercepting the loopback request under test.
         let client = Client::builder().no_proxy().build().unwrap();
         let state = ServerState {
+            accounts: Default::default(),
             api_client: client.clone(),
             proxy_client: client.clone(),
             source_proxy_client: client.clone(),

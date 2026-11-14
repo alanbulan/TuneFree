@@ -15,6 +15,7 @@ async fn authenticated_url_resolution_reports_verified_urls_and_sanitizes_networ
     let listener = bind_local_listener().unwrap();
     let port = listener.local_addr().unwrap().port();
     let state = ServerState {
+        accounts: Default::default(),
         api_client: upstream.client.clone(),
         proxy_client: upstream.client.clone(),
         source_proxy_client: upstream.client.clone(),

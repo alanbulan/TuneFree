@@ -30,6 +30,13 @@ describe('nativeProvider', () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain('platform=qq');
   });
 
+  it('QQ 曲目 MID 和媒体文件 MID 分别传入原生解析', async () => {
+    await nativeProvider.getUrl!({ platform: 'qq', id: 'song-mid', strMediaMid: 'media-mid', quality: '320k' });
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain('id=song-mid');
+    expect(url).toContain('mediaMid=media-mid');
+  });
+
   it('搜索与榜单：只认自己声明的平台', async () => {
     await expect(nativeProvider.search!('词', 'kugou', 1, 5)).resolves.toEqual([]);
     await expect(nativeProvider.topLists!('kugou')).resolves.toEqual([]);

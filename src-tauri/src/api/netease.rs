@@ -103,6 +103,17 @@ pub async fn get_netease_url(
     songmid: &str,
     quality: &str,
 ) -> Result<String, ApiError> {
+    get_netease_url_with_cookie(client, songmid, quality, "os=pc;").await
+}
+
+/// Authenticated requests are made only by the native account service's
+/// fixed-origin client. The cookie is never returned to a renderer/provider.
+pub(crate) async fn get_netease_url_with_cookie(
+    client: &Client,
+    songmid: &str,
+    quality: &str,
+    cookie: &str,
+) -> Result<String, ApiError> {
     let br = match quality {
         "128k" => 128000,
         "320k" => 320000,
@@ -135,13 +146,17 @@ pub async fn get_netease_url(
     let resp = client
         .post(EAPI_SONG_URL_ENDPOINT)
         .header("Content-Type", "application/x-www-form-urlencoded")
-        .header("Cookie", "os=pc;")
+        .header("Cookie", cookie)
         .body(body)
         .send()
-        .await?
-        .error_for_status()?;
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|error| ApiError::Network(error.without_url()))?;
 
-    let data: Value = resp.json().await?;
+    let data: Value = resp
+        .json()
+        .await
+        .map_err(|error| ApiError::Network(error.without_url()))?;
     parse_netease_url(&data)
 }
 

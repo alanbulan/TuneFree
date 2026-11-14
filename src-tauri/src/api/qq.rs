@@ -109,9 +109,19 @@ impl MusicProvider for QqProvider {
 /// Direct HTTPS audio URL on success, or `ApiError::VipContent` if the song
 /// is VIP/copyright-protected.
 pub async fn get_qq_url(client: &Client, songmid: &str, quality: &str) -> Result<String, ApiError> {
-    let filename = build_qq_filename(songmid, quality);
+    get_qq_url_with_cookie(client, songmid, quality, None, None).await
+}
 
-    let data_param = serde_json::json!({
+pub(crate) async fn get_qq_url_with_cookie(
+    client: &Client,
+    songmid: &str,
+    quality: &str,
+    cookie: Option<&str>,
+    media_mid: Option<&str>,
+) -> Result<String, ApiError> {
+    let filename = build_qq_filename(media_mid.unwrap_or(songmid), quality);
+
+    let mut payload = serde_json::json!({
         "queryvkey": {
             "method": "CgiGetVkey",
             "module": "vkey.GetVkeyServer",
@@ -125,20 +135,32 @@ pub async fn get_qq_url(client: &Client, songmid: &str, quality: &str) -> Result
                 "songmid": [songmid]
             }
         }
-    })
-    .to_string();
-
-    let resp = client
-        .get(QQ_MUSICU_ENDPOINT)
-        .query(&[("data", &data_param)])
+    });
+    if let Some(cookie) = cookie {
+        let comm = crate::app::platform_accounts::qq_request_comm(cookie);
+        payload["queryvkey"]["param"]["uin"] = comm["uin"].clone();
+        payload["comm"] = comm;
+    }
+    // A logged-in comm contains authst. Keep it out of URLs, which reqwest
+    // errors and network diagnostics can include verbatim.
+    let mut request = client
+        .post(QQ_MUSICU_ENDPOINT)
+        .json(&payload)
         .header("User-Agent", get_random_user_agent())
         .header("Origin", "https://y.qq.com")
-        .header("Referer", "https://y.qq.com/portal/search.html")
+        .header("Referer", "https://y.qq.com/portal/search.html");
+    if let Some(cookie) = cookie {
+        request = request.header("Cookie", cookie);
+    }
+    let resp = request
         .send()
-        .await?
-        .error_for_status()?;
-
-    let data: Value = resp.json().await?;
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|error| ApiError::Network(error.without_url()))?;
+    let data: Value = resp
+        .json()
+        .await
+        .map_err(|error| ApiError::Network(error.without_url()))?;
     parse_vkey_url(&data)
 }
 

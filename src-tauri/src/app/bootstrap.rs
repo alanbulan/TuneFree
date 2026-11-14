@@ -21,8 +21,8 @@ use super::system_commands::{
     LocalServerState,
 };
 use super::{
-    desktop_lyric, desktop_lyric_bounds, desktop_lyric_render, downloads, recommendation_commands,
-    system_commands, updater,
+    desktop_lyric, desktop_lyric_bounds, desktop_lyric_render, downloads, platform_accounts,
+    recommendation_commands, system_commands, updater,
 };
 use crate::{recommendation::RecommendationService, server};
 
@@ -44,6 +44,7 @@ struct BootstrapContext {
 }
 
 struct SetupContext {
+    accounts: platform_accounts::PlatformAccountState,
     api_client: reqwest::Client,
     proxy_client: reqwest::Client,
     source_proxy_client: reqwest::Client,
@@ -274,6 +275,7 @@ fn setup_application(
     };
     tauri::async_runtime::spawn(server::start_server(
         server::ServerState {
+            accounts: context.accounts,
             api_client: context.api_client,
             proxy_client: context.proxy_client,
             source_proxy_client: context.source_proxy_client,
@@ -323,9 +325,12 @@ fn application_context() -> tauri::Context<tauri::Wry> {
     app_context
 }
 
-fn build_application(context: BootstrapContext) -> tauri::App {
-    let app_context = application_context();
-    let setup_context = SetupContext {
+fn make_setup_context(
+    context: BootstrapContext,
+    accounts: platform_accounts::PlatformAccountState,
+) -> SetupContext {
+    SetupContext {
+        accounts,
         api_client: context.api_client.clone(),
         proxy_client: context.proxy_client,
         source_proxy_client: context.source_proxy_client,
@@ -333,7 +338,12 @@ fn build_application(context: BootstrapContext) -> tauri::App {
         server_listener: context.server_listener,
         local_server_port: context.local_server_port,
         local_server_token: context.local_server_token.clone(),
-    };
+    }
+}
+
+fn build_application(context: BootstrapContext) -> tauri::App {
+    let app_context = application_context();
+    let accounts = platform_accounts::PlatformAccountState::default();
     let builder = tauri::Builder::default();
     // The single-instance plugin must be registered first so a second launch
     // exits before touching any shared resources; its callback runs in the
@@ -353,20 +363,21 @@ fn build_application(context: BootstrapContext) -> tauri::App {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(context.lifecycle)
+        .manage(context.lifecycle.clone())
         // Must be registered here rather than in `setup`: windows begin loading
         // the frontend before `setup` runs, and `get_local_server_info` is among
         // the first commands the renderer issues.
         .manage(LocalServerState {
             port: context.local_server_port,
-            token: context.local_server_token,
+            token: context.local_server_token.clone(),
         })
-        .manage(context.api_client)
-        .manage(DownloadClient(context.download_client))
+        .manage(context.api_client.clone())
+        .manage(DownloadClient(context.download_client.clone()))
         .manage(DownloadTaskRegistry::default())
         .manage(downloads::DownloadMetaStore::default())
         .manage(DesktopLyricBoundsSaveState::default())
         .manage(DesktopLyricRenderState::default())
+        .manage(accounts.clone())
         .invoke_handler(tauri::generate_handler![
             downloads::transfer::download_song_to_local,
             downloads::transfer::cancel_download,
@@ -403,10 +414,18 @@ fn build_application(context: BootstrapContext) -> tauri::App {
             desktop_lyric_render::mark_desktop_lyric_ready,
             desktop_lyric::show_desktop_lyric_window,
             desktop_lyric::set_desktop_lyric_lock,
-            desktop_lyric::hide_desktop_lyric_window
+            desktop_lyric::hide_desktop_lyric_window,
+            platform_accounts::list_platform_accounts,
+            platform_accounts::start_platform_login,
+            platform_accounts::finish_platform_login,
+            platform_accounts::cancel_platform_login,
+            platform_accounts::refresh_platform_account,
+            platform_accounts::logout_platform_account,
+            platform_accounts::list_platform_playlists,
+            platform_accounts::import_platform_playlist
         ])
         .on_window_event(handle_desktop_lyric_event)
-        .setup(move |app| setup_application(app, setup_context))
+        .setup(move |app| setup_application(app, make_setup_context(context, accounts)))
         .build(app_context)
         .expect("error while building tauri application")
 }

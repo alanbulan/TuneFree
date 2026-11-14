@@ -24,6 +24,7 @@ pub const LOCAL_TOKEN_HEADER: &str = "x-tunefree-token";
 /// audio streams are not terminated mid-playback.
 #[derive(Clone)]
 pub struct ServerState {
+    pub(crate) accounts: crate::app::platform_accounts::PlatformAccountState,
     pub api_client: Client,
     pub proxy_client: Client,
     /// 自定义音源专用的转发客户端：目标为任意公网主机，
@@ -56,6 +57,9 @@ pub struct UrlQuery {
     pub id: String,
     /// Desired audio quality (e.g. "128k", "320k", "flac"). Defaults to "128k".
     pub quality: Option<String>,
+    /// QQ Music file MID can differ from the song MID used in vkey songmid.
+    #[serde(rename = "mediaMid")]
+    pub media_mid: Option<String>,
 }
 
 /// Response body for the `/api/url` endpoint.
@@ -92,32 +96,62 @@ async fn handle_url(
     let quality = query.quality.clone().unwrap_or_else(|| "128k".to_string());
 
     match crate::api::get_provider(&query.platform) {
-        Some(provider) => match provider
-            .get_url(&state.api_client, &query.id, &quality)
-            .await
-        {
-            Ok(url) => (
-                StatusCode::OK,
-                Json(UrlResponse {
-                    url: Some(url),
-                    error: None,
-                }),
-            ),
-            Err(e) => {
-                log::warn!(
-                    "URL resolution failed for platform {}: {}",
-                    query.platform,
-                    e
-                );
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
+        Some(provider) => {
+            let cookie = state.accounts.playback_cookie(&query.platform).await;
+            let result = match (query.platform.as_str(), cookie.as_deref()) {
+                ("netease", Some(cookie)) => {
+                    crate::api::netease::get_netease_url_with_cookie(
+                        state.accounts.http_client(),
+                        &query.id,
+                        &quality,
+                        cookie,
+                    )
+                    .await
+                }
+                ("qq" | "tencent", cookie) => {
+                    crate::api::qq::get_qq_url_with_cookie(
+                        if cookie.is_some() {
+                            state.accounts.http_client()
+                        } else {
+                            &state.api_client
+                        },
+                        &query.id,
+                        &quality,
+                        cookie,
+                        query.media_mid.as_deref(),
+                    )
+                    .await
+                }
+                _ => {
+                    provider
+                        .get_url(&state.api_client, &query.id, &quality)
+                        .await
+                }
+            };
+            match result {
+                Ok(url) => (
+                    StatusCode::OK,
                     Json(UrlResponse {
-                        url: None,
-                        error: Some(public_error_message(&e)),
+                        url: Some(url),
+                        error: None,
                     }),
-                )
+                ),
+                Err(e) => {
+                    log::warn!(
+                        "URL resolution failed for platform {}: {}",
+                        query.platform,
+                        e
+                    );
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(UrlResponse {
+                            url: None,
+                            error: Some(public_error_message(&e)),
+                        }),
+                    )
+                }
             }
-        },
+        }
         None => (
             StatusCode::BAD_REQUEST,
             Json(UrlResponse {

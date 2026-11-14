@@ -14,6 +14,7 @@ fn resolved_client(address: std::net::SocketAddr) -> reqwest::Client {
 
 fn state_with(client: reqwest::Client) -> ServerState {
     ServerState {
+        accounts: Default::default(),
         api_client: client.clone(),
         proxy_client: client.clone(),
         source_proxy_client: client,
