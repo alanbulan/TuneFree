@@ -18,7 +18,7 @@ vi.mock('../hooks/useSongDownload', () => ({ DownloadProvider: ({ children }: Pr
 vi.mock('../components/RecommendationSyncBridge', () => ({ RecommendationSyncBridge: () => null }));
 vi.mock('../components/LibrarySaveNotice', () => ({ LibrarySaveNotice: () => null }));
 vi.mock('../components/DesktopShell', () => ({ default: ({ view, onViewChange }: { view: string; onViewChange: (v: string) => void }) =>
-  <div><span>页面：{view}</span><button onClick={() => onViewChange('settings')}>设置</button></div> }));
+  <div className="desktop-shell"><span>页面：{view}</span><button onClick={() => onViewChange('settings')}>设置</button></div> }));
 const ready = async () => { await act(async () => {}); };
 beforeEach(() => {
   vi.useFakeTimers(); mocks.tauri = true; vi.clearAllMocks(); window.history.replaceState({}, '', '/');
@@ -66,5 +66,23 @@ describe('启动屏障和路由', () => {
     expect(console.error).toHaveBeenCalledWith('确认主界面启动就绪失败', expect.any(Error)); view.unmount();
     mocks.tauri = false; mocks.invoke.mockClear(); render(<DesktopApp initialView="downloads" />); await ready();
     expect(screen.getByText('页面：downloads')).toBeTruthy(); expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it('隐藏的原生窗口在业务界面挂载后确认就绪，不依赖被冻结的动画帧', async () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    const frame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+    const view = render(<DesktopApp />); await ready();
+    await act(async () => vi.advanceTimersByTimeAsync(150));
+    expect(view.container.querySelector('.app-root.is-ready .desktop-shell')).toBeTruthy();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(mocks.invoke).toHaveBeenCalledWith('mark_frontend_ready');
+    expect(frame).not.toHaveBeenCalled();
+  });
+
+  it('业务外壳未挂载时不发出就绪标记', async () => {
+    vi.spyOn(document, 'querySelector').mockReturnValue(null);
+    render(<DesktopApp />); await ready();
+    await act(async () => vi.advanceTimersByTimeAsync(160));
+    expect(mocks.invoke).not.toHaveBeenCalledWith('mark_frontend_ready');
   });
 });

@@ -39,7 +39,7 @@ const createHarness = (queue: Song[], currentSong: Song | null): Harness => {
   const resolver = {
     preloadNextSong,
     resolveParsedSong: vi.fn(),
-    getParsedSongCacheKey: vi.fn(),
+    getParsedSongCacheKey: vi.fn(() => 'current-account'),
   } as unknown as Parameters<typeof useQueueControls>[4];
 
   const mount = () => {
@@ -98,6 +98,19 @@ describe("useQueueControls 预加载副作用", () => {
 });
 
 describe("useQueueControls 随机播放导航", () => {
+  it('账号切换后换队列或单曲循环会重新解析当前歌曲', async () => {
+    const first = song('account'); const harness = createHarness([first], first);
+    harness.double.audio.src = 'https://audio.test/previous-account.mp3';
+    harness.double.audio.paused = false;
+    harness.double.refs.activeParsedCacheKey.current = 'previous-account';
+    const { result } = harness.mount();
+    await act(() => result.current.playQueue([first]));
+    expect(harness.playSong).toHaveBeenCalledWith(first);
+    harness.playSong.mockClear(); harness.double.refs.playMode.current = 'loop';
+    act(() => result.current.playNext(false));
+    expect(harness.playSong).toHaveBeenCalledWith(first);
+    expect(harness.double.audio.play).not.toHaveBeenCalled();
+  });
   it("随机模式下的上一首回到刚刚播过的那一首", () => {
     const queue = Array.from({ length: 8 }, (_, index) => song(String(index + 1)));
     const harness = createHarness(queue, queue[0]);

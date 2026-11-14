@@ -247,6 +247,7 @@ fn setup_application(
     app: &mut tauri::App,
     context: SetupContext,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    context.accounts.attach_app(app.handle().clone());
     // Windows are created — and start loading the frontend — before `setup`
     // runs, so any state the renderer's first commands need must already be
     // registered. v1.1.28 shipped with `LocalServerState` managed here instead
@@ -275,7 +276,6 @@ fn setup_application(
     };
     tauri::async_runtime::spawn(server::start_server(
         server::ServerState {
-            accounts: context.accounts,
             api_client: context.api_client,
             proxy_client: context.proxy_client,
             source_proxy_client: context.source_proxy_client,
@@ -285,6 +285,7 @@ fn setup_application(
         server_listener,
         context.shutdown_rx,
     ));
+    super::smoke::observe(app);
     Ok(())
 }
 
@@ -341,10 +342,12 @@ fn make_setup_context(
     }
 }
 
-fn build_application(context: BootstrapContext) -> tauri::App {
-    let app_context = application_context();
-    let accounts = platform_accounts::PlatformAccountState::default();
-    let builder = tauri::Builder::default();
+fn application_builder() -> tauri::Builder<tauri::Wry> {
+    let builder = tauri::Builder::default().on_page_load(|window, payload| {
+        if super::smoke::is_enabled() && window.label() == "main" {
+            log::info!("冒烟主页面加载：{:?}", payload.event());
+        }
+    });
     // The single-instance plugin must be registered first so a second launch
     // exits before touching any shared resources; its callback runs in the
     // first instance and raises the (possibly tray-hidden) main window.
@@ -359,6 +362,12 @@ fn build_application(context: BootstrapContext) -> tauri::App {
         ))
     };
     builder
+}
+
+fn build_application(context: BootstrapContext) -> tauri::App {
+    let app_context = application_context();
+    let accounts = platform_accounts::PlatformAccountState::default();
+    application_builder()
         .plugin(build_log_plugin())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -422,7 +431,9 @@ fn build_application(context: BootstrapContext) -> tauri::App {
             platform_accounts::refresh_platform_account,
             platform_accounts::logout_platform_account,
             platform_accounts::list_platform_playlists,
-            platform_accounts::import_platform_playlist
+            platform_accounts::import_platform_playlist,
+            platform_accounts::preview_platform_playlist,
+            platform_accounts::resolve_platform_account_url
         ])
         .on_window_event(handle_desktop_lyric_event)
         .setup(move |app| setup_application(app, make_setup_context(context, accounts)))

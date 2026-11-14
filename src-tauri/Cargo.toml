@@ -49,6 +49,8 @@ reqwest = { version = "0.13.5", default-features = false, features = ["json", "q
 tower-http = { version = "0.7.1", features = ["cors"] }
 aes = "0.9.4"
 md5 = "0.8.1"
+# QQ's public musicu wire signature requires SHA-1; never used for local credentials.
+sha1 = "0.11.0"
 # Reuse the system RNG already present in Cargo.lock.
 getrandom = "=0.4.3"
 base64 = "0.23.1"

@@ -31,6 +31,8 @@ import type {
   PlatformLoginStatus,
   PlatformPlaylist,
   PlatformPlaylistImport,
+  PlatformPlaylistPreview,
+  PlatformAccountPlayback,
 } from "./types";
 
 export interface CommandMap {
@@ -117,6 +119,11 @@ export interface CommandMap {
   logout_platform_account: { args: { platform: string }; result: void };
   list_platform_playlists: { args: { platform: string }; result: PlatformPlaylist[] };
   import_platform_playlist: { args: { platform: string; playlistId: string }; result: PlatformPlaylistImport };
+  preview_platform_playlist: { args: { platform: string; playlistId: string; page: number }; result: PlatformPlaylistPreview };
+  resolve_platform_account_url: {
+    args: { platform: string; songId: string; quality: string; mediaMid?: string; rejectedUrls?: string[] };
+    result: PlatformAccountPlayback;
+  };
 }
 
 export async function invokeCommand<K extends keyof CommandMap>(

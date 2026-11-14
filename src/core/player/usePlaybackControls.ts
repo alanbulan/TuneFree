@@ -33,6 +33,11 @@ export const usePlaybackControls = (
     const audio = audioRef.current;
     const song = currentSongRef.current;
     if (!song) return;
+    const previousKey = refs.activeParsedCacheKey.current;
+    if (previousKey && previousKey !== resolver.getParsedSongCacheKey(song, audioQualityRef.current)) {
+      await playSongRef.current(song);
+      return;
+    }
     if (pendingQualityChangeRef.current &&
         activeQualityRef.current !== audioQualityRef.current) {
       await playSongRef.current(song, audioQualityRef.current);
@@ -69,7 +74,7 @@ export const usePlaybackControls = (
       audioLifecycle.clearActiveAudioSource();
       await playSongRef.current(song);
     }
-  }, [audioLifecycle, recommendation, recovery, resolver, setIsLoading, setIsPlaying, audioRef, currentSongRef, playRequestIdRef, pendingQualityChangeRef, activeQualityRef, audioQualityRef, playSongRef, audioContextRef]);
+  }, [audioLifecycle, recommendation, recovery, resolver, refs, setIsLoading, setIsPlaying, audioRef, currentSongRef, playRequestIdRef, pendingQualityChangeRef, activeQualityRef, audioQualityRef, playSongRef, audioContextRef]);
 
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;

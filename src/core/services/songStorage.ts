@@ -12,6 +12,7 @@ export const stripRuntimeSongFields = (song: Song): Song => ({
   ...(song.picId ? { picId: song.picId } : {}),
   ...(song.urlId ? { urlId: song.urlId } : {}),
   ...(song.lyricId ? { lyricId: song.lyricId } : {}),
+  ...(song.strMediaMid ? { strMediaMid: song.strMediaMid } : {}),
   ...(song.hash ? { hash: song.hash } : {}),
   ...(song.albumId ? { albumId: song.albumId } : {}),
   ...(song.qualityHashes ? { qualityHashes: song.qualityHashes } : {}),

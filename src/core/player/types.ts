@@ -17,10 +17,18 @@ export interface PlayerNotice {
   kind?: PlayerNoticeKind;
 }
 
+export interface PlaybackOrigin {
+  source: string;
+  kind: 'account' | 'source' | 'offline';
+  quality: string;
+}
+
 export interface PlayerContextValue {
   currentSong: Song | null;
   isPlaying: boolean;
   isLoading: boolean;
+  /** The source actually used by the active media element, never persisted with a song. */
+  playbackOrigin?: PlaybackOrigin | null;
   /** 播放进度是否已进入尾声（> 0.92），低频派生量，供桌宠等只关心阈值的订阅方使用。 */
   isNearEnd: boolean;
   currentTime: number;
@@ -59,7 +67,7 @@ export type PlayerActions = Pick<PlayerContextValue,
   | "clearQueue" | "setAudioQuality" | "initAudioContext"
 >;
 export type PlayerNowPlaying =
-  Pick<PlayerContextValue, "currentSong" | "isPlaying" | "isLoading" | "isNearEnd">;
+  Pick<PlayerContextValue, "currentSong" | "isPlaying" | "isLoading" | "isNearEnd" | "playbackOrigin">;
 export type PlayerQueueState = Pick<PlayerContextValue, "queue" | "playMode">;
 export type PlayerSettings = Pick<PlayerContextValue, "audioQuality">;
 export type PlayerAnalyser = Pick<PlayerContextValue, "analyser">;

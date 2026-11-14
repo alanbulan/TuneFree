@@ -19,6 +19,7 @@ import {
   searchSongs as searchPlatformSongs,
 } from "./sources/registry";
 import { toSourceResolveRequest, type SourceResolveRequest } from "./sources/types";
+import { resolveAccountUrl } from './accountResolution';
 
 /**
  * 解析链路的编排层。
@@ -51,6 +52,9 @@ export type ParsedSongFull = {
   resolvedPicId?: string;
   /** 跨源匹配结果的元数据，供延后获取歌词和封面时使用。 */
   resolvedSongMeta?: SongMeta;
+  playbackAccount?: string;
+  playbackQuality?: string;
+  playbackNotice?: string;
 };
 
 // 跨音源 fallback（与 Flutter / 移动 PWA 对齐）：
@@ -94,7 +98,10 @@ const getDirectSongUrl = async (
   if (!hasPlayableId(id) || !source || source === "undefined") {
     return null;
   }
-  return resolveDirectUrl(toSourceRequest(id, source, quality, songMeta, options));
+  const request = toSourceRequest(id, source, quality, songMeta, options);
+  const account = await resolveAccountUrl(request);
+  if (account?.url && !isRejectedUrl(request, account.url)) return normalizeMusicUrl(account.url) || account.url;
+  return resolveDirectUrl(request);
 };
 
 const resolveDirectSongFull = async (
@@ -109,6 +116,17 @@ const resolveDirectSongFull = async (
   }
 
   const request = toSourceRequest(id, platform, quality, songMeta, options);
+  const account = await resolveAccountUrl(request);
+  if (account?.url && !isRejectedUrl(request, account.url)) {
+    return {
+      url: normalizeMusicUrl(account.url) || account.url,
+      lrc: options?.deferMetadata ? '' : await getLyrics(id, platform, songMeta, options),
+      pic: songMeta?.pic ? normalizeMusicUrl(songMeta.pic) : '',
+      resolvedSource: platform, resolvedId: id, resolvedLyricId: songMeta?.lyricId || id,
+      resolvedPicId: songMeta?.picId, playbackAccount: platform,
+      ...(account.quality ? { playbackQuality: account.quality } : {}),
+    };
+  }
   // 专属平台（如 GD 的 joox / bilibili）由 provider 一次性拿 url + 歌词 + 封面。
   const full = await resolveFull(request);
   if (full) {
@@ -118,18 +136,19 @@ const resolveDirectSongFull = async (
       resolvedId: id,
       resolvedLyricId: songMeta?.lyricId || id,
       resolvedPicId: songMeta?.picId,
+      ...(!full.url && account?.message ? { playbackNotice: account.message } : {}),
     };
   }
 
   const [url, lrc] = await Promise.all([
-    getDirectSongUrl(id, platform, quality, songMeta, options),
+    resolveDirectUrl(request),
     options?.deferMetadata ? Promise.resolve('') : getLyrics(id, platform, songMeta, options),
   ]);
   const declaredPic = songMeta?.pic ? normalizeMusicUrl(songMeta.pic) : "";
   // 自定义音源常在 pic action 里给封面；只有缺封面时才多花一次请求。
   const pic = declaredPic || (options?.deferMetadata ? '' : await resolvePic(request));
 
-  if (!url && !lrc && !pic) return null;
+  if (!url && !lrc && !pic && !account?.message) return null;
 
   return {
     url,
@@ -139,6 +158,7 @@ const resolveDirectSongFull = async (
     resolvedId: id,
     resolvedLyricId: songMeta?.lyricId || id,
     resolvedPicId: songMeta?.picId,
+    ...(!url && account?.message ? { playbackNotice: account.message } : {}),
   };
 };
 
@@ -250,6 +270,8 @@ const resolveFallbackSongFull = async (
               resolvedLyricId: parsed.resolvedLyricId,
               resolvedPicId: parsed.resolvedPicId,
               resolvedSongMeta: candidate,
+              ...(parsed.playbackAccount ? { playbackAccount: parsed.playbackAccount } : {}),
+              ...(parsed.playbackQuality ? { playbackQuality: parsed.playbackQuality } : {}),
             };
           }
         }

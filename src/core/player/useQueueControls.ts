@@ -16,7 +16,7 @@ export const useQueueControls = (
   resolver: SongResolver,
 ) => {
   const { commitCurrentSong, commitQueue, refs, setDuration,
-    setIsLoading, setIsPlaying, setPlayMode } = runtime;
+    setIsLoading, setIsPlaying, setPlayMode, setPlaybackOrigin } = runtime;
   const {
     preloadedResolutionKey: preloadedResolutionKeyRef, audio: audioRef, currentSong: currentSongRef,
     playSong: playSongRef, queue: queueRef, playMode: playModeRef,
@@ -40,13 +40,15 @@ export const useQueueControls = (
     commitQueue(nextQueue);
     const activeAudio = audioRef.current;
     if (isSameSong(currentSongRef.current, targetSong) && activeAudio?.src &&
-        activeAudio.src !== window.location.href && !activeAudio.paused) {
+        activeAudio.src !== window.location.href && !activeAudio.paused &&
+        (!refs.activeParsedCacheKey.current || refs.activeParsedCacheKey.current ===
+          resolver.getParsedSongCacheKey(targetSong, audioQualityRef.current))) {
       commitCurrentSong({ ...currentSongRef.current, ...targetSong } as Song);
       resolver.preloadNextSong(targetSong);
       return;
     }
     await playSongRef.current(targetSong);
-  }, [commitCurrentSong, commitQueue, resolver, preloadedResolutionKeyRef, audioRef, currentSongRef, playSongRef]);
+  }, [commitCurrentSong, commitQueue, resolver, refs, audioQualityRef, preloadedResolutionKeyRef, audioRef, currentSongRef, playSongRef]);
 
   const playNext = useCallback((force = true) => {
     const queue = queueRef.current;
@@ -54,6 +56,11 @@ export const useQueueControls = (
     if (queue.length === 0) return;
     if (force) recommendation.logEarlySkipIfNeeded();
     if (!force && playModeRef.current === "loop") {
+      const previousKey = refs.activeParsedCacheKey.current;
+      if (current && previousKey && previousKey !== resolver.getParsedSongCacheKey(current, audioQualityRef.current)) {
+        void playSongRef.current(current);
+        return;
+      }
       if (audioRef.current) {
         audioRef.current.currentTime = 0;
         audio.updateCurrentTimeState(0);
@@ -72,7 +79,7 @@ export const useQueueControls = (
     } else {
       void playSongRef.current(nextSong);
     }
-  }, [audio, recommendation, refs, audioRef, currentSongRef, playSongRef, queueRef, playModeRef, refreshedResolutionsRef, audioQualityRef]);
+  }, [audio, recommendation, resolver, refs, audioRef, currentSongRef, playSongRef, queueRef, playModeRef, refreshedResolutionsRef, audioQualityRef]);
 
   const playPrev = useCallback(() => {
     const activeAudio = audioRef.current;
@@ -113,6 +120,7 @@ export const useQueueControls = (
         activeAudio.load();
       }
       commitCurrentSong(null);
+      setPlaybackOrigin(null);
       audio.updateCurrentTimeState(0);
       setDuration(0);
       setIsPlaying(false);
@@ -125,7 +133,7 @@ export const useQueueControls = (
     }
     const nextSong = nextQueue[Math.min(removedIndex, nextQueue.length - 1)] || nextQueue[0];
     if (nextSong) void playSongRef.current(nextSong);
-  }, [audio, commitCurrentSong, commitQueue, setDuration, setIsLoading, setIsPlaying, preloadedResolutionKeyRef, audioRef, currentSongRef, playSongRef, queueRef, playRequestIdRef, playAbortRef]);
+  }, [audio, commitCurrentSong, commitQueue, setDuration, setIsLoading, setIsPlaying, setPlaybackOrigin, preloadedResolutionKeyRef, audioRef, currentSongRef, playSongRef, queueRef, playRequestIdRef, playAbortRef]);
 
   const clearQueue = useCallback(() => {
     preloadedResolutionKeyRef.current = null;

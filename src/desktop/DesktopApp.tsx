@@ -81,11 +81,19 @@ export default function DesktopApp({ initialView = 'home' }: { initialView?: Des
 
   useEffect(() => {
     if (!serverReady || !isReady || !isTauri()) return;
-    const frame = requestAnimationFrame(() => {
+    // Effects run after React commits the shell. Verify that mount explicitly;
+    // an occluded WKWebView suspends rAF even when its native window is visible.
+    if (!document.querySelector('.app-root.is-ready .desktop-shell')) return;
+    const confirmReady = () => {
       void invokeCommand('mark_frontend_ready').catch((error: unknown) => {
         console.error('确认主界面启动就绪失败', error);
       });
-    });
+    };
+    if (document.visibilityState === 'hidden') {
+      const timer = setTimeout(confirmReady, 0);
+      return () => clearTimeout(timer);
+    }
+    const frame = requestAnimationFrame(confirmReady);
     return () => cancelAnimationFrame(frame);
   }, [isReady, serverReady]);
 

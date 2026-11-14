@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isTauri, toIpcError, type AccountPlatform, type PlatformAccount, type PlatformLoginAttempt, type PlatformPlaylist } from '../../../../core/ipc';
+import { isTauri, listenEvent, toIpcError, type AccountPlatform, type PlatformAccount, type PlatformLoginAttempt, type PlatformPlaylist } from '../../../../core/ipc';
 import { accountPlatformName, platformAccounts } from '../../../../core/services/platformAccounts';
 
 export function usePlatformAccounts() {
   const [accounts, setAccounts] = useState<PlatformAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [credentialWaiting, setCredentialWaiting] = useState(false);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState<PlatformLoginAttempt | null>(null);
   const [loginError, setLoginError] = useState('');
@@ -15,16 +16,39 @@ export function usePlatformAccounts() {
   const generation = useRef(0);
   const operation = useRef(false);
   const loginCheck = useRef(false);
+  const changed = useRef(false);
+  const snapshot = useRef(0);
   const native = isTauri();
+
+  useEffect(() => {
+    if (!loading) return;
+    const timer = setTimeout(() => setCredentialWaiting(true), 8000);
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   const upsert = useCallback((account: PlatformAccount) => {
     setAccounts((previous) => [...previous.filter((item) => item.platform !== account.platform), account]);
   }, []);
 
+  // Native playback can expire an account while this page is open. Keep that
+  // snapshot separate from login operations so an event cannot cancel their result.
+  const syncChanged = useCallback(async () => {
+    if (!mounted.current || !changed.current || operation.current || loginCheck.current) return;
+    changed.current = false;
+    const version = ++snapshot.current;
+    const operationVersion = generation.current;
+    try {
+      const result = await platformAccounts.list();
+      if (mounted.current && version === snapshot.current && operationVersion === generation.current) setAccounts(result);
+    } catch (failure) {
+      if (mounted.current && version === snapshot.current && operationVersion === generation.current) setError(toIpcError(failure).message);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     if (!native) { setLoading(false); return; }
     const version = ++generation.current;
-    setLoading(true); setError('');
+    setLoading(true); setCredentialWaiting(false); setError('');
     try {
       const result = await platformAccounts.list();
       if (mounted.current && version === generation.current) setAccounts(result);
@@ -46,6 +70,19 @@ export function usePlatformAccounts() {
     };
   }, [load]);
 
+  useEffect(() => {
+    if (!native) return;
+    const subscription: { disposed: boolean; unlisten?: () => void } = { disposed: false };
+    const subscribe = async () => {
+      try {
+        const next = await listenEvent('platform-account-changed', () => { changed.current = true; void syncChanged(); });
+        if (subscription.disposed) next(); else subscription.unlisten = next;
+      } catch { /* Browser previews do not provide native events. */ }
+    };
+    void subscribe();
+    return () => { subscription.disposed = true; subscription.unlisten?.(); };
+  }, [native, syncChanged]);
+
   const start = async (platform: AccountPlatform) => {
     if (operation.current || attemptRef.current) return;
     operation.current = true;
@@ -62,6 +99,7 @@ export function usePlatformAccounts() {
     } finally {
       operation.current = false;
       if (mounted.current && version === generation.current) setBusyPlatform(null);
+      void syncChanged();
     }
   };
 
@@ -88,8 +126,9 @@ export function usePlatformAccounts() {
     } finally {
       loginCheck.current = false;
       if (mounted.current && version === generation.current) setLoginBusy(false);
+      void syncChanged();
     }
-  }, [upsert]);
+  }, [upsert, syncChanged]);
 
   useEffect(() => {
     if (!attempt || loginError) return;
@@ -123,6 +162,7 @@ export function usePlatformAccounts() {
     } finally {
       operation.current = false;
       if (mounted.current) setBusyPlatform(null);
+      void syncChanged();
     }
   };
 
@@ -143,6 +183,7 @@ export function usePlatformAccounts() {
     } finally {
       operation.current = false;
       if (mounted.current && version === generation.current) setBusyPlatform(null);
+      void syncChanged();
     }
   };
 
@@ -159,6 +200,7 @@ export function usePlatformAccounts() {
     } finally {
       operation.current = false;
       if (mounted.current && version === generation.current) setBusyPlatform(null);
+      void syncChanged();
     }
   };
 
@@ -166,7 +208,7 @@ export function usePlatformAccounts() {
     setAccounts((previous) => previous.map((account) => account.platform === platform ? { ...account, state: 'expired' } : account));
   }, []);
 
-  return { accounts, loading, error, native, attempt, loginError, loginBusy, busyPlatform,
+  return { accounts, loading, credentialWaiting, error, native, attempt, loginError, loginBusy, busyPlatform,
     load, start, checkLogin, cancel, refresh, logout, markExpired, accountPlatformName };
 }
 

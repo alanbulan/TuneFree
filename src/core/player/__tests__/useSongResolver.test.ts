@@ -7,7 +7,8 @@ import type { ParsedSongData } from "../types";
 import { MAX_URL_REFRESHES, usePlaybackRecovery } from "../usePlaybackRecovery";
 import type { RecommendationPlayback } from "../useRecommendationPlayback";
 import { useSongResolver } from "../useSongResolver";
-import { abortError, createRuntimeDouble, song, type RuntimeDouble } from "./playerTestDoubles";
+import { invalidatePlayback } from '../../services/sources/generation';
+import { abortError, createRuntimeDouble, deferred, song, type RuntimeDouble } from "./playerTestDoubles";
 
 const api = vi.hoisted(() => ({ parseSongFull: vi.fn() }));
 const offline = vi.hoisted(() => ({ resolveOfflinePlayback: vi.fn() }));
@@ -52,6 +53,21 @@ describe("useSongResolver 解析缓存", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('账号在解析期间切换会重取链接，迟到的旧账号结果不会进入缓存', async () => {
+    const target = song('account-race');
+    const double = createRuntimeDouble({ queue: [target] });
+    const previous = deferred<ParsedSongData>();
+    api.parseSongFull.mockReturnValueOnce(previous.promise).mockResolvedValueOnce(parsed('new-account'));
+    const resolver = mountResolver(double);
+    const run = resolver.current.resolveParsedSong(target, '320k');
+    await flush(); invalidatePlayback(); previous.resolve(parsed('previous-account'));
+    const result = await run;
+    expect(result.parsed?.url).toContain('new-account');
+    expect(api.parseSongFull).toHaveBeenCalledTimes(2);
+    expect([...double.refs.parsedSongCache.current.values()].map((entry) => entry.data.url))
+      .toEqual(['https://cdn.example.com/new-account.mp3']);
   });
 
   it("在 TTL 内复用缓存，过期后重新解析", async () => {

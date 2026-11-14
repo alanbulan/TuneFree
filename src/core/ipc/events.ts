@@ -16,6 +16,7 @@ import type {
 } from "./types";
 
 export interface EventMap {
+  'platform-account-changed': { platform: string };
   "lyric-song": LyricSongPayload;
   "lyric-tick": LyricTickPayload;
   "player-control": PlayerControlPayload;

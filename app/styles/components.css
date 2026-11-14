@@ -167,9 +167,14 @@
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+  border: 0;
+  appearance: none;
+  color: inherit;
 }
 .primary-button { color: #fff; background: var(--accent); }
 .soft-button { background: var(--surface-2); }
+.playback-origin { display: inline-flex; align-items: center; gap: 4px; color: var(--success); font-size: 11px; font-weight: 500; line-height: 1.4; }
+.transport-info .playback-origin { font-size: 10px; }
 .danger-button { color: #fff; background: var(--danger); }
 .primary-button:hover,
 .danger-button:hover { filter: brightness(0.9); }
@@ -365,6 +370,20 @@
 
 .custom-select-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .custom-select-trigger:disabled { cursor: not-allowed; opacity: .6; }
+
+/* 工具栏与 soft-button 使用相同尺寸；设置页保留默认规格。 */
+.custom-select-container.is-compact .custom-select-trigger {
+  height: 32px;
+  padding: 0 12px;
+  gap: 8px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: none;
+}
+.custom-select-container.is-compact .custom-select-options { border-radius: 10px; }
+.custom-select-container.is-compact .custom-select-option { min-height: 32px; padding: 6px 8px; font-size: 12px; }
 
 /* 下拉箭头 */
 .custom-select-arrow {

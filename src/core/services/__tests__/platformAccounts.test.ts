@@ -3,7 +3,7 @@ import { platformAccounts, importedPlatformSongs, accountPlatformName } from '..
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('../../ipc', () => ({ invokeCommand: invoke }));
-beforeEach(() => invoke.mockReset().mockResolvedValue(undefined));
+beforeEach(() => invoke.mockReset().mockResolvedValue({ state: 'waiting', account: null }));
 
 describe('platform account service', () => {
   it('uses native IPC for every authenticated operation', async () => {
@@ -15,12 +15,23 @@ describe('platform account service', () => {
     await platformAccounts.logout('qq');
     await platformAccounts.playlists('qq');
     await platformAccounts.import('qq', 'playlist');
+    await platformAccounts.preview('kuwo', 'playlist', 2);
     expect(invoke.mock.calls.map(([command]) => command)).toEqual([
       'list_platform_accounts', 'start_platform_login', 'finish_platform_login', 'cancel_platform_login',
-      'refresh_platform_account', 'logout_platform_account', 'list_platform_playlists', 'import_platform_playlist',
+      'refresh_platform_account', 'logout_platform_account', 'list_platform_playlists', 'import_platform_playlist', 'preview_platform_playlist',
     ]);
-    expect(invoke.mock.lastCall).toEqual(['import_platform_playlist', { platform: 'qq', playlistId: 'playlist' }]);
+    expect(invoke.mock.lastCall).toEqual(['preview_platform_playlist', { platform: 'kuwo', playlistId: 'playlist', page: 2 }]);
     expect(accountPlatformName('qq')).toBe('QQ 音乐');
+  });
+
+  it('invalidates playback on completed login but not while waiting', async () => {
+    const { getPlaybackGeneration } = await import('../sources/generation');
+    const before = getPlaybackGeneration();
+    await platformAccounts.finish('netease', 'pending');
+    expect(getPlaybackGeneration()).toBe(before);
+    invoke.mockResolvedValueOnce({ state: 'connected', account: {} });
+    await platformAccounts.finish('netease', 'complete');
+    expect(getPlaybackGeneration()).toBe(before + 1);
   });
 
   it('preserves QQ media identity and omits null song fields for the library', () => {

@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -53,7 +54,7 @@ fn playlist(row: &Value, kind: &str) -> CommandResult<PlatformPlaylist> {
         .find_map(|field| value_string(&row[field]))
         .unwrap_or_else(|| "0".into());
     numeric_id(&tid)?;
-    let id = if dirid == "201" && tid == "0" {
+    let id = if dirid == "201" {
         "liked".to_string()
     } else {
         tid
@@ -96,7 +97,7 @@ pub(super) fn parse_playlists(
         .map(|row| playlist(row, kind))
         .collect::<CommandResult<Vec<_>>>()?;
     let more = if kind == "created" {
-        !data["bFinish"].as_bool().ok_or_else(invalid_response)?
+        !flag(&data["bFinish"]).ok_or_else(invalid_response)?
     } else {
         flag(&data["hasmore"]).ok_or_else(invalid_response)?
     };
@@ -158,18 +159,24 @@ pub(super) async fn playlists(
     Err(invalid_response())
 }
 
-async fn encrypted_user_id(client: &Client, session: &Session) -> CommandResult<String> {
+pub(super) async fn encrypted_user_id(client: &Client, session: &Session) -> CommandResult<String> {
+    // Older website sessions omit encryptUin in GetLoginUserInfo.
+    // CgiGetDiss accepts the legacy ID encoding and returns the current
+    // login's canonical encrypt_login, which PlaylistFavRead requires.
+    let mut legacy = vec![0_u8; 3];
+    legacy.extend_from_slice(session.account.user_id.as_bytes());
     let data = http::qq_request(
         client,
         &session.cookie,
-        "QQMusic.UserLoginServer",
-        "GetUserInfo",
-        json!({}),
+        "music.srfDissInfo.DissInfo",
+        "CgiGetDiss",
+        json!({"disstid":0,"dirid":201,"song_begin":0,"song_num":1,
+            "userinfo":true,"orderlist":true,"enc_host_uin":STANDARD.encode(legacy)}),
     )
     .await?;
-    ["encryptUin", "encrypt_uin", "euin"]
-        .into_iter()
-        .find_map(|field| value_string(&data[field]))
+    value_string(&data["encrypt_login"])
+        .or_else(|| value_string(&data["dirinfo"]["encrypt_uin"]))
+        .filter(|id| id.len() <= 256)
         .ok_or_else(|| CommandError::network("QQ 音乐未返回账号标识，无法读取收藏歌单，请重新登录"))
 }
 

@@ -26,11 +26,11 @@ export const useSongResolver = (runtime: PlayerRuntime) => {
     [],
   );
 
-  const resolveParsedSong = useCallback(async (
+  const resolveParsedSong = useCallback(async function resolveCurrentSong(
     song: Song,
     quality: AudioQuality,
     options?: ResolveOptions,
-  ): Promise<ParsedSongResolution> => {
+  ): Promise<ParsedSongResolution> {
     throwIfAborted(options?.signal);
     const local = await resolveOfflinePlayback(song, quality).catch(() => null);
     throwIfAborted(options?.signal);
@@ -56,6 +56,10 @@ export const useSongResolver = (runtime: PlayerRuntime) => {
     try {
       const parsed = await parseSongFull(song.id, song.source, quality, song, { ...options, deferMetadata: true });
       throwIfAborted(options?.signal);
+      // A login/logout during resolution invalidates both script and account URLs.
+      if (getParsedSongCacheKey(song, quality) !== cacheKey) {
+        return resolveCurrentSong(song, quality, options);
+      }
       if (parsed?.url) {
         parsedSongCacheRef.current.set(cacheKey, {
           data: parsed, expiresAt: Date.now() + PARSED_SONG_CACHE_TTL_MS,

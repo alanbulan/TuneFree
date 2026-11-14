@@ -35,4 +35,11 @@ fn parses_real_user_playlist_format_and_completion_flags() {
     assert!(more);
     assert!(parse_song_page(&json!({"songlist":[],"total_song_num":100,"hasmore":1})).is_ok());
     assert!(parse_playlists(&json!({"v_list":[]}), "collected").is_err());
+    let (lists, more) = parse_playlists(
+        &json!({"v_playlist":[{"tid":456,"dirId":201,"dirName":"我喜欢","songNum":6}],"bFinish":1}),
+        "created",
+    )
+    .unwrap();
+    assert_eq!(lists[0].id, "liked");
+    assert!(!more);
 }
