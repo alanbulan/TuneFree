@@ -22,6 +22,7 @@
 | `src-tauri/src/api/`、`server.rs` | 回环 HTTP 服务、匿名解析与代理 | 与携登录会话的账号 IPC 解析分开维护 |
 | `src-tauri/src/credentials/` | macOS 共享系统凭据仓库 | 保持操作系统授权边界，不写明文磁盘缓存 |
 | `src-tauri/src/recommendation/` | 推荐领域、模型、后台任务和 SQLite | 存储、搜索、任务、排序分别维护 |
+| `src-tauri/src/recommendation/migrations/` | 按日期与顺序命名的 SQL 迁移 | SQL 编译嵌入，Rust 显式编排版本、参数与事务；历史脚本发布后不改写 |
 | `vendor/bloub/` | 固定版本的上游动画核心及许可 | 项目适配放在 `src/desktop/`，保留来源记录 |
 | `e2e/`、相邻 `__tests__/` | 浏览器回归与单元、边界测试 | 浏览器文件使用 `*.e2e.ts`，与 Vitest 隔离 |
 | `scripts/` | 构建、契约、发布、验收和性能测量 | 测量脚本不进入产品界面或运行时依赖 |
@@ -48,12 +49,14 @@
 - 删除与 `public/icon.svg` 完全相同且没有引用的 `app/icon.svg`，图标资源以 `public/` 为入口。
 - 删除 Vite 应用中无效的 `use client` 指令，明确客户端入口职责。
 - 移除 `DesktopLibrary` 不读取返回值的聚合 `useLibrary()` 订阅；Provider 由应用根创建，各子页自行读取需要的切片。
+- 将推荐数据库的基础结构和版本 2–5 的数据迁移拆成五份 `2026-11-15_NNN_用途.sql`；日期标为整理日期，保留数据库原数字版本与后台重建流程。迁移测试移到相邻 `__tests__/`，新增事务回滚与已升级数据库的重复启动回归。规则见[迁移目录说明](../src-tauri/src/recommendation/migrations/README.md)。
 
 ## 后续维护重点
 
 | 位置 | 观察 | 后续处理时机 |
 | --- | --- | --- |
-| `sources/manager.ts`、`recommendation/migration.rs` | 均到达守卫 500 行上限 | 下次增加行为前，按音源生命周期 / 快照或迁移步骤拆分 |
+| `sources/manager.ts` | 到达守卫 500 行上限 | 下次增加行为前，按音源生命周期 / 快照拆分 |
+| `recommendation/migration.rs` | 已将 SQL 与测试移出，保留版本和事务编排 | 后续迁移按日期新增 SQL，显式注册数字版本和调用顺序 |
 | `contexts/libraryData.ts`、`contexts/playerQueue.ts` | 混合类型、计算与持久化辅助，仍符合现有依赖方向 | 修改对应领域时按职责提取；不为目录整齐一次移动所有状态代码 |
 | `DesktopLibrary.tsx` | 七个库页面静态导入在同一个延迟加载模块中 | 仅在测得首屏加载或模块解析瓶颈后，考虑按页进一步拆包 |
 | 较大的测试文件 | 架构守卫豁免，阅读成本会随场景增加 | 新增测试时按协议、生命周期、失败恢复等场景拆分 |
