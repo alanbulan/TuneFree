@@ -41,13 +41,15 @@ fn parse_account(cookie: &str) -> CommandResult<Session> {
     let uid = cookies::kuwo_user_id(cookie).ok_or_else(auth_required)?;
     let name = ["uname3", "username", "nickName"]
         .into_iter()
-        .find_map(|key| cookies::value(cookie, key))
-        .map(decode_cookie)
+        .filter_map(|key| cookies::value(cookie, key).map(decode_cookie))
+        .find(|name| !name.trim().is_empty())
         .unwrap_or_default();
-    let avatar = ["pic3", "pic"]
-        .into_iter()
-        .find_map(|key| cookies::value(cookie, key))
-        .and_then(|raw| image_url(&Value::String(decode_cookie(raw))));
+    // pic3 is the website's portrait cookie. Validate each decoded candidate
+    // before falling back to pic; a placeholder pic3 must not mask a valid pic.
+    let avatar = ["pic3", "pic"].into_iter().find_map(|key| {
+        let raw = cookies::value(cookie, key)?;
+        image_url(&Value::String(decode_cookie(raw)))
+    });
     Ok(Session {
         account: PlatformAccount {
             platform: "kuwo".into(),

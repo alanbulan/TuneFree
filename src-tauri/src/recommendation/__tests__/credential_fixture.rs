@@ -27,6 +27,7 @@ impl Drop for Credentials {
     }
 }
 
+#[cfg(windows)]
 #[tokio::test]
 async fn malformed_system_secret_is_reported_without_preventing_settings_from_loading() {
     let _credentials = Credentials::new().await;
@@ -40,6 +41,24 @@ async fn malformed_system_secret_is_reported_without_preventing_settings_from_lo
         .get(CredentialId::Current)
         .unwrap_err()
         .contains("读取系统凭据失败"));
+    let view = crate::recommendation::llm_config::view_config(&conn, 0, None).unwrap();
+    assert!(!view.has_api_key);
+    assert!(view.local_recommendation_enabled);
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn deleted_vault_keys_do_not_resurrect_malformed_legacy_entries_in_settings() {
+    let _credentials = Credentials::new().await;
+    let conn = Connection::open_in_memory().unwrap();
+    crate::recommendation::migration::run_migrations(&conn).unwrap();
+    let entry = SystemCredentialStore::entry(CredentialId::Current).unwrap();
+    entry.set_secret(&[0xff, 0xfe, 0xfd]).unwrap();
+    assert!(entry.get_password().is_err());
+    assert!(SystemCredentialStore
+        .get(CredentialId::Current)
+        .unwrap()
+        .is_none());
     let view = crate::recommendation::llm_config::view_config(&conn, 0, None).unwrap();
     assert!(!view.has_api_key);
     assert!(view.local_recommendation_enabled);

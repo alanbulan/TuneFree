@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Headphones, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { type AccountPlatform } from '../../../core/ipc';
 import { useDesktopDialog } from '../../components/DialogHost';
 import { AccountCards, LoginGuide } from './accounts/AccountCards';
@@ -32,17 +32,13 @@ export default function AccountsView() {
     {model.loading && <p className="account-loading" role="status">正在读取已保存的账号…</p>}
     {model.loading && model.credentialWaiting && <p className="account-browser-notice" role="status">系统凭据存储正在等待响应。若 macOS 钥匙串出现授权窗口，请在系统窗口中完成授权；处理后会继续读取账号。</p>}
     {model.error && <div className="account-page-error"><p className="account-error" role="alert">{model.error}</p>
-      <button type="button" className="soft-button" disabled={busy} onClick={() => void model.load()}>重新读取账号</button></div>}
+      <button type="button" className="soft-button" disabled={busy} onClick={() => void model.load(true)}>重新读取账号</button></div>}
     <AccountCards accounts={model.accounts} native={model.native} busy={busy} busyPlatform={model.busyPlatform}
       onConnect={(platform) => { setSelected(platform); void model.start(platform); }} onRefresh={(platform) => void model.refresh(platform)}
       onLogout={(platform) => void handleLogout(platform)} />
-    <div className="account-playback-overview">
-      <Headphones size={20} aria-hidden="true" /><div><h2>账号优先播放</h2>
-        <p>播放时优先使用歌曲所属平台的账号，音质按账号权益。</p></div><span>自动启用</span>
-    </div>
     {model.attempt ? <LoginGuide attempt={model.attempt} error={model.loginError} busy={model.loginBusy}
       onCheck={() => void model.checkLogin(true)} onCancel={() => void model.cancel()} />
       : account ? <AccountsLibrary key={accountKey} accounts={model.accounts} account={account} onSelect={setSelected} markExpired={model.markExpired} /> : <EmptyAccounts />}
-    <p className="account-privacy"><ShieldCheck size={14} aria-hidden="true" />已连接账号优先用于播放，音质与可播放范围按账号权益。登录会话保存在本机。</p>
+    <p className="account-privacy"><ShieldCheck size={14} aria-hidden="true" />登录会话仅保存在本机。</p>
   </section>;
 }

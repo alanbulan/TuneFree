@@ -12,6 +12,7 @@ pub async fn list_platform_accounts(
     state: State<'_, PlatformAccountState>,
 ) -> CommandResult<Vec<PlatformAccount>> {
     state.initialize().await?;
+    state.repair_saved_profiles().await;
     let sessions = state.0.sessions.lock();
     Ok(Platform::ALL
         .iter()
@@ -21,6 +22,14 @@ pub async fn list_platform_accounts(
                 .map(|session| session.account.clone())
         })
         .collect())
+}
+
+#[tauri::command]
+pub async fn retry_platform_account_access(
+    state: State<'_, PlatformAccountState>,
+) -> CommandResult<Vec<PlatformAccount>> {
+    state.retry_initialization().await?;
+    list_platform_accounts(state).await
 }
 
 #[tauri::command]
@@ -161,20 +170,9 @@ pub async fn refresh_platform_account(
 ) -> CommandResult<PlatformAccount> {
     let platform = Platform::parse(&platform)?;
     let (previous, revision) = state.session(platform).await?;
-    let fetched = fetch_account(&state.0.client, platform, &previous.cookie).await;
-    let mut session = match fetched {
-        Ok(session) => session,
-        Err(error) => {
-            state.expire(platform, revision, &error);
-            return Err(error);
-        }
-    };
-    let _guard = state.0.operations.lock().await;
-    state.check_revision(platform, revision)?;
-    session.account.connected_at = previous.account.connected_at;
-    let account = session.account.clone();
-    state.0.sessions.lock().insert(platform, session);
-    Ok(account)
+    state
+        .refresh_profile(platform, previous, revision, credentials::SystemCredentials)
+        .await
 }
 
 #[tauri::command]

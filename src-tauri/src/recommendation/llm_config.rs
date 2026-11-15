@@ -60,13 +60,11 @@ pub fn view_config(
     let config = load_config(conn).map_err(|e| format!("读取模型配置失败: {}", e))?;
     let local_recommendation_enabled =
         load_recommendation_enabled(conn).map_err(|e| format!("读取推荐开关失败: {}", e))?;
-    // 取密钥失败只降级为"未配置"，不能让整个设置视图打不开。
-    let has_api_key = credential_store::get_api_key(conn)
-        .map(|key| !key.trim().is_empty())
-        .unwrap_or_else(|error| {
-            log::warn!("读取 API Key 状态失败，按未配置处理: {}", error);
-            false
-        });
+    // 配置和启动同步只读取凭据存在状态，macOS 不解密密钥或触发迁移。
+    let has_api_key = credential_store::has_api_key(conn).unwrap_or_else(|error| {
+        log::warn!("读取 API Key 状态失败，按未配置处理: {}", error);
+        false
+    });
     let llm_cache_entries = conn
         .query_row("SELECT COUNT(*) FROM llm_recommendation_cache", [], |row| {
             row.get::<_, i64>(0)

@@ -172,9 +172,9 @@ export async function testLlmProvider(config?: LlmConfigInput): Promise<LlmProvi
   return invokeCommand('test_llm_provider', { config });
 }
 
-export async function listLlmModels(config?: LlmConfigInput): Promise<string[]> {
+export async function listLlmModels(config?: LlmConfigInput, retryAccess = false): Promise<string[]> {
   if (!isTauri()) throw new Error('请在桌面应用中获取模型列表');
-  return invokeCommand('list_llm_models', { config });
+  return invokeCommand('list_llm_models', { config, ...(retryAccess ? { retryAccess: true } : {}) });
 }
 
 export async function clearRecommendationData(): Promise<RecommendationMaintenanceStats> {

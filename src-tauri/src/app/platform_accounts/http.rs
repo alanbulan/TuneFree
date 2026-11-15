@@ -5,6 +5,7 @@ use super::model::{invalid_response, Platform};
 use crate::app::error::{CommandError, CommandResult};
 
 const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const QQ_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 pub(super) fn client() -> Client {
     Client::builder()
@@ -115,12 +116,22 @@ pub(super) async fn qq_signed(
         .header("Referer", "https://y.qq.com/")
         .header("Origin", "https://y.qq.com")
         .header("Content-Type", "application/json")
-        .header("User-Agent", "Mozilla/5.0")
+        .header("User-Agent", QQ_USER_AGENT)
         .body(body)
         .send()
         .await
         .map_err(|_| CommandError::network("QQ 音乐账号解析失败，请稍后重试"))?;
-    qq_data(read_response(response).await?)
+    let status = response.status().as_u16();
+    let value = read_response(response).await?;
+    // Numeric protocol diagnostics only: never include request bodies,
+    // account identifiers, cookies, signed URLs or upstream messages.
+    log::info!(
+        "QQ 音乐原生请求 {method}：HTTP {status}，code={:?}，req_code={:?}，data_code={:?}",
+        value["code"].as_i64(),
+        value["req"]["code"].as_i64(),
+        value["req"]["data"]["code"].as_i64()
+    );
+    qq_data(value)
 }
 
 #[cfg(test)]
