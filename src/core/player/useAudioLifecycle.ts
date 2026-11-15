@@ -41,7 +41,7 @@ export const useAudioLifecycle = (
   recommendation: RecommendationPlayback,
   recovery: PlaybackRecovery,
 ) => {
-  const { refs, isPlaying, setAnalyser, setCurrentTime, setDuration } = runtime;
+  const { refs, isPlaying, setAnalyser, setCurrentTime, setDuration, setPlaybackOrigin } = runtime;
   const dependenciesRef = useRef({ runtime, recommendation, recovery });
   dependenciesRef.current = { runtime, recommendation, recovery };
   const updateCurrentTimeState = useCallback((time: number) => {
@@ -59,7 +59,8 @@ export const useAudioLifecycle = (
     }
     updateCurrentTimeState(0);
     setDuration(0);
-  }, [refs, setDuration, updateCurrentTimeState]);
+    setPlaybackOrigin(null);
+  }, [refs, setDuration, setPlaybackOrigin, updateCurrentTimeState]);
 
   const syncPlaybackTime = useCallback((force = false) => {
     const audio = refs.audio.current;

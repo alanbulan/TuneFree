@@ -4,6 +4,7 @@ mod desktop_lyric_bounds;
 mod desktop_lyric_render;
 mod downloads;
 pub mod error;
+pub(crate) mod platform_accounts;
 mod recommendation_commands;
 pub(crate) use recommendation_commands::run_recommendation_blocking;
 mod smoke;

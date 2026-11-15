@@ -25,6 +25,7 @@ const viewPaths: Record<DesktopView, string> = {
   playlists: '/library/playlists',
   downloads: '/library/downloads',
   sources: '/library/sources',
+  accounts: '/library/accounts',
   settings: '/library/settings',
   about: '/library/about',
 };
@@ -36,6 +37,7 @@ const getViewFromPath = (fallback: DesktopView): DesktopView => {
   if (path.startsWith('/library/playlists')) return 'playlists';
   if (path.startsWith('/library/downloads')) return 'downloads';
   if (path.startsWith('/library/sources')) return 'sources';
+  if (path.startsWith('/library/accounts')) return 'accounts';
   if (path.startsWith('/library/settings')) return 'settings';
   if (path.startsWith('/library/about')) return 'about';
   if (path.startsWith('/library')) return 'favorites';
@@ -79,11 +81,19 @@ export default function DesktopApp({ initialView = 'home' }: { initialView?: Des
 
   useEffect(() => {
     if (!serverReady || !isReady || !isTauri()) return;
-    const frame = requestAnimationFrame(() => {
+    // Effects run after React commits the shell. Verify that mount explicitly;
+    // an occluded WKWebView suspends rAF even when its native window is visible.
+    if (!document.querySelector('.app-root.is-ready .desktop-shell')) return;
+    const confirmReady = () => {
       void invokeCommand('mark_frontend_ready').catch((error: unknown) => {
         console.error('确认主界面启动就绪失败', error);
       });
-    });
+    };
+    if (document.visibilityState === 'hidden') {
+      const timer = setTimeout(confirmReady, 0);
+      return () => clearTimeout(timer);
+    }
+    const frame = requestAnimationFrame(confirmReady);
     return () => cancelAnimationFrame(frame);
   }, [isReady, serverReady]);
 

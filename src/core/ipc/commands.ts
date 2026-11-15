@@ -26,6 +26,13 @@ import type {
   RecommendationMaintenanceStats,
   ResolvedPlayback,
   RuntimeInfo,
+  PlatformAccount,
+  PlatformLoginAttempt,
+  PlatformLoginStatus,
+  PlatformPlaylist,
+  PlatformPlaylistImport,
+  PlatformPlaylistPreview,
+  PlatformAccountPlayback,
 } from "./types";
 
 export interface CommandMap {
@@ -104,6 +111,19 @@ export interface CommandMap {
   show_desktop_lyric_window: { args: { lock: boolean }; result: void };
   set_desktop_lyric_lock: { args: { lock: boolean }; result: void };
   hide_desktop_lyric_window: { args: void; result: void };
+  list_platform_accounts: { args: void; result: PlatformAccount[] };
+  start_platform_login: { args: { platform: string }; result: PlatformLoginAttempt };
+  finish_platform_login: { args: { platform: string; attemptId: string }; result: PlatformLoginStatus };
+  cancel_platform_login: { args: { platform: string; attemptId: string }; result: void };
+  refresh_platform_account: { args: { platform: string }; result: PlatformAccount };
+  logout_platform_account: { args: { platform: string }; result: void };
+  list_platform_playlists: { args: { platform: string }; result: PlatformPlaylist[] };
+  import_platform_playlist: { args: { platform: string; playlistId: string }; result: PlatformPlaylistImport };
+  preview_platform_playlist: { args: { platform: string; playlistId: string; page: number }; result: PlatformPlaylistPreview };
+  resolve_platform_account_url: {
+    args: { platform: string; songId: string; quality: string; mediaMid?: string; rejectedUrls?: string[] };
+    result: PlatformAccountPlayback;
+  };
 }
 
 export async function invokeCommand<K extends keyof CommandMap>(

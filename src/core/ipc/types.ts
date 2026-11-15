@@ -276,3 +276,68 @@ export interface RecommendationMaintenanceStats {
   databaseSizeBytes: number;
   llmCacheEntries: number;
 }
+
+export type AccountPlatform = 'netease' | 'qq' | 'kuwo';
+
+/** Session cookies stay in Rust and the OS vault; views receive public fields only. */
+export interface PlatformAccount {
+  platform: AccountPlatform;
+  userId: string;
+  nickname: string;
+  avatarUrl: string | null;
+  state: 'saved' | 'connected' | 'expired';
+  connectedAt: number;
+}
+
+export interface PlatformLoginAttempt {
+  platform: AccountPlatform;
+  attemptId: string;
+  startedAt: number;
+}
+
+export interface PlatformLoginStatus {
+  state: 'waiting' | 'connected' | 'closed' | 'expired';
+  account: PlatformAccount | null;
+}
+
+export interface PlatformPlaylist {
+  id: string;
+  name: string;
+  coverUrl: string | null;
+  trackCount: number;
+  kind: 'created' | 'collected';
+}
+
+export interface PlatformPlaylistSong {
+  id: string;
+  source: string;
+  name: string;
+  artist: string;
+  album: string;
+  pic: string | null;
+  lyricId: string | null;
+  strMediaMid: string | null;
+}
+
+export interface PlatformPlaylistImport {
+  name: string;
+  songs: PlatformPlaylistSong[];
+  unavailableCount?: number;
+}
+
+/** A bounded song page; preview never writes to the local library. */
+export interface PlatformPlaylistPreview {
+  name: string;
+  songs: PlatformPlaylistSong[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** Native account resolver result; contains no session or account identity. */
+export interface PlatformAccountPlayback {
+  url: string | null;
+  quality: string | null;
+  state: 'connected' | 'unavailable' | 'expired' | 'not_connected';
+  message: string | null;
+}

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(windows)]
 use std::{collections::VecDeque, sync::Arc};
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 #[path = "https.rs"]
 pub(crate) mod https;
 
