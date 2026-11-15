@@ -135,6 +135,7 @@ export const createRuntimeDouble = (options: {
     commitCurrentSong,
     setIsPlaying,
     setIsLoading,
+    setPlaybackOrigin: vi.fn(),
     setDuration,
     setCurrentTime: vi.fn(),
     setLyricOffsetSeconds: vi.fn(),

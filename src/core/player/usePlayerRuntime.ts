@@ -11,7 +11,7 @@ import {
   persistQueue,
 } from "../contexts/playerPersistence";
 import type { ShuffleOrder } from "../contexts/playerQueue";
-import type { AudioHandlers, ParsedSongCacheEntry, PlayerNotice, PlayerRefs } from "./types";
+import type { AudioHandlers, ParsedSongCacheEntry, PlaybackOrigin, PlayerNotice, PlayerRefs } from "./types";
 import type { RecoveryStage } from "./playbackRecovery";
 
 const createPlayerRefs = (
@@ -57,6 +57,7 @@ export const usePlayerRuntime = () => {
   const [currentSong, setCurrentSong] = useState<Song | null>(loadStoredCurrentSong);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [playbackOrigin, setPlaybackOrigin] = useState<PlaybackOrigin | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [lyricOffsetSeconds, setLyricOffsetSeconds] = useState(0);
@@ -114,11 +115,11 @@ export const usePlayerRuntime = () => {
   }, [audioQuality, audioQualityRef]);
 
   return {
-    currentSong, isPlaying, isLoading, currentTime, duration,
+    currentSong, isPlaying, isLoading, playbackOrigin, currentTime, duration,
     lyricOffsetSeconds, queue, playMode, audioQuality,
     playerNotice, unplayableSongKeys, analyser, refs,
     commitQueue, commitCurrentSong, markSongUnplayable,
-    setIsPlaying, setIsLoading, setCurrentTime,
+    setIsPlaying, setIsLoading, setPlaybackOrigin, setCurrentTime,
     setDuration, setLyricOffsetSeconds, setPlayMode,
     setAudioQuality, setPlayerNotice, setAnalyser,
   };

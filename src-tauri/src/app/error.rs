@@ -52,6 +52,8 @@ pub enum ErrorCode {
     LlmRequestFailed,
     /// The OS credential store is unavailable on this platform.
     CredentialUnavailable,
+    /// The platform rejected or no longer has a logged-in session.
+    AuthRequired,
 }
 
 /// Error type returned by every `#[tauri::command]`.
@@ -181,6 +183,7 @@ mod tests {
     #[test]
     fn every_code_serializes_as_screaming_snake_case() {
         let expected = [
+            (ErrorCode::AuthRequired, "AUTH_REQUIRED"),
             (ErrorCode::Internal, "INTERNAL"),
             (ErrorCode::InvalidArgument, "INVALID_ARGUMENT"),
             (ErrorCode::NotFound, "NOT_FOUND"),

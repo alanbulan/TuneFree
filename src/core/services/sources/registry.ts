@@ -10,6 +10,7 @@ import {
 } from './types';
 import type { ParsedSongFull } from '../resolver';
 import { BUILTIN_PROVIDERS } from './builtin';
+import { getPlaybackGeneration, invalidatePlayback } from './generation';
 import {
   CircuitOpenError,
   isCircuitOpen,
@@ -42,13 +43,12 @@ let builtinProviders: MusicProvider[] = [...BUILTIN_PROVIDERS];
 /** 内置脚本（例如 GD 音乐台）产出的 provider，与静态内置 provider 同等对待。 */
 let builtinScriptProviders: RegisteredProvider[] = [];
 let customProviders: RegisteredProvider[] = [];
-let generation = 0;
 let scriptOrder: string[] = [];
 
 /** 只更新排序和解析缓存代数，不重置通道健康状态。 */
 export const setSourceOrder = (ids: string[]): void => {
   scriptOrder = [...ids];
-  generation += 1;
+  invalidatePlayback();
 };
 const orderOf = (provider: MusicProvider): number => {
   const index = scriptOrder.findIndex((id) => provider.id.startsWith(`lx:${id}:`));
@@ -58,13 +58,13 @@ const orderOf = (provider: MusicProvider): number => {
 /** 注册内置 provider（应用启动时调用一次）。 */
 export const registerBuiltinProviders = (providers: MusicProvider[]): void => {
   builtinProviders = [...providers];
-  generation += 1;
+  invalidatePlayback();
 };
 
 /** 由音源管理器在导入 / 启停 / 删除 / 重载后调用。 */
 export const setCustomProviders = (entries: RegisteredProvider[]): void => {
   customProviders = entries;
-  generation += 1;
+  invalidatePlayback();
   // 音源集变了，旧的熔断计数不再代表当前配置，清空让用户的操作立刻生效。
   resetCircuits();
 };
@@ -72,7 +72,7 @@ export const setCustomProviders = (entries: RegisteredProvider[]): void => {
 /** 注册内置脚本产出的 provider（启动时一次、脚本重载时更新）。 */
 export const setBuiltinScriptProviders = (entries: RegisteredProvider[]): void => {
   builtinScriptProviders = entries;
-  generation += 1;
+  invalidatePlayback();
   resetCircuits();
 };
 
@@ -88,7 +88,7 @@ const allBuiltinProviders = (): MusicProvider[] => [
  * 播放链路的缓存（parsed-song cache）会把代数编进键，保证导入或停用音源后
  * 立即失效，而不是等 TTL 到期。
  */
-export const getSourceGeneration = (): number => generation;
+export const getSourceGeneration = getPlaybackGeneration;
 
 const customFor = (platform: string): MusicProvider[] =>
   customProviders

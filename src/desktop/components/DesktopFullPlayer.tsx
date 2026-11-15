@@ -29,6 +29,7 @@ import FullPlayerQueue from './fullplayer/FullPlayerQueue';
 import FullPlayerActions from './fullplayer/FullPlayerActions';
 import ConnectedProgressSlider from './ConnectedProgressSlider';
 import QualitySelector from './QualitySelector';
+import PlaybackOriginLabel from './PlaybackOriginLabel';
 
 interface DesktopFullPlayerProps {
   isOpen: boolean;
@@ -151,6 +152,7 @@ export default function DesktopFullPlayer({ isOpen, onClose, onSearch }: Desktop
                 >
                   <h2>{currentSong?.name || '未在播放'}</h2>
                   <p>{currentSong?.artist || '从排行榜、搜索或资料库中选择音乐'}</p>
+                  <PlaybackOriginLabel />
                 </motion.div>
               </AnimatePresence>
             </div>

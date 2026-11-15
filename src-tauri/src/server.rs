@@ -56,6 +56,9 @@ pub struct UrlQuery {
     pub id: String,
     /// Desired audio quality (e.g. "128k", "320k", "flac"). Defaults to "128k".
     pub quality: Option<String>,
+    /// QQ Music file MID can differ from the song MID used in vkey songmid.
+    #[serde(rename = "mediaMid")]
+    pub media_mid: Option<String>,
 }
 
 /// Response body for the `/api/url` endpoint.
@@ -92,32 +95,51 @@ async fn handle_url(
     let quality = query.quality.clone().unwrap_or_else(|| "128k".to_string());
 
     match crate::api::get_provider(&query.platform) {
-        Some(provider) => match provider
-            .get_url(&state.api_client, &query.id, &quality)
-            .await
-        {
-            Ok(url) => (
-                StatusCode::OK,
-                Json(UrlResponse {
-                    url: Some(url),
-                    error: None,
-                }),
-            ),
-            Err(e) => {
-                log::warn!(
-                    "URL resolution failed for platform {}: {}",
-                    query.platform,
-                    e
-                );
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
+        Some(provider) => {
+            // Authenticated playback is handled once by the account IPC before
+            // providers run. This fallback must never retry a weaker protocol
+            // with the same private session after the account path rejected it.
+            let result = match query.platform.as_str() {
+                "qq" | "tencent" => {
+                    crate::api::qq::get_qq_url_with_cookie(
+                        &state.api_client,
+                        &query.id,
+                        &quality,
+                        None,
+                        query.media_mid.as_deref(),
+                    )
+                    .await
+                }
+                _ => {
+                    provider
+                        .get_url(&state.api_client, &query.id, &quality)
+                        .await
+                }
+            };
+            match result {
+                Ok(url) => (
+                    StatusCode::OK,
                     Json(UrlResponse {
-                        url: None,
-                        error: Some(public_error_message(&e)),
+                        url: Some(url),
+                        error: None,
                     }),
-                )
+                ),
+                Err(e) => {
+                    log::warn!(
+                        "URL resolution failed for platform {}: {}",
+                        query.platform,
+                        e
+                    );
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(UrlResponse {
+                            url: None,
+                            error: Some(public_error_message(&e)),
+                        }),
+                    )
+                }
             }
-        },
+        }
         None => (
             StatusCode::BAD_REQUEST,
             Json(UrlResponse {

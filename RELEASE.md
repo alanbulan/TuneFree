@@ -1,6 +1,6 @@
 # TuneFree Desktop 发布流程
 
-正式版本只从 `tauri` 分支发布。公开发布页：<https://github.com/alanbulan/TuneFree_Mobile/releases>。
+正式版本只从 `tauri` 分支发布。公开发布页：<https://github.com/alanbulan/TuneFree/releases>。
 
 ## 版本升级
 
@@ -53,12 +53,12 @@ Clippy 的严格规则固化在 `src-tauri/Cargo.toml` 的 `[lints]` 段（`too_
 
 ## 提交与标签
 
-版本号与标签必须一致。例如当前版本升级为 `1.1.32` 时：
+版本号与标签必须一致。例如当前版本升级为 `1.1.44` 时：
 
 ```powershell
 git add -A
-git commit -m "release: prepare v1.1.32"
-git tag -a v1.1.32 -m "TuneFree v1.1.32"
+git commit -m "release: prepare v1.1.44"
+git tag -a v1.1.44 -m "TuneFree v1.1.44"
 git push origin tauri
 git push origin v1.1.32
 ```
@@ -107,7 +107,7 @@ gh workflow run release.yml --ref tauri -f tag=v1.1.31
 
 `src-tauri/tauri.conf.json` 的 updater endpoint 指向
 `https://github.com/alanbulan/TuneFree_Mobile/releases/latest/download/latest.json`，
-新版本 Release 公开并设为 `latest` 后，已安装客户端下一次检查更新会获取该版本。
+GitHub 将旧仓库名重定向至 `alanbulan/TuneFree`。新版本 Release 公开并设为 `latest` 后，已安装客户端下一次检查更新会获取该版本。
 
 打标签前完成本地发布前验证；推送标签后，工作流通过全部检查即自动公开。
 

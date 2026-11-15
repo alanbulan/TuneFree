@@ -45,6 +45,13 @@ describe('音乐资源地址', () => {
     });
   });
 
+  it('QQ 歌单保存与重新读取保留 file MID，播放授权地址仍只留在运行时', () => {
+    const song = stripRuntimeSongFields({ id: 'SONG', source: 'qq', name: '歌', artist: '人', album: '',
+      strMediaMid: 'MEDIA', url: 'https://stream.qqmusic.qq.com/song?vkey=private-fixture' });
+    expect(song).toMatchObject({ id: 'SONG', strMediaMid: 'MEDIA' });
+    expect(JSON.stringify(song)).not.toContain('private-fixture');
+  });
+
   it('保留 Tauri 文件资源地址，持久化时移除失效的会话端点', () => {
     expect(normalizeMusicUrl('http://asset.localhost/C%3A/music/cover.jpg')).toBe('http://asset.localhost/C%3A/music/cover.jpg');
     expect(normalizeMusicUrl('asset://localhost/cover.jpg')).toBe('asset://localhost/cover.jpg');

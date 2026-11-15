@@ -14,6 +14,7 @@ import type { PlaybackRecovery } from "./usePlaybackRecovery";
 import type { PlayerRuntime } from "./usePlayerRuntime";
 import type { RecommendationPlayback } from "./useRecommendationPlayback";
 import type { SongResolver } from "./useSongResolver";
+import type { ParsedSongResolution } from './types';
 
 export interface SongPlaybackDependencies {
   runtime: PlayerRuntime;
@@ -42,6 +43,8 @@ const reuseCurrentPlayback = async (
   const isCurrent = isSameSong(runtime.refs.currentSong.current, song);
   const targetQuality = forceQuality || runtime.refs.audioQuality.current;
   if (!isCurrent || targetQuality !== runtime.refs.activeQuality.current || forceQuality) return false;
+  const previousKey = runtime.refs.activeParsedCacheKey.current;
+  if (previousKey && previousKey !== resolver.getParsedSongCacheKey(song, targetQuality)) return false;
   const activeAudio = runtime.refs.audio.current;
   if (!activeAudio?.src || activeAudio.src === window.location.href) return false;
   if (activeAudio.paused) {
@@ -83,6 +86,7 @@ const beginPlaybackRequest = (
   refs.playAbort.current = controller;
   refs.lyricBindings.current.clear();
   runtime.setIsLoading(true);
+  runtime.setPlaybackOrigin(null);
   if (!forceQuality) refs.recoveryStage.current = "initial";
   if (!isCurrentSong && refs.audio.current) {
     refs.forceNoCorsPlayback.current = false;
@@ -165,17 +169,21 @@ const handlePlayError = (
 const startResolvedAudio = async (
   dependencies: SongPlaybackDependencies,
   request: PlaybackRequest,
-  cacheKey: string | null,
+  resolution: ParsedSongResolution,
 ): Promise<void> => {
   const { runtime, audio, recommendation, resolver } = dependencies;
   const { refs } = runtime;
   const url = request.fullSong.url;
   if (!url) return;
-  const activeAudio = configureAudioSource(dependencies, request, url, cacheKey);
+  const activeAudio = configureAudioSource(dependencies, request, url, resolution.cacheKey);
   if (!activeAudio) return;
   try {
     await activeAudio.play();
     if (request.requestId !== refs.playRequestId.current) return;
+    const parsed = resolution.parsed!;
+    runtime.setPlaybackOrigin({ source: parsed.playbackAccount || parsed.resolvedSource,
+      kind: parsed.playbackAccount ? 'account' : resolution.cacheKey === null ? 'offline' : 'source',
+      quality: parsed.playbackQuality || request.targetQuality });
     recommendation.resetPlaybackState(request.fullSong);
     audio.syncPlaybackTime(true);
     runtime.setIsPlaying(true);
@@ -197,6 +205,7 @@ const handleMissingUrl = (
   dependencies: SongPlaybackDependencies,
   song: Song,
   quality: AudioQuality,
+  reason?: string,
 ): void => {
   const { runtime, audio, recovery, recommendation } = dependencies;
   console.error(`No valid URL for ${song.name} [${quality}]`);
@@ -204,7 +213,7 @@ const handleMissingUrl = (
     song, quality, trigger: "missingUrl", canRetryWithoutCors: false,
     onGiveUp: (notice) => {
       audio.clearActiveAudioSource();
-      recommendation.showPlayerNotice(notice ?? "未获取到可用播放地址，请在音源页查看解析失败原因", "error",
+      recommendation.showPlayerNotice(notice ?? reason ?? "未获取到可用播放地址，请检查账号连接或音源状态", "error",
         "playbackFailed");
       runtime.setIsLoading(false);
       runtime.setIsPlaying(false);
@@ -238,9 +247,9 @@ export const executeSongPlayback = async (
       dependencies.runtime, song, request.fullSong, resolution.parsed,
     );
     if (resolution.parsed?.url) {
-      await startResolvedAudio(dependencies, request, resolution.cacheKey);
+      await startResolvedAudio(dependencies, request, resolution);
     } else {
-      handleMissingUrl(dependencies, song, request.targetQuality);
+      handleMissingUrl(dependencies, song, request.targetQuality, resolution.parsed?.playbackNotice);
     }
   } catch (error) {
     if (isAbortError(error)) return;
