@@ -1,5 +1,3 @@
-'use client';
-
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { emitEventTo, invokeCommand, isTauri, toIpcError } from '../ipc';
 import {

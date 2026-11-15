@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState,
   type KeyboardEvent, type PointerEvent } from 'react';
 export type CompanionGesture = 'wink' | 'burst';
 
-export interface MiraPosition { x: number; y: number }
-interface MiraDragState {
+export interface CompanionPosition { x: number; y: number }
+interface CompanionDragState {
   pointerId: number; offsetX: number; offsetY: number;
   width: number; height: number;
   startX: number; startY: number; moved: boolean;
 }
 
+// 保留已有版本的键名，组件重命名后仍恢复用户保存的位置。
 const STORAGE_KEY = 'tunefree_desktop_mira_position_v3';
 const DEFAULT_LEFT = 52;
 const DEFAULT_BOTTOM = 120;
@@ -19,24 +20,24 @@ const DRAG_THRESHOLD = 3;
 const GESTURE_HOLD_MS = 1800;
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), Math.max(min, max));
-const clampPosition = (position: MiraPosition, width: number, height: number): MiraPosition => ({
+const clampPosition = (position: CompanionPosition, width: number, height: number): CompanionPosition => ({
   x: clamp(position.x, VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN),
   y: clamp(position.y, VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN),
 });
 const defaultPosition = (width: number, height: number) => clampPosition({
   x: DEFAULT_LEFT, y: window.innerHeight - height - DEFAULT_BOTTOM,
 }, width, height);
-const readStoredPosition = (): MiraPosition | null => {
+const readStoredPosition = (): CompanionPosition | null => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (!saved) return null;
-    const parsed = JSON.parse(saved) as Partial<MiraPosition>;
+    const parsed = JSON.parse(saved) as Partial<CompanionPosition>;
     return typeof parsed.x === 'number' && Number.isFinite(parsed.x)
       && typeof parsed.y === 'number' && Number.isFinite(parsed.y)
       ? { x: parsed.x, y: parsed.y } : null;
   } catch { return null; }
 };
-const savePosition = (position: MiraPosition): void => {
+const savePosition = (position: CompanionPosition): void => {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(position)); } catch { return; }
 };
 
@@ -52,11 +53,11 @@ export const useReducedMotion = (): boolean => {
   return reducedMotion;
 };
 
-export const useMiraPetPosition = () => {
+export const useCompanionPosition = () => {
   const petRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<MiraDragState | null>(null);
+  const dragRef = useRef<CompanionDragState | null>(null);
   const movementResetRef = useRef<number | null>(null);
-  const [position, setPosition] = useState<MiraPosition | null>(null);
+  const [position, setPosition] = useState<CompanionPosition | null>(null);
   const [dragging, setDragging] = useState(false);
   const [movementAction, setMovementAction] = useState<CompanionGesture | null>(null);
 
