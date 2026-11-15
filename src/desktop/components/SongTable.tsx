@@ -20,6 +20,11 @@ interface SongTableProps {
   onDelete?: (song: Song) => void;
   deleteLabel?: string;
   onEndReached?: () => void;
+  selection?: {
+    isSelected: (song: Song) => boolean;
+    onToggle: (song: Song, selected: boolean) => void;
+    disabled?: boolean;
+  };
   /** 传入即开启拖拽排序（收藏与歌单详情用）。索引相对当前 `songs` 数组。 */
   onReorder?: (fromIndex: number, toIndex: number) => void;
 }
@@ -41,12 +46,13 @@ export default function SongTable({
   deleteLabel = '删除歌曲',
   onEndReached,
   onReorder,
+  selection,
 }: SongTableProps) {
   // 调用方几乎都是就地箭头函数，直接下发会让行组件的 memo 永远失效；
   // 这里把最新实现存进 ref，对外只暴露一组永不变的转发函数。
-  const latestRef = useRef({ onPlay, onFavorite, onMore, onDismiss, onDelete, onReorder });
+  const latestRef = useRef({ onPlay, onFavorite, onMore, onDismiss, onDelete, onReorder, selection });
   useEffect(() => {
-    latestRef.current = { onPlay, onFavorite, onMore, onDismiss, onDelete, onReorder };
+    latestRef.current = { onPlay, onFavorite, onMore, onDismiss, onDelete, onReorder, selection };
   });
 
   // 拖拽过程中的源行与落点行。只在松手时提交一次重排，途中不动真实数据，
@@ -60,6 +66,7 @@ export default function SongTable({
     more: (song) => latestRef.current.onMore?.(song),
     dismiss: (song) => latestRef.current.onDismiss?.(song),
     remove: (song) => latestRef.current.onDelete?.(song),
+    select: (song, selected) => latestRef.current.selection?.onToggle(song, selected),
   }), []);
 
   const dragHandlers = useMemo<SongRowDragHandlers>(() => ({
@@ -79,13 +86,15 @@ export default function SongTable({
   const hasMore = !!onMore;
   const hasDismiss = !!onDismiss;
   const hasDelete = !!onDelete;
+  const hasSelection = !!selection;
   const slots = useMemo<SongRowSlots>(() => ({
     favorite: hasFavorite,
     more: hasMore,
     dismiss: hasDismiss,
     remove: hasDelete,
     removeLabel: deleteLabel,
-  }), [deleteLabel, hasDelete, hasDismiss, hasFavorite, hasMore]);
+    select: hasSelection,
+  }), [deleteLabel, hasDelete, hasDismiss, hasFavorite, hasMore, hasSelection]);
 
   if (isLoading && songs.length === 0) {
     return (
@@ -133,7 +142,7 @@ export default function SongTable({
   return (
     <div className="song-table">
       <div className="table-head">
-        <span>#</span>
+        <span>{selection ? '选择' : '#'}</span>
         <span>歌曲</span>
         <span>专辑</span>
         <span>来源</span>
@@ -154,6 +163,8 @@ export default function SongTable({
             current={isSameSong(currentSong, song)}
             isPlaying={!!isPlaying}
             favoriteActive={Boolean(isFavorite?.(song))}
+            selected={Boolean(selection?.isSelected(song))}
+            selectionDisabled={selection?.disabled}
             handlers={handlers}
             slots={slots}
             drag={onReorder ? dragHandlers : undefined}

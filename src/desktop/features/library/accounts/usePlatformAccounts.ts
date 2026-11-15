@@ -45,12 +45,12 @@ export function usePlatformAccounts() {
     }
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (retryAccess = false) => {
     if (!native) { setLoading(false); return; }
     const version = ++generation.current;
     setLoading(true); setCredentialWaiting(false); setError('');
     try {
-      const result = await platformAccounts.list();
+      const result = await (retryAccess ? platformAccounts.retryAccess() : platformAccounts.list());
       if (mounted.current && version === generation.current) setAccounts(result);
     } catch (failure) {
       if (mounted.current && version === generation.current) setError(toIpcError(failure).message);
@@ -61,7 +61,7 @@ export function usePlatformAccounts() {
 
   useEffect(() => {
     mounted.current = true;
-    void Promise.resolve().then(load);
+    void Promise.resolve().then(() => load());
     return () => {
       mounted.current = false; generation.current += 1;
       const current = attemptRef.current;

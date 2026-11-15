@@ -1,5 +1,7 @@
 pub mod api;
 mod app;
+#[cfg(target_os = "macos")]
+mod credentials;
 pub mod recommendation;
 pub mod server;
 

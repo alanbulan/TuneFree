@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "1.1.44"
+version = "1.1.45"
 description = "TuneFree Desktop - Modern desktop music player"
 authors = ["AlanBulan"]
 license = "MIT"
@@ -64,8 +64,13 @@ parking_lot = "0.13.0"
 tauri-plugin-single-instance = "2.5.5"
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
-# v1 接口统一使用 Windows Credential Manager / macOS Keychain，保留原凭据标识。
+# 保留 Windows 凭据管理器与 macOS 旧记录的读取协议。
 keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# 已在锁文件中；安全包装用于只读元数据与原子更新，不修改钥匙串访问权限。
+security-framework = "3.7.0"
+core-foundation = "0.10.1"
 
 [dev-dependencies]
 tauri = { version = "2.12.5", features = ["test"] }

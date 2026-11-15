@@ -425,6 +425,7 @@ fn build_application(context: BootstrapContext) -> tauri::App {
             desktop_lyric::set_desktop_lyric_lock,
             desktop_lyric::hide_desktop_lyric_window,
             platform_accounts::list_platform_accounts,
+            platform_accounts::retry_platform_account_access,
             platform_accounts::start_platform_login,
             platform_accounts::finish_platform_login,
             platform_accounts::cancel_platform_login,

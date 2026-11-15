@@ -68,3 +68,16 @@ it('handles single unavailable imports and stops a pending confirmation', async 
   let run: Promise<void>; await act(async () => { run = view.result.current.start([lists[0]]); }); act(() => view.result.current.cancel());
   await act(async () => { pending.resolve(true); await run!; }); expect(mocks.import).toHaveBeenCalledTimes(2);
 });
+it('saves only chosen metadata, confirms the same local name and retries the same selection after a storage failure', async () => {
+  const songs = [{ id: '2', source: 'netease', name: '所选歌曲', artist: '歌手', album: '' }];
+  mocks.local = [{ name: 'list0' }]; mocks.create.mockReturnValueOnce(false);
+  const view = renderHook(() => usePlaylistImports(account, vi.fn()));
+  await act(async () => view.result.current.start([lists[0]], songs));
+  expect(mocks.confirm).toHaveBeenCalledOnce(); expect(mocks.create).toHaveBeenCalledWith('list0', songs);
+  expect(view.result.current.failed).toEqual([lists[0]]); expect(mocks.import).not.toHaveBeenCalled();
+  await act(async () => view.result.current.retry());
+  expect(mocks.create).toHaveBeenLastCalledWith('list0', songs); expect(view.result.current.failed).toEqual([]);
+  expect(mocks.import).not.toHaveBeenCalled(); expect(mocks.toast.mock.lastCall?.[0]).toContain('共 1 首');
+  await act(async () => view.result.current.start([lists[0]], []));
+  await act(async () => view.result.current.start(lists, songs)); expect(mocks.create).toHaveBeenCalledTimes(2);
+});

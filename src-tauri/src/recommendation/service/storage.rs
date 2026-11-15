@@ -34,6 +34,8 @@ impl RecommendationService {
         if crate::app::is_smoke_test() {
             return Err(CommandError::cancelled("冒烟测试不调用云端模型"));
         }
+        #[cfg(target_os = "macos")]
+        crate::credentials::retry_failed_access();
         let (config, api_key) = self.provider_config(input).await?;
         let result = self.provider.test(&config, &api_key).await;
         *self.last_llm_error.lock() = result.error.clone();
@@ -43,7 +45,17 @@ impl RecommendationService {
     pub async fn list_llm_models(
         &self,
         input: Option<LlmConfigInput>,
+        retry_access: bool,
     ) -> CommandResult<Vec<String>> {
+        if crate::app::is_smoke_test() {
+            return Err(CommandError::cancelled("冒烟测试不调用云端模型"));
+        }
+        #[cfg(target_os = "macos")]
+        if retry_access {
+            crate::credentials::retry_failed_access();
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = retry_access;
         let (config, api_key) = self.provider_config(input).await?;
         self.provider
             .list_models(&config, &api_key)

@@ -25,6 +25,11 @@ fn state(server: &HttpsServer, session: Session) -> PlatformAccountState {
         attempts: parking_lot::Mutex::new(Default::default()),
         operations: tokio::sync::Mutex::new(()),
         revisions: [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)],
+        profile_repairs: [
+            AtomicBool::new(false),
+            AtomicBool::new(false),
+            AtomicBool::new(false),
+        ],
         app: parking_lot::Mutex::new(None),
         client: server.client.clone(),
     }))
@@ -38,8 +43,9 @@ async fn account_qq_uses_signed_track_info_and_selects_the_first_complete_grant(
         ),
         qq_reply(
             json!({"sip":["https://ws.stream.qqmusic.qq.com/"],"midurlinfo":[
-            {"filename":"F000MEDIASONG.flac","purl":""},{"filename":"M800MEDIASONG.mp3","purl":"M800MEDIASONG.mp3?vkey=fixture"},
-            {"filename":"M500MEDIASONG.mp3","purl":"M500MEDIASONG.mp3?vkey=fixture"}]})
+            {"filename":"F000MEDIA.flac","purl":""},{"filename":"F000MEDIASONG.flac","purl":""},
+            {"filename":"M800MEDIA.mp3","purl":"M800MEDIA.mp3?vkey=fixture"},{"filename":"M800MEDIASONG.mp3","purl":""},
+            {"filename":"M500MEDIA.mp3","purl":"M500MEDIA.mp3?vkey=fixture"},{"filename":"M500MEDIASONG.mp3","purl":""}]})
         )
     ]));
     let session = super::super::qq::parse_account(
@@ -53,14 +59,24 @@ async fn account_qq_uses_signed_track_info_and_selects_the_first_complete_grant(
         .await
         .unwrap();
     assert_eq!(result.quality.as_deref(), Some("320k"));
-    assert!(result.url.unwrap().contains("M800MEDIASONG"));
+    assert!(result.url.unwrap().contains("M800MEDIA"));
     let calls = server.calls();
     let body: Value = serde_json::from_str(calls[1]["body"].as_str().unwrap()).unwrap();
     assert_eq!(body["comm"]["authst"], "private-fixture");
+    assert_eq!(body["comm"]["qqmusic_key"], "private-fixture");
+    assert_eq!(body["comm"]["qq"], "123");
+    assert_eq!(body["comm"]["ct"], 19);
+    assert_eq!(body["comm"]["cv"], 1859);
+    assert_eq!(body["req"]["param"]["uin"], "123");
+    assert_eq!(
+        calls[1]["headers"]["cookie"],
+        "uin=123; qqmusic_uin=123; qm_keyst=private-fixture; qqmusic_key=private-fixture"
+    );
     let guid = body["req"]["param"]["guid"].as_str().unwrap();
     assert_eq!(guid.len(), 10);
     assert!(guid.bytes().all(|byte| byte.is_ascii_digit()));
-    assert_eq!(body["req"]["param"]["filename"][0], "F000MEDIASONG.flac");
+    assert_eq!(body["comm"]["uin"], "123");
+    assert_eq!(body["req"]["param"]["filename"][0], "F000MEDIA.flac");
     assert!(!calls[1]["query"].to_string().contains("private-fixture"));
     assert!(calls[1]["query"]["sign"]
         .as_str()

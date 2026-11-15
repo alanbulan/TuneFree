@@ -23,6 +23,19 @@ fn guid(session: &Session) -> String {
     (1_000_000_000 + value % 9_000_000_000).to_string()
 }
 
+fn playback_cookie(session: &Session) -> CommandResult<String> {
+    let id = cookies::qq_user_id(&session.cookie).ok_or_else(auth_required)?;
+    let key = cookies::qq_key(&session.cookie).ok_or_else(auth_required)?;
+    if id != session.account.user_id || !cookies::safe_cookie_value(key) {
+        return Err(auth_required());
+    }
+    // Official playback uses the music identity in Cookie and JSON together.
+    // Browser OAuth cookies can carry a different QQ identity in `uin`.
+    Ok(format!(
+        "uin={id}; qqmusic_uin={id}; qm_keyst={key}; qqmusic_key={key}"
+    ))
+}
+
 fn candidates(
     file: &Value,
     song_mid: &str,
@@ -43,6 +56,9 @@ fn candidates(
         if known && integer(&file[size]).unwrap_or(0) == 0 && *quality != "128k" {
             continue;
         }
+        // Current track-info media MID already identifies the audio file.
+        // Older grants also accept media MID + song MID; keep that fallback.
+        result.push((format!("{prefix}{media_mid}.{ext}"), quality.to_string()));
         result.push((
             format!("{prefix}{media_mid}{song_mid}.{ext}"),
             quality.to_string(),
@@ -63,6 +79,13 @@ pub(super) async fn resolve(
         return Err(CommandError::invalid_argument("QQ 歌曲标识不正确"));
     }
     let cookie = &session.cookie;
+    let wire_cookie = playback_cookie(session)?;
+    log::info!(
+        "QQ 音乐账号原生解析：identity_matches={}，session_key={}，login_type={:?}",
+        cookies::qq_user_id(cookie).as_deref() == Some(session.account.user_id.as_str()),
+        cookies::qq_key(cookie).is_some(),
+        cookies::qq_request_comm(cookie)["tmeLoginType"].as_u64()
+    );
     let tracks = http::qq_signed(
         client,
         cookie,
@@ -76,6 +99,9 @@ pub(super) async fn resolve(
         .as_array()
         .and_then(|rows| rows.first())
         .ok_or_else(invalid_response)?;
+    if track["mid"].as_str().is_some_and(|mid| mid != id) {
+        return Err(invalid_response());
+    }
     let file = &track["file"];
     let media = file["media_mid"]
         .as_str()
@@ -86,16 +112,41 @@ pub(super) async fn resolve(
     let mut comm = cookies::qq_request_comm(cookie);
     comm["ct"] = json!(19);
     comm["cv"] = json!(1859);
+    // WeChat music IDs can exceed JSON's exact floating-point integer range.
+    // UrlGetVkey uses the decimal string in both comm and param.
+    comm["uin"] = json!(session.account.user_id);
+    comm["qq"] = json!(session.account.user_id);
     comm["qqmusic_key"] = comm["authst"].clone();
-    let data = http::qq_signed(client, cookie, "music.vkey.GetVkey", "UrlGetVkey", json!({
+    let data = http::qq_signed(client, &wire_cookie, "music.vkey.GetVkey", "UrlGetVkey", json!({
         "uin":session.account.user_id, "filename":rungs.iter().map(|(name,_)| name).collect::<Vec<_>>(),
         "guid":guid(session), "songmid":vec![id;rungs.len()],
         "songtype":vec![0;rungs.len()],"ctx":0,
     }), Some(comm)).await?;
+    granted_url(&data, &rungs, rejected)
+}
+
+fn granted_url(
+    data: &Value,
+    rungs: &[(String, String)],
+    rejected: &[String],
+) -> CommandResult<Option<(String, String)>> {
     let infos = data["midurlinfo"].as_array().ok_or_else(invalid_response)?;
     if infos.len() != rungs.len() {
         return Err(invalid_response());
     }
+    log::info!(
+        "QQ 音乐官方 Vkey：candidates={}，responses={}，grants={}，results={:?}",
+        rungs.len(),
+        infos.len(),
+        infos
+            .iter()
+            .filter(|info| info["purl"].as_str().is_some_and(|url| !url.is_empty()))
+            .count(),
+        infos
+            .iter()
+            .map(|info| info["result"].as_i64())
+            .collect::<Vec<_>>()
+    );
     let base = data["sip"]
         .as_array()
         .and_then(|rows| {
@@ -111,6 +162,9 @@ pub(super) async fn resolve(
             .is_some_and(|name| name != filename)
         {
             return Err(invalid_response());
+        }
+        if info["result"].as_i64().is_some_and(|code| code != 0) {
+            continue;
         }
         let Some(path) = info["purl"].as_str().filter(|path| !path.is_empty()) else {
             continue;

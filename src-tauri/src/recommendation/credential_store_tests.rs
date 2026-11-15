@@ -226,3 +226,50 @@ fn failed_legacy_delete_restores_current_and_preserves_database() {
     );
     assert_eq!(load_legacy_secret(&conn).unwrap(), "plaintext");
 }
+
+struct MetadataOnlyStore {
+    current: bool,
+    legacy: bool,
+}
+
+impl CredentialStore for MetadataOnlyStore {
+    fn get(&self, _: CredentialId) -> Result<Option<String>, String> {
+        panic!("settings must not decrypt secrets")
+    }
+    fn set(&self, _: CredentialId, _: &str) -> Result<(), String> {
+        panic!("settings must not migrate secrets")
+    }
+    fn delete(&self, _: CredentialId) -> Result<(), String> {
+        panic!("settings must not delete secrets")
+    }
+    fn contains(&self, id: CredentialId) -> Result<bool, String> {
+        Ok(match id {
+            CredentialId::Current => self.current,
+            CredentialId::Legacy => self.legacy,
+        })
+    }
+}
+
+#[test]
+fn key_status_does_not_decrypt_or_migrate_keys_and_respects_explicit_deletion() {
+    let conn = database("");
+    for (current, legacy) in [(true, false), (false, true), (false, false)] {
+        let store = MetadataOnlyStore { current, legacy };
+        assert_eq!(
+            has_api_key_with_store(&conn, &store).unwrap(),
+            current || legacy
+        );
+    }
+    conn.execute("UPDATE llm_config SET api_key = 'legacy-plaintext'", [])
+        .unwrap();
+    let store = MetadataOnlyStore {
+        current: false,
+        legacy: false,
+    };
+    assert!(has_api_key_with_store(&conn, &store).unwrap());
+    assert_eq!(load_legacy_secret(&conn).unwrap(), "legacy-plaintext");
+    conn.execute("UPDATE llm_config SET api_key_deleted = 1", [])
+        .unwrap();
+    assert!(!has_api_key_with_store(&conn, &store).unwrap());
+    assert_eq!(get_api_key_with_store(&conn, &store).unwrap(), "");
+}

@@ -18,6 +18,40 @@ fn decodes_official_cookie_names_and_requires_authenticated_identity() {
         .contains("session_suffix"));
 }
 
+#[test]
+fn website_portrait_cookie_decoding_falls_back_after_an_invalid_primary_value() {
+    for (cookie, expected) in [
+        (
+            "pic3=http%253A%252F%252Fkwimg1.kuwo.cn%252Favatar.jpg",
+            "https://kwimg1.kuwo.cn/avatar.jpg",
+        ),
+        (
+            "pic3=%2F%2Fthirdwx.qlogo.cn%2Fmmopen%2Favatar%2F132",
+            "https://thirdwx.qlogo.cn/mmopen/avatar/132",
+        ),
+        (
+            "pic3=%u0068%u0074%u0074%u0070%u0073%u003A%u002F%u002Fkwimg1.kuwo.cn/avatar.jpg",
+            "https://kwimg1.kuwo.cn/avatar.jpg",
+        ),
+        (
+            "pic3=undefined; pic=https%3A%2F%2Fkwimg2.kuwo.cn%2Favatar.jpg",
+            "https://kwimg2.kuwo.cn/avatar.jpg",
+        ),
+        (
+            "pic3=javascript%3Aalert(1); pic=https%3A%2F%2Fkwimg2.kuwo.cn%2Favatar.jpg",
+            "https://kwimg2.kuwo.cn/avatar.jpg",
+        ),
+    ] {
+        let session = parse_account(&format!("userid=123; sid=fixture; {cookie}")).unwrap();
+        assert_eq!(session.account.avatar_url.as_deref(), Some(expected));
+    }
+    let session =
+        parse_account("userid=123; sid=fixture; uname3=%20; username=%u97F3%u4E50; pic3=undefined")
+            .unwrap();
+    assert_eq!(session.account.nickname, "音乐");
+    assert!(session.account.avatar_url.is_none());
+}
+
 #[cfg(any(windows, target_os = "macos"))]
 #[tokio::test]
 async fn checks_the_web_session_in_a_form_and_never_treats_public_uid_as_login() {

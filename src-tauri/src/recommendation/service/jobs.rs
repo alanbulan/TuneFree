@@ -171,9 +171,9 @@ impl RecommendationService {
         if !config.enabled || config.base_url.trim().is_empty() || config.model.trim().is_empty() {
             return false;
         }
-        llm_config::get_api_key(&conn)
-            .map(|key| !key.trim().is_empty())
-            .unwrap_or(false)
+        // Scheduling only needs presence; actual cloud work reads the key.
+        // Do not decrypt credentials while deciding which jobs can run.
+        crate::recommendation::credential_store::has_api_key(&conn).unwrap_or(false)
     }
 
     fn is_recommendation_enabled(&self) -> bool {

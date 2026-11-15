@@ -3,12 +3,16 @@ use rusqlite::{params, Connection};
 use super::catalog;
 
 #[cfg(any(windows, target_os = "macos"))]
+#[cfg(any(windows, test))]
 const SERVICE: &str = "com.alanbulan.tunefree";
 #[cfg(any(windows, target_os = "macos"))]
+#[cfg(any(windows, test))]
 const ACCOUNT: &str = "llm-api-key-v1";
 #[cfg(any(windows, target_os = "macos"))]
+#[cfg(any(windows, test))]
 const LEGACY_SERVICE: &str = "TuneFree";
 #[cfg(any(windows, target_os = "macos"))]
+#[cfg(any(windows, test))]
 const LEGACY_ACCOUNT: &str = "openai-compatible-api-key";
 
 /// Error surfaced by write operations on the credential store.
@@ -45,11 +49,16 @@ trait CredentialStore {
     fn get(&self, id: CredentialId) -> Result<Option<String>, String>;
     fn set(&self, id: CredentialId, secret: &str) -> Result<(), String>;
     fn delete(&self, id: CredentialId) -> Result<(), String>;
+    fn contains(&self, id: CredentialId) -> Result<bool, String> {
+        self.get(id)
+            .map(|secret| secret.is_some_and(|value| !value.trim().is_empty()))
+    }
 }
 
 struct SystemCredentialStore;
 
 #[cfg(any(windows, target_os = "macos"))]
+#[cfg(any(windows, test))]
 impl SystemCredentialStore {
     fn entry(id: CredentialId) -> Result<keyring::Entry, String> {
         let (service, account) = match id {
@@ -65,7 +74,7 @@ impl SystemCredentialStore {
     }
 }
 
-#[cfg(any(windows, target_os = "macos"))]
+#[cfg(windows)]
 impl CredentialStore for SystemCredentialStore {
     fn is_available(&self) -> bool {
         // 原生验收使用隔离数据库；凭据也必须隔离，不能读取、迁移或删除正式密钥。
@@ -94,6 +103,38 @@ impl CredentialStore for SystemCredentialStore {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn key(id: CredentialId) -> crate::credentials::CredentialKey {
+    use crate::credentials::CredentialKey;
+    match id {
+        CredentialId::Current => CredentialKey::Llm,
+        CredentialId::Legacy => CredentialKey::LegacyLlm,
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl CredentialStore for SystemCredentialStore {
+    fn is_available(&self) -> bool {
+        !crate::app::is_smoke_test()
+    }
+
+    fn get(&self, id: CredentialId) -> Result<Option<String>, String> {
+        crate::credentials::load(key(id))
+    }
+
+    fn set(&self, id: CredentialId, secret: &str) -> Result<(), String> {
+        crate::credentials::save(key(id), secret)
+    }
+
+    fn delete(&self, id: CredentialId) -> Result<(), String> {
+        crate::credentials::delete(key(id))
+    }
+
+    fn contains(&self, id: CredentialId) -> Result<bool, String> {
+        crate::credentials::contains(key(id))
+    }
+}
+
 #[cfg(not(any(windows, target_os = "macos")))]
 impl CredentialStore for SystemCredentialStore {
     fn is_available(&self) -> bool {
@@ -118,11 +159,33 @@ pub fn get_api_key(conn: &Connection) -> Result<String, String> {
 }
 
 pub fn save_api_key(conn: &Connection, secret: &str) -> Result<(), CredentialStoreError> {
+    #[cfg(target_os = "macos")]
+    crate::credentials::retry_failed_access();
     save_api_key_with_store(conn, &SystemCredentialStore, secret)
 }
 
 pub fn delete_api_key(conn: &Connection) -> Result<(), CredentialStoreError> {
+    #[cfg(target_os = "macos")]
+    crate::credentials::retry_failed_access();
     delete_api_key_with_store(conn, &SystemCredentialStore)
+}
+
+pub fn has_api_key(conn: &Connection) -> Result<bool, String> {
+    has_api_key_with_store(conn, &SystemCredentialStore)
+}
+
+fn has_api_key_with_store(conn: &Connection, store: &impl CredentialStore) -> Result<bool, String> {
+    if is_explicitly_deleted(conn)? {
+        return Ok(false);
+    }
+    if store.is_available()
+        && (store.contains(CredentialId::Current)? || store.contains(CredentialId::Legacy)?)
+    {
+        return Ok(true);
+    }
+    // Only the legacy database column is examined. Viewing settings never
+    // decrypts or migrates a system key; migration waits for actual use.
+    Ok(!load_legacy_secret(conn)?.trim().is_empty())
 }
 
 fn get_api_key_with_store(
@@ -137,11 +200,11 @@ fn get_api_key_with_store(
         }
         return load_legacy_secret(conn);
     }
-    if let Some(secret) = store.get(CredentialId::Current)? {
-        return Ok(secret);
-    }
     if is_explicitly_deleted(conn)? {
         return Ok(String::new());
+    }
+    if let Some(secret) = store.get(CredentialId::Current)? {
+        return Ok(secret);
     }
     if let Some(secret) = store.get(CredentialId::Legacy)? {
         migrate_secret(conn, store, &secret, CredentialId::Legacy)?;
