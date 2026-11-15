@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLibrary } from '../../../../core/contexts/LibraryContext';
 import { toIpcError, type AccountPlatform, type PlatformAccount, type PlatformPlaylist } from '../../../../core/ipc';
 import { importedPlatformSongs, platformAccounts } from '../../../../core/services/platformAccounts';
+import type { Song } from '../../../../core/types';
 import { useDesktopDialog } from '../../../components/DialogHost';
 import { useToast } from '../../../components/ToastHost';
 
@@ -9,7 +10,10 @@ export interface PlaylistImportStatus {
   playlist: PlatformPlaylist;
   state: 'queued' | 'importing' | 'success' | 'failed' | 'cancelled';
   message: string;
+  selectedSongs?: Song[];
 }
+
+interface ImportRequest { playlist: PlatformPlaylist; selectedSongs?: Song[] }
 
 export function usePlaylistImports(account: PlatformAccount, markExpired: (platform: AccountPlatform) => void) {
   const { playlists: local, createPlaylist } = useLibrary();
@@ -30,15 +34,17 @@ export function usePlaylistImports(account: PlatformAccount, markExpired: (platf
       [id, item.state === 'queued' || item.state === 'importing' ? { ...item, state: 'cancelled', message: '已停止，未导入' } : item])));
   };
 
-  const start = async (requested: PlatformPlaylist[]) => {
+  const run = async (requested: ImportRequest[]) => {
     if (active.current !== null || account.state === 'expired' || requested.length === 0) return;
-    const playlists = [...new Map(requested.map((item) => [item.id, item])).values()];
+    const requests = [...new Map(requested.map((item) => [item.playlist.id, item])).values()];
+    const playlists = requests.map((item) => item.playlist);
     const version = ++generation.current;
     active.current = version;
     const valid = () => mounted.current && version === generation.current;
     let successes = 0, failures = 0;
     const update = (playlist: PlatformPlaylist, state: PlaylistImportStatus['state'], message = '') => {
-      setStatuses((previous) => ({ ...previous, [playlist.id]: { playlist, state, message } }));
+      const selectedSongs = requests.find((item) => item.playlist.id === playlist.id)?.selectedSongs;
+      setStatuses((previous) => ({ ...previous, [playlist.id]: { playlist, state, message, selectedSongs } }));
     };
     try {
       const names = new Set(local.map((item) => item.name));
@@ -54,20 +60,21 @@ export function usePlaylistImports(account: PlatformAccount, markExpired: (platf
       if (!valid()) return;
       setPrompting(false);
       setProgress({ completed: 0, total: playlists.length, running: true });
-      setStatuses((previous) => ({ ...previous, ...Object.fromEntries(playlists.map((playlist) =>
-        [playlist.id, { playlist, state: 'queued' as const, message: '等待导入' }])) }));
-      for (const playlist of playlists) {
+      setStatuses((previous) => ({ ...previous, ...Object.fromEntries(requests.map(({ playlist, selectedSongs }) =>
+        [playlist.id, { playlist, selectedSongs, state: 'queued' as const, message: '等待导入' }])) }));
+      for (const { playlist, selectedSongs } of requests) {
         if (!valid()) return;
         update(playlist, 'importing', '导入中…');
         try {
-          const payload = await platformAccounts.import(account.platform, playlist.id);
+          const payload = selectedSongs ? null : await platformAccounts.import(account.platform, playlist.id);
           if (!valid()) return;
-          const songs = importedPlatformSongs(payload);
-          if (!createPlaylist(payload.name, songs)) throw new Error('本地歌单保存失败，请检查存储空间后重试');
+          const songs = selectedSongs ?? importedPlatformSongs(payload!);
+          const name = payload?.name ?? playlist.name;
+          if (!createPlaylist(name, songs)) throw new Error('本地歌单保存失败，请检查存储空间后重试');
           successes += 1;
-          const unavailable = payload.unavailableCount ? `，${payload.unavailableCount} 首已下架或不可见` : '';
+          const unavailable = payload?.unavailableCount ? `，${payload.unavailableCount} 首已下架或不可见` : '';
           update(playlist, 'success', `已导入 ${songs.length} 首${unavailable}`);
-          if (playlists.length === 1) showToast(`已导入「${payload.name}」共 ${songs.length} 首${unavailable}，可在「歌单」中打开`, 'success');
+          if (playlists.length === 1) showToast(`已导入「${name}」共 ${songs.length} 首${unavailable}，可在「歌单」中打开`, 'success');
         } catch (error) {
           if (!valid()) return;
           failures += 1;
@@ -94,6 +101,12 @@ export function usePlaylistImports(account: PlatformAccount, markExpired: (platf
     }
   };
 
+  const failed = Object.values(statuses).filter((item) => item.state === 'failed');
+  const start = async (playlists: PlatformPlaylist[], selectedSongs?: Song[]) => {
+    if (selectedSongs && (selectedSongs.length === 0 || playlists.length !== 1)) return;
+    await run(playlists.map((playlist) => ({ playlist, ...(selectedSongs ? { selectedSongs: [...selectedSongs] } : {}) })));
+  };
   return { statuses, progress, busy: progress.running || prompting, start, cancel,
-    failed: Object.values(statuses).filter((item) => item.state === 'failed').map((item) => item.playlist) };
+    retry: () => run(failed.map(({ playlist, selectedSongs }) => ({ playlist, selectedSongs }))),
+    failed: failed.map((item) => item.playlist) };
 }

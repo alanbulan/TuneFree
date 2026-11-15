@@ -43,3 +43,30 @@ fn parses_real_user_playlist_format_and_completion_flags() {
     assert_eq!(lists[0].id, "liked");
     assert!(!more);
 }
+
+#[test]
+fn normalizes_login_portrait_urls_without_accepting_unsafe_schemes() {
+    for (raw, expected) in [
+        (
+            "//thirdqq.qlogo.cn/g/avatar/100",
+            Some("https://thirdqq.qlogo.cn/g/avatar/100"),
+        ),
+        (
+            "http://thirdwx.qlogo.cn/mmopen/avatar/132",
+            Some("https://thirdwx.qlogo.cn/mmopen/avatar/132"),
+        ),
+        ("javascript:alert(1)", None),
+        ("https://user:password@example.com/avatar", None),
+    ] {
+        let session = parse_account(
+            json!({"info":{"nick":"fixture","headurl":raw}}),
+            "qqmusic_uin=123; qqmusic_key=fixture",
+        )
+        .unwrap();
+        assert_eq!(session.account.avatar_url.as_deref(), expected);
+    }
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+#[path = "qq_account_http.rs"]
+mod account_http;

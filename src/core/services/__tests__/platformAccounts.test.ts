@@ -8,6 +8,7 @@ beforeEach(() => invoke.mockReset().mockResolvedValue({ state: 'waiting', accoun
 describe('platform account service', () => {
   it('uses native IPC for every authenticated operation', async () => {
     await platformAccounts.list();
+    await platformAccounts.retryAccess();
     await platformAccounts.start('netease');
     await platformAccounts.finish('netease', 'attempt');
     await platformAccounts.cancel('netease', 'attempt');
@@ -17,7 +18,7 @@ describe('platform account service', () => {
     await platformAccounts.import('qq', 'playlist');
     await platformAccounts.preview('kuwo', 'playlist', 2);
     expect(invoke.mock.calls.map(([command]) => command)).toEqual([
-      'list_platform_accounts', 'start_platform_login', 'finish_platform_login', 'cancel_platform_login',
+      'list_platform_accounts', 'retry_platform_account_access', 'start_platform_login', 'finish_platform_login', 'cancel_platform_login',
       'refresh_platform_account', 'logout_platform_account', 'list_platform_playlists', 'import_platform_playlist', 'preview_platform_playlist',
     ]);
     expect(invoke.mock.lastCall).toEqual(['preview_platform_playlist', { platform: 'kuwo', playlistId: 'playlist', page: 2 }]);

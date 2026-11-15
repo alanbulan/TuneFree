@@ -77,12 +77,13 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "app"
-version = "1.1.44"
+version = "1.1.45"
 dependencies = [
  "aes",
  "async-trait",
  "axum",
  "base64 0.23.1",
+ "core-foundation 0.10.1",
  "getrandom 0.4.3",
  "keyring",
  "log",
@@ -90,6 +91,7 @@ dependencies = [
  "parking_lot 0.13.0",
  "reqwest",
  "rusqlite",
+ "security-framework",
  "serde",
  "serde_json",
  "sha1",

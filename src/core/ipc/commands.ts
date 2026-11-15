@@ -93,7 +93,7 @@ export interface CommandMap {
   rebuild_recommendation_index: { args: void; result: void };
   get_llm_config: { args: void; result: LlmConfigView };
   save_llm_config: { args: { config: LlmConfigInput }; result: void };
-  list_llm_models: { args: { config?: LlmConfigInput }; result: string[] };
+  list_llm_models: { args: { config?: LlmConfigInput; retryAccess?: boolean }; result: string[] };
   test_llm_provider: {
     args: { config?: LlmConfigInput };
     result: LlmProviderTestResult;
@@ -112,6 +112,7 @@ export interface CommandMap {
   set_desktop_lyric_lock: { args: { lock: boolean }; result: void };
   hide_desktop_lyric_window: { args: void; result: void };
   list_platform_accounts: { args: void; result: PlatformAccount[] };
+  retry_platform_account_access: { args: void; result: PlatformAccount[] };
   start_platform_login: { args: { platform: string }; result: PlatformLoginAttempt };
   finish_platform_login: { args: { platform: string; attemptId: string }; result: PlatformLoginStatus };
   cancel_platform_login: { args: { platform: string; attemptId: string }; result: void };

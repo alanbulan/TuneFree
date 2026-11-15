@@ -46,12 +46,15 @@ async fn verify_isolated_credentials() {
         "llm-api-key-v1",
     )
     .unwrap();
+    current.set_password("current-test-sentinel").unwrap();
     let legacy = keyring::Entry::new(
         &format!("TuneFree.tests-{}", std::process::id()),
         "openai-compatible-api-key",
     )
     .unwrap();
     legacy.set_password("legacy-test-sentinel").unwrap();
+    #[cfg(target_os = "macos")]
+    let vault_before = crate::credentials::test_raw_snapshot().unwrap();
     let mut context: tauri::Context<tauri::test::MockRuntime> =
         tauri::test::mock_context(tauri::test::noop_assets());
     configure(&mut context).unwrap();
@@ -70,4 +73,9 @@ async fn verify_isolated_credentials() {
     // 以下条目属于本测试进程；始终不使用正式 service 标识。
     assert_eq!(current.get_password().unwrap(), "current-test-sentinel");
     assert_eq!(legacy.get_password().unwrap(), "legacy-test-sentinel");
+    #[cfg(target_os = "macos")]
+    assert_eq!(
+        crate::credentials::test_raw_snapshot().unwrap(),
+        vault_before
+    );
 }

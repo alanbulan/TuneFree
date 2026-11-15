@@ -33,6 +33,20 @@ describe('歌曲表格的键盘和菜单', () => {
     expect(screen.queryByRole('button', { name: /收藏歌曲/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /更多操作/ })).toBeNull();
   });
+
+  it('勾选歌曲不触发播放，受控选择保持最新回调并支持禁用', () => {
+    const song = { id: '1', name: '夜曲', artist: '歌手', album: '', source: 'qq' };
+    const play = vi.fn(), select = vi.fn(), nextSelect = vi.fn();
+    const view = render(<SongTable songs={[song]} onPlay={play} selection={{ isSelected: () => false, onToggle: select }} />);
+    const checkbox = screen.getByRole('checkbox', { name: '选择歌曲 夜曲' });
+    fireEvent.click(checkbox); fireEvent.keyDown(checkbox, { key: ' ' });
+    expect(select).toHaveBeenCalledWith(song, true); expect(play).not.toHaveBeenCalled();
+    view.rerender(<SongTable songs={[song]} onPlay={play} selection={{ isSelected: () => true, onToggle: nextSelect }} />);
+    expect((checkbox as HTMLInputElement).checked).toBe(true); expect(screen.getByLabelText('夜曲 - 歌手').classList.contains('is-selected')).toBe(true);
+    fireEvent.click(checkbox); expect(nextSelect).toHaveBeenCalledWith(song, false);
+    view.rerender(<SongTable songs={[song]} onPlay={play} selection={{ isSelected: () => true, onToggle: nextSelect, disabled: true }} />);
+    expect((checkbox as HTMLInputElement).disabled).toBe(true);
+  });
 });
 
 describe('拖拽排序', () => {
