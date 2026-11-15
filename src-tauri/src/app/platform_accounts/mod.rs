@@ -8,6 +8,7 @@ mod model;
 mod netease;
 mod playback;
 mod preview;
+mod profiles;
 mod qq;
 mod qq_sign;
 
@@ -31,6 +32,7 @@ struct Inner {
     attempts: Mutex<HashMap<Platform, PlatformLoginAttempt>>,
     operations: tokio::sync::Mutex<()>,
     revisions: [AtomicU64; 3],
+    profile_repairs: [AtomicBool; 3],
     app: Mutex<Option<tauri::AppHandle>>,
     client: reqwest::Client,
 }
@@ -46,6 +48,11 @@ impl Default for PlatformAccountState {
             attempts: Mutex::new(HashMap::new()),
             operations: tokio::sync::Mutex::new(()),
             revisions: [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)],
+            profile_repairs: [
+                AtomicBool::new(false),
+                AtomicBool::new(false),
+                AtomicBool::new(false),
+            ],
             app: Mutex::new(None),
             client: http::client(),
         }))
@@ -59,6 +66,10 @@ impl PlatformAccountState {
 
     fn invalidate(&self, platform: Platform) {
         self.0.revisions[platform.index()].fetch_add(1, Ordering::SeqCst);
+        self.notify_account_changed(platform);
+    }
+
+    fn notify_account_changed(&self, platform: Platform) {
         if let Some(app) = self.0.app.lock().as_ref() {
             use tauri::Emitter;
             let _ = app.emit_to(
@@ -90,10 +101,11 @@ impl PlatformAccountState {
             return Ok(());
         }
         let loaded = blocking(|| {
+            let values = SystemCredentials.load_all()?;
             let mut sessions = HashMap::new();
             for platform in Platform::ALL {
-                if let Some(raw) = SystemCredentials.load(platform)? {
-                    let mut session: Session = serde_json::from_str(&raw).map_err(|_| {
+                if let Some(raw) = values.get(&platform) {
+                    let mut session: Session = serde_json::from_str(raw).map_err(|_| {
                         CommandError::internal("已保存的登录会话损坏，请退出登录后重试")
                     })?;
                     if !cookies::valid_stored_session(platform, &session) {
@@ -111,6 +123,16 @@ impl PlatformAccountState {
         *self.0.sessions.lock() = loaded;
         self.0.initialized.store(true, Ordering::Release);
         Ok(())
+    }
+
+    async fn retry_initialization(&self) -> CommandResult<()> {
+        #[cfg(target_os = "macos")]
+        {
+            // Only this explicit UI command re-enables a denied request.
+            let _guard = self.0.operations.lock().await;
+            crate::credentials::retry_failed_access();
+        }
+        self.initialize().await
     }
 
     async fn session(&self, platform: Platform) -> CommandResult<(Session, u64)> {

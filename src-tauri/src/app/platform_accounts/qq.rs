@@ -18,7 +18,55 @@ pub(super) async fn account(client: &Client, cookie: &str) -> CommandResult<Sess
         json!({}),
     )
     .await?;
-    parse_account(data, cookie)
+    let mut session = parse_account(data, cookie)?;
+    if session.account.avatar_url.is_none() {
+        // The login check does not reliably include a portrait. The website
+        // queries BaseUserInfoServer separately; see the fixed protocol references.
+        session.account.avatar_url = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            account_avatar(client, &session),
+        )
+        .await
+        .ok()
+        .flatten();
+    }
+    Ok(session)
+}
+
+async fn account_avatar(client: &Client, session: &Session) -> Option<String> {
+    let data = http::qq_request(
+        client,
+        &session.cookie,
+        "userInfo.BaseUserInfoServer",
+        "get_user_baseinfo_v2",
+        json!({"vec_uin": [session.account.user_id]}),
+    )
+    .await;
+    if let Ok(data) = data {
+        let profile = &data["map_userinfo"][&session.account.user_id];
+        let matches_user =
+            value_string(&profile["uin"]).as_deref() == Some(session.account.user_id.as_str());
+        if data["code"].as_i64() == Some(0) && matches_user {
+            if let Some(avatar) = image_url(&profile["headurl"]) {
+                return Some(avatar);
+            }
+        }
+    }
+    let encrypted_id = session.encrypted_user_id.as_deref()?;
+    let data = http::qq_request(
+        client,
+        &session.cookie,
+        "music.UnifiedHomepage.UnifiedHomepageSrv",
+        "GetHomepageHeader",
+        json!({"uin": encrypted_id, "IsQueryTabDetail": 1}),
+    )
+    .await
+    .ok()?;
+    let profile = &data["Info"]["BaseInfo"];
+    if value_string(&profile["EncryptedUin"]).as_deref() != Some(encrypted_id) {
+        return None;
+    }
+    image_url(&profile["Avatar"])
 }
 
 pub(super) fn parse_account(data: Value, cookie: &str) -> CommandResult<Session> {

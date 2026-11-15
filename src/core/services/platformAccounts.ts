@@ -16,6 +16,7 @@ export const accountPlatformName = (platform: AccountPlatform): string =>
 /** No authenticated fetches in the renderer: all account operations use typed IPC. */
 export const platformAccounts = {
   list: () => invokeCommand('list_platform_accounts'),
+  retryAccess: () => invokeCommand('retry_platform_account_access'),
   start: (platform: AccountPlatform) => invokeCommand('start_platform_login', { platform }),
   finish: async (platform: AccountPlatform, attemptId: string) => {
     const result = await invokeCommand('finish_platform_login', { platform, attemptId });

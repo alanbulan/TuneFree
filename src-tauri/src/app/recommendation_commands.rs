@@ -120,8 +120,11 @@ pub(crate) async fn save_llm_config(
 pub(crate) async fn list_llm_models(
     state: State<'_, Arc<RecommendationService>>,
     config: Option<LlmConfigInput>,
+    retry_access: Option<bool>,
 ) -> CommandResult<Vec<String>> {
-    state.list_llm_models(config).await
+    state
+        .list_llm_models(config, retry_access.unwrap_or(false))
+        .await
 }
 
 #[tauri::command]

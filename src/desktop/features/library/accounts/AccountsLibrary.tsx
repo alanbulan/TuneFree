@@ -21,8 +21,8 @@ export default function AccountsLibrary({ accounts, account, onSelect, markExpir
     <AccountPlaylists accounts={accounts} account={account} playlists={cloud.playlists} loading={cloud.loading}
       error={cloud.error} statuses={imports.statuses} progress={imports.progress} busy={imports.busy}
       onSelect={onSelect} onReload={() => void cloud.reload()} onImport={(playlists) => void imports.start(playlists)}
-      onPreview={setPreview} onCancel={imports.cancel} onRetry={() => void imports.start(imports.failed)} />
+      onPreview={setPreview} onCancel={imports.cancel} onRetry={() => void imports.retry()} />
     {preview && <PlaylistPreview key={preview.id} account={account} playlist={preview} busy={imports.busy}
-      onClose={() => setPreview(null)} onImport={() => { setPreview(null); void imports.start([preview]); }} markExpired={markExpired} />}
+      onClose={() => setPreview(null)} onImport={(songs) => { setPreview(null); void imports.start([preview], songs); }} markExpired={markExpired} />}
   </>;
 }

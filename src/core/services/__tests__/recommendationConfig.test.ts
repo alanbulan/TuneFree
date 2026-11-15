@@ -15,6 +15,8 @@ describe('推荐配置和稳定数据边界', () => {
     vi.mocked(invokeCommand).mockResolvedValueOnce(['model-a', 'model-b']);
     await expect(listLlmModels(draft)).resolves.toEqual(['model-a', 'model-b']);
     expect(invokeCommand).toHaveBeenCalledWith('list_llm_models', { config: draft });
+    await listLlmModels(draft, true);
+    expect(invokeCommand).toHaveBeenLastCalledWith('list_llm_models', { config: draft, retryAccess: true });
   });
 
   it('晚到的旧配置不能覆盖刚保存的启用状态', async () => {

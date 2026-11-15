@@ -12,6 +12,7 @@ export interface SongRowHandlers {
   more: (song: Song) => void;
   dismiss: (song: Song) => void;
   remove: (song: Song) => void;
+  select: (song: Song, selected: boolean) => void;
 }
 
 /** 拖拽排序回调；不传即该列表不支持排序。 */
@@ -32,6 +33,7 @@ export interface SongRowSlots {
   dismiss: boolean;
   remove: boolean;
   removeLabel: string;
+  select: boolean;
 }
 
 interface SongTableRowProps {
@@ -41,6 +43,8 @@ interface SongTableRowProps {
   current: boolean;
   isPlaying: boolean;
   favoriteActive: boolean;
+  selected: boolean;
+  selectionDisabled?: boolean;
   handlers: SongRowHandlers;
   slots: SongRowSlots;
   drag?: SongRowDragHandlers;
@@ -59,7 +63,7 @@ const stopRowActivation = (event: MouseEvent | KeyboardEvent) => event.stopPropa
  * whole row as a single control. Click / Enter / Space still start playback.
  */
 function SongTableRow({
-  song, index, style, current, isPlaying, favoriteActive, handlers, slots,
+  song, index, style, current, isPlaying, favoriteActive, selected, selectionDisabled, handlers, slots,
   drag, dragging, dropTarget,
 }: SongTableRowProps) {
   const title = typeof song.name === 'string' ? song.name : '未知歌曲';
@@ -77,7 +81,7 @@ function SongTableRow({
 
   return (
     <div
-      className={`song-row ${current ? 'current' : ''}${dragging ? ' is-dragging' : ''}${dropTarget ? ' is-drop-target' : ''}`}
+      className={`song-row ${current ? 'current' : ''}${selected ? ' is-selected' : ''}${dragging ? ' is-dragging' : ''}${dropTarget ? ' is-drop-target' : ''}`}
       style={style}
       aria-label={`${title} - ${artist}`}
       aria-current={current ? 'true' : undefined}
@@ -111,7 +115,10 @@ function SongTableRow({
         handlers.play(song);
       }}
     >
-      <span className="song-index">{current && isPlaying ? '▶' : String(index + 1).padStart(2, '0')}</span>
+      {slots.select ? <span className="song-index song-selection" onClick={stopRowActivation} onKeyDown={stopRowActivation}>
+        <input type="checkbox" className="settings-checkbox is-small" aria-label={`选择歌曲 ${title}`}
+          checked={selected} disabled={selectionDisabled} onChange={(event) => handlers.select(song, event.target.checked)} />
+      </span> : <span className="song-index">{current && isPlaying ? '▶' : String(index + 1).padStart(2, '0')}</span>}
       <span className="song-main">
         <span className="song-cover">
           {song.pic ? (

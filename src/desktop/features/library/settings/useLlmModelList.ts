@@ -8,7 +8,7 @@ export function useLlmModelList(config: LlmConfigView, apiKey: string, clearApiK
   const initialFetch = useRef(false);
   const connection = `${config.baseUrl.trim()}\0${apiKey.trim()}\0${clearApiKey}`;
 
-  const fetchModels = useCallback(async () => {
+  const fetchModels = useCallback(async (retryAccess = true) => {
     const request = ++requestId.current;
     setResponse({ connection, models: [], loading: true, error: '' });
     try {
@@ -19,7 +19,7 @@ export function useLlmModelList(config: LlmConfigView, apiKey: string, clearApiK
         timeoutMs: config.timeoutMs,
         apiKey: apiKey.trim() || undefined,
         clearApiKey,
-      });
+      }, retryAccess);
       if (request === requestId.current) setResponse({ connection, models: fetched, loading: false, error: '' });
     } catch (failure) {
       if (request === requestId.current) {
@@ -33,7 +33,7 @@ export function useLlmModelList(config: LlmConfigView, apiKey: string, clearApiK
   useEffect(() => {
     if (initialFetch.current || !config.baseUrl || !config.hasApiKey) return;
     initialFetch.current = true;
-    void fetchModels();
+    void fetchModels(false);
   }, [config.baseUrl, config.hasApiKey, fetchModels]);
 
   const current = response.connection === connection;

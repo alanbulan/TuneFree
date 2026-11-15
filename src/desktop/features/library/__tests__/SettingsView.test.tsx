@@ -220,6 +220,7 @@ describe('设置页面真实控件', () => {
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', '目录服务暂不可用');
     fireEvent.click(screen.getByRole('button', { name: '获取列表' }));
     await screen.findByText('已从服务商获取 2 个模型');
+    expect(listLlmModels).toHaveBeenLastCalledWith(expect.anything(), true);
     fireEvent.click(screen.getByLabelText('模型'));
     await screen.findByRole('option', { name: 'test-model' });
     expect(screen.queryByRole('alert')).toBeNull();
@@ -231,7 +232,7 @@ describe('设置页面真实控件', () => {
     await screen.findByText('已从服务商获取 2 个模型');
     fireEvent.click(screen.getByLabelText('模型'));
     await screen.findByRole('option', { name: 'test-model' });
-    expect(listLlmModels).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'https://model.test/v1', apiKey: undefined }));
+    expect(listLlmModels).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'https://model.test/v1', apiKey: undefined }), false);
     fireEvent.click(screen.getByRole('option', { name: 'test-model' }));
     fireEvent.click(screen.getByRole('button', { name: '测试连接' }));
     await waitFor(() => expect(testLlmProvider).toHaveBeenCalled());

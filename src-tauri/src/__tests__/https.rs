@@ -62,9 +62,12 @@ impl HttpsServer {
     }
 
     pub(crate) fn calls(&self) -> Vec<Value> {
-        std::fs::read_to_string(self.directory.0.join("calls.jsonl"))
-            .unwrap()
-            .lines()
+        let raw = match std::fs::read_to_string(self.directory.0.join("calls.jsonl")) {
+            Ok(raw) => raw,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+            Err(error) => panic!("无法读取 HTTPS 测试请求记录：{error}"),
+        };
+        raw.lines()
             .map(|line| serde_json::from_str(line).unwrap())
             .collect()
     }

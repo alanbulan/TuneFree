@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ArrowRight, CircleUserRound, ExternalLink, LoaderCircle, ShieldCheck } from 'lucide-react';
 import { ACCOUNT_PLATFORMS } from '../../../../core/services/platformAccounts';
 import type { AccountPlatform, PlatformAccount, PlatformLoginAttempt } from '../../../../core/ipc';
@@ -12,7 +13,19 @@ interface AccountCardsProps {
   onLogout: (platform: AccountPlatform) => void;
 }
 
+function AccountAvatar({ url }: { url?: string | null }) {
+  const [failed, setFailed] = useState(false);
+  return <span className="account-avatar">{url && !failed
+    ? <img src={url} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+    : <CircleUserRound size={38} aria-hidden="true" />}</span>;
+}
+
 export function AccountCards({ accounts, busy, busyPlatform, native, onConnect, onRefresh, onLogout }: AccountCardsProps) {
+  const [avatarRetries, setAvatarRetries] = useState<Partial<Record<AccountPlatform, number>>>({});
+  const refresh = (platform: AccountPlatform) => {
+    setAvatarRetries((previous) => ({ ...previous, [platform]: (previous[platform] || 0) + 1 }));
+    onRefresh(platform);
+  };
   return <div className="account-cards">
     {ACCOUNT_PLATFORMS.map(({ id, name }) => {
       const account = accounts.find((item) => item.platform === id);
@@ -22,15 +35,12 @@ export function AccountCards({ accounts, busy, busyPlatform, native, onConnect, 
       return <article key={id} className="content-card account-card" aria-label={`${name}账号`}>
         <div className="account-card-heading"><h2>{name}</h2><span className={`account-state is-${state || 'empty'}`}>{label}</span></div>
         <div className="account-profile">
-          <span className="account-avatar">{account?.avatarUrl
-            ? <img src={account.avatarUrl} alt="" referrerPolicy="no-referrer" />
-            : <CircleUserRound size={38} aria-hidden="true" />}</span>
-          <div><h3>{account?.nickname || '连接你的音乐账号'}</h3>
-            <p>{state === 'expired' ? '重新登录后继续使用账号播放' : account ? '播放优先使用这个账号' : '登录后直接播放、浏览个人歌单'}</p></div>
+          <AccountAvatar key={`${account?.avatarUrl || 'empty'}:${avatarRetries[id] || 0}`} url={account?.avatarUrl} />
+          <div><h3>{account?.nickname || '连接你的音乐账号'}</h3></div>
         </div>
         <div className="account-card-actions">
           {account && state !== 'expired' ? <>
-            <button type="button" className="soft-button" disabled={busy} onClick={() => onRefresh(id)}>
+            <button type="button" className="soft-button" disabled={busy} onClick={() => refresh(id)}>
               {waiting && <LoaderCircle size={14} className="account-spinner" aria-hidden="true" />} 检查连接
             </button>
             <button type="button" className="soft-button" disabled={busy} onClick={() => onConnect(id)}>重新登录</button>
