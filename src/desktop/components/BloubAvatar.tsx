@@ -20,19 +20,22 @@ const createEngine = (state: StateId, expression: ExpressionId, shape: ShapeId) 
   R, state, SHAPE_BY_ID.get(shape)?.radii ?? null,
   EXPRESSION_BY_ID.get(expression) ?? null,
 );
-const FRAME_INTERVAL_MS = 1000 / 60;
+const IDLE_FRAME_INTERVAL_MS = 1000 / 30;
+const INTERACTIVE_FRAME_INTERVAL_MS = 1000 / 60;
 
 /** 仅适配官方组件的时钟与指针生命周期，测量数据和形变计算仍来自上游。 */
 function useBloubFrame(state: StateId, frozen: boolean, expression: ExpressionId, shape: ShapeId, followPointer: boolean) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [engine] = useState(() => createEngine(state, expression, shape));
   const clockRef = useRef(0);
+  const transitionUntilRef = useRef(0);
   const [frame, setFrame] = useState(() => engine.sample(frozen ? POSES[state] : 0));
 
   useEffect(() => {
     engine.setState(state, clockRef.current);
     engine.setExpression(EXPRESSION_BY_ID.get(expression) ?? null, clockRef.current);
     engine.setShape(SHAPE_BY_ID.get(shape)?.radii ?? null, clockRef.current);
+    transitionUntilRef.current = clockRef.current + Math.max(TURN_TIME, STATE_BY_ID.get(state)!.morph, BotEngine.SHAPE_MORPH);
     // 在当前状态进入完成后取一个静止帧；恢复时从这一帧继续，避免回跳。
     if (frozen) clockRef.current += Math.max(POSES[state], STATE_BY_ID.get(state)!.morph);
     setFrame(engine.sample(clockRef.current));
@@ -40,17 +43,21 @@ function useBloubFrame(state: StateId, frozen: boolean, expression: ExpressionId
 
   useEffect(() => {
     if (frozen) return;
-    const loop = { raf: 0, last: 0, pointer: null as { x: number; y: number } | null,
+    const loop = { raf: 0, last: 0, interactiveUntil: 0, pointer: null as { x: number; y: number } | null,
       aiming: false, turnSince: clockRef.current };
     const bounds = { rect: null as DOMRect | null };
     const invalidateBox = () => { bounds.rect = null; };
     const onPointerMove = (event: PointerEvent) => {
       if (event.pointerType !== 'touch') {
         loop.pointer = { x: event.clientX, y: event.clientY };
+        loop.interactiveUntil = performance.now() + TURN_TIME * 1000;
         invalidateBox();
       }
     };
-    const onPointerLeave = () => { loop.pointer = null; };
+    const onPointerLeave = () => {
+      loop.pointer = null;
+      loop.interactiveUntil = performance.now() + TURN_TIME * 1000;
+    };
     const aim = () => {
       const clock = clockRef.current;
       if (!STATE_BY_ID.get(engine.state)?.baseFace) {
@@ -71,8 +78,10 @@ function useBloubFrame(state: StateId, frozen: boolean, expression: ExpressionId
       loop.aiming = true;
     };
     const tick = (ms: number) => {
-      // 120/144Hz 屏幕无需同频重建装饰 SVG；保持 60Hz，动画时钟仍按真实经过时间前进。
-      if (loop.last && ms - loop.last < FRAME_INTERVAL_MS - 1) {
+      // 形变和指针交互保持 60Hz，空闲装饰降至 30Hz；时钟仍按真实时间前进。
+      const morphing = clockRef.current < transitionUntilRef.current;
+      const interval = morphing || ms < loop.interactiveUntil ? INTERACTIVE_FRAME_INTERVAL_MS : IDLE_FRAME_INTERVAL_MS;
+      if (loop.last && ms - loop.last < interval - 1) {
         loop.raf = window.requestAnimationFrame(tick);
         return;
       }

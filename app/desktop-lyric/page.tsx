@@ -1,5 +1,3 @@
-'use client';
-
 import { useState } from 'react';
 import './desktop-lyric.css';
 import { DesktopLyricResizeHandles } from './_components/DesktopLyricResizeHandles';

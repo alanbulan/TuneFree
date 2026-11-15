@@ -38,6 +38,9 @@ const INITIAL_TIMING: TimingSnapshot = {
   receivedAt: 0,
 };
 
+const LINE_CLOCK_INTERVAL_MS = 100;
+const KARAOKE_CLOCK_INTERVAL_MS = 1000 / 30;
+
 export const useDesktopLyricBridge = () => {
   const [song, setSong] = useState<DesktopLyricSong | null>(null);
   const [trackKey, setTrackKey] = useState('');
@@ -138,9 +141,16 @@ export const useDesktopLyricBridge = () => {
     if (!timing.isPlaying) return;
 
     let frame = 0;
+    let lastUpdate = timing.receivedAt;
+    const intervalSeconds = (timing.lyricDisplayMode === 'karaoke' ? KARAOKE_CLOCK_INTERVAL_MS : LINE_CLOCK_INTERVAL_MS) / 1000;
     const tick = () => {
-      const elapsed = Math.max(0, getNowSeconds() - timing.receivedAt);
-      setProjectedTime(timing.currentTime + elapsed * timing.playbackRate);
+      const now = getNowSeconds();
+      // 逐行无需每帧重建整棵歌词树，逐字仍保留30Hz渐进高亮；seek由事件立即同步。
+      if (now - lastUpdate >= intervalSeconds - 0.001) {
+        const elapsed = Math.max(0, now - timing.receivedAt);
+        setProjectedTime(timing.currentTime + elapsed * timing.playbackRate);
+        lastUpdate = now;
+      }
       frame = window.requestAnimationFrame(tick);
     };
 

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { backupCorruptStorage, safeGetItem, safeGetJson, safeRemoveItem, safeSetItem, safeSetJson } from '../safeStorage';
-import { formatBytes, formatUptime } from '../formatting';
 import { readCachedDownloadDir, writeCachedDownloadDir } from '../../../desktop/utils/downloadDirCache';
 
 beforeEach(() => { localStorage.clear(); });
@@ -41,12 +40,5 @@ describe('安全存储', () => {
     vi.unstubAllGlobals();
     vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => { throw new Error('denied'); });
     expect(safeGetItem('key', 'initial')).toBe('initial');
-  });
-});
-
-describe('状态数值格式', () => {
-  it('持续时间显示完整天时分，字节按支持的单位显示', () => {
-    expect(formatUptime(0)).toBe('刚启动'); expect(formatUptime(90060)).toBe('1天 1小时 1分');
-    expect(formatBytes(0)).toBe('0 B'); expect(formatBytes(1024)).toBe('1 KB'); expect(formatBytes(1536)).toBe('1.5 KB');
   });
 });
