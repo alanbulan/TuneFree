@@ -41,7 +41,7 @@ Mac 包采用 ad-hoc 本地签名，尚未进行 Apple Developer ID 签名与公
 
 **Bloub 音乐伙伴**复用上游 TypeScript 动画核心，通过项目维护的 React 适配层随播放与推荐状态变化。来源和许可见 [vendor/bloub](./vendor/bloub/README.md)。
 
-平台账号功能在 [Issue #11](https://github.com/alanbulan/TuneFree/issues/11) 对应开发分支中提供：音乐库新增「账号」，连接网易云 / QQ 音乐、查看个人歌单并导入本地副本。会话由原生层保存到系统凭据存储。真实账号与 Windows 运行验收仍待完成，当前正式版本尚未包含；范围、原型和检查证据见[平台账号开发计划](./docs/platform-accounts-plan.md)。
+**平台账号（v1.1.44）**：音乐库新增「账号」，支持网易云、QQ 音乐、酷我音乐。播放对应平台歌曲时优先使用本人账号解析，无需安装音乐脚本，实际音质与可播放范围按账号权益。个人歌单支持分页、弹窗预览点歌、收藏、跨页多选与批量导入；会话由原生层保存到系统凭据存储。范围、界面与验证记录见[平台账号开发计划](./docs/platform-accounts-plan.md)。
 
 ## 技术栈
 
