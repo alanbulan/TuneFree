@@ -1,4 +1,3 @@
-import { useLibrary } from '../../../core/contexts/LibraryContext';
 import type { LibraryView } from '../../types';
 import FavoritesView from './FavoritesView';
 import PlaylistsView from './PlaylistsView';
@@ -23,11 +22,6 @@ interface DesktopLibraryProps {
 }
 
 export default function DesktopLibrary({ activeView }: DesktopLibraryProps) {
-  // Ensure LibraryProvider is initialised – the individual views read from
-  // the same context but we keep this call so the provider is always
-  // touched at the library root.
-  useLibrary();
-
   const meta = viewMeta[activeView];
 
   return (

@@ -1,11 +1,11 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useMiraPetPosition, useReducedMotion } from '../useMiraPetPosition';
+import { useCompanionPosition, useReducedMotion } from '../useCompanionPosition';
 
 const key = 'tunefree_desktop_mira_position_v3';
 const capture = vi.fn(), release = vi.fn();
 function Pet() {
-  const { petRef, position, dragging, movementAction, handlePointerDown, handlePointerMove, finishDrag, handleKeyDown } = useMiraPetPosition();
+  const { petRef, position, dragging, movementAction, handlePointerDown, handlePointerMove, finishDrag, handleKeyDown } = useCompanionPosition();
   const reduced = useReducedMotion();
   return <div ref={petRef} tabIndex={0} role="button" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
     onPointerUp={finishDrag} onPointerCancel={finishDrag} onKeyDown={handleKeyDown}

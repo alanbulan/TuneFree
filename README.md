@@ -129,6 +129,8 @@ scripts/                     架构、IPC、发布和运行验收脚本
 
 </details>
 
+目录职责与新增模块约定见[代码与目录约定](./docs/code-structure.md)；最新测量方法、优化与边界见[桌面性能检测](./docs/performance-review-2026-11-15.md)。
+
 ## 开发与验证
 
 验证环境：Node.js 26.13.0、npm 12.2.1、Rust 1.99.1（`rust-toolchain.toml` 固定；最低 Rust 版本为 1.95）。Windows 需要 Visual Studio C++ Build Tools 与 WebView2；macOS 需要 Xcode Command Line Tools。

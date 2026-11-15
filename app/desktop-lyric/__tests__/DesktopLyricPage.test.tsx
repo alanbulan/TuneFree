@@ -54,6 +54,29 @@ describe('桌面歌词窗口', () => {
     expect(cancel).toHaveBeenCalledWith(12); view.unmount();
   });
 
+  it.each([{ mode: 'line', maximum: 11 }, { mode: 'karaoke', maximum: 31 }])('$mode 模式限制状态更新频率，seek与暂停事件即时生效', async ({ mode, maximum }) => {
+    let now = 10000, frame: FrameRequestCallback = () => {}, renders = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { frame = callback; return 12; });
+    const view = renderHook(() => { renders += 1; return useDesktopLyricBridge(); }); await ready();
+    emit('lyric-song', { trackKey: 'qq:1', id: '1', title: '歌曲', source: 'qq', lrc: '[00:00]开始\n[00:20]继续' });
+    emit('lyric-tick', { trackKey: 'qq:1', currentTime: 0, isPlaying: true, playbackRate: 1, lyricDisplayMode: mode });
+    renders = 0;
+    for (let i = 1; i <= 120; i += 1) {
+      now = 10000 + i * 1000 / 120;
+      act(() => frame(now));
+    }
+    expect(renders).toBeLessThanOrEqual(maximum);
+    expect(renders).toBeGreaterThanOrEqual(maximum - 2);
+    expect(view.result.current.playerState.currentTime).toBeCloseTo(1, 1);
+    emit('lyric-tick', { trackKey: 'qq:1', currentTime: 25, isPlaying: true, lyricDisplayMode: mode });
+    expect(view.result.current.playerState.currentTime).toBe(25);
+    expect(view.result.current.playerState.currentLine?.text).toBe('继续');
+    emit('lyric-tick', { trackKey: 'qq:1', currentTime: 26, isPlaying: false, lyricDisplayMode: mode });
+    expect(view.result.current.playerState.currentTime).toBe(26);
+    view.unmount();
+  });
+
   it('焦点、悬停显示工具栏，七个按钮与八个缩放方向连接原生接口', async () => {
     render(<DesktopLyricPage />); await ready(); const root = screen.getByRole('region');
     expect(screen.queryByRole('button', { name: '上一首' })).toBeNull(); fireEvent.mouseEnter(root);

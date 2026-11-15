@@ -8,7 +8,9 @@ import { STATES } from '../../../../vendor/bloub/src/bot/states';
 
 const frames = new Map<number, FrameRequestCallback>();
 let nextFrame = 0;
+let now = 0;
 const step = (time: number) => act(() => {
+  now = time;
   const callbacks = [...frames.values()];
   frames.clear();
   callbacks.forEach((callback) => callback(time));
@@ -16,7 +18,8 @@ const step = (time: number) => act(() => {
 const body = (container: HTMLElement) => container.querySelector('mask > path')!.getAttribute('d');
 
 beforeEach(() => {
-  frames.clear(); nextFrame = 0;
+  frames.clear(); nextFrame = 0; now = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
   document.documentElement.className = '';
   document.documentElement.style.setProperty('--ios-bg', '#f6f6f8');
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
@@ -120,6 +123,29 @@ describe('Bloub 官方帧的 React 适配', () => {
     fireEvent.pointerMove(window, { pointerType: 'mouse', clientX: 400, clientY: 200 });
     step(1024); expect(bounds).toHaveBeenCalledTimes(2);
     fireEvent.resize(window); step(1040); expect(bounds).toHaveBeenCalledTimes(3);
+    view.unmount(); expect(frames.size).toBe(0);
+  });
+
+  it('空闲降至30Hz，鼠标交互和状态形变恢复60Hz并按真实时间前进', () => {
+    const sample = vi.spyOn(BotEngine.prototype, 'sample');
+    const view = render(<BloubAvatar state="idle" frozen={false} />);
+    for (let time = 8; time <= 2000; time += 8) step(time);
+    sample.mockClear();
+    for (let time = 2008; time <= 3000; time += 8) step(time);
+    expect(sample.mock.calls.length).toBeGreaterThanOrEqual(25);
+    expect(sample.mock.calls.length).toBeLessThanOrEqual(32);
+    const before = sample.mock.calls[0][0], after = sample.mock.calls[sample.mock.calls.length - 1][0];
+    expect(after - before).toBeGreaterThan(0.9);
+    fireEvent.pointerMove(window, { pointerType: 'mouse', clientX: 400, clientY: 200 });
+    sample.mockClear();
+    for (let time = 3008; time <= 3500; time += 8) step(time);
+    expect(sample.mock.calls.length).toBeGreaterThanOrEqual(28);
+    fireEvent.pointerLeave(document);
+    for (let time = 3508; time <= 5000; time += 8) step(time);
+    view.rerender(<BloubAvatar state="orbit" frozen={false} />);
+    sample.mockClear();
+    for (let time = 5008; time <= 5500; time += 8) step(time);
+    expect(sample.mock.calls.length).toBeGreaterThanOrEqual(28);
     view.unmount(); expect(frames.size).toBe(0);
   });
 });

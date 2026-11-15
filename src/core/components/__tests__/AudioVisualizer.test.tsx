@@ -19,16 +19,19 @@ vi.mock('react', async (original) => {
 });
 const frames = new Map<number, FrameRequestCallback>(); let id = 0;
 let resize: (() => void) | undefined, theme: (() => void) | undefined;
-const disconnect = vi.fn(); let width = 440, height = 100;
+const disconnect = vi.fn(); let width = 440, height = 100, now = 0, hidden = false;
 const context = { clearRect: vi.fn(), setTransform: vi.fn(), beginPath: vi.fn(), roundRect: vi.fn(), fill: vi.fn(),
   moveTo: vi.fn(), arcTo: vi.fn(), lineTo: vi.fn(), fillStyle: '' };
 const step = (count = 1) => { for (let index = 0; index < count; index++) {
-  const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach((callback) => callback(index * 16));
+  now += 1000 / 30;
+  const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach((callback) => callback(now));
 } };
 beforeEach(() => {
-  vi.clearAllMocks(); mocks.analyser = null; mocks.legacy = false; frames.clear(); id = 0; width = 440; height = 100;
+  vi.clearAllMocks(); mocks.analyser = null; mocks.legacy = false; frames.clear(); id = 0; width = 440; height = 100; now = 0; hidden = false;
   resize = undefined; theme = undefined; context.fillStyle = '';
   vi.stubGlobal('devicePixelRatio', 2);
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
   vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ width, height, top: 0, left: 0, right: width, bottom: height, x: 0, y: 0, toJSON: () => ({}) }));
   vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => { frames.set(++id, callback); return id; }));
@@ -80,5 +83,42 @@ describe('音频频谱帧循环', () => {
     const legacy = { ...context, roundRect: undefined } as unknown as CanvasRenderingContext2D;
     renderVisualizerBar(legacy, 1, 0, 100, 2, '1, 2, 3');
     expect(context.arcTo).toHaveBeenCalledTimes(4); expect(context.fill).toHaveBeenCalledOnce();
+  });
+
+  it('120Hz回调只绘制30Hz，隐藏时释放动画、重新可见时恢复且保留暂停状态', () => {
+    const read = vi.fn((bytes: Uint8Array) => bytes.fill(128));
+    mocks.analyser = { frequencyBinCount: 256, getByteFrequencyData: read } as unknown as AnalyserNode;
+    const view = render(<AudioVisualizer isPlaying />);
+    read.mockClear();
+    for (let time = 1000 / 120; time <= 1000; time += 1000 / 120) {
+      now = time;
+      const callbacks = [...frames.values()]; frames.clear();
+      act(() => callbacks.forEach((callback) => callback(time)));
+    }
+    expect(read.mock.calls.length).toBeLessThanOrEqual(30);
+    expect(read.mock.calls.length).toBeGreaterThanOrEqual(29);
+    hidden = true;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(frames.size).toBe(0);
+    const calls = read.mock.calls.length;
+    view.rerender(<AudioVisualizer isPlaying />);
+    expect(read).toHaveBeenCalledTimes(calls);
+    hidden = false;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(frames.size).toBe(1);
+    view.rerender(<AudioVisualizer isPlaying={false} />); act(() => step(100));
+    expect(frames.size).toBe(0);
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(frames.size).toBe(0);
+  });
+
+  it('隐藏时挂载的频谱不读取数据，显示后才开始绘制', () => {
+    hidden = true;
+    const view = render(<AudioVisualizer isPlaying />);
+    expect(frames.size).toBe(0); expect(context.roundRect).not.toHaveBeenCalled();
+    hidden = false;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(frames.size).toBe(1); expect(context.roundRect).toHaveBeenCalledTimes(BAR_COUNT);
+    view.unmount(); expect(frames.size).toBe(0);
   });
 });

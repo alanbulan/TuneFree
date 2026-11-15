@@ -1,5 +1,3 @@
-'use client';
-
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { DesktopLyricPlayerState, DesktopLyricStyleState } from '../_core/types';
 import { LyricLineRenderer } from './LyricLineRenderer';
