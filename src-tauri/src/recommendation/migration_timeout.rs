@@ -12,7 +12,7 @@ pub(super) fn run_llm_timeout_migration_v5(conn: &Connection) -> rusqlite::Resul
     )?;
     if !already_applied {
         tx.execute(
-            "UPDATE llm_config SET timeout_ms = ?1 WHERE id = 1 AND timeout_ms = 8000",
+            include_str!("migrations/2026-11-15_005_llm_timeout.sql"),
             [DEFAULT_LLM_TIMEOUT_MS as i64],
         )?;
         tx.execute(

@@ -1,5 +1,3 @@
-'use client';
-
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 export type CloseBehavior = 'ask' | 'tray' | 'exit';

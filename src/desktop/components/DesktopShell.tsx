@@ -9,7 +9,7 @@ import type { DesktopView, LibraryView } from '../types';
 import DesktopFullPlayer from './DesktopFullPlayer';
 import DesktopTransport from './DesktopTransport';
 import LyricSyncBridge from './LyricSyncBridge';
-import BloubCompanion from './MiraPet';
+import BloubCompanion from './BloubCompanion';
 import { useToast } from './ToastHost';
 import { useLyricControlListener } from '../hooks/useLyricControlListener';
 import ClosePrompt from './ClosePrompt';

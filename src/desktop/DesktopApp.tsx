@@ -1,5 +1,3 @@
-'use client';
-
 import { useEffect, useState } from 'react';
 import { MotionConfig } from 'framer-motion';
 import { DesktopPreferencesProvider } from '../core/contexts/DesktopPreferencesContext';

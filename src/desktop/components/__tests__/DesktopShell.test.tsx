@@ -29,7 +29,7 @@ vi.mock('../../features/library/DesktopLibrary', () => ({ default: ({ activeView
 vi.mock('../DesktopTransport', () => ({ default: ({ onExpand, suspended }: { onExpand: () => void; suspended: boolean }) => <button onClick={onExpand}>展开 {String(suspended)}</button> }));
 vi.mock('../DesktopFullPlayer', () => ({ default: ({ onSearch, onClose }: { onSearch: (s: string) => void; onClose: () => void }) => <div><button onClick={() => onSearch('歌手')}>搜索歌手</button><button onClick={onClose}>收起</button></div> }));
 vi.mock('../LyricSyncBridge', () => ({ default: () => null }));
-vi.mock('../MiraPet', () => ({ default: ({ aiBusy }: { aiBusy: boolean }) => <span>伙伴：{String(aiBusy)}</span> }));
+vi.mock('../BloubCompanion', () => ({ default: ({ aiBusy }: { aiBusy: boolean }) => <span>伙伴：{String(aiBusy)}</span> }));
 
 function Shell({ initial = 'home' }: { initial?: DesktopView }) {
   const [view, change] = useState(initial);
