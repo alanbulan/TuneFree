@@ -65,7 +65,7 @@ fn should_forward_response_header(name: &HeaderName, connection_tokens: &HashSet
 ///
 /// Only requests to these hosts (or their subdomains) are permitted.
 /// This prevents the proxy from being used as an open relay.
-const ALLOWED_HOSTS: [&str; 24] = [
+const ALLOWED_HOSTS: [&str; 27] = [
     "music.163.com",
     "interface.music.163.com",
     "interface3.music.163.com",
@@ -90,6 +90,9 @@ const ALLOWED_HOSTS: [&str; 24] = [
     "complexsearch.kugou.com",
     "c.musicapp.migu.cn",
     "hdslb.com",
+    "music.126.net",
+    "qqmusic.qq.com",
+    "sycdn.kuwo.cn",
 ];
 
 /// Returns the proxy host whitelist for the `/api/allowed-hosts` endpoint,

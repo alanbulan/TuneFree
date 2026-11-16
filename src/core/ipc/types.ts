@@ -117,6 +117,8 @@ export interface LyricTickPayload {
   isPlaying: boolean;
   sentAt: number;
   playbackRate: number;
+  /** waiting/seek 时停止歌词窗口外推，isPlaying 仍表示用户播放意图。 */
+  advancing?: boolean;
   lyricOffsetSeconds: number;
   lyricDisplayMode: string;
 }
@@ -192,16 +194,21 @@ export interface RecommendationFeedback {
   context?: string;
 }
 
-export type RecommendationJobStatus = "running" | "done" | "error";
+export type RecommendationJobStatus = "idle" | "waiting" | "running" | "done" | "error" | "cancelled" | "disabled";
 
 export type RecommendationJobStage =
+  | "waiting"
   | "local_recall"
   | "discovery_plan"
   | "platform_search"
   | "cloud_rerank"
   | "local_only"
+  | "cached"
   | "done"
-  | "error";
+  | "error"
+  | "cancelled"
+  | "disabled"
+  | "cleared";
 
 export interface RecommendationJob {
   jobId: string;
@@ -212,14 +219,21 @@ export interface RecommendationJob {
   error?: string | null;
   updatedAt: number;
   deadlineAt?: number | null;
+  localCount: number;
+  localUpdatedAt: number;
+  cloudEnabled: boolean;
+  resultUpdatedAt: number;
+  nextRefreshAt?: number | null;
 }
 
 /** 推荐任务进度事件，event `recommendation-job-update`（items 不随事件下发）。 */
 export interface RecommendationJobUpdatePayload {
   jobId: string;
-  status: "pending" | "running" | "done" | "error";
+  status: RecommendationJobStatus;
   stage: string | null;
   detail: string | null;
+  updatedAt: number;
+  nextRefreshAt?: number | null;
 }
 
 export interface LlmConfigView {

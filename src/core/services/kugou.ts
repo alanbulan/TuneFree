@@ -114,7 +114,7 @@ export const searchKugou = async (
   const data = await proxyFetchJson(url, KUGOU_SEARCH_TIMEOUT_MS, signal);
   throwIfAborted(signal);
   const lists = data?.data?.lists;
-  if (!Array.isArray(lists)) throw new Error('酷狗搜索响应不可用');
+  if (!Array.isArray(lists)) throw new TypeError('酷狗搜索响应不可用');
   return lists
     .map(normalizeKugouSong)
     .filter((song): song is Song => song !== null);

@@ -4,6 +4,8 @@ export interface Song {
   name: string;
   artist: string;
   album: string;
+  /** 平台提供的录音时长（秒），歌词跨库匹配时与实际媒体时长共同校验。 */
+  durationSeconds?: number;
   pic?: string;
   picId?: string;
   url?: string;

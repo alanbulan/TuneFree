@@ -16,7 +16,7 @@ export const usePlaybackControls = (
   const {
     audio: audioRef, currentSong: currentSongRef, playRequestId: playRequestIdRef,
     pendingQualityChange: pendingQualityChangeRef, activeQuality: activeQualityRef, audioQuality: audioQualityRef,
-    playSong: playSongRef, audioContext: audioContextRef,
+    playSong: playSongRef,
   } = refs;
   const pausePlayback = useCallback(() => {
     const audio = audioRef.current;
@@ -47,13 +47,12 @@ export const usePlaybackControls = (
       await playSongRef.current(song);
       return;
     }
-    if (audioContextRef.current?.state === "suspended") {
-      await audioContextRef.current.resume().catch(() => {});
-    }
     const requestId = ++playRequestIdRef.current;
     setIsLoading(true);
     try {
-      await audio.play();
+      const playable = await audioLifecycle.resumeAudioContext();
+      if (!playable || requestId !== playRequestIdRef.current) return;
+      await playable.play();
       if (requestId !== playRequestIdRef.current) return;
       audioLifecycle.syncPlaybackTime(true);
       setIsPlaying(true);
@@ -74,7 +73,7 @@ export const usePlaybackControls = (
       audioLifecycle.clearActiveAudioSource();
       await playSongRef.current(song);
     }
-  }, [audioLifecycle, recommendation, recovery, resolver, refs, setIsLoading, setIsPlaying, audioRef, currentSongRef, playRequestIdRef, pendingQualityChangeRef, activeQualityRef, audioQualityRef, playSongRef, audioContextRef]);
+  }, [audioLifecycle, recommendation, recovery, resolver, refs, setIsLoading, setIsPlaying, audioRef, currentSongRef, playRequestIdRef, pendingQualityChangeRef, activeQualityRef, audioQualityRef, playSongRef]);
 
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;

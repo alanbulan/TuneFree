@@ -53,6 +53,7 @@ const MERGED_CANDIDATE_LIMIT: usize = 100;
 const DYNAMIC_REFRESH_DEBOUNCE_MS: u64 = 20 * 1000;
 const DYNAMIC_REFRESH_MIN_INTERVAL_MS: i64 = 3 * 60 * 1000;
 const DYNAMIC_REFRESH_RUNNING_RETRY_MS: u64 = 30 * 1000;
+const CLOUD_REFRESH_MIN_INTERVAL_MS: i64 = 3 * 60 * 1000;
 const FAVORITE_PROFILE_WEIGHT: f64 = 1.5;
 const PLAYLIST_PROFILE_WEIGHT: f64 = 0.6;
 const MAINTENANCE_INTERVAL_MS: i64 = 24 * 60 * 60 * 1000;
@@ -86,9 +87,14 @@ pub struct RecommendationService {
     db: Arc<OnceLock<DbHandle>>,
     init_started: Arc<AtomicBool>,
     last_llm_error: Arc<Mutex<Option<String>>>,
+    last_recommendation_error: Arc<Mutex<Option<String>>>,
     recommendation_jobs: Arc<Mutex<HashMap<String, RecommendationJob>>>,
     dynamic_refresh_pending: Arc<AtomicBool>,
     last_dynamic_refresh_at: Arc<AtomicI64>,
+    last_cloud_refresh_at: Arc<AtomicI64>,
+    cloud_refresh_requested: Arc<AtomicBool>,
+    initial_library_synced: Arc<AtomicBool>,
+    current_job_id: Arc<Mutex<Option<String>>>,
     recommendation_generation: Arc<AtomicU64>,
     weak_signal_count: Arc<AtomicU64>,
     cloud_cancel: Arc<Mutex<watch::Sender<bool>>>,
@@ -105,9 +111,14 @@ impl RecommendationService {
             db: Arc::new(OnceLock::new()),
             init_started: Arc::new(AtomicBool::new(false)),
             last_llm_error: Arc::new(Mutex::new(None)),
+            last_recommendation_error: Arc::new(Mutex::new(None)),
             recommendation_jobs: Arc::new(Mutex::new(HashMap::new())),
             dynamic_refresh_pending: Arc::new(AtomicBool::new(false)),
             last_dynamic_refresh_at: Arc::new(AtomicI64::new(0)),
+            last_cloud_refresh_at: Arc::new(AtomicI64::new(0)),
+            cloud_refresh_requested: Arc::new(AtomicBool::new(false)),
+            initial_library_synced: Arc::new(AtomicBool::new(false)),
+            current_job_id: Arc::new(Mutex::new(None)),
             recommendation_generation: Arc::new(AtomicU64::new(1)),
             weak_signal_count: Arc::new(AtomicU64::new(0)),
             cloud_cancel: Arc::new(Mutex::new(watch::channel(false).0)),
@@ -228,8 +239,8 @@ impl RecommendationService {
         Ok(())
     }
 
-    /// 契约 §7.9：强信号立即作废在途任务；弱信号只累计，
-    /// 达到阈值或距上次刷新足够久时才触发一次不作废在途任务的刷新。
+    /// 明确偏好可以取消云任务；普通点击和收听只累积本地画像。
+    /// 云端是否重新请求还需检查结果有效期与独立的请求冷却。
     fn handle_event_signal(&self, event_type: &str, weight: f64) {
         if weight == 0.0 {
             return;

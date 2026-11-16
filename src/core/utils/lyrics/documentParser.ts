@@ -1,16 +1,14 @@
 import type {
-  LyricBlock, LyricDocument, LyricTrackType, ParsedLyricWord,
+  LyricBlock, LyricDocument, LyricTrackType,
   RawLyricLine, TimedLineGroup,
 } from './types';
+import { parseTimedContent, shiftWords } from './wordParser';
 
 const timeTagPattern = /\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
 const metadataPattern = /^\s*\[(ar|al|ti|by|length|re|ve|kana):.*\]\s*$/i;
 const offsetPattern = /^\s*\[offset:([+-]?\d+)\]\s*$/i;
 const trackMarkerPattern = /^\s*\[(?:tunefree:)?([a-z_-]+)\]\s*$/i;
-const inlineWordTimePattern = /<((?:(?:\d{1,3}:)?\d{1,2}[.:]\d{1,3}|\d+)(?:,\d+)?)(?:,[^>]*)?>/g;
 const durationLinePattern = /^\s*\[(\d+),(\d+)\](.*)$/;
-const durationTimingMarkerPattern = /\((\d+),(\d+)(?:,[^)]*)?\)/g;
-const durationWordPattern = /\((\d+),(\d+)(?:,[^)]*)?\)([^()]*)/g;
 const BLOCK_RESET_TOLERANCE_SECONDS = 2;
 const THIRD_PARTY_WATERMARKS = new Set([
   '***歌詞來自第三方***',
@@ -23,6 +21,7 @@ const TRACK_MARKERS: Record<string, LyricTrackType> = {
   romanisation: 'romanization', romaji: 'romanization', roma: 'romanization',
   rlyric: 'romanization', rlrc: 'romanization', pronunciation: 'pronunciation',
   pron: 'pronunciation', kana: 'pronunciation', karaoke: 'karaoke', yrc: 'karaoke', qrc: 'karaoke',
+  krc: 'karaoke', mrc: 'karaoke', klyric: 'karaoke',
 };
 
 const parseTimeMatch = (match: RegExpMatchArray): number => {
@@ -31,77 +30,6 @@ const parseTimeMatch = (match: RegExpMatchArray): number => {
 };
 const isThirdPartyWatermarkSentinel = (match: RegExpMatchArray, text: string): boolean =>
   match[1] === '999' && THIRD_PARTY_WATERMARKS.has(text);
-const parseInlineWordTime = (value: string): { start: number; duration?: number } | null => {
-  const commaParts = value.split(',');
-  if (commaParts.length >= 2 && /^\d+$/.test(commaParts[0]) && /^\d+$/.test(commaParts[1])) {
-    return { start: Number(commaParts[0]) / 1000, duration: Number(commaParts[1]) / 1000 };
-  }
-  const match = value.match(/^(?:(\d{1,3}):)?(\d{1,2})[.:](\d{1,3})$/);
-  if (!match) return null;
-  const fraction = Number((match[3] || '0').padEnd(3, '0').slice(0, 3));
-  return { start: Number(match[1] || 0) * 60 + Number(match[2]) + fraction / 1000 };
-};
-const cleanWordText = (value: string): string => value.replace(/\s+/g, ' ');
-const normalizeWordStart = (start: number, lineStart: number): number =>
-  lineStart > 0 && start + 0.05 < lineStart ? lineStart + start : start;
-
-const parseDurationWords = (text: string, lineStart: number): ParsedLyricWord[] => {
-  const words: ParsedLyricWord[] = [];
-  const firstTimingIndex = text.search(durationTimingMarkerPattern);
-  if (firstTimingIndex > 0 && text.slice(0, firstTimingIndex).trim()) {
-    let cursor = 0;
-    for (const match of text.matchAll(durationTimingMarkerPattern)) {
-      const markerIndex = match.index || 0;
-      const rawText = cleanWordText(text.slice(cursor, markerIndex));
-      cursor = markerIndex + match[0].length;
-      if (!rawText) continue;
-      const start = normalizeWordStart(Number(match[1]) / 1000, lineStart);
-      const duration = Number(match[2]) / 1000;
-      if (Number.isFinite(start) && Number.isFinite(duration) && duration >= 0) {
-        words.push({ start, duration, text: rawText });
-      }
-    }
-    return words;
-  }
-  for (const match of text.matchAll(durationWordPattern)) {
-    const rawText = cleanWordText(match[3] || '');
-    if (!rawText) continue;
-    const start = normalizeWordStart(Number(match[1]) / 1000, lineStart);
-    const duration = Number(match[2]) / 1000;
-    if (Number.isFinite(start) && Number.isFinite(duration) && duration >= 0) {
-      words.push({ start, duration, text: rawText });
-    }
-  }
-  return words;
-};
-const parseInlineWords = (text: string): ParsedLyricWord[] => {
-  const matches = Array.from(text.matchAll(inlineWordTimePattern));
-  const words: ParsedLyricWord[] = [];
-  for (let index = 0; index < matches.length; index += 1) {
-    const match = matches[index];
-    const timing = parseInlineWordTime(match[1]);
-    if (!timing) continue;
-    const contentStart = (match.index || 0) + match[0].length;
-    const contentEnd = index + 1 < matches.length ? matches[index + 1].index || text.length : text.length;
-    const wordText = cleanWordText(text.slice(contentStart, contentEnd));
-    if (!wordText.trim()) continue;
-    const nextTiming = index + 1 < matches.length ? parseInlineWordTime(matches[index + 1][1]) : null;
-    const duration = timing.duration ?? (nextTiming ? Math.max(0, nextTiming.start - timing.start) : 0);
-    if (Number.isFinite(timing.start) && duration > 0) words.push({ start: timing.start, duration, text: wordText });
-  }
-  return words;
-};
-const normalizeLyricText = (line: string): string => line
-  .replace(timeTagPattern, '').replace(durationLinePattern, '$3')
-  .replace(durationWordPattern, '$3').replace(durationTimingMarkerPattern, '')
-  .replace(inlineWordTimePattern, '').replace(/\s+/g, ' ').trim();
-const parseTimedContent = (text: string, lineStart = 0) => {
-  const durationWords = parseDurationWords(text, lineStart);
-  const words = durationWords.length > 0 ? durationWords : parseInlineWords(text);
-  const normalizedText = normalizeLyricText(text);
-  return { text: normalizedText || words.map((word) => word.text).join('').replace(/\s+/g, ' ').trim(),
-    words: words.length > 0 ? words : undefined };
-};
 const getTimeKey = (time: number): string => String(Math.round(time * 100));
 export const pushUnique = (values: string[], value: string): void => {
   if (value && !values.includes(value)) values.push(value);
@@ -122,7 +50,27 @@ export const parseLyricDocument = (
   let offsetSeconds = 0;
   let previousLineTime: number | null = null;
   if (!lrc?.trim()) return { blocks: [], plainLines, offsetSeconds };
-  for (const rawLine of lrc.split('\n')) {
+  const xmlContent = lrc.match(/\bLyricContent="([\s\S]*?)"\s*\/?>/)?.[1];
+  const input = (xmlContent ?? lrc).replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&#(?:13|10);/g, '\n');
+  const sourceLines = input.split(/\r?\n/);
+  // 无歌词的 marker 前置 offset 为公共值；已有歌词或 marker 内的 offset 只属于该轨。
+  // 预扫描使轨道末尾的 offset 也能同步移动整轨及其真实逐字时间。
+  let preambleHasContent = false;
+  let inheritedOffset = 0;
+  const blockOffsets = sourceLines.reduce<number[]>((offsets, line) => {
+    if (getTrackTypeFromMarker(line)) {
+      if (offsets.length === 1) inheritedOffset = preambleHasContent ? 0 : offsets[0];
+      offsets.push(inheritedOffset);
+    }
+    const match = line.match(offsetPattern);
+    if (match) offsets[offsets.length - 1] = Number(match[1]) / 1000;
+    else if (offsets.length === 1 && line.trim() && !metadataPattern.test(line)) preambleHasContent = true;
+    return offsets;
+  }, [0]);
+  let rawBlockIndex = 0;
+  offsetSeconds = blockOffsets[0] || 0;
+  for (const rawLine of sourceLines) {
     const line = rawLine.trim();
     if (!line) continue;
     const markerType = getTrackTypeFromMarker(line);
@@ -130,26 +78,28 @@ export const parseLyricDocument = (
       const currentBlock = blocks[blocks.length - 1];
       if (currentBlock.lines.length === 0) currentBlock.type = markerType;
       else blocks.push(createBlock(markerType));
-      offsetSeconds = 0; previousLineTime = null; continue;
+      rawBlockIndex += 1;
+      offsetSeconds = blockOffsets[rawBlockIndex] || 0; previousLineTime = null; continue;
     }
     const offsetMatch = line.match(offsetPattern);
-    if (offsetMatch) { offsetSeconds = Number(offsetMatch[1]) / 1000; continue; }
+    if (offsetMatch) continue;
     if (metadataPattern.test(line)) continue;
     const durationLineMatch = line.match(durationLinePattern);
     if (durationLineMatch) {
-      const time = Math.max(0, Number(durationLineMatch[1]) / 1000 + offsetSeconds);
-      const content = parseTimedContent(durationLineMatch[3] || '', time);
+      const rawTime = Number(durationLineMatch[1]) / 1000;
+      const time = Math.max(0, rawTime + offsetSeconds);
+      const content = parseTimedContent(durationLineMatch[3] || '', rawTime);
       if (!content.text) continue;
       if (previousLineTime !== null && time + BLOCK_RESET_TOLERANCE_SECONDS < previousLineTime) {
         blocks.push(createBlock('auto'));
       }
       previousLineTime = time;
       blocks[blocks.length - 1].lines.push({ time, text: content.text,
-        words: content.words, order, key: getTimeKey(time) });
+        words: shiftWords(content.words, offsetSeconds), order, key: getTimeKey(time) });
       order += 1; continue;
     }
     const matches = Array.from(line.matchAll(timeTagPattern));
-    const firstLineTime = matches.length > 0 ? parseTimeMatch(matches[0]) + offsetSeconds : 0;
+    const firstLineTime = matches.length > 0 ? parseTimeMatch(matches[0]) : 0;
     const content = parseTimedContent(line, firstLineTime);
     if (!content.text) continue;
     if (matches.length === 0) { plainLines.push(content.text); continue; }
@@ -163,7 +113,8 @@ export const parseLyricDocument = (
     for (const match of timedMatches) {
       const time = Math.max(0, parseTimeMatch(match) + offsetSeconds);
       blocks[blocks.length - 1].lines.push({ time, text: content.text,
-        words: content.words, order, key: getTimeKey(time) });
+        words: shiftWords(content.words, parseTimeMatch(match) - firstLineTime + offsetSeconds),
+        order, key: getTimeKey(time) });
     }
     order += 1;
   }

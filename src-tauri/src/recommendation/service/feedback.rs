@@ -13,23 +13,44 @@ impl RecommendationService {
             tx.commit()
                 .map_err(|e| CommandError::database(format!("提交不感兴趣事务失败: {}", e)))?;
         }
-        let dismissed_identity = catalog::song_identity(&song);
-        for job in self.recommendation_jobs.lock().values_mut() {
-            job.items
-                .retain(|item| catalog::song_identity(&item.song) != dismissed_identity);
-        }
-        self.invalidate_and_schedule_refresh("不感兴趣反馈");
+        self.invalidate_dismissal_and_schedule_refresh(&song);
         Ok(())
     }
 
     pub fn save_feedback(&self, feedback: RecommendationFeedback) -> CommandResult<()> {
         let conn = self.conn_handle()?;
-        {
+        let inserted = {
             let mut conn = conn.lock();
-            record_recommendation_feedback(&mut conn, &feedback).map_err(CommandError::database)?;
+            record_recommendation_feedback(&mut conn, &feedback).map_err(CommandError::database)?
+        };
+        if !inserted {
+            return Ok(());
         }
-        self.invalidate_and_schedule_refresh("推荐反馈");
+        if feedback.action == "dismiss" {
+            self.invalidate_dismissal_and_schedule_refresh(&feedback.song);
+        } else {
+            let event_type = feedback_event_type(&feedback)?;
+            self.handle_event_signal(event_type, events::event_weight(event_type));
+        }
         Ok(())
+    }
+
+    pub(in crate::recommendation::service) fn remove_dismissed_from_jobs(&self, song: &RecSong) {
+        let identity = catalog::song_identity(song);
+        for job in self.recommendation_jobs.lock().values_mut() {
+            job.items
+                .retain(|item| catalog::song_identity(&item.song) != identity);
+        }
+    }
+}
+
+fn feedback_event_type(feedback: &RecommendationFeedback) -> CommandResult<&'static str> {
+    match feedback.action.as_str() {
+        "play" if feedback.recommendation_source == "hybrid" => Ok("llm_recommend_click"),
+        "play" if feedback.context.as_deref() == Some("similar") => Ok("similar_click"),
+        "play" => Ok("recommendation_click"),
+        "dismiss" => Ok("dismiss"),
+        _ => Err(CommandError::invalid_argument("不支持的推荐反馈动作")),
     }
 }
 
@@ -74,19 +95,19 @@ fn record_dismissal(
 pub(super) fn record_recommendation_feedback(
     conn: &mut Connection,
     feedback: &RecommendationFeedback,
-) -> Result<(), String> {
-    let event_type = match feedback.action.as_str() {
-        "play" if feedback.recommendation_source == "hybrid" => "llm_recommend_click",
-        "play" if feedback.context.as_deref() == Some("similar") => "similar_click",
-        "play" => "recommendation_click",
-        "dismiss" => "dismiss",
-        _ => return Err("不支持的推荐反馈动作".to_string()),
-    };
+) -> Result<bool, String> {
+    let event_type = feedback_event_type(feedback).map_err(|error| error.message)?;
     let tx = conn
         .transaction()
         .map_err(|e| format!("开启推荐反馈事务失败: {}", e))?;
     let track_key = catalog::upsert_track(&tx, &feedback.song)
         .map_err(|e| format!("保存推荐反馈歌曲失败: {}", e))?;
+    if feedback.action == "dismiss" && tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM recommendation_feedback WHERE request_id = ?1 AND track_key = ?2 AND action = 'dismiss')",
+        params![feedback.request_id, track_key], |row| row.get::<_, bool>(0),
+    ).map_err(|e| format!("检查重复不感兴趣反馈失败: {}", e))? {
+        return Ok(false);
+    }
     tx.execute(
         r#"
         INSERT INTO recommendation_feedback
@@ -135,5 +156,6 @@ pub(super) fn record_recommendation_feedback(
         .map_err(|e| format!("更新推荐反馈画像失败: {}", e))?;
     }
     tx.commit()
-        .map_err(|e| format!("提交推荐反馈事务失败: {}", e))
+        .map_err(|e| format!("提交推荐反馈事务失败: {}", e))?;
+    Ok(true)
 }

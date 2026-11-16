@@ -20,6 +20,11 @@ fn stale_dynamic_refresh_task_does_not_clear_new_generation() {
                 error: None,
                 updated_at: 1,
                 deadline_at: None,
+                local_count: 0,
+                local_updated_at: 1,
+                cloud_enabled: true,
+                result_updated_at: 0,
+                next_refresh_at: None,
             },
         ),
         (
@@ -33,6 +38,11 @@ fn stale_dynamic_refresh_task_does_not_clear_new_generation() {
                 error: None,
                 updated_at: 1,
                 deadline_at: None,
+                local_count: 0,
+                local_updated_at: 1,
+                cloud_enabled: true,
+                result_updated_at: 1,
+                next_refresh_at: None,
             },
         ),
     ]));
@@ -41,12 +51,20 @@ fn stale_dynamic_refresh_task_does_not_clear_new_generation() {
     assert!(!pending.load(Ordering::SeqCst));
     assert!(matches!(
         &jobs.lock().get("running").unwrap().status,
-        RecommendationJobStatus::Done
+        RecommendationJobStatus::Cancelled
     ));
     assert!(jobs.lock().contains_key("done"));
     // 只有被作废的 running 任务需要向前端推送状态事件。
     assert_eq!(transitions.len(), 1);
     assert_eq!(transitions[0].job_id, "running");
+    assert!(matches!(
+        transitions[0].status,
+        RecommendationJobStatus::Cancelled
+    ));
+    assert!(matches!(
+        transitions[0].stage,
+        RecommendationJobStage::Cancelled
+    ));
 }
 
 #[test]
@@ -67,7 +85,15 @@ fn unready_service_reports_busy_instead_of_blocking() {
 
 #[test]
 fn weak_signals_do_not_invalidate_inflight_jobs() {
-    for weak in ["play_start", "play_30s", "play_complete", "download"] {
+    for weak in [
+        "play_start",
+        "play_30s",
+        "play_complete",
+        "download",
+        "recommendation_click",
+        "llm_recommend_click",
+        "similar_click",
+    ] {
         assert!(!is_strong_signal(weak), "{weak} 不应作废在途任务");
     }
     for strong in [

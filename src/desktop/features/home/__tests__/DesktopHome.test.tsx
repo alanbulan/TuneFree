@@ -11,7 +11,7 @@ import DesktopHome from '../DesktopHome';
 import { ContextSearchPanel } from '../HomePanels';
 import { useRecommendationJob } from '../useRecommendationJob';
 
-const mocks = vi.hoisted(() => ({ play: vi.fn(), toast: vi.fn(), remove: vi.fn(), navigate: vi.fn(), busy: vi.fn() }));
+const mocks = vi.hoisted(() => ({ play: vi.fn(), toast: vi.fn(), remove: vi.fn(), refresh: vi.fn(), navigate: vi.fn(), busy: vi.fn() }));
 vi.mock('../../../../core/contexts/PlayerContext', () => ({ usePlayerActions: () => ({ playQueue: mocks.play }),
   usePlayerNowPlaying: () => ({ currentSong: { id: 'playing', name: '灵感', artist: '歌手', album: '', source: 'qq' }, isPlaying: true }) }));
 vi.mock('../../../../core/services/api', async (original) => ({ ...await original<typeof import('../../../../core/services/api')>(), getTopLists: vi.fn(), getTopListDetail: vi.fn() }));
@@ -36,7 +36,8 @@ beforeEach(() => {
   vi.mocked(getTopListDetail).mockReset().mockResolvedValue([song]);
   vi.mocked(searchSongsByContext).mockReset().mockResolvedValue([song]);
   vi.mocked(saveRecommendationFeedback).mockReset().mockResolvedValue(undefined);
-  vi.mocked(useRecommendationJob).mockReturnValue({ songs: [], loading: false, initializing: false, error: '', removeSong: mocks.remove });
+  vi.mocked(useRecommendationJob).mockReturnValue({ songs: [], loading: false, initializing: false, error: '', removeSong: mocks.remove,
+    refresh: mocks.refresh, running: false, waiting: false, disabled: false });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
@@ -183,14 +184,34 @@ describe('AI 搜歌', () => {
 });
 
 describe('推荐反馈', () => {
+  it('等待时可主动刷新，运行中禁止重复启动，停用时显示停用状态', async () => {
+    const snapshot = { songs: [], loading: false, initializing: false, error: '', removeSong: mocks.remove,
+      refresh: mocks.refresh, running: false, waiting: true, disabled: false };
+    vi.mocked(useRecommendationJob).mockReturnValue(snapshot);
+    const view = renderHome(); await ready(); selectSource('为你推荐');
+    expect(screen.getByText('等待刷新推荐')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '刷新推荐' }));
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+    vi.mocked(useRecommendationJob).mockReturnValue({ ...snapshot, waiting: false, running: true });
+    view.rerender(<DesktopHome onViewChange={mocks.navigate} onAiBusyChange={mocks.busy} />);
+    expect(screen.getByRole('button', { name: '刷新推荐' })).toHaveProperty('disabled', true);
+    vi.mocked(useRecommendationJob).mockReturnValue({ ...snapshot, waiting: false, disabled: true });
+    view.rerender(<DesktopHome onViewChange={mocks.navigate} onAiBusyChange={mocks.busy} />);
+    expect(screen.getByText('音乐推荐未启用')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '刷新推荐' })).toHaveProperty('disabled', true);
+  });
+
   it('正在初始化与失败可导航设置，反馈成功才从当前列表移除', async () => {
     const recommended: Song = { ...song, recommendationRequestId: 'request', recommendationSource: 'hybrid' };
-    vi.mocked(useRecommendationJob).mockReturnValue({ songs: [recommended], loading: false, initializing: true, error: '推荐失败', removeSong: mocks.remove });
+    vi.mocked(useRecommendationJob).mockReturnValue({ songs: [recommended], loading: false, initializing: true, error: '推荐失败', removeSong: mocks.remove,
+      refresh: mocks.refresh, running: false, waiting: false, disabled: false });
     renderHome(); await ready(); selectSource('为你推荐');
     expect(screen.getByText('推荐服务正在初始化，请稍候…')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '打开设置' })); expect(mocks.navigate).toHaveBeenCalledWith('settings');
     fireEvent.click(screen.getByRole('button', { name: '不感兴趣 夜曲' })); await ready();
     expect(mocks.remove).toHaveBeenCalledWith(recommended);
+    expect(saveRecommendationFeedback).toHaveBeenCalledOnce();
+    expect(saveRecommendationFeedback).toHaveBeenCalledWith(expect.objectContaining({ action: 'dismiss', requestId: 'request' }));
     vi.mocked(saveRecommendationFeedback).mockRejectedValueOnce(new IpcError('BUSY', '启动'));
     fireEvent.click(screen.getByRole('button', { name: '不感兴趣 夜曲' })); await ready();
     expect(mocks.toast).toHaveBeenLastCalledWith('推荐服务正在初始化，请稍后再试', 'info');

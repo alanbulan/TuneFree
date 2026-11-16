@@ -27,6 +27,7 @@ export const fetchNativeLyrics = async (
   source: string,
   options?: NativeLyricsOptions,
 ): Promise<string> => {
+  if (options?.signal?.aborted) throw abortReasonError(options.signal);
   const cacheKey = `lrc:${source}:${id}`;
   if (!options?.forceRefresh) {
     const cached = lyricsCache.get(cacheKey);
@@ -50,14 +51,19 @@ export const fetchNativeLyrics = async (
     } catch (error) {
       if (options?.signal?.aborted) throw abortReasonError(options.signal);
       console.warn(`[Sources] 原生歌词获取失败 (${source}:${id}):`, error);
-    } finally {
-      if (!options?.signal) lyricsPending.delete(cacheKey);
     }
-
+    // 部分旧接口不遵循 AbortSignal，返回时再核对，不能缓存已取消的迟到结果。
+    if (options?.signal?.aborted) throw abortReasonError(options.signal);
     if (lrc) lyricsCache.set(cacheKey, lrc);
+    else if (options?.forceRefresh) lyricsCache.delete(cacheKey);
     return lrc;
   })();
 
-  if (!options?.signal) lyricsPending.set(cacheKey, request);
+  if (!options?.signal) {
+    lyricsPending.set(cacheKey, request);
+    void request.finally(() => {
+      if (lyricsPending.get(cacheKey) === request) lyricsPending.delete(cacheKey);
+    }).catch(() => {});
+  }
   return request;
 };

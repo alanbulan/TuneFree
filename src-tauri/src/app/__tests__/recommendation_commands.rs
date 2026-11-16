@@ -62,6 +62,10 @@ async fn commands_use_managed_state_and_cover_the_library_feedback_and_configura
         .await
         .unwrap()
         .is_some());
+    assert!(refresh_recommendations(app.state())
+        .await
+        .unwrap()
+        .is_some());
     assert!(get_similar_songs(app.state(), song.clone(), Some(2))
         .await
         .unwrap()
@@ -145,8 +149,13 @@ async fn verify_configuration_commands(app: &tauri::App) {
     assert_eq!(server.calls.lock().len(), 3);
     let stats = clear_recommendation_data(app.state()).await.unwrap();
     assert_eq!(stats.llm_cache_entries, 0);
-    assert!(get_latest_recommendation_job(app.state())
+    let cleared = get_latest_recommendation_job(app.state())
         .await
         .unwrap()
-        .is_none());
+        .unwrap();
+    assert!(cleared.items.is_empty());
+    assert!(matches!(
+        cleared.status,
+        crate::recommendation::model::RecommendationJobStatus::Idle
+    ));
 }

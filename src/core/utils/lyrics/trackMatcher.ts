@@ -217,7 +217,7 @@ export const buildRowsFromPrimaryAndTracks = (
   return rows.sort((a, b) => a.time - b.time);
 };
 export const buildPlainRows = (plainLines: string[]): ParsedLyric[] =>
-  plainLines.slice(0, 80).map((text, index) => ({ time: index * 4, text }));
+  plainLines.slice(0, 300).map((text) => ({ time: 0, text, untimed: true }));
 export const inferLegacyAutoTrackType = (
   autoTrackIndex: number,
 ): Exclude<LyricTrackType, 'main'> => autoTrackIndex === 2 ? 'romanization' : 'translation';

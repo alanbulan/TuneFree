@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   attachRecommendationMeta,
   getLatestRecommendationJob,
+  refreshRecommendations,
   getSimilarSongs,
   logRecommendationEvent,
   listLlmModels,
@@ -18,6 +19,7 @@ describe('recommendation service', () => {
       ),
     ).resolves.toEqual([]);
     await expect(getLatestRecommendationJob()).resolves.toBeNull();
+    await expect(refreshRecommendations()).resolves.toBeNull();
     await expect(logRecommendationEvent({ eventType: 'play_start' })).resolves.toBeUndefined();
     await expect(listLlmModels()).rejects.toThrow('请在桌面应用中获取模型列表');
   });

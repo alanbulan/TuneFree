@@ -41,21 +41,30 @@ pub struct RecommendationQuery {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecommendationJobStatus {
+    Idle,
+    Waiting,
     Running,
     Done,
     Error,
+    Cancelled,
+    Disabled,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecommendationJobStage {
+    Waiting,
     LocalRecall,
     DiscoveryPlan,
     PlatformSearch,
     CloudRerank,
     LocalOnly,
+    Cached,
     Done,
     Error,
+    Cancelled,
+    Disabled,
+    Cleared,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -69,6 +78,11 @@ pub struct RecommendationJob {
     pub error: Option<String>,
     pub updated_at: i64,
     pub deadline_at: Option<i64>,
+    pub local_count: usize,
+    pub local_updated_at: i64,
+    pub cloud_enabled: bool,
+    pub result_updated_at: i64,
+    pub next_refresh_at: Option<i64>,
 }
 
 #[cfg(test)]
@@ -86,12 +100,19 @@ mod job_contract_tests {
             error: None,
             updated_at: 1_700_000_000_000,
             deadline_at: Some(1_700_000_265_000),
+            local_count: 0,
+            local_updated_at: 1_700_000_000_000,
+            cloud_enabled: true,
+            result_updated_at: 0,
+            next_refresh_at: None,
         };
         assert_eq!(
             serde_json::to_value(job).unwrap(),
             serde_json::json!({
                 "jobId": "job-1", "status": "running", "stage": "cloud_rerank", "detail": "running",
-                "items": [], "error": null, "updatedAt": 1_700_000_000_000_i64, "deadlineAt": 1_700_000_265_000_i64
+                "items": [], "error": null, "updatedAt": 1_700_000_000_000_i64, "deadlineAt": 1_700_000_265_000_i64,
+                "localCount": 0, "localUpdatedAt": 1_700_000_000_000_i64, "cloudEnabled": true,
+                "resultUpdatedAt": 0, "nextRefreshAt": null
             })
         );
     }
@@ -106,6 +127,8 @@ pub struct RecommendationJobUpdatePayload {
     pub status: RecommendationJobStatus,
     pub stage: RecommendationJobStage,
     pub detail: Option<String>,
+    pub updated_at: i64,
+    pub next_refresh_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

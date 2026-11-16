@@ -3,6 +3,7 @@ import { deferred } from '../../../__tests__/deferred';
 import { createLxProvider } from '../lxProvider';
 import type { LxSourceDeclaration } from '../protocol';
 import type { LxSandbox, SandboxCallOutcome } from '../workerHost';
+import { parseLyrics } from '../../../utils/lyrics';
 
 interface CallRecord {
   source: string;
@@ -211,6 +212,21 @@ describe('lxProvider', () => {
     const sandbox = createSandboxStub(() => urlOutcome({ lyric: '[00:01]歌曲', [field]: '[1000,1000]歌(0,1000)' }));
     const provider = createProvider(sandbox, { actions: ['lyric'] });
     expect(await provider.getLyrics!(request())).toContain('[tunefree:karaoke]\n[1000,1000]歌(0,1000)');
+  });
+
+  it('KRC1 hex字段解码为真实词时标，搜索结果和musicInfo保留录音时长', async () => {
+    // 固定独立KRC1包：内容 [1000,1000]<0,500,0>你<500,500,0>好。
+    const { deflate } = await import('pako');
+    const key = [64, 71, 97, 119, 94, 50, 116, 71, 81, 54, 49, 45, 206, 210, 110, 105];
+    const compressed = deflate(new TextEncoder().encode('[1000,1000]<0,500,0>你<500,500,0>好'));
+    const krc = '6b726331' + Array.from(compressed, (byte, index) => (byte ^ key[index % key.length]).toString(16).padStart(2, '0')).join('');
+    const sandbox = createSandboxStub(({ action }) => action === 'search'
+      ? urlOutcome([{ id: 42, name: '你好', durationSeconds: 120 }])
+      : urlOutcome({ krc }));
+    const provider = createProvider(sandbox, { actions: ['lyric', 'search'] });
+    expect(parseLyrics(await provider.getLyrics!(request({ durationSeconds: 120 })))[0].words?.map((word) => word.start)).toEqual([1, 1.5]);
+    expect(await provider.search!('你好', 'kuwo', 1, 5)).toEqual([expect.objectContaining({ durationSeconds: 120 })]);
+    expect(sandbox.calls[0].info.musicInfo).toMatchObject({ interval: 120, duration: 120 });
   });
 
   it('歌词：musicUrl 报错不阻断歌词，但结果为空', async () => {

@@ -48,9 +48,9 @@ describe('音频播放失败的收敛', () => {
   it('CORS 策略变化重建元素，上下文恢复失败不产生未处理拒绝', async () => {
     const h = createHarness(); h.double.audio.crossOrigin = 'anonymous'; h.double.refs.isIOS.current = true;
     h.double.refs.audioContext.current = { state: 'suspended', resume: vi.fn().mockRejectedValue(new Error('resume')) } as unknown as AudioContext;
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const playback = startPlayback(h, song('a')); await flushMicrotasks(); h.pending[0].resolve({ parsed: parsedFor('a'), cacheKey: null }); await playback.done;
-    expect(h.dependencies.audio.createAudioElement).toHaveBeenCalledWith(false); expect(warn).toHaveBeenCalled(); warn.mockRestore();
+    expect(h.dependencies.audio.createAudioElement).toHaveBeenCalledWith(false);
+    expect(h.dependencies.audio.resumeAudioContext).toHaveBeenCalledOnce();
   });
   it('没有可用地址且恢复耗尽时清理状态并给出提示', async () => {
     const h = createHarness(); const playback = startPlayback(h, song('a')); await flushMicrotasks();
@@ -103,6 +103,7 @@ const createHarness = (options: Parameters<typeof createRuntimeDouble>[0] = {}):
       syncPlaybackTime: vi.fn(),
       createAudioElement: vi.fn(),
       initAudioContext: vi.fn(),
+      resumeAudioContext: vi.fn(async () => double.refs.audio.current),
       clearActiveAudioSource,
     },
     controls: { resumePlayback: vi.fn(() => Promise.resolve()) },
@@ -290,6 +291,25 @@ describe("executeSongPlayback 竞态与取消", () => {
     }));
     harness.pending[2].resolve({ parsed: parsedFor("a"), cacheKey: null });
     await unknownUrl;
+  });
+
+  it('同曲换音质由跨源录音回到原平台ID时清掉旧逐字歌词，延后元数据期间不串词', async () => {
+    const target = song('original', { url: 'https://cdn.example.com/qq.mp3',
+      lrc: '[1000,1000](1000,1000,0)前一录音' });
+    const h = createHarness({ queue: [target], currentSong: target });
+    h.double.audio.src = target.url!;
+    const previousBinding = { source: 'qq', id: 'cross-source', lyricId: 'qq-lyric' };
+    h.double.refs.lyricBindings.current.set('netease:original', previousBinding);
+    const done = executeSongPlayback(h.dependencies, target, '128k');
+    await flushMicrotasks();
+    expect(h.double.refs.lyricBindings.current.get('netease:original')).toBe(previousBinding);
+    h.pending[0].resolve({ parsed: parsedFor('original', { lrc: '' }), cacheKey: 'original-128k' });
+    await done;
+    expect(h.double.refs.currentSong.current?.lrc).toBe('');
+    expect(h.double.refs.queue.current[0].lrc).toBe('');
+    expect(h.double.refs.lyricBindings.current.get('netease:original')).toMatchObject({
+      source: 'netease', id: 'original', lyricId: 'original',
+    });
   });
 
   it("重复播放当前正在放的歌不会新开解析请求", async () => {

@@ -13,6 +13,7 @@ fn prepared_task(app: &tauri::App, base_url: &str) -> CloudJobTask {
     .unwrap();
     catalog::upsert_track(&conn.lock(), &song).unwrap();
     llm_config::save_config(&conn.lock(), config_input(base_url)).unwrap();
+    service.initial_library_synced.store(true, Ordering::SeqCst);
     let prepared = service
         .prepare_recommendation_job(RecommendationQuery {
             limit: Some(3),
@@ -32,6 +33,51 @@ fn current_job(task: &CloudJobTask) -> RecommendationJob {
 }
 
 #[tokio::test]
+async fn terminal_jobs_ignore_late_snapshot_writes_and_error_callbacks() {
+    let _credentials = Credentials::new().await;
+    let app = crate::test_support::app();
+    let task = prepared_task(&app, "http://127.0.0.1:1");
+    task.jobs.lock().get_mut(&task.job_id).unwrap().status = RecommendationJobStatus::Error;
+    *task.last_llm_error.lock() = Some("本轮超时".into());
+    persist_success(&task, task.local.clone());
+    task.fail("迟到失败", "不应覆盖".into(), vec![]);
+    assert_eq!(
+        task.conn
+            .lock()
+            .query_row(
+                "SELECT COUNT(*) FROM recommendation_result_snapshots",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+    assert_eq!(*task.last_llm_error.lock(), Some("本轮超时".into()));
+    assert!(matches!(
+        current_job(&task).status,
+        RecommendationJobStatus::Error
+    ));
+}
+
+#[test]
+fn background_errors_stay_with_jobs_instead_of_overwriting_provider_errors() {
+    let app = crate::test_support::app();
+    let service = initialized_service(&app);
+    *service.last_recommendation_error.lock() = Some("后台推荐超时".into());
+    assert!(service.get_llm_config().unwrap().last_error.is_none());
+    *service.last_llm_error.lock() = Some("连接测试失败".into());
+    assert_eq!(
+        service.get_llm_config().unwrap().last_error,
+        Some("连接测试失败".into())
+    );
+    *service.last_recommendation_error.lock() = None;
+    assert_eq!(
+        service.get_llm_config().unwrap().last_error,
+        Some("连接测试失败".into())
+    );
+}
+
+#[tokio::test]
 async fn verified_platform_discovery_is_merged_ranked_and_persisted() {
     let _credentials = Credentials::new().await;
     let model = LlmServer::contents(&[
@@ -47,6 +93,7 @@ async fn verified_platform_discovery_is_merged_ranked_and_persisted() {
     }]));
     let app = crate::test_support::app();
     let mut task = prepared_task(&app, &model.base_url);
+    *task.last_llm_error.lock() = Some("上轮模型错误".into());
     task.client = platform.client.clone();
     let (_sender, receiver) = watch::channel(false);
     run_cloud_job(task.clone(), receiver).await;

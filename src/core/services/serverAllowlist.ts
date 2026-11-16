@@ -1,6 +1,7 @@
 import { isTauri } from '../ipc/env';
 import type { AllowedHostsResponse } from '../ipc/types';
 import { buildLocalServerHeaders, getLocalServerBase } from './config';
+import { PLAYBACK_PROXY_HOSTS } from './playbackMediaUrl';
 
 // ==============================
 // 音源 host 白名单启动自检（仅开发/诊断用途）
@@ -27,6 +28,7 @@ export const PROXY_REQUIRED_HOSTS: readonly string[] = [
   'c.musicapp.migu.cn',      // migu.ts 咪咕搜索
   'tunehub.sayqz.com',       // playlistImport.ts TuneHub 兜底
   'hdslb.com',               // utils.ts normalizeMusicUrl 代理 B 站封面图
+  ...PLAYBACK_PROXY_HOSTS,
 ];
 
 // 与后端 is_allowed_host 相同的子域匹配规则（sub.kuwo.cn 命中 kuwo.cn）。

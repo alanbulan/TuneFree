@@ -2,6 +2,7 @@ import type { HTMLAttributeReferrerPolicy } from "react";
 import { Song } from "../types";
 export { normalizeMusicUrl } from './musicUrl';
 import { normalizeMusicUrl } from './musicUrl';
+import { getPlatformSongDuration } from './songDuration';
 
 /**
  * 根据图片 URL 来源返回合适的 referrerPolicy：
@@ -312,11 +313,13 @@ export const normalizeSongs = (list: Record<string, unknown>[], platform: string
       const file = actualItem.file;
       const mediaMid = actualItem.strMediaMid ?? (typeof file === 'object' && file !== null
         ? (file as Record<string, unknown>).media_mid : undefined);
+      const durationSeconds = getPlatformSongDuration(actualItem, platform);
 
       return {
         ...actualItem,
         source: platform,
         id: finalId,
+        ...(durationSeconds ? { durationSeconds } : {}),
         ...(platform === 'qq' && typeof mediaMid === 'string' && mediaMid ? { strMediaMid: mediaMid } : {}),
         name,
         artist: String(artist || "Unknown Artist"),

@@ -1,9 +1,10 @@
 use super::llm_timeout::{run_llm_timeout_migration_v5, LLM_TIMEOUT_MIGRATION_VERSION};
+use super::refresh_state::{run_refresh_state_migration_v6, REFRESH_STATE_MIGRATION_VERSION};
 use super::*;
 
 type Migration = (i64, fn(&Connection) -> rusqlite::Result<()>);
 
-const MIGRATIONS: [Migration; 4] = [
+const MIGRATIONS: [Migration; 5] = [
     (
         DERIVED_DATA_MIGRATION_VERSION,
         run_derived_data_migration_v2,
@@ -17,6 +18,10 @@ const MIGRATIONS: [Migration; 4] = [
         run_recommendation_click_migration_v4,
     ),
     (LLM_TIMEOUT_MIGRATION_VERSION, run_llm_timeout_migration_v5),
+    (
+        REFRESH_STATE_MIGRATION_VERSION,
+        run_refresh_state_migration_v6,
+    ),
 ];
 
 fn seed_previous_data(conn: &Connection, version: i64) {
@@ -131,5 +136,5 @@ fn already_applied_versions_leave_saved_values_and_timestamps_unchanged() {
             },
         )
         .unwrap();
-    assert_eq!(unchanged, (4, 1, 1, "similar_click".into(), 99.0, 8000, 0));
+    assert_eq!(unchanged, (5, 1, 1, "similar_click".into(), 99.0, 8000, 0));
 }

@@ -59,6 +59,7 @@ pub(super) struct CloudJobTask {
     pub(super) client: reqwest::Client,
     pub(super) jobs: Arc<Mutex<HashMap<String, RecommendationJob>>>,
     pub(super) last_llm_error: Arc<Mutex<Option<String>>>,
+    pub(super) publication: Arc<Mutex<watch::Sender<bool>>>,
     pub(super) generation_state: Arc<AtomicU64>,
     pub(super) generation: u64,
     pub(super) job_id: String,
@@ -76,8 +77,19 @@ impl CloudJobTask {
         self.generation_state.load(Ordering::SeqCst) == self.generation
     }
 
+    /// 调用者持有发布锁；终态任务不再写入快照或改动本轮错误。
+    fn can_publish(&self) -> bool {
+        self.is_current()
+            && self
+                .jobs
+                .lock()
+                .get(&self.job_id)
+                .is_some_and(|job| matches!(job.status, RecommendationJobStatus::Running))
+    }
+
     fn fail(&self, detail: &str, error: String, items: Vec<RecommendationItem>) {
-        if !self.is_current() {
+        let _publication_guard = self.publication.lock();
+        if !self.can_publish() {
             return;
         }
         *self.last_llm_error.lock() = Some(error.clone());
@@ -204,9 +216,6 @@ async fn plan_and_discover(
     if !task.is_current() {
         return Ok(None);
     }
-    if let Some(error) = &plan.error {
-        *task.last_llm_error.lock() = Some(error.clone());
-    }
     if plan.queries.is_empty() {
         return Ok(Some((Vec::new(), plan.error)));
     }
@@ -248,7 +257,8 @@ fn filter_merged_candidates(
 }
 
 fn persist_success(task: &CloudJobTask, items: Vec<RecommendationItem>) {
-    if !task.is_current() {
+    let _publication_guard = task.publication.lock();
+    if !task.can_publish() {
         return;
     }
     // 先完成 DB 写入、释放 conn 锁，再获取 jobs 锁：
@@ -258,16 +268,17 @@ fn persist_success(task: &CloudJobTask, items: Vec<RecommendationItem>) {
         if !task.is_current() {
             return;
         }
-        if let Err(error) = save_cloud_recommendation_result(
+        let result = save_cloud_recommendation_result(
             &guard,
             &task.context,
             &task.job_id,
             "已完成本地召回、新歌发现和云端重排",
             &items,
-        ) {
+        );
+        *task.last_llm_error.lock() = result.err().map(|error| {
             log::warn!("保存云端推荐快照失败，本次结果仍返回当前任务: {}", error);
-            *task.last_llm_error.lock() = Some(error);
-        }
+            error
+        });
     }
     let payload = {
         let mut jobs = task.jobs.lock();
@@ -287,6 +298,8 @@ fn persist_success(task: &CloudJobTask, items: Vec<RecommendationItem>) {
         job.items = items;
         job.error = None;
         job.updated_at = catalog::now_ms();
+        job.result_updated_at = job.updated_at;
+        job.next_refresh_at = None;
         job_update_payload(job)
     };
     emit_job_payload(&task.app, payload);

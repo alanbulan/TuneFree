@@ -10,6 +10,7 @@ import { useLyricDisplayMode } from '../../../core/hooks/useLyricDisplayMode';
 import { findActiveLyricIndex, parseLyrics } from '../../../core/utils/lyrics';
 import MotionPanel from '../MotionPanel';
 import FullPlayerLyricLine from './FullPlayerLyricLine';
+import { useLyricClock } from '../../../core/hooks/useLyricClock';
 
 interface FullPlayerLyricsProps {
   isOpen: boolean;
@@ -17,9 +18,10 @@ interface FullPlayerLyricsProps {
 
 export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
   const { currentSong, isLoading } = usePlayerNowPlaying();
-  const { currentTime, lyricOffsetSeconds } = usePlayerProgress();
+  const { lyricOffsetSeconds } = usePlayerProgress();
   const { seek } = usePlayerActions();
   const lyricDisplayMode = useLyricDisplayMode();
+  const currentTime = useLyricClock(isOpen && lyricDisplayMode === 'karaoke');
   const reducedMotion = useReducedMotion();
 
   const lyricListRef = useRef<HTMLDivElement>(null);
@@ -80,7 +82,7 @@ export default function FullPlayerLyrics({ isOpen }: FullPlayerLyricsProps) {
                 <FullPlayerLyricLine key={`${songKey}:${index}:${row.time}`} row={row}
                   active={index === activeLyricIndex} dim={Math.abs(index - activeLyricIndex) > 2}
                   currentTime={index === activeLyricIndex ? lyricClock : index < activeLyricIndex ? Number.MAX_SAFE_INTEGER : -Number.MAX_SAFE_INTEGER}
-                  mode={lyricDisplayMode} onSeek={seek} />
+                  mode={lyricDisplayMode} offsetSeconds={lyricOffsetSeconds} onSeek={seek} />
               ))}
             </div>
           ) : (

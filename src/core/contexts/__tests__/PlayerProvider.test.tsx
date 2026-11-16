@@ -51,6 +51,6 @@ describe('播放器 Provider 完整链路', () => {
     const line = '[00:01]你好', karaoke = '[1000,1000](1000,500,0)你(1500,500,0)好';
     expect(shouldUseLyricCandidate(line, karaoke)).toBe(true);
     expect(shouldUseLyricCandidate(line, mergeLyricTracks({ main: line, translation: '[00:01]hello', source: 'qq' }))).toBe(true);
-    expect(shouldFetchBetterLyrics({ source: 'qq' }, line)).toBe(true); expect(shouldFetchBetterLyrics({ source: 'unknown' }, line)).toBe(false);
+    expect(shouldFetchBetterLyrics({ source: 'qq' }, line)).toBe(true); expect(shouldFetchBetterLyrics({ source: 'unknown' }, line)).toBe(true);
   });
 });

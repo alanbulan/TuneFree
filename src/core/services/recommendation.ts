@@ -20,9 +20,10 @@ import { normalizeMusicUrl } from './utils';
 import { stripRuntimeSongFields } from './songStorage';
 
 export const RECOMMENDATION_CHANGED_EVENT = 'tunefree:recommendation-changed';
+export type RecommendationChangeReason = 'config' | 'cleared';
 let configCacheVersion = 0;
-const notifyRecommendationChanged = () => {
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event(RECOMMENDATION_CHANGED_EVENT));
+const notifyRecommendationChanged = (reason: RecommendationChangeReason) => {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(RECOMMENDATION_CHANGED_EVENT, { detail: reason }));
 };
 
 const cacheRecommendationEnabled = (enabled: boolean) => {
@@ -100,6 +101,11 @@ export async function getLatestRecommendationJob(): Promise<RecommendationJob | 
   return invokeCommand('get_latest_recommendation_job');
 }
 
+export async function refreshRecommendations(): Promise<RecommendationJob | null> {
+  if (!isTauri()) return null;
+  return invokeCommand('refresh_recommendations');
+}
+
 export async function getSimilarSongs(
   song: Song,
   options: RecommendationOptions = {},
@@ -157,7 +163,7 @@ export async function saveLlmConfig(config: LlmConfigInput): Promise<void> {
   await invokeCommand('save_llm_config', { config });
   configCacheVersion += 1;
   if (config.localRecommendationEnabled !== undefined) cacheRecommendationEnabled(config.localRecommendationEnabled);
-  notifyRecommendationChanged();
+  notifyRecommendationChanged('config');
 }
 
 export async function testLlmProvider(config?: LlmConfigInput): Promise<LlmProviderTestResult> {
@@ -180,7 +186,7 @@ export async function listLlmModels(config?: LlmConfigInput, retryAccess = false
 export async function clearRecommendationData(): Promise<RecommendationMaintenanceStats> {
   if (!isTauri()) return { databaseSizeBytes: 0, llmCacheEntries: 0 };
   const result = await invokeCommand('clear_recommendation_data');
-  notifyRecommendationChanged();
+  notifyRecommendationChanged('cleared');
   return result;
 }
 

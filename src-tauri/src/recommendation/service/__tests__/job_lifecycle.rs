@@ -11,6 +11,66 @@ fn query() -> RecommendationQuery {
     }
 }
 
+#[tokio::test]
+async fn startup_waits_for_the_first_library_snapshot_before_requesting_models() {
+    let _credentials = Credentials::new().await;
+    let server = LlmServer::contents(&[
+        r#"{"queries":[]}"#,
+        r#"{"items":[{"track_key":"qq:startup","rank":1,"reason":"收藏偏好"}]}"#,
+    ])
+    .await;
+    let app = crate::test_support::app();
+    let service = initialized_service(&app);
+    llm_config::save_config(
+        &service.conn_handle().unwrap().lock(),
+        config_input(&server.base_url),
+    )
+    .unwrap();
+    let waiting = service.start_startup_recommendation_job().unwrap().unwrap();
+    assert!(matches!(waiting.status, RecommendationJobStatus::Waiting));
+    assert!(waiting.next_refresh_at.is_none());
+    assert!(server.calls.lock().is_empty());
+    let song: RecSong = serde_json::from_value(serde_json::json!({
+        "id":"startup", "source":"qq", "name":"收藏歌曲", "artist":"歌手", "album":""
+    }))
+    .unwrap();
+    service
+        .sync_library(LibrarySnapshot {
+            favorites: vec![song],
+            playlists: vec![],
+            queue: vec![],
+            current_song: None,
+            delta: None,
+        })
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while service.has_running_recommendation_job() {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let completed = service.get_latest_recommendation_job().unwrap().unwrap();
+    assert!(matches!(completed.status, RecommendationJobStatus::Done));
+    assert_eq!(completed.items[0].song.name, "收藏歌曲");
+    assert_eq!(server.calls.lock().len(), 2);
+    service
+        .sync_library(LibrarySnapshot {
+            favorites: vec![],
+            playlists: vec![],
+            queue: vec![],
+            current_song: None,
+            delta: Some(LibraryDelta {
+                upsert_songs: vec![],
+                added_memberships: vec![],
+                removed_memberships: vec![],
+            }),
+        })
+        .unwrap();
+    assert_eq!(server.calls.lock().len(), 2, "重复同步不再次预热云端");
+    service.clear_data().unwrap();
+}
+
 #[test]
 fn jobs_are_pruned_reused_and_gated_by_the_stored_switch() {
     let app = crate::test_support::app();
@@ -42,7 +102,7 @@ fn jobs_are_pruned_reused_and_gated_by_the_stored_switch() {
         .execute("UPDATE recommendation_settings SET enabled=0", [])
         .unwrap();
     let disabled = service.start_recommendation_job(query()).unwrap();
-    assert!(matches!(disabled.status, RecommendationJobStatus::Done));
+    assert!(matches!(disabled.status, RecommendationJobStatus::Disabled));
     assert!(disabled.items.is_empty());
     assert_ne!(disabled.job_id, running.job_id);
     conn.lock()
@@ -64,7 +124,7 @@ fn jobs_are_pruned_reused_and_gated_by_the_stored_switch() {
     );
     assert_eq!(recommendation_context(&similar), "similar");
     assert!(initial_job_detail(true, false, true).contains("最近一次"));
-    assert!(initial_job_detail(true, false, false).contains("本地候选已返回"));
+    assert_eq!(initial_job_detail(true, false, false), "正在生成推荐");
     assert!(initial_job_detail(false, false, false).contains("本地推荐"));
 }
 
@@ -110,6 +170,7 @@ async fn cloud_job_uses_local_candidates_when_discovery_fails_and_persists_the_v
     .unwrap();
     catalog::upsert_track(&conn.lock(), &item).unwrap();
     llm_config::save_config(&conn.lock(), config_input(&server.base_url)).unwrap();
+    service.initial_library_synced.store(true, Ordering::SeqCst);
     assert!(service.has_cloud_recommendation_config());
     let started = service.start_recommendation_job(query()).unwrap();
     assert!(started.deadline_at.is_some());
@@ -130,6 +191,17 @@ async fn cloud_job_uses_local_candidates_when_discovery_fails_and_persists_the_v
     assert_eq!(completed.items.len(), 1);
     assert!(completed.deadline_at.is_none());
     assert_eq!(server.calls.lock().len(), 2);
+    assert!(completed.result_updated_at > 0);
+    service.recommendation_jobs.lock().clear();
+    let cached = service.start_recommendation_job(query()).unwrap();
+    assert!(matches!(cached.stage, RecommendationJobStage::Cached));
+    assert_eq!(cached.result_updated_at, completed.result_updated_at);
+    assert_eq!(
+        server.calls.lock().len(),
+        2,
+        "复用整轮快照不得再调用发现或重排模型"
+    );
+    service.recommendation_jobs.lock().clear();
     assert_eq!(
         service
             .latest_cloud_recommendation_items("home")

@@ -46,10 +46,10 @@ export const renderVisualizerBar = (
   w: number,
   color: string,
 ) => {
-  if (percent < MIN_BAR_PERCENT) percent = MIN_BAR_PERCENT;
+  percent = Number.isFinite(percent) ? Math.max(MIN_BAR_PERCENT, Math.min(1, percent)) : MIN_BAR_PERCENT;
 
   const barHeight = percent * h;
-  const radius = w / 2;
+  const radius = Math.min(w / 2, barHeight / 2);
   const y = h - barHeight;
 
   // 颜色跟随当前主题，强度越大越不透明

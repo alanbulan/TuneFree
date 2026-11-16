@@ -10,6 +10,7 @@ type TimingSnapshot = {
   trackKey: string;
   currentTime: number;
   isPlaying: boolean;
+  advancing: boolean;
   playbackRate: number;
   lyricOffsetSeconds: number;
   lyricDisplayMode: LyricDisplayMode;
@@ -32,6 +33,7 @@ const INITIAL_TIMING: TimingSnapshot = {
   trackKey: '',
   currentTime: 0,
   isPlaying: false,
+  advancing: false,
   playbackRate: 1,
   lyricOffsetSeconds: 0,
   lyricDisplayMode: 'line',
@@ -96,17 +98,19 @@ export const useDesktopLyricBridge = () => {
     // 进度心跳只带标量；trackKey 不匹配说明是上一首的过期 tick，直接丢弃。
     register(
       listenEvent('lyric-tick', (payload) => {
-        const transportDelay = payload.isPlaying && payload.sentAt
+        const playbackRate = Number.isFinite(payload.playbackRate) && payload.playbackRate > 0 ? payload.playbackRate : 1;
+        const advancing = payload.advancing ?? payload.isPlaying;
+        const transportDelay = advancing && payload.sentAt
           ? Math.max(0, Date.now() - payload.sentAt) / 1000
           : 0;
-        const baseTime = payload.currentTime + Math.min(0.25, transportDelay);
+        const baseTime = Math.max(0, Number.isFinite(payload.currentTime) ? payload.currentTime : 0)
+          + Math.min(0.25, transportDelay) * playbackRate;
         setTiming({
           trackKey: payload.trackKey,
           currentTime: baseTime,
           isPlaying: payload.isPlaying,
-          playbackRate: Number.isFinite(payload.playbackRate) && payload.playbackRate
-            ? payload.playbackRate
-            : 1,
+          advancing,
+          playbackRate,
           lyricOffsetSeconds: Number.isFinite(payload.lyricOffsetSeconds)
             ? payload.lyricOffsetSeconds || 0
             : 0,
@@ -138,7 +142,7 @@ export const useDesktopLyricBridge = () => {
   }, [isTauri]);
 
   useEffect(() => {
-    if (!timing.isPlaying) return;
+    if (!timing.advancing) return;
 
     let frame = 0;
     let lastUpdate = timing.receivedAt;
@@ -147,7 +151,8 @@ export const useDesktopLyricBridge = () => {
       const now = getNowSeconds();
       // 逐行无需每帧重建整棵歌词树，逐字仍保留30Hz渐进高亮；seek由事件立即同步。
       if (now - lastUpdate >= intervalSeconds - 0.001) {
-        const elapsed = Math.max(0, now - timing.receivedAt);
+        // 最多外推两拍；主窗口已关闭或心跳丢失时不能无限把歌词唱下去。
+        const elapsed = Math.min(1, Math.max(0, now - timing.receivedAt));
         setProjectedTime(timing.currentTime + elapsed * timing.playbackRate);
         lastUpdate = now;
       }

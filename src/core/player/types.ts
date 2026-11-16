@@ -34,6 +34,8 @@ export interface PlayerContextValue {
   currentTime: number;
   duration: number;
   lyricOffsetSeconds: number;
+  /** 稳定读取媒体时钟，不提高共享 Context 的刷新频率。 */
+  getPlaybackClock?: () => { currentTime: number; playbackRate: number; advancing: boolean };
   playMode: PlayMode;
   queue: Song[];
   analyser: AnalyserNode | null;
@@ -71,7 +73,7 @@ export type PlayerNowPlaying =
 export type PlayerQueueState = Pick<PlayerContextValue, "queue" | "playMode">;
 export type PlayerSettings = Pick<PlayerContextValue, "audioQuality">;
 export type PlayerAnalyser = Pick<PlayerContextValue, "analyser">;
-export type PlayerProgress = Pick<PlayerContextValue, "currentTime" | "duration" | "lyricOffsetSeconds">;
+export type PlayerProgress = Pick<PlayerContextValue, "currentTime" | "duration" | "lyricOffsetSeconds" | "getPlaybackClock">;
 export type PlayerNoticeState = Pick<PlayerContextValue, "playerNotice" | "unplayableSongKeys">;
 
 export type ParsedSongData = NonNullable<Awaited<ReturnType<typeof parseSongFull>>>;

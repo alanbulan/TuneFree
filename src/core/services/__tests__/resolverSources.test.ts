@@ -96,11 +96,25 @@ describe('自定义音源接入解析链路', () => {
     expect(requested.some((url) => url.includes('platform=qq'))).toBe(false);
   });
 
-  it('自定义音源提供歌词时优先使用，且不请求原生歌词', async () => {
-    register('netease', { getLyrics: async () => '[00:00]自定义歌词' });
+  it('自定义音源已有真实逐字时立即使用，不再请求原生歌词', async () => {
+    const lyrics = '[1000,1000](1000,500,0)自定义(1500,500,0)歌词';
+    register('netease', { getLyrics: async () => lyrics });
 
-    await expect(getLyrics(1, 'netease', songMeta)).resolves.toBe('[00:00]自定义歌词');
+    await expect(getLyrics(1, 'netease', songMeta)).resolves.toBe(lyrics);
     expect(fetchNeteaseLyrics).not.toHaveBeenCalled();
+  });
+
+  it('空平台ID只使用姓名和真实录音时长的外部兜底，不向平台发空ID请求', async () => {
+    const platformLyrics = vi.fn(async () => '平台不应调用');
+    register('netease', { getLyrics: platformLyrics });
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify({
+      trackName: '江南', artistName: '林俊杰', albumName: '第二天堂', duration: 268,
+      syncedLyrics: '[00:01]风到这里就是粘',
+    })));
+    await expect(getLyrics('', 'netease', { ...songMeta, durationSeconds: 268 })).resolves.toBe('[00:01]风到这里就是粘');
+    expect(platformLyrics).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[0][0])).toContain('lrclib.net/api/get');
   });
 
   it('自定义音源提供封面时填充缺失的封面', async () => {

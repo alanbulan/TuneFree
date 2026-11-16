@@ -7,6 +7,8 @@ import type { LxSourceDeclaration } from './protocol';
 import type { MusicProvider, SourceResolveRequest } from './types';
 import type { LxSandbox } from './workerHost';
 import { readSourceUrl } from './diagnostics';
+import { decodeKrcPayload } from './krcPayload';
+import { getPlatformSongDuration } from '../songDuration';
 
 /** 解析结果缓存时长（与 GD 的 urlCache 对齐）。 */
 const URL_CACHE_TTL_MS = 5 * 60_000;
@@ -40,13 +42,16 @@ export interface LxProviderInput {
  * 合并逻辑（翻译 / 罗马音 / 逐字）拼成一条，和内置平台的歌词格式保持一致。
  */
 const extractLyric = (result: unknown, source: string): string => {
-  if (typeof result === 'string') return result;
+  if (typeof result === 'string') return decodeKrcPayload(result);
   if (!result || typeof result !== 'object') return '';
   const record = result as Record<string, unknown>;
   const pick = (fields: readonly string[]): string => {
     for (const field of fields) {
       const value = record[field];
-      if (typeof value === 'string' && value.trim()) return value.trim();
+      if (typeof value === 'string' && value.trim()) {
+        const decoded = decodeKrcPayload(value);
+        if (decoded.trim()) return decoded.trim();
+      }
     }
     return '';
   };
@@ -72,6 +77,8 @@ const extractSong = (raw: unknown, fallbackSource: string): Song | null => {
   const picId = text(record.picId);
   const lyricId = text(record.lyricId);
   const urlId = text(record.urlId);
+  const source = text(record.source) || fallbackSource;
+  const durationSeconds = getPlatformSongDuration(record, source);
   return {
     id,
     name,
@@ -81,7 +88,8 @@ const extractSong = (raw: unknown, fallbackSource: string): Song | null => {
     ...(picId ? { picId } : {}),
     ...(lyricId ? { lyricId } : {}),
     ...(urlId ? { urlId } : {}),
-    source: text(record.source) || fallbackSource,
+    source,
+    ...(durationSeconds ? { durationSeconds } : {}),
   };
 };
 

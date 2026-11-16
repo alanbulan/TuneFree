@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Song } from '../../../core/types';
 import LyricSyncBridge from '../LyricSyncBridge';
@@ -18,6 +18,7 @@ const bridge = vi.hoisted(() => ({
   lyricOffsetSeconds: 0,
   lyricDisplayMode: 'line' as string,
   showDesktopLyric: true,
+  getPlaybackClock: undefined as undefined | (() => { currentTime: number; playbackRate: number; advancing: boolean }),
 }));
 
 const ipc = vi.hoisted(() => ({
@@ -37,6 +38,7 @@ vi.mock('../../../core/contexts/PlayerContext', () => ({
     currentTime: bridge.currentTime,
     duration: bridge.duration,
     lyricOffsetSeconds: bridge.lyricOffsetSeconds,
+    getPlaybackClock: bridge.getPlaybackClock,
   }),
 }));
 
@@ -110,9 +112,11 @@ describe('LyricSyncBridge 事件拆分', () => {
     bridge.lyricOffsetSeconds = 0;
     bridge.lyricDisplayMode = 'line';
     bridge.showDesktopLyric = true;
+    bridge.getPlaybackClock = undefined;
   });
 
   afterEach(() => {
+    cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -254,5 +258,21 @@ describe('LyricSyncBridge 事件拆分', () => {
     });
 
     expect(ipc.listeners.has('desktop-lyric-ready')).toBe(false);
+  });
+
+  it('读取真实媒体时间和倍速，Context进度停更时仍每500ms同步缓冲状态', async () => {
+    let actualTime = 1.234, advancing = true;
+    bridge.getPlaybackClock = () => ({ currentTime: actualTime, playbackRate: 1.5, advancing });
+    const view = await renderBridge();
+    expect(payloadsOf('lyric-tick').slice(-1)[0]).toMatchObject({ currentTime: 1.234, playbackRate: 1.5, advancing: true });
+    ipc.emitted.length = 0;
+    actualTime = 1.9; advancing = false;
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(payloadsOf('lyric-tick')).toHaveLength(1);
+    expect(payloadsOf('lyric-tick')[0]).toMatchObject({ currentTime: 1.9, playbackRate: 1.5, isPlaying: true, advancing: false });
+    bridge.currentTime = 1.9;
+    await applyState(view.rerender);
+    expect(payloadsOf('lyric-tick')).toHaveLength(1);
+    view.unmount(); expect(vi.getTimerCount()).toBe(0);
   });
 });

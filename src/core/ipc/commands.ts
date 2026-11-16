@@ -82,6 +82,7 @@ export interface CommandMap {
     args: void;
     result: RecommendationJob | null;
   };
+  refresh_recommendations: { args: void; result: RecommendationJob | null };
   dismiss_recommendation: {
     args: { song: Song; reason?: string };
     result: void;

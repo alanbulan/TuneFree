@@ -7,6 +7,8 @@ export type ParsedLyricExtra = {
 export type ParsedLyricWord = { start: number; duration: number; text: string };
 export type ParsedLyric = {
   time: number;
+  /** 没有真实时标的纯文本；只能静态显示，不能生成伪时间轴或逐字。 */
+  untimed?: boolean;
   karaokeTime?: number;
   text: string;
   mainTexts?: string[];

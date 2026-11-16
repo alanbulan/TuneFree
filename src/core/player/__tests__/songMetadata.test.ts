@@ -184,4 +184,29 @@ describe("resolved lyric binding", () => {
     expect(notifyLyricTimelineMismatch(runtime, originalSong, lrc, 200)).toBe(false);
     expect(runtime.setPlayerNotice).toHaveBeenCalledTimes(1);
   });
+
+  it('跨源录音更换时清掉旧逐字轨，延后元数据返回前不能显示原平台歌词', () => {
+    const old = { ...originalSong, lrc: '[1000,1000](1000,1000,0)旧录音' };
+    const runtime = createRuntime(old);
+    runtime.refs.lyricMismatchNoticedKey.current = 'kuwo:original-id';
+    const next = applyParsedMetadata(runtime, old, old, { url: 'https://audio.test/new.mp3', pic: '', lrc: '', resolvedSource: 'qq', resolvedId: 'new' });
+    expect(next.lrc).toBe(''); expect(runtime.refs.queue.current[0].lrc).toBe('');
+    expect(runtime.refs.lyricMismatchNoticedKey.current).toBeNull();
+    expect(updateLyrics(runtime, old, { source: 'qq', id: 'new' }, '[00:01]新录音')).toBe(true);
+    expect(runtime.refs.currentSong.current?.lrc).toBe('[00:01]新录音');
+  });
+
+  it('相同录音绑定仍按文本与质量补充，错误时标不能覆盖正确轨', () => {
+    const lyrics = '[00:01]你好';
+    const base = { ...originalSong, lrc: lyrics, durationSeconds: 120 };
+    const runtime = createRuntime(base);
+    runtime.refs.lyricBindings.current.set('kuwo:original-id', { source: 'kuwo', id: base.id });
+    const result = applyParsedMetadata(runtime, base, base, { url: null, pic: '', lrc: '[1000,500](1000,500,0)你好',
+      resolvedSource: 'kuwo', resolvedId: base.id });
+    expect(result.lrc).toContain('(1000,500,0)');
+    const overrun = '[1000,150000](1000,150000,0)你好';
+    expect(updateLyrics(runtime, base, { source: 'kuwo', id: base.id }, overrun)).toBe(false);
+    runtime.refs.audio.current = { duration: NaN } as HTMLAudioElement; runtime.duration = 120;
+    expect(updateLyrics(runtime, base, { source: 'kuwo', id: base.id }, overrun)).toBe(false);
+  });
 });

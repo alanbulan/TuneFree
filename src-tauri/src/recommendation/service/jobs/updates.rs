@@ -28,12 +28,30 @@ impl RecommendationService {
             jobs.insert(job.job_id.clone(), job.clone());
             receiver
         };
+        *self.current_job_id.lock() = Some(job.job_id.clone());
+        self.last_dynamic_refresh_at
+            .store(job.local_updated_at, Ordering::SeqCst);
+        self.weak_signal_count.store(0, Ordering::SeqCst);
         // 在释放发布锁前发出初始状态，避免覆盖随后发出的失效通知。
         emit_job_update(self.app_handle(), &job);
         if let (Some(task), Some(cancel_rx)) = (prepared.task, cancel_rx) {
-            self.last_dynamic_refresh_at
-                .store(catalog::now_ms(), Ordering::SeqCst);
+            let now = catalog::now_ms();
+            self.last_cloud_refresh_at.store(now, Ordering::SeqCst);
+            self.cloud_refresh_requested.store(false, Ordering::SeqCst);
+            if let Err(error) = task.conn.lock().execute(
+                "UPDATE recommendation_refresh_state SET cloud_attempted_at = ?1 WHERE id = 1",
+                [now],
+            ) {
+                log::warn!("保存云端推荐尝试时间失败: {}", error);
+            }
             tauri::async_runtime::spawn(run_cloud_job(task, cancel_rx));
+        } else if matches!(job.status, RecommendationJobStatus::Waiting)
+            && job.next_refresh_at.is_some()
+        {
+            self.cloud_refresh_requested.store(true, Ordering::SeqCst);
+        } else if !job.cloud_enabled {
+            // 本地完成同样消费本次刷新请求，弱信号不能永久绕过本地冷却。
+            self.cloud_refresh_requested.store(false, Ordering::SeqCst);
         }
         Ok(job)
     }
@@ -45,17 +63,25 @@ pub(super) fn job_update_payload(job: &RecommendationJob) -> RecommendationJobUp
         status: job.status.clone(),
         stage: job.stage.clone(),
         detail: Some(job.detail.clone()),
+        updated_at: job.updated_at,
+        next_refresh_at: job.next_refresh_at,
     }
 }
 
 /// 契约 §4.3：状态事件不携带 items，前端在 done 后重新拉取完整结果。
-pub(super) fn emit_job_payload(app: &tauri::AppHandle, payload: RecommendationJobUpdatePayload) {
+pub(in crate::recommendation::service) fn emit_job_payload(
+    app: &tauri::AppHandle,
+    payload: RecommendationJobUpdatePayload,
+) {
     if let Err(error) = app.emit("recommendation-job-update", payload) {
         log::warn!("推送推荐任务状态事件失败: {}", error);
     }
 }
 
-pub(super) fn emit_job_update(app: &tauri::AppHandle, job: &RecommendationJob) {
+pub(in crate::recommendation::service) fn emit_job_update(
+    app: &tauri::AppHandle,
+    job: &RecommendationJob,
+) {
     emit_job_payload(app, job_update_payload(job));
 }
 

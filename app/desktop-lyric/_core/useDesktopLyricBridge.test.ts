@@ -1,5 +1,5 @@
-import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ParsedLyric } from '../../../src/core/utils/lyrics';
 import { getDesktopLyricCurrentLine, useDesktopLyricBridge } from './useDesktopLyricBridge';
 import { deferred } from '../../../src/core/__tests__/deferred';
@@ -38,6 +38,11 @@ const rows: ParsedLyric[] = [
   { time: 20, text: '第一句' },
   { time: 25, text: '第二句' },
 ];
+const frames = new Map<number, FrameRequestCallback>(); let frameId = 0, now = 0;
+const step = (seconds: number) => act(() => {
+  now = seconds;
+  const pending = [...frames.values()]; frames.clear(); pending.forEach((frame) => frame(seconds * 1000));
+});
 
 describe('getDesktopLyricCurrentLine', () => {
   it('previews the first row before its timestamp', () => {
@@ -95,7 +100,13 @@ describe('useDesktopLyricBridge 事件消费', () => {
     ipc.emit.mockReset().mockResolvedValue(undefined);
     ipc.ready.mockReset().mockResolvedValue(undefined);
     ipc.registration.mockReset();
+    frames.clear(); frameId = 0; now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => now * 1000);
+    vi.stubGlobal('requestAnimationFrame', vi.fn((frame: FrameRequestCallback) => { frames.set(++frameId, frame); return frameId; }));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn((id: number) => frames.delete(id)));
   });
+
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it('订阅拆分后的两个歌词事件', async () => {
     await mountBridge();
@@ -236,5 +247,31 @@ describe('useDesktopLyricBridge 事件消费', () => {
 
     expect(ipc.disposed).toEqual(expect.arrayContaining(['lyric-song', 'lyric-tick']));
     expect(ipc.handlers.has('lyric-tick')).toBe(false);
+  });
+
+  it('实际倍速乘传输耗时及本地时间，缓冲时停止外推，心跳丢失最多推进1秒', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(100000);
+    const view = await mountBridge();
+    emit('lyric-song', songPayload('a', LRC_A));
+    emit('lyric-tick', tickPayload('a', 10, { isPlaying: true, advancing: true, sentAt: 99800, playbackRate: 2, lyricDisplayMode: 'karaoke' }));
+    expect(view.result.current.playerState.currentTime).toBeCloseTo(10.4);
+    step(0.05); expect(view.result.current.playerState.currentTime).toBeCloseTo(10.5);
+    step(0.55); expect(view.result.current.playerState.currentTime).toBeCloseTo(11.5);
+    step(4); expect(view.result.current.playerState.currentTime).toBeCloseTo(12.4);
+    emit('lyric-tick', tickPayload('a', 11, { isPlaying: true, advancing: false, sentAt: 98000, playbackRate: 2 }));
+    expect(frames.size).toBe(0); step(8);
+    expect(view.result.current.playerState.currentTime).toBe(11);
+    emit('lyric-tick', tickPayload('a', 42, { isPlaying: true, advancing: true, sentAt: 99000 }));
+    expect(view.result.current.playerState.currentTime).toBe(42.25);
+    step(8.11); expect(view.result.current.playerState.currentTime).toBeCloseTo(42.36);
+    view.unmount(); expect(frames.size).toBe(0);
+  });
+
+  it('非法当前时间归零，旧版没有advancing字段仍兼容暂停', async () => {
+    const view = await mountBridge();
+    emit('lyric-song', songPayload('a', LRC_A));
+    emit('lyric-tick', tickPayload('a', Number.NaN));
+    expect(view.result.current.playerState.currentTime).toBe(0);
+    expect(frames.size).toBe(0);
   });
 });

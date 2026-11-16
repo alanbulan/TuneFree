@@ -77,6 +77,7 @@ describe('platformMap', () => {
       singer: '',
       album: '',
     });
+    expect(buildMusicInfo(request({ durationSeconds: 120.5 }))).toMatchObject({ interval: 120.5, duration: 120.5 });
   });
 
   it('声明解析：转换平台键并补齐默认 actions', () => {

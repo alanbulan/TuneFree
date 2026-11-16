@@ -8,6 +8,7 @@ import {
   shouldUseCors,
 } from "./playerUtils";
 import { applyParsedMetadata } from "./songMetadata";
+import { normalizeProxyPlayableUrl, canAnalyseMediaUrl } from '../services/playbackMediaUrl';
 import type { AudioLifecycle } from "./useAudioLifecycle";
 import type { PlaybackControls } from "./usePlaybackControls";
 import type { PlaybackRecovery } from "./usePlaybackRecovery";
@@ -84,7 +85,8 @@ const beginPlaybackRequest = (
   refs.playAbort.current?.abort();
   const controller = new AbortController();
   refs.playAbort.current = controller;
-  refs.lyricBindings.current.clear();
+  // 同曲换音质/恢复仍需旧绑定，才能识别解析回原ID时录音已变并清掉前一来源歌词。
+  if (!isCurrentSong) refs.lyricBindings.current.clear();
   runtime.setIsLoading(true);
   runtime.setPlaybackOrigin(null);
   if (!forceQuality) refs.recoveryStage.current = "initial";
@@ -116,25 +118,24 @@ const configureAudioSource = (
   const { refs } = runtime;
   const resumeTime = request.isCurrentSong && request.isDifferentQuality
     ? refs.audio.current?.currentTime || 0 : 0;
-  const needsCors = !refs.forceNoCorsPlayback.current && shouldUseCors(url);
+  const mediaUrl = refs.forceNoCorsPlayback.current ? url : normalizeProxyPlayableUrl(url);
+  const needsCors = !refs.forceNoCorsPlayback.current &&
+    (canAnalyseMediaUrl(mediaUrl) || shouldUseCors(mediaUrl));
   if (refs.isIOS.current || !needsCors) {
     if (refs.audioContextConnected.current || refs.audio.current?.crossOrigin) {
       audio.createAudioElement(false);
     }
   } else {
-    if (!refs.audioContextConnected.current) audio.createAudioElement(true);
+    if (!refs.audio.current?.crossOrigin) audio.createAudioElement(true);
     audio.initAudioContext();
   }
   const activeAudio = refs.audio.current;
   if (!activeAudio) return null;
   refs.activeQuality.current = request.targetQuality;
   refs.activeParsedCacheKey.current = cacheKey;
-  activeAudio.src = url;
+  activeAudio.src = mediaUrl;
   activeAudio.load();
   if (resumeTime > 0) activeAudio.currentTime = resumeTime;
-  if (refs.audioContext.current?.state === "suspended") {
-    void refs.audioContext.current.resume().catch((error: unknown) => console.warn('恢复音频上下文失败', error));
-  }
   return activeAudio;
 };
 
@@ -175,9 +176,10 @@ const startResolvedAudio = async (
   const { refs } = runtime;
   const url = request.fullSong.url;
   if (!url) return;
-  const activeAudio = configureAudioSource(dependencies, request, url, resolution.cacheKey);
-  if (!activeAudio) return;
+  if (!configureAudioSource(dependencies, request, url, resolution.cacheKey)) return;
   try {
+    const activeAudio = await audio.resumeAudioContext();
+    if (!activeAudio || request.requestId !== refs.playRequestId.current) return;
     await activeAudio.play();
     if (request.requestId !== refs.playRequestId.current) return;
     const parsed = resolution.parsed!;

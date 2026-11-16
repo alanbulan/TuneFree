@@ -15,7 +15,7 @@ import MotionPanel from '../../components/MotionPanel';
 import type { DesktopView } from '../../types';
 import { ContextSearchPanel, HomeHero, HomeSourceTabs } from './HomePanels';
 import { attachContextSearchMeta, describeContextSearchError, isCurrentContextSearch } from './contextSearch';
-import { isBusyError } from './recommendationJobWatcher';
+import { isBusyError } from '../../../core/services/recommendationRuntime';
 import { useRecommendationJob } from './useRecommendationJob';
 
 const cacheTtl = 3 * 60 * 1000;
@@ -221,6 +221,13 @@ export default function DesktopHome({ onViewChange, onAiBusyChange }: DesktopHom
       />
       <HomeSourceTabs activeSource={activeSource} onChange={changeSource} />
       <MotionPanel transitionKey={`${activeSource}:${selectedTopListId ?? ''}`}>
+      {isRecommendationSource && (
+        <div className="section-header">
+          <h2 className="section-title">为你推荐</h2>
+          <button type="button" className="soft-button" disabled={recommendation.running || recommendation.initializing || recommendation.disabled}
+            onClick={() => void recommendation.refresh()}>刷新推荐</button>
+        </div>
+      )}
       {isRecommendationSource && recommendation.initializing && (
         <div className="content-card home-status-card">
           <span className="home-status-text">推荐服务正在初始化，请稍候…</span>
@@ -277,7 +284,9 @@ export default function DesktopHome({ onViewChange, onAiBusyChange }: DesktopHom
       {showResults && (loadingSongs && featuredSongs.length === 0 ? (
         <SongTable songs={[]} isLoading skeletonRows={7} emptyText={isRecommendationSource ? '正在读取智能推荐...' : '正在分析语境...'} onPlay={handlePlay} />
       ) : featuredSongs.length === 0 ? (
-        <div className="empty-state"><p>{isRecommendationSource ? '多听几首、收藏一些喜欢的歌，推荐会慢慢更懂你。也可以在设置中查看推荐是否已启用。' : activeSource === 'embeat' ? '暂时没有找到合适的歌曲，试着换一种描述。' : '选一张榜单，开始发现好音乐。'}</p></div>
+        <div className="empty-state"><p>{isRecommendationSource
+          ? recommendation.disabled ? '音乐推荐未启用' : recommendation.waiting ? '等待刷新推荐' : '暂无推荐'
+          : activeSource === 'embeat' ? '暂时没有找到合适的歌曲，试着换一种描述。' : '选一张榜单，开始发现好音乐。'}</p></div>
       ) : (
         <SongTable songs={featuredSongs} currentSong={currentSong} isPlaying={isPlaying} emptyText="暂无榜单歌曲" onPlay={handlePlay} onFavorite={handleFavorite} isFavorite={(song) => isFavorite(song.id, song.source)} onDismiss={isRecommendationSource ? handleDismiss : undefined} />
       ))}

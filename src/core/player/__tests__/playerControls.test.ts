@@ -17,6 +17,7 @@ const harness = (current = song('a')) => {
   const audio = {
     updateMediaSession: vi.fn(), updateCurrentTimeState: vi.fn(), updatePositionState: vi.fn(),
     syncPlaybackTime: vi.fn(), clearActiveAudioSource: vi.fn(),
+    resumeAudioContext: vi.fn(async () => double.refs.audio.current),
   } as unknown as AudioLifecycle;
   const recommendation = {
     showPlayerNotice: vi.fn(), logEarlySkipIfNeeded: vi.fn(), startPlaybackSession: vi.fn(),
@@ -84,7 +85,7 @@ describe('播放控制的真实状态边界', () => {
     h.refs.audioContext.current = { state: 'suspended', resume } as unknown as AudioContext;
     const { result } = h.mount();
     await act(() => result.current.resumePlayback());
-    expect(resume).toHaveBeenCalledOnce();
+    expect(h.audioLifecycle.resumeAudioContext).toHaveBeenCalledOnce();
     act(() => result.current.seek(42));
     expect(h.audio.currentTime).toBe(42);
     expect(h.audioLifecycle.updatePositionState).toHaveBeenCalledOnce();
@@ -113,7 +114,7 @@ describe('播放控制的真实状态边界', () => {
     const h = harness(); h.audio.src = 'https://audio.test/a.mp3';
     const pending = deferred<void>(); h.audio.play.mockReturnValueOnce(pending.promise);
     const { result } = h.mount();
-    const run = result.current.resumePlayback(); h.refs.playRequestId.current += 1;
+    const run = result.current.resumePlayback(); await Promise.resolve(); h.refs.playRequestId.current += 1;
     if (settle === 'resolve') pending.resolve(); else pending.reject(new Error('过期响应'));
     await act(() => run);
     expect(h.setIsPlaying).not.toHaveBeenCalled();

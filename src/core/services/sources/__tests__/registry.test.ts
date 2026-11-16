@@ -27,6 +27,8 @@ import {
 } from '../registry';
 import { CircuitOpenError, getOpenCircuits, recordFailure, resetCircuits } from '../circuitBreaker';
 import type { MusicProvider, SourceResolveRequest } from '../types';
+import { normalizeProxyPlayableUrl } from '../../playbackMediaUrl';
+import { setLocalServerInfo } from '../../config';
 
 /**
  * 注册表是「平台能力的唯一来源」，这里的内置 provider 用可控替身注册，
@@ -103,6 +105,7 @@ describe('registry', () => {
     setBuiltinScriptProviders([]);
     setCustomProviders([]);
     setSourceOrder([]);
+    setLocalServerInfo({ port: 3002, token: '' });
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -266,6 +269,21 @@ describe('registry', () => {
     await expect(resolveLyrics(request({ platform: 'joox', signal: controller.signal }))).rejects.toMatchObject({
       name: 'AbortError',
     });
+  });
+
+  it('普通歌词继续接力真实逐字，文本不一致或越界候选被拒绝', async () => {
+    const plain = '[00:01]你好';
+    const timed = '[1000,1000](1000,500,0)你(1500,500,0)好';
+    const last = vi.fn(async () => '不应调用');
+    registerBuiltinProviders([
+      provider({ id: 'first', platforms: ['qq'], priority: 1, getLyrics: async () => plain }),
+      provider({ id: 'wrong', platforms: ['qq'], priority: 2, getLyrics: async () => '[1000,1000](1000,1000,0)另一首' }),
+      provider({ id: 'overrun', platforms: ['qq'], priority: 3, getLyrics: async () => '[1000,150000](1000,150000,0)你好' }),
+      provider({ id: 'timed', platforms: ['qq'], priority: 4, getLyrics: async () => timed }),
+      provider({ id: 'late', platforms: ['qq'], priority: 5, getLyrics: last }),
+    ]);
+    expect(await resolveLyrics(request({ platform: 'qq', durationSeconds: 120 }))).toBe(timed);
+    expect(last).not.toHaveBeenCalled();
   });
 
   it('整曲解析：只交给声明了 resolveFull 的 provider', async () => {
@@ -497,6 +515,21 @@ describe('熔断接入注册表', () => {
     expect(deadUrl).toHaveBeenCalledTimes(5);
     expect(isRejectedUrl({ rejectedUrls: ['not a url'] }, 'not a url')).toBe(true);
     expect(isRejectedUrl({}, 'https://good.test/a.mp3')).toBe(false);
+  });
+
+  it('播放代理端口和token改变仍能拒绝同一失败上游，不能误拒绝新签名地址', async () => {
+    const raw = 'https://stream.qqmusic.qq.com/a%2Fb.mp3?sig=a%2Fb+c&key=x%26y&key=second';
+    setLocalServerInfo({ port: 51001, token: 'old-token' });
+    const failed = normalizeProxyPlayableUrl(raw);
+    setLocalServerInfo({ port: 51002, token: 'new-token' });
+    expect(isRejectedUrl({ rejectedUrls: [failed] }, raw)).toBe(true);
+    expect(isRejectedUrl({ rejectedUrls: [failed] }, normalizeProxyPlayableUrl(raw))).toBe(true);
+    expect(isRejectedUrl({ rejectedUrls: [failed] }, raw.replace('sig=a%2Fb+c', 'sig=new'))).toBe(false);
+    const retry = vi.fn(async () => raw);
+    registerBuiltinProviders([provider({ id: 'fresh', platforms: ['qq'], getUrl: async () => raw.replace('sig=a%2Fb+c', 'sig=new') })]);
+    setCustomProviders([{ platform: 'qq', provider: provider({ id: 'failed', platforms: ['qq'], getUrl: retry }) }]);
+    await expect(resolveDirectUrl(request({ platform: 'qq', rejectedUrls: [failed] }))).resolves.toBe(raw.replace('sig=a%2Fb+c', 'sig=new'));
+    expect(retry).toHaveBeenCalledOnce();
   });
 
   it('整曲解析返回刚刚播放失败的地址时同样跳过', async () => {

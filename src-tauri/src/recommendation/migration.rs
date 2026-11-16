@@ -7,6 +7,8 @@ const EVENT_WEIGHT_MIGRATION_VERSION: i64 = 3;
 const RECOMMENDATION_CLICK_MIGRATION_VERSION: i64 = 4;
 #[path = "migration_timeout.rs"]
 mod llm_timeout;
+#[path = "migration_refresh.rs"]
+mod refresh_state;
 
 #[cfg(test)]
 #[path = "__tests__/migrations.rs"]
@@ -63,6 +65,7 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
     run_event_weight_migration_v3(conn)?;
     run_recommendation_click_migration_v4(conn)?;
     llm_timeout::run_llm_timeout_migration_v5(conn)?;
+    refresh_state::run_refresh_state_migration_v6(conn)?;
 
     Ok(())
 }

@@ -75,7 +75,7 @@ export const findActiveLyricIndex = (
   lyricOffsetSeconds = DEFAULT_LYRIC_OFFSET_SECONDS,
   timingMode: LyricTimingMode = 'line',
 ): number => {
-  if (rows.length === 0) return -1;
+  if (rows.every((row) => row.untimed)) return -1;
   const targetTime = currentTime + lyricOffsetSeconds;
   if (timingMode === 'karaoke') {
     let activeIndex = -1;
