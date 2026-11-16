@@ -1,7 +1,8 @@
 import { Song, TopList } from "../types";
 import { mergeLyricTracks } from "../utils/lyrics";
-import { proxyFetchJson, throwIfAborted } from "./proxy";
+import { createLinkedAbort, proxyFetchJson, throwIfAborted } from "./proxy";
 import { normalizeMusicUrl } from "./utils";
+import { getPlatformSongDuration } from './songDuration';
 
 // ==============================
 // 网易云音乐 直连接口
@@ -78,13 +79,15 @@ const fetchNeteaseLyricJson = async (
 ): Promise<any> => {
   const proxied = await proxyFetchJson(url, 8000, signal);
   if (proxied) return proxied;
-
+  const linked = createLinkedAbort(signal, 5000);
   try {
-    const resp = await fetch(url, { signal });
+    const resp = await fetch(url, { credentials: 'omit', signal: linked.signal });
+    if (!resp.ok) { await resp.body?.cancel(); return null; }
     return await resp.json();
   } catch {
+    throwIfAborted(signal);
     return null;
-  }
+  } finally { linked.cleanup(); }
 };
 
 const extractNeteaseLyricTracks = (data: any) => ({
@@ -161,6 +164,7 @@ export const searchNetease = async (
       album: typeof al === "object" && al !== null ? String((al as Record<string, unknown>).name ?? "") : "",
       pic: normalizeMusicUrl(typeof al === "object" && al !== null ? (al as Record<string, unknown>).picUrl as string : ""),
       source: "netease" as const,
+      ...(getPlatformSongDuration(s, 'netease') ? { durationSeconds: getPlatformSongDuration(s, 'netease') } : {}),
     };
   });
 };
@@ -214,6 +218,7 @@ export const getNeteaseTopListDetail = async (
       album: typeof al === "object" && al !== null ? String((al as Record<string, unknown>).name ?? "") : "",
       pic: normalizeMusicUrl(typeof al === "object" && al !== null ? (al as Record<string, unknown>).picUrl as string : ""),
       source: "netease" as const,
+      ...(getPlatformSongDuration(s, 'netease') ? { durationSeconds: getPlatformSongDuration(s, 'netease') } : {}),
     };
   });
 };

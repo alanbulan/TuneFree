@@ -20,6 +20,7 @@ import {
 } from "./sources/registry";
 import { toSourceResolveRequest, type SourceResolveRequest } from "./sources/types";
 import { resolveAccountUrl } from './accountResolution';
+import { resolveLyricFallback } from './lyricsFallback';
 
 /**
  * 解析链路的编排层。
@@ -85,7 +86,9 @@ export const getLyrics = async (
   songMeta?: SongMeta,
   options?: ResolveOptions,
 ): Promise<string> => {
-  return resolveLyrics(toSourceRequest(id, source, "320k", songMeta, options));
+  const request = toSourceRequest(id, source, "320k", songMeta, options);
+  const native = hasPlayableId(id) ? await resolveLyrics(request) : '';
+  return resolveLyricFallback(request, native);
 };
 
 const getDirectSongUrl = async (

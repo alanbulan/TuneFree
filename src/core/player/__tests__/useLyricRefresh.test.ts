@@ -90,4 +90,26 @@ describe('播放后的歌词和封面补充', () => {
     await waitFor(() => expect(refs.currentSong.current?.lrc).toContain('新歌词'));
     expect(getLyrics).toHaveBeenCalledTimes(2);
   });
+
+  it('实际媒体时长就绪后重新匹配，当前逐字轨越界时仍重新获取', async () => {
+    const current = song('duration', { source: 'kuwo', url: 'https://audio.test/a.mp3', pic: 'cover',
+      lrc: '[1000,150000](1000,150000,0)异常整行' });
+    const { runtime } = createRuntimeDouble({ currentSong: current });
+    const view = renderHook(({ value }) => useLyricRefresh(value), { initialProps: { value: runtime } });
+    expect(getLyrics).not.toHaveBeenCalled();
+    view.rerender({ value: { ...runtime, duration: 120 } }); await act(async () => {});
+    expect(getLyrics).toHaveBeenCalledWith('duration', 'kuwo', expect.objectContaining({ durationSeconds: 120 }), expect.anything());
+    expect(resolvePic).not.toHaveBeenCalled();
+  });
+
+  it('跨源没有解析ID仍可按真实姓名及录音时长兜底，空ID不查平台封面', async () => {
+    const current = song('anonymous', { source: 'embeat', url: 'https://audio.test/a.mp3', durationSeconds: 120 });
+    const { runtime, refs } = createRuntimeDouble({ currentSong: current });
+    refs.lyricBindings.current.set('embeat:anonymous', { source: 'netease' });
+    vi.mocked(getLyrics).mockResolvedValue('[00:01]姓名兜底');
+    renderHook(() => useLyricRefresh(runtime)); await act(async () => {});
+    expect(getLyrics).toHaveBeenCalledWith('', 'netease', expect.objectContaining({ name: current.name, artist: current.artist, durationSeconds: 120 }), expect.anything());
+    expect(resolvePic).not.toHaveBeenCalled();
+    expect(refs.currentSong.current?.lrc).toBe('[00:01]姓名兜底');
+  });
 });

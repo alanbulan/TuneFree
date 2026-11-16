@@ -131,10 +131,8 @@ Line three`;
     expect(result[0].text).toBe('Line one');
     expect(result[1].text).toBe('Line two');
     expect(result[2].text).toBe('Line three');
-    // Plain rows get auto-generated times (index * 4)
-    expect(result[0].time).toBe(0);
-    expect(result[1].time).toBe(4);
-    expect(result[2].time).toBe(8);
+    expect(result.every((row) => row.time === 0 && row.untimed)).toBe(true);
+    expect(findActiveLyricIndex(result, 100)).toBe(-1);
   });
 
   it('should handle empty or undefined input', () => {
@@ -172,6 +170,7 @@ Line three`;
     expect(result[0].text).toBe('Word1 Word2');
     expect(result[0].words).toEqual([
       { start: 1, duration: 0.5, text: 'Word1 ' },
+      { start: 1.5, duration: 0, text: 'Word2' },
     ]);
   });
 

@@ -410,6 +410,7 @@ fn build_application(context: BootstrapContext) -> tauri::App {
             recommendation_commands::get_similar_songs,
             recommendation_commands::get_recommendation_job,
             recommendation_commands::get_latest_recommendation_job,
+            recommendation_commands::refresh_recommendations,
             recommendation_commands::dismiss_recommendation,
             recommendation_commands::save_recommendation_feedback,
             recommendation_commands::rebuild_recommendation_index,

@@ -172,7 +172,14 @@ fn library_deltas_and_disabled_recommendations_preserve_saved_preferences() {
         .start_startup_recommendation_job()
         .unwrap()
         .is_none());
-    assert!(service.get_latest_recommendation_job().unwrap().is_none());
+    assert!(matches!(
+        service
+            .get_latest_recommendation_job()
+            .unwrap()
+            .unwrap()
+            .status,
+        RecommendationJobStatus::Disabled
+    ));
 }
 
 fn assert_event_transaction_failures(service: &RecommendationService, event: RecommendationEvent) {

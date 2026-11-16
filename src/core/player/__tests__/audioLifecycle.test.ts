@@ -8,9 +8,10 @@ import type { PlaybackRecovery } from '../usePlaybackRecovery';
 
 class TestAudio extends EventTarget {
   src = ''; paused = true; currentTime = 0; duration = 100; playbackRate = 1;
+  readyState = 4; ended = false; seeking = false; volume = 0.5; muted = false;
   preload = ''; crossOrigin: string | null = null; error: { code: number; message: string } | null = null;
   play = vi.fn().mockResolvedValue(undefined); pause = vi.fn(() => { this.paused = true; });
-  load = vi.fn(); removeAttribute = vi.fn(() => { this.src = ''; });
+  load = vi.fn(() => { this.playbackRate = 1; }); removeAttribute = vi.fn(() => { this.src = ''; });
 }
 const harness = () => {
   const h = createRuntimeDouble({ currentSong: song('1'), audio: null });
@@ -30,7 +31,7 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'mediaSession', { configurable: true, value: { setPositionState: position, metadata: null, playbackState: 'none' } });
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); Reflect.deleteProperty(navigator, 'mediaSession'); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); Reflect.deleteProperty(navigator, 'mediaSession'); });
 
 describe('原生音频元素事件', () => {
   it('播放进度上报一次有效播放和完成事件，同步元数据及等待状态', () => {
@@ -117,13 +118,14 @@ describe('播放器音频生命周期', () => {
   it('音频图只连接一次，恢复可见页面中的暂停上下文并发布媒体会话', async () => {
     const h = harness(); const analyser = { connect: vi.fn(), fftSize: 0, smoothingTimeConstant: 0 };
     const source = { connect: vi.fn() }; const resume = vi.fn().mockResolvedValue(undefined); const close = vi.fn().mockResolvedValue(undefined);
-    class Context { destination = {}; state = 'suspended'; resume = resume; close = close; createAnalyser = () => analyser; createMediaElementSource = () => source; }
+    class Context { destination = {}; state = 'suspended'; resume = async () => { await resume(); this.state = 'running'; }; close = close; createAnalyser = () => analyser; createMediaElementSource = () => source; }
     vi.stubGlobal('AudioContext', Context); vi.stubGlobal('MediaMetadata', class { title = ''; constructor(data: object) { Object.assign(this, data); } });
     const { result, unmount } = renderHook(() => useAudioLifecycle(h.runtime, h.recommendation, h.recovery));
     act(() => { result.current.initAudioContext(); result.current.initAudioContext(); });
-    expect(source.connect).toHaveBeenCalledOnce(); expect(analyser.fftSize).toBe(512); expect(h.refs.audioContextConnected.current).toBe(true);
+    expect(source.connect).toHaveBeenCalledOnce(); expect(analyser.fftSize).toBe(2048); expect(h.refs.audioContextConnected.current).toBe(true);
     act(() => document.dispatchEvent(new Event('visibilitychange'))); await act(async () => {}); expect(resume).toHaveBeenCalledOnce();
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {}); resume.mockRejectedValueOnce(new Error('blocked'));
+    (h.refs.audioContext.current as unknown as Context).state = 'interrupted';
     act(() => document.dispatchEvent(new Event('visibilitychange'))); await act(async () => {}); expect(warning).toHaveBeenCalled();
     act(() => result.current.updateMediaSession(song('1', { pic: 'https://img.test/a.jpg' }), 'playing'));
     expect(navigator.mediaSession.metadata?.artwork).toHaveLength(6); expect(navigator.mediaSession.playbackState).toBe('playing');
@@ -145,5 +147,125 @@ describe('播放器音频生命周期', () => {
     expect(h.runtime.setAnalyser).not.toHaveBeenCalled();
     h.refs.audio.current = null; act(() => { result.current.syncPlaybackTime(); result.current.updatePositionState(); result.current.clearActiveAudioSource(); });
     Reflect.deleteProperty(navigator, 'mediaSession'); act(() => { result.current.updateMediaSession(null, 'paused'); result.current.updatePositionState(); });
+  });
+
+  it('真实播放时钟返回媒体当前时间、速率和推进状态，暂停/缓冲/seek不得外推', () => {
+    const h = harness();
+    const { result } = renderHook(() => useAudioLifecycle(h.runtime, h.recommendation, h.recovery));
+    const audio = h.refs.audio.current as unknown as TestAudio;
+    audio.currentTime = 12.345; audio.playbackRate = 1.5; audio.paused = false;
+    expect(result.current.getPlaybackClock()).toEqual({ currentTime: 12.345, playbackRate: 1.5, advancing: true });
+    audio.readyState = 2; expect(result.current.getPlaybackClock().advancing).toBe(false);
+    audio.readyState = 4; audio.seeking = true; expect(result.current.getPlaybackClock().advancing).toBe(false);
+    audio.seeking = false; audio.ended = true; expect(result.current.getPlaybackClock().advancing).toBe(false);
+    audio.ended = false; audio.paused = true; expect(result.current.getPlaybackClock().advancing).toBe(false);
+    audio.currentTime = NaN; audio.playbackRate = 0;
+    expect(result.current.getPlaybackClock()).toEqual({ currentTime: 0, playbackRate: 1, advancing: false });
+    h.refs.audio.current = null;
+    expect(result.current.getPlaybackClock()).toEqual({ currentTime: 0, playbackRate: 1, advancing: false });
+  });
+
+  it('无CORS远端媒体不绑定分析图，节点连接失败更换普通元素并保留设置', async () => {
+    const h = harness(); const close = vi.fn().mockResolvedValue(undefined);
+    const source = { connect: vi.fn(() => { throw new Error('连接不支持'); }) };
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal('AudioContext', class { close = close; createAnalyser = () => ({ connect: vi.fn() }); createMediaElementSource = () => source; });
+    const { result } = renderHook(() => useAudioLifecycle(h.runtime, h.recommendation, h.recovery));
+    const original = h.refs.audio.current as unknown as TestAudio;
+    original.src = 'https://no-cors.example/audio.mp3';
+    act(() => result.current.initAudioContext()); expect(source.connect).not.toHaveBeenCalled();
+    original.crossOrigin = 'anonymous'; original.volume = 0.25; original.muted = true; original.playbackRate = 1.5;
+    act(() => result.current.initAudioContext()); await act(async () => {});
+    const replacement = h.refs.audio.current as unknown as TestAudio;
+    expect(replacement).not.toBe(original); expect(replacement.crossOrigin).toBeNull();
+    expect(replacement).toMatchObject({ src: 'https://no-cors.example/audio.mp3', volume: 0.25, muted: true, playbackRate: 1.5 });
+    expect(h.refs.audioContext.current).toBeNull(); expect(h.refs.analyser.current).toBeNull();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('恢复interrupted图失败或closed图会转普通播放，保留播放位置', async () => {
+    const h = harness(); const close = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { result } = renderHook(() => useAudioLifecycle(h.runtime, h.recommendation, h.recovery));
+    const previous = h.refs.audio.current as unknown as TestAudio;
+    previous.src = 'http://127.0.0.1:3002/api/cors-proxy?url=x'; previous.currentTime = 26.5; previous.paused = false;
+    h.refs.audioContext.current = { state: 'interrupted', resume: vi.fn().mockRejectedValue(new Error('无法恢复')), close } as unknown as AudioContext;
+    let playable: HTMLAudioElement | null = null;
+    await act(async () => { playable = await result.current.resumeAudioContext(); });
+    expect(playable).not.toBe(previous); expect(playable).toMatchObject({ currentTime: 26.5, src: 'http://127.0.0.1:3002/api/cors-proxy?url=x' });
+    expect(h.runtime.setAnalyser).toHaveBeenCalledWith(null); expect(close).toHaveBeenCalledOnce();
+    h.refs.audioContext.current = { state: 'closed', resume: vi.fn(), close } as unknown as AudioContext;
+    await act(async () => { await result.current.resumeAudioContext(); });
+    expect(close).toHaveBeenCalledTimes(2);
+    expect(await result.current.resumeAudioContext()).toBe(h.refs.audio.current);
+  });
+
+  it('恢复图期间切换元素时返回空值，旧恢复不能启动新歌；无响应resume在1秒后降级', async () => {
+    const h = harness(); vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { result } = renderHook(() => useAudioLifecycle(h.runtime, h.recommendation, h.recovery));
+    let finish!: () => void;
+    const resume = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const close = vi.fn().mockResolvedValue(undefined);
+    h.refs.audioContext.current = { state: 'suspended', resume, close } as unknown as AudioContext;
+    const pending = result.current.resumeAudioContext();
+    act(() => result.current.createAudioElement(false)); finish();
+    expect(await pending).toBeNull();
+    vi.useFakeTimers();
+    h.refs.audioContext.current = { state: 'suspended', resume: vi.fn(() => new Promise(() => {})), close } as unknown as AudioContext;
+    let ordinary: HTMLAudioElement | null = null;
+    const deadline = result.current.resumeAudioContext().then((value) => { ordinary = value; });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); await deadline; });
+    expect(ordinary).toBe(h.refs.audio.current); expect(h.refs.audioContext.current).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('页面恢复分析失败会续播新普通元素，续播被阻止只记录日志', async () => {
+    const h = harness(); const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { result } = renderHook(() => useAudioLifecycle(h.runtime, h.recommendation, h.recovery));
+    const old = h.refs.audio.current as unknown as TestAudio;
+    old.paused = false; old.src = '/audio.mp3';
+    h.refs.audioContext.current = { state: 'interrupted', resume: vi.fn().mockRejectedValue(new Error('blocked')),
+      close: vi.fn().mockResolvedValue(undefined) } as unknown as AudioContext;
+    act(() => document.dispatchEvent(new Event('visibilitychange'))); await act(async () => {});
+    const ordinary = h.refs.audio.current as unknown as TestAudio;
+    expect(ordinary.play).toHaveBeenCalledOnce();
+    h.refs.audioContext.current = { state: 'running' } as AudioContext;
+    expect(await result.current.resumeAudioContext()).toBe(h.refs.audio.current);
+    ordinary.paused = false;
+    h.refs.audioContext.current = { state: 'suspended', resume: vi.fn().mockRejectedValue(new Error('blocked')),
+      close: vi.fn().mockResolvedValue(undefined) } as unknown as AudioContext;
+    vi.stubGlobal('Audio', class extends TestAudio { play = vi.fn().mockRejectedValue(new Error('需要手势')); });
+    warning.mockClear();
+    act(() => document.dispatchEvent(new Event('visibilitychange'))); await act(async () => {});
+    expect(warning).toHaveBeenCalledWith('恢复普通播放失败', expect.any(Error));
+  });
+
+  it('普通元素元数据未就绪时延后恢复seek，换源后旧seek不能落到新地址', async () => {
+    const h = harness(); vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { result } = renderHook(() => useAudioLifecycle(h.runtime, h.recommendation, h.recovery));
+    const original = h.refs.audio.current as unknown as TestAudio;
+    original.src = 'https://audio.test/old.mp3'; original.currentTime = 23.5;
+    vi.stubGlobal('Audio', class extends TestAudio {
+      constructor() {
+        super(); let time = 0, attempts = 0;
+        Object.defineProperty(this, 'currentTime', { get: () => time, set: (value: number) => {
+          if (++attempts === 1) throw new Error('metadata未就绪');
+          time = value;
+        } });
+      }
+    });
+    const broken = () => ({ state: 'closed', close: vi.fn().mockResolvedValue(undefined) } as unknown as AudioContext);
+    h.refs.audioContext.current = broken();
+    await act(async () => { await result.current.resumeAudioContext(); });
+    const first = h.refs.audio.current as unknown as TestAudio;
+    expect(first.currentTime).toBe(0);
+    act(() => first.dispatchEvent(new Event('loadedmetadata')));
+    expect(first.currentTime).toBe(23.5);
+    h.refs.audioContext.current = broken();
+    await act(async () => { await result.current.resumeAudioContext(); });
+    const second = h.refs.audio.current as unknown as TestAudio;
+    second.src = 'https://audio.test/new.mp3';
+    act(() => second.dispatchEvent(new Event('loadedmetadata')));
+    expect(second.currentTime).toBe(0);
   });
 });

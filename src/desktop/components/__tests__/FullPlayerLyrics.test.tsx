@@ -104,4 +104,20 @@ describe('全屏歌词的稳定节点与滚动', () => {
     expect(screen.getByText('Hello')).toBeTruthy();
     expect(view.container.querySelectorAll('.lyric-line em')).toHaveLength(1);
   });
+
+  it('按歌词偏移逆算媒体seek，纯文本不能跳到伪造时间点', () => {
+    player.offset = 0.5;
+    const view = render(<FullPlayerLyrics isOpen />);
+    fireEvent.click(screen.getAllByRole('listitem')[1]);
+    expect(player.seek).toHaveBeenLastCalledWith(2.5);
+    player.offset = 5; view.rerender(<FullPlayerLyrics isOpen />);
+    fireEvent.keyDown(screen.getAllByRole('listitem')[0], { key: 'Enter' });
+    expect(player.seek).toHaveBeenLastCalledWith(0);
+    player.seek.mockClear(); player.song = { ...song, lrc: '纯文本\n没有时标' };
+    view.rerender(<FullPlayerLyrics isOpen />);
+    fireEvent.click(screen.getAllByRole('listitem')[1]);
+    fireEvent.keyDown(screen.getAllByRole('listitem')[0], { key: 'Enter' });
+    expect(player.seek).not.toHaveBeenCalled();
+    expect(view.container.querySelector('[data-active]')).toBeNull();
+  });
 });

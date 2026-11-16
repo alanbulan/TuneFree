@@ -6,6 +6,7 @@ import type { PlaybackRecovery } from "./usePlaybackRecovery";
 import type { PlayerRuntime } from "./usePlayerRuntime";
 import type { RecommendationPlayback } from "./useRecommendationPlayback";
 import type { PlayerRefs } from "./types";
+import { canAnalyseMediaUrl } from '../services/playbackMediaUrl';
 
 const disposeAudio = (refs: PlayerRefs): void => {
   const audio = refs.audio.current;
@@ -71,6 +72,15 @@ export const useAudioLifecycle = (
     }
   }, [refs, updateCurrentTimeState]);
 
+  const getPlaybackClock = useCallback(() => {
+    const audio = refs.audio.current;
+    return {
+      currentTime: audio && Number.isFinite(audio.currentTime) ? Math.max(0, audio.currentTime) : 0,
+      playbackRate: audio && Number.isFinite(audio.playbackRate) && audio.playbackRate > 0 ? audio.playbackRate : 1,
+      advancing: !!audio && !audio.paused && !audio.ended && !audio.seeking && audio.readyState >= 3,
+    };
+  }, [refs]);
+
   const createAudioElement = useCallback((withCors: boolean) =>
     createManagedAudioElement({
       withCors, ...dependenciesRef.current,
@@ -84,18 +94,46 @@ export const useAudioLifecycle = (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const restorePlainAudio = useCallback((media: HTMLAudioElement): HTMLAudioElement => {
+    const settings = { src: media.src, time: media.currentTime, volume: media.volume,
+      muted: media.muted, playbackRate: media.playbackRate };
+    const replacement = createAudioElement(false);
+    replacement.volume = settings.volume;
+    replacement.muted = settings.muted;
+    if (settings.src && settings.src !== window.location.href) {
+      replacement.src = settings.src;
+      replacement.load();
+      if (Number.isFinite(settings.time) && settings.time > 0) {
+        try { replacement.currentTime = settings.time; }
+        catch {
+          replacement.addEventListener('loadedmetadata', () => {
+            if (refs.audio.current === replacement && replacement.src === settings.src) replacement.currentTime = settings.time;
+          }, { once: true });
+        }
+      }
+    }
+    // HTMLMediaElement.load() 会复位 playbackRate；必须在载入源之后恢复真实倍速。
+    replacement.playbackRate = settings.playbackRate;
+    return replacement;
+  }, [createAudioElement, refs]);
+
   const initAudioContext = useCallback(() => {
     if (refs.isIOS.current || refs.audioContext.current || !refs.audio.current) return;
+    // 没有 CORS 的跨域媒体接入 Web Audio 会被规范强制静音，不能为了频谱破坏播放。
+    if (!refs.audio.current.crossOrigin && !canAnalyseMediaUrl(refs.audio.current.src)) return;
     let context: AudioContext | undefined;
+    const media = refs.audio.current;
+    let boundToContext = false;
     try {
       const AudioContextClass = window.AudioContext ||
         (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioContextClass) return;
       context = new AudioContextClass();
       const analyser = context.createAnalyser();
-      analyser.fftSize = 512;
+      analyser.fftSize = 2048;
       analyser.smoothingTimeConstant = 0.7;
-      const source = context.createMediaElementSource(refs.audio.current);
+      const source = context.createMediaElementSource(media);
+      boundToContext = true;
       source.connect(analyser);
       analyser.connect(context.destination);
       refs.audioContext.current = context;
@@ -104,22 +142,48 @@ export const useAudioLifecycle = (
       refs.analyser.current = analyser;
       setAnalyser(analyser);
     } catch (error) {
-      // 节点创建或连接失败时，释放已创建的上下文，再使用模拟频谱。
+      // 已绑定 MediaElementSource 的元素不能从关闭的 context 脱离；更换元素恢复普通播放。
       void context?.close().catch(() => {});
-      console.error("AudioContext 初始化失败，使用模拟可视化", error);
+      if (boundToContext) restorePlainAudio(media);
+      console.warn("音频分析不可用，频谱已停止，普通播放仍可使用", error);
     }
-  }, [refs, setAnalyser]);
+  }, [refs, setAnalyser, restorePlainAudio]);
+
+  const resumeAudioContext = useCallback(async (): Promise<HTMLAudioElement | null> => {
+    const media = refs.audio.current, context = refs.audioContext.current;
+    if (!media || !context || context.state === 'running') return media;
+    const requestId = refs.playRequestId.current;
+    let timer = 0;
+    try {
+      if (context.state !== 'closed') await Promise.race([
+        context.resume(),
+        new Promise<void>((resolve) => { timer = window.setTimeout(resolve, 1000); }),
+      ]);
+    } catch (error) { console.warn('恢复音频分析失败，改用普通播放', error); }
+    finally { window.clearTimeout(timer); }
+    // 恢复期间切歌/关闭播放器的响应不可再替换新元素。
+    if (refs.audio.current !== media || refs.audioContext.current !== context
+      || refs.playRequestId.current !== requestId) return null;
+    if (String(context.state) === 'running') return media;
+    console.warn('当前环境无法恢复音频分析，已停止频谱并保留普通播放');
+    return restorePlainAudio(media);
+  }, [refs, restorePlainAudio]);
 
   useEffect(() => {
-    const handleVisibility = () => {
+    const handleVisibility = async () => {
       const context = refs.audioContext.current;
-      if (document.visibilityState === "visible" && context?.state === "suspended") {
-        void context.resume().catch((error: unknown) => console.warn('恢复音频上下文失败', error));
+      if (document.visibilityState === "visible" && context && ['suspended', 'interrupted'].includes(context.state)) {
+        const wasPlaying = refs.audio.current && !refs.audio.current.paused;
+        const previous = refs.audio.current;
+        const media = await resumeAudioContext();
+        if (wasPlaying && media && media !== previous && refs.audio.current === media) {
+          void media.play().catch((error: unknown) => console.warn('恢复普通播放失败', error));
+        }
       }
     };
     document.addEventListener("visibilitychange", handleVisibility);
     return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [refs]);
+  }, [refs, resumeAudioContext]);
 
   const updateMediaSession = useCallback((song: Song | null, state: "playing" | "paused") => {
     if (!("mediaSession" in navigator) || !song) return;
@@ -162,9 +226,9 @@ export const useAudioLifecycle = (
 
   return useMemo(() => ({
     clearActiveAudioSource, syncPlaybackTime, createAudioElement,
-    initAudioContext, updateCurrentTimeState, updateMediaSession, updatePositionState,
+    initAudioContext, resumeAudioContext, updateCurrentTimeState, updateMediaSession, updatePositionState, getPlaybackClock,
   }), [clearActiveAudioSource, createAudioElement, initAudioContext, syncPlaybackTime,
-    updateCurrentTimeState, updateMediaSession, updatePositionState]);
+    resumeAudioContext, updateCurrentTimeState, updateMediaSession, updatePositionState, getPlaybackClock]);
 };
 
 export type AudioLifecycle = ReturnType<typeof useAudioLifecycle>;

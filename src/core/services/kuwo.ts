@@ -4,6 +4,7 @@ import { inflate } from "pako";
 import { buildLocalServerHeaders, SELF_HOSTED_PROXY } from "./config";
 import { createLinkedAbort, getProxies, proxyFetchJson, throwIfAborted } from "./proxy";
 import { fixUrl } from "./utils";
+import { getPlatformSongDuration } from './songDuration';
 
 // ==============================
 // 酷我音乐 直连接口
@@ -107,6 +108,7 @@ export const searchKuwo = async (
           album: (s.ALBUM || "").replace(/&nbsp;/g, " ").trim(),
           pic: "",
           source: "kuwo" as const,
+          ...(getPlatformSongDuration(s, 'kuwo') ? { durationSeconds: getPlatformSongDuration(s, 'kuwo') } : {}),
         };
       });
 
@@ -189,6 +191,7 @@ export const getKuwoTopListDetail = async (
     album: s.album || "",
     pic: "",
     source: "kuwo" as const,
+    ...(getPlatformSongDuration(s, 'kuwo') ? { durationSeconds: getPlatformSongDuration(s, 'kuwo') } : {}),
   }));
 
   // kbangserver 不返回封面，通过 artistpicserver 批量补全

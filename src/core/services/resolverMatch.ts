@@ -1,9 +1,10 @@
 import type { Song } from "../types";
+import { matchesLyricSongIdentity } from '../utils/lyrics/identity';
 
 // 跨音源 fallback 的候选匹配与并发调度工具（resolver.ts 专用）。
 
 export type SongMeta = Pick<Song, "pic" | "picId" | "urlId" | "lyricId"> &
-  Partial<Pick<Song, "name" | "artist" | "album" | "hash" | "albumId" | "strMediaMid" | "qualityHashes">>;
+  Partial<Pick<Song, "name" | "artist" | "album" | "durationSeconds" | "hash" | "albumId" | "strMediaMid" | "qualityHashes">>;
 
 export const abortReasonError = (signal: AbortSignal): Error =>
   signal.reason instanceof Error
@@ -93,25 +94,10 @@ export const hasPlayableId = (id: string | number | undefined | null): boolean =
   return !!normalized && !normalized.startsWith("temp_");
 };
 
-const normalizeComparableText = (value: unknown): string => {
-  if (value === null || value === undefined) return "";
-  return String(value)
-    .toLowerCase()
-    .replace(/[（(].*?[)）]/g, "")
-    .replace(/[\s·・.。\-_—–,，、/\\|:：]+/g, "")
-    .trim();
-};
-
 const isUnknownText = (value: unknown): boolean => {
   const text = String(value || "").trim().toLowerCase();
   return !text || text === "unknown song" || text === "unknown artist";
 };
-
-const splitArtistTokens = (artist: unknown): string[] =>
-  String(artist || "")
-    .split(/[,&，、/\\|]+|\s+(?:and|feat\.?|ft\.?)\s+/i)
-    .map(normalizeComparableText)
-    .filter((token) => token.length > 1);
 
 export const buildFallbackQuery = (songMeta?: SongMeta): string => {
   if (!songMeta || isUnknownText(songMeta.name)) return "";
@@ -123,23 +109,5 @@ export const buildFallbackQuery = (songMeta?: SongMeta): string => {
 export const isLikelySameSong = (candidate: Song, songMeta?: SongMeta): boolean => {
   if (!songMeta || isUnknownText(songMeta.name)) return true;
 
-  const targetName = normalizeComparableText(songMeta.name);
-  const candidateName = normalizeComparableText(candidate.name);
-  if (!targetName || !candidateName) return false;
-
-  const nameMatches =
-    candidateName === targetName ||
-    candidateName.includes(targetName) ||
-    targetName.includes(candidateName);
-  if (!nameMatches) return false;
-
-  const targetArtists = splitArtistTokens(songMeta.artist);
-  if (targetArtists.length === 0) return true;
-
-  const candidateArtist = normalizeComparableText(candidate.artist);
-  if (!candidateArtist) return true;
-
-  return targetArtists.some(
-    (artist) => candidateArtist.includes(artist) || artist.includes(candidateArtist),
-  );
+  return matchesLyricSongIdentity(candidate, songMeta, false);
 };

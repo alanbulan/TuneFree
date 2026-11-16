@@ -267,6 +267,10 @@ describe('设置页面真实控件', () => {
     fireEvent.change(document.querySelector('input[type=color]')!, { target: { value: '#123456' } });
     fireEvent.click(screen.getByRole('button', { name: '系统默认' })); fireEvent.click(screen.getByRole('option', { name: '宋体' }));
     for (const name of ['启用桌面歌词', '锁定桌面歌词', '锁定桌面歌词', '显示音乐伙伴', '根据播放与收藏发现好音乐', '使用已配置的模型发现和精选音乐', '清除已保存密钥', '允许上传最近少量事件摘要']) {
+      if (name === '使用已配置的模型发现和精选音乐') {
+        expect(screen.getByRole('checkbox', { name })).toHaveProperty('disabled', true);
+        fireEvent.click(screen.getByRole('checkbox', { name: '根据播放与收藏发现好音乐' }));
+      }
       fireEvent.click(screen.getByRole('checkbox', { name }));
     }
     fireEvent.change(screen.getByPlaceholderText('留空使用内置代理（推荐）'), { target: { value: 'https://proxy.test/' } });

@@ -57,4 +57,10 @@ describe('音乐资源地址', () => {
     expect(normalizeMusicUrl('asset://localhost/cover.jpg')).toBe('asset://localhost/cover.jpg');
     expect(stableMusicUrl('http://127.0.0.1:51001/api/temporary?token=old')).toBe('');
   });
+
+  it('持久化保留已知录音时长，非法时长丢弃不用于外部歌词匹配', () => {
+    const base = { id: 1, source: 'qq', name: '歌', artist: '歌手', album: '专辑' };
+    expect(stripRuntimeSongFields({ ...base, durationSeconds: 120.5 })).toMatchObject({ durationSeconds: 120.5 });
+    expect(stripRuntimeSongFields({ ...base, durationSeconds: NaN }).durationSeconds).toBeUndefined();
+  });
 });

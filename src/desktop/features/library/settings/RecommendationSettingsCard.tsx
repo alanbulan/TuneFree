@@ -12,7 +12,7 @@ export default function RecommendationSettingsCard({ model }: { model: SettingsV
     <div className="settings-card settings-core-card glass-panel">
       <h3><BrainCircuit size={18} /> 音乐推荐</h3>
       <div className="panel-field">
-        <label>本地推荐</label>
+        <label>音乐推荐</label>
         <div className="settings-checkbox-row">
           <input
             type="checkbox"
@@ -34,6 +34,7 @@ export default function RecommendationSettingsCard({ model }: { model: SettingsV
             id="llm-recommendation-toggle"
             className="settings-checkbox"
             checked={model.llmConfig.enabled}
+            disabled={!model.localRecommendationEnabled}
             onChange={(event) => updateConfig({ enabled: event.target.checked })}
           />
           <label htmlFor="llm-recommendation-toggle" className="settings-checkbox-label">

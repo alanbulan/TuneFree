@@ -18,6 +18,7 @@ export interface SourceResolveRequest {
   name?: string;
   artist?: string;
   album?: string;
+  durationSeconds?: number;
   /** 平台侧文件 hash（酷狗等）。 */
   hash?: string;
   /** 平台侧专辑 id。 */
@@ -110,6 +111,7 @@ export const toSourceResolveRequest = (
   name: song.name,
   artist: song.artist,
   album: song.album,
+  durationSeconds: song.durationSeconds,
   hash: song.hash,
   albumId: song.albumId,
   strMediaMid: song.strMediaMid,

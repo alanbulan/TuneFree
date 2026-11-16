@@ -421,7 +421,7 @@ describe('isLikelySameSong (indirect via getSongUrl)', () => {
     expect(result).toBeNull();
   });
 
-  it('should match candidates with partial name overlap', async () => {
+  it('rejects different songs that only share a title prefix', async () => {
     const songMeta = {
       name: 'Love',
       artist: 'Singer',
@@ -431,7 +431,7 @@ describe('isLikelySameSong (indirect via getSongUrl)', () => {
       lyricId: '',
     };
 
-    // Candidate name contains the target name
+    // Love Story is a different song from Love, even when the artist matches.
     vi.mocked(searchQQ).mockResolvedValue([
       {
         id: 'qq456',
@@ -449,7 +449,7 @@ describe('isLikelySameSong (indirect via getSongUrl)', () => {
     }) as any;
 
     const result = await getSongUrl('temp_0', 'netease', '320k', songMeta);
-    expect(result).toBe('https://example.com/love.mp3');
+    expect(result).toBeNull();
   });
 
   it('should return null when songMeta name is unknown (no fallback query)', async () => {
@@ -474,7 +474,7 @@ describe('isLikelySameSong (indirect via getSongUrl)', () => {
     expect(searchNetease).not.toHaveBeenCalled();
   });
 
-  it('should handle artist token splitting and partial matching', async () => {
+  it('rejects a solo recording when the requested recording is a duet', async () => {
     const songMeta = {
       name: 'Duet Song',
       artist: 'Singer A & Singer B',
@@ -502,7 +502,20 @@ describe('isLikelySameSong (indirect via getSongUrl)', () => {
     }) as any;
 
     const result = await getSongUrl('temp_0', 'netease', '320k', songMeta);
-    expect(result).toBe('https://example.com/duet.mp3');
+    expect(result).toBeNull();
+  });
+
+  it('matches the complete duet artist set despite order and separator differences', async () => {
+    vi.mocked(searchQQ).mockResolvedValue([{
+      id: 'complete-duet', name: 'Duet Song', artist: 'Singer B / Singer A', album: '', pic: '', source: 'qq',
+    }]);
+    vi.mocked(searchNetease).mockResolvedValue([]);
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true, json: () => Promise.resolve({ url: 'https://example.com/complete-duet.mp3' }),
+    }) as any;
+    await expect(getSongUrl('temp_duet', 'netease', '320k', {
+      name: 'Duet Song', artist: 'Singer A & Singer B', pic: '',
+    })).resolves.toBe('https://example.com/complete-duet.mp3');
   });
 
   it('resolves a fast fallback source without waiting for a slow source', async () => {

@@ -18,7 +18,7 @@ export const analyzeLyricTimeline = (
 ): LyricTimelineAnalysis => {
   const safeDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
     ? durationSeconds : 0;
-  const rows = parseLyrics(lrc);
+  const rows = parseLyrics(lrc).filter((row) => !row.untimed);
   if (safeDuration === 0 || rows.length === 0) {
     return {
       status: 'unavailable',
@@ -30,13 +30,19 @@ export const analyzeLyricTimeline = (
   }
 
   const lastLineTimeSeconds = rows.reduce((latest, row) => Math.max(latest, row.time), 0);
-  const overrunSeconds = Math.max(0, lastLineTimeSeconds - safeDuration);
+  const wordEnds = rows.flatMap((row) => (row.words || []).filter((word) =>
+    Number.isFinite(word.start) && Number.isFinite(word.duration) && word.duration > 0)
+    .map((word) => word.start + word.duration));
+  const lastWordEnd = wordEnds.reduce((latest, end) => Math.max(latest, end), 0);
+  const overrunSeconds = Math.max(0, lastLineTimeSeconds - safeDuration, lastWordEnd - safeDuration);
   const toleranceSeconds = Math.max(
     MIN_OVERRUN_TOLERANCE_SECONDS,
     safeDuration * OVERRUN_TOLERANCE_RATIO,
   );
   const outOfRangeLineCount = rows.filter((row) => row.time > safeDuration).length;
-  const hasVersionMismatchSignal = overrunSeconds > toleranceSeconds && outOfRangeLineCount >= 2;
+  // 普通 LRC 的单个尾部标签可能是制作信息，真实词结束时标越界则已有直接证据。
+  const hasVersionMismatchSignal = overrunSeconds > toleranceSeconds
+    && (outOfRangeLineCount >= 2 || lastWordEnd > safeDuration + toleranceSeconds);
 
   return {
     status: hasVersionMismatchSignal ? 'overrun' : 'ok',

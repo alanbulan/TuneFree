@@ -82,3 +82,31 @@ fn generic_and_similar_recommendation_clicks_keep_distinct_semantics() {
         assert_eq!(count, 1);
     }
 }
+
+#[test]
+fn dismissal_retries_with_the_same_request_are_idempotent() {
+    let mut conn = Connection::open_in_memory().unwrap();
+    migration::run_migrations(&conn).unwrap();
+    let song = song("qq", "1", "歌曲", "歌手");
+    let feedback = RecommendationFeedback {
+        request_id: "job-1".into(),
+        song,
+        action: "dismiss".into(),
+        recommendation_source: "hybrid".into(),
+        context: Some("home".into()),
+    };
+    assert!(record_recommendation_feedback(&mut conn, &feedback).unwrap());
+    let before: f64 = conn
+        .query_row(
+            "SELECT value FROM user_profile WHERE key = 'artist:歌手'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(!record_recommendation_feedback(&mut conn, &feedback).unwrap());
+    let counts: (i64, i64, f64) = conn.query_row(
+        "SELECT (SELECT COUNT(*) FROM recommendation_feedback), (SELECT COUNT(*) FROM play_events WHERE event_type = 'dismiss'), (SELECT value FROM user_profile WHERE key = 'artist:歌手')",
+        [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).unwrap();
+    assert_eq!(counts, (1, 1, before));
+}

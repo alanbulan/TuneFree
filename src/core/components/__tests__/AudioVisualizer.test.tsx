@@ -43,7 +43,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('音频频谱帧循环', () => {
   it('按像素密度绘制，暂停衰减后停止帧，尺寸和主题变化只重画必要帧', () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0); vi.spyOn(Math, 'sin').mockReturnValue(0);
+    mocks.analyser = { frequencyBinCount: 256, getByteFrequencyData: vi.fn((bytes: Uint8Array) => bytes.fill(128)) } as unknown as AnalyserNode;
     const view = render(<AudioVisualizer isPlaying />); const canvas = view.container.querySelector('canvas')!;
     expect(canvas.width).toBe(880); expect(canvas.height).toBe(200); expect(context.setTransform).toHaveBeenCalledWith(2, 0, 0, 2, 0, 0);
     expect(context.roundRect).toHaveBeenCalledTimes(BAR_COUNT); act(() => step(3));
@@ -113,6 +113,7 @@ describe('音频频谱帧循环', () => {
   });
 
   it('隐藏时挂载的频谱不读取数据，显示后才开始绘制', () => {
+    mocks.analyser = { frequencyBinCount: 256, getByteFrequencyData: vi.fn() } as unknown as AnalyserNode;
     hidden = true;
     const view = render(<AudioVisualizer isPlaying />);
     expect(frames.size).toBe(0); expect(context.roundRect).not.toHaveBeenCalled();
@@ -120,5 +121,30 @@ describe('音频频谱帧循环', () => {
     act(() => document.dispatchEvent(new Event('visibilitychange')));
     expect(frames.size).toBe(1); expect(context.roundRect).toHaveBeenCalledTimes(BAR_COUNT);
     view.unmount(); expect(frames.size).toBe(0);
+  });
+
+  it('没有真实分析器时绘制静态底线，不生成随机频谱或持续占用动画帧', () => {
+    const random = vi.spyOn(Math, 'random');
+    const view = render(<AudioVisualizer isPlaying />);
+    expect(frames.size).toBe(0);
+    expect(random).not.toHaveBeenCalled();
+    expect(view.container.querySelector('canvas')?.dataset.spectrum).toBe('unavailable');
+    expect(context.roundRect.mock.calls.every((args) => args[3] === 4)).toBe(true);
+  });
+
+  it('分析器读取失败静态降级，暂停的上下文恢复后重新读取真实数据', () => {
+    const audioContext = new EventTarget() as EventTarget & { state: string };
+    audioContext.state = 'suspended';
+    const read = vi.fn((bytes: Uint8Array) => bytes.fill(180));
+    mocks.analyser = { frequencyBinCount: 256, getByteFrequencyData: read, context: audioContext } as unknown as AnalyserNode;
+    const view = render(<AudioVisualizer isPlaying />);
+    expect(read).not.toHaveBeenCalled(); expect(frames.size).toBe(0);
+    audioContext.state = 'running'; act(() => audioContext.dispatchEvent(new Event('statechange')));
+    expect(read).toHaveBeenCalledOnce(); expect(frames.size).toBe(1);
+    read.mockImplementationOnce(() => { throw new Error('CORS blocked'); });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    act(() => step(100));
+    expect(frames.size).toBe(0);
+    expect(view.container.querySelector('canvas')?.dataset.spectrum).toBe('unavailable');
   });
 });

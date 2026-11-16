@@ -12,6 +12,7 @@ impl RecommendationService {
         llm_config::view_config(
             &conn,
             self.database_size_bytes(),
+            // 后台推荐错误由任务状态提供，避免设置保留上一轮后台错误。
             self.last_llm_error.lock().clone(),
         )
         .map_err(CommandError::database)
@@ -23,6 +24,7 @@ impl RecommendationService {
             let conn = conn.lock();
             llm_config::save_config(&conn, config)?;
         }
+        self.initial_library_synced.store(false, Ordering::SeqCst);
         self.invalidate_and_schedule_refresh("推荐配置更新");
         Ok(())
     }
@@ -133,18 +135,46 @@ impl RecommendationService {
         let conn_handle = self.conn_handle()?;
         // 清理期间禁止发布新任务，取消信号与 generation 变更不会被新通道绕过。
         let cancel = self.cloud_cancel.lock();
+        let cancelled_jobs = super::jobs::invalidate_recommendation_state(
+            &self.recommendation_generation,
+            &self.recommendation_jobs,
+            &self.dynamic_refresh_pending,
+        );
         let _ = cancel.send(true);
-        self.recommendation_generation
-            .fetch_add(1, Ordering::SeqCst);
         let clear_result = {
             let conn = conn_handle.lock();
             clear_recommendation_storage(&conn)
         };
+        if let Err(error) = clear_result {
+            for payload in cancelled_jobs {
+                super::jobs::emit_cancelled_job(self.app_handle(), payload);
+            }
+            return Err(CommandError::database(format!(
+                "清空推荐数据失败: {}",
+                error
+            )));
+        }
         self.recommendation_jobs.lock().clear();
         self.dynamic_refresh_pending.store(false, Ordering::SeqCst);
+        self.last_dynamic_refresh_at.store(0, Ordering::SeqCst);
+        self.last_cloud_refresh_at.store(0, Ordering::SeqCst);
+        self.cloud_refresh_requested.store(false, Ordering::SeqCst);
+        self.initial_library_synced.store(false, Ordering::SeqCst);
+        self.weak_signal_count.store(0, Ordering::SeqCst);
         *self.last_llm_error.lock() = None;
+        *self.last_recommendation_error.lock() = None;
+        let mut job = super::jobs::cleared_job();
+        if !self.is_recommendation_enabled() {
+            job.status = RecommendationJobStatus::Disabled;
+            job.stage = RecommendationJobStage::Disabled;
+            job.detail = "推荐已关闭".into();
+        }
+        *self.current_job_id.lock() = Some(job.job_id.clone());
+        self.recommendation_jobs
+            .lock()
+            .insert(job.job_id.clone(), job.clone());
+        super::jobs::emit_state_job(self.app_handle(), &job);
         drop(cancel);
-        clear_result.map_err(|e| CommandError::database(format!("清空推荐数据失败: {}", e)))?;
         Ok(self.maintenance_stats())
     }
 
@@ -186,7 +216,15 @@ impl RecommendationService {
                 match result {
                     Ok(Ok(true)) => {
                         log::info!("推荐数据库定期维护已完成并更新推荐状态");
-                        service.invalidate_and_schedule_refresh("推荐数据定期维护");
+                        let worker = service.clone();
+                        if let Err(error) = run_recommendation_blocking(move || {
+                            worker.invalidate_and_schedule_refresh("推荐数据定期维护");
+                            Ok(())
+                        })
+                        .await
+                        {
+                            log::error!("更新维护后的推荐状态失败: {}", error);
+                        }
                     }
                     Ok(Ok(false)) => {}
                     Ok(Err(error)) => log::error!("推荐数据库定期维护失败: {}", error),
@@ -242,6 +280,11 @@ pub(super) fn load_latest_cloud_recommendation_job(
                 error: None,
                 updated_at,
                 deadline_at: None,
+                local_count: 0,
+                local_updated_at: 0,
+                cloud_enabled: true,
+                result_updated_at: updated_at,
+                next_refresh_at: None,
             })
         },
     )
@@ -270,7 +313,8 @@ pub(super) fn save_cloud_recommendation_result(
 }
 
 pub(super) fn clear_recommendation_storage(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute_batch(
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(
         r#"
         DELETE FROM play_events;
         DELETE FROM user_profile;
@@ -283,8 +327,10 @@ pub(super) fn clear_recommendation_storage(conn: &Connection) -> rusqlite::Resul
         DELETE FROM recommendation_feedback;
         DELETE FROM llm_recommendation_cache;
         DELETE FROM llm_calls;
+        UPDATE recommendation_refresh_state SET preference_changed_at = 0, cloud_attempted_at = 0 WHERE id = 1;
         "#,
-    )
+    )?;
+    tx.commit()
 }
 
 fn run_recommendation_maintenance(conn: &mut Connection) -> Result<bool, String> {

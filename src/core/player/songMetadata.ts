@@ -50,15 +50,16 @@ export const updateLyrics = (
   const { commitCurrentSong, commitQueue, refs } = runtime;
   if (!isSameLyricBinding(refs.lyricBindings.current.get(getSongKey(song)), binding)) return false;
   const current = refs.currentSong.current;
+  const duration = (refs.audio.current ? getFiniteAudioDuration(refs.audio.current) : 0)
+    || runtime.duration || binding?.songMeta?.durationSeconds || current?.durationSeconds || 0;
   if (!current || !isSameSong(current, song) ||
-      !shouldUseLyricCandidate(current.lrc, lrc)) return false;
-  notifyLyricTimelineMismatch(runtime, song, lrc);
+      !shouldUseLyricCandidate(current.lrc, lrc, duration)) return false;
   commitCurrentSong({ ...current, lrc });
   commitQueue((previous) => {
     let changed = false;
     const nextQueue = previous.map((queuedSong) => {
       if (!isSameSong(queuedSong, song) ||
-          !shouldUseLyricCandidate(queuedSong.lrc, lrc)) return queuedSong;
+          !shouldUseLyricCandidate(queuedSong.lrc, lrc, duration)) return queuedSong;
       changed = true;
       return { ...queuedSong, lrc };
     });
@@ -102,11 +103,21 @@ export const applyParsedMetadata = (
     ...(parsed.resolvedPicId ? { picId: parsed.resolvedPicId } : {}),
     ...(parsed.resolvedSongMeta ? { songMeta: parsed.resolvedSongMeta } : {}),
   };
+  const previousBinding = runtime.refs.lyricBindings.current.get(getSongKey(song));
+  const changedRecording = previousBinding
+    ? !isSameLyricBinding(previousBinding, lyricBinding)
+    : parsed.resolvedSource !== song.source ||
+      (parsed.resolvedId !== undefined && String(parsed.resolvedId) !== String(song.id));
   runtime.refs.lyricBindings.current.set(getSongKey(song), lyricBinding);
   const patch: Partial<Song> = {};
   if (parsed.url) patch.url = parsed.url;
   if (parsed.pic && !current.pic) patch.pic = parsed.pic;
-  if (parsed.lrc) patch.lrc = parsed.lrc;
+  if (changedRecording) {
+    // 延后获取的新录音歌词尚未回来时，不能展示旧平台/旧版本的时间轴。
+    patch.lrc = parsed.lrc || '';
+    runtime.refs.lyricMismatchNoticedKey.current = null;
+  } else if (parsed.lrc && shouldUseLyricCandidate(current.lrc, parsed.lrc,
+    parsed.resolvedSongMeta?.durationSeconds || current.durationSeconds || 0)) patch.lrc = parsed.lrc;
   let fullSong = current;
   if (Object.keys(patch).length > 0) {
     fullSong = { ...current, ...patch };

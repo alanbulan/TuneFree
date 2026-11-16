@@ -73,6 +73,14 @@ pub(crate) async fn get_latest_recommendation_job(
 }
 
 #[tauri::command]
+pub(crate) async fn refresh_recommendations(
+    state: State<'_, Arc<RecommendationService>>,
+) -> CommandResult<Option<RecommendationJob>> {
+    let service = Arc::clone(state.inner());
+    run_recommendation_blocking(move || service.refresh_recommendations()).await
+}
+
+#[tauri::command]
 pub(crate) async fn dismiss_recommendation(
     state: State<'_, Arc<RecommendationService>>,
     song: RecSong,

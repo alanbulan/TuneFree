@@ -63,7 +63,7 @@ export const searchMigu = async (
   const data = await proxyFetchJson(url, MIGU_SEARCH_TIMEOUT_MS, signal);
   throwIfAborted(signal);
   const list = data?.songResultData?.result;
-  if (!Array.isArray(list)) throw new Error('咪咕搜索响应不可用');
+  if (!Array.isArray(list)) throw new TypeError('咪咕搜索响应不可用');
   return list
     .map(normalizeMiguSong)
     .filter((song): song is Song => song !== null);

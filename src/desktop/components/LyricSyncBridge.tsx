@@ -27,7 +27,7 @@ const buildTrackKey = (source?: string, id?: string | number): string =>
  */
 export default function LyricSyncBridge() {
   const { currentSong, isPlaying } = usePlayerNowPlaying();
-  const { currentTime, duration, lyricOffsetSeconds } = usePlayerProgress();
+  const { currentTime, duration, lyricOffsetSeconds, getPlaybackClock } = usePlayerProgress();
   const lyricDisplayMode = useLyricDisplayMode();
   const { showDesktopLyric } = useTheme();
 
@@ -47,13 +47,14 @@ export default function LyricSyncBridge() {
     lyricOffsetSeconds,
     lyricDisplayMode,
     song: currentSong,
+    getPlaybackClock,
   });
   useLayoutEffect(() => {
     snapshotRef.current = {
       trackKey, lrc, currentTime, duration, isPlaying,
-      lyricOffsetSeconds, lyricDisplayMode, song: currentSong,
+      lyricOffsetSeconds, lyricDisplayMode, song: currentSong, getPlaybackClock,
     };
-  }, [trackKey, lrc, currentTime, duration, isPlaying, lyricOffsetSeconds, lyricDisplayMode, currentSong]);
+  }, [trackKey, lrc, currentTime, duration, isPlaying, lyricOffsetSeconds, lyricDisplayMode, currentSong, getPlaybackClock]);
 
   const emitSong = useCallback(async () => {
     const snapshot = snapshotRef.current;
@@ -76,21 +77,34 @@ export default function LyricSyncBridge() {
 
   const emitTick = useCallback(async () => {
     const snapshot = snapshotRef.current;
+    const clock = snapshot.getPlaybackClock?.();
     const payload: LyricTickPayload = {
       trackKey: snapshot.trackKey,
-      currentTime: snapshot.currentTime,
+      currentTime: clock?.currentTime ?? snapshot.currentTime,
       isPlaying: snapshot.isPlaying,
       sentAt: Date.now(),
-      playbackRate: 1,
+      playbackRate: clock?.playbackRate ?? 1,
+      advancing: clock?.advancing ?? snapshot.isPlaying,
       lyricOffsetSeconds: snapshot.lyricOffsetSeconds,
       lyricDisplayMode: snapshot.lyricDisplayMode,
     };
+    lastTickAtRef.current = payload.sentAt;
+    lastTickTimeRef.current = payload.currentTime;
     try {
       await emitEventTo(LYRIC_WINDOW, 'lyric-tick', payload);
     } catch (error) {
       console.error('同步歌词进度失败:', error);
     }
   }, []);
+
+  // 主 WebView 隐藏或 buffering 时进度 Context 可停止，歌词窗口仍需真实时钟心跳。
+  useEffect(() => {
+    if (!isTauri() || !showDesktopLyric || !getPlaybackClock) return;
+    const timer = window.setInterval(() => {
+      if (Date.now() - lastTickAtRef.current >= LYRIC_TICK_INTERVAL_MS) void emitTick();
+    }, LYRIC_TICK_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [showDesktopLyric, getPlaybackClock, emitTick]);
 
   // 曲目或歌词文本变化时下发一次全量，随后补一拍 tick 让歌词窗口立刻定位。
   useEffect(() => {

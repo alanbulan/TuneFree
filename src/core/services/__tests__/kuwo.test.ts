@@ -44,10 +44,10 @@ describe('酷我搜索与封面', () => {
 
   it('解析旧版单引号格式、HTML 空格和不同 ID，并补齐封面', async () => {
     vi.mocked(getProxies).mockReturnValue(['https://proxy.test/?url=']);
-    fetchMock.mockResolvedValueOnce(new Response("{'abslist':[{'MUSICRID':'MUSIC_42','SONGNAME':'夜&nbsp;曲','ARTIST':' 周&nbsp;杰伦 ','ALBUM':' 专&nbsp;辑 '},{'DC_TARGETID':43,'NAME':'另一首'},{}]}"))
+    fetchMock.mockResolvedValueOnce(new Response("{'abslist':[{'MUSICRID':'MUSIC_42','DURATION':'123','SONGNAME':'夜&nbsp;曲','ARTIST':' 周&nbsp;杰伦 ','ALBUM':' 专&nbsp;辑 '},{'DC_TARGETID':43,'NAME':'另一首'},{}]}"))
       .mockImplementation(() => Promise.resolve(new Response('http://img.test/cover.jpg')));
     const songs = await searchKuwo('夜 曲', 2, 20);
-    expect(songs[0]).toMatchObject({ id: '42', name: '夜 曲', artist: '周 杰伦', album: '专 辑', source: 'kuwo' });
+    expect(songs[0]).toMatchObject({ id: '42', name: '夜 曲', artist: '周 杰伦', album: '专 辑', source: 'kuwo', durationSeconds: 123 });
     expect(songs[1]).toMatchObject({ id: '43', name: '另一首', artist: '', album: '' });
     expect(songs[2].id).not.toBe('');
     expect(decodeURIComponent(String(fetchMock.mock.calls[0][0]))).toContain('pn=1&rn=20');
@@ -82,9 +82,9 @@ describe('酷我榜单', () => {
     expect(charts[2].coverImgUrl).toBe('http://img.test/b');
   });
   it('榜单歌曲正常归一化，缺失列表返回空值', async () => {
-    vi.mocked(proxyFetchJson).mockResolvedValueOnce({ musiclist: [{ id: 9, name: '歌', artist: '人', album: '专辑' }, {}] });
+    vi.mocked(proxyFetchJson).mockResolvedValueOnce({ musiclist: [{ id: 9, name: '歌', artist: '人', album: '专辑', song_duration: '189', duration: '1' }, {}] });
     fetchMock.mockResolvedValue(new Response('http://img.test/a'));
-    expect(await getKuwoTopListDetail('93')).toEqual([song('9', 'http://img.test/a')].map((item) => ({ ...item, name: '歌', artist: '人', album: '专辑' })).concat([{ ...song(''), name: '' }]));
+    expect(await getKuwoTopListDetail('93')).toEqual([{ ...song('9', 'http://img.test/a'), name: '歌', artist: '人', album: '专辑', durationSeconds: 189 }, { ...song(''), name: '' }]);
     expect(await getKuwoTopListDetail('bad')).toEqual([]);
   });
 });

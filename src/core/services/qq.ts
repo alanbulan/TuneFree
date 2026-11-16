@@ -4,6 +4,7 @@ import { decryptQrc } from "qrc-decoder";
 import { buildLocalServerHeaders, SELF_HOSTED_PROXY } from "./config";
 import { createLinkedAbort, getProxies, throwIfAborted } from "./proxy";
 import { fixUrl } from "./utils";
+import { getPlatformSongDuration } from './songDuration';
 
 // ==============================
 // QQ 音乐 直连接口
@@ -215,6 +216,7 @@ export const searchQQ = async (
         )
       : "",
     source: "qq" as const,
+    ...(getPlatformSongDuration(s, 'qq') ? { durationSeconds: getPlatformSongDuration(s, 'qq') } : {}),
   }));
 };
 
@@ -292,6 +294,7 @@ export const getQQTopListDetail = async (
         )
       : "",
     source: "qq" as const,
+    ...(getPlatformSongDuration(s, 'qq') ? { durationSeconds: getPlatformSongDuration(s, 'qq') } : {}),
   }));
 };
 

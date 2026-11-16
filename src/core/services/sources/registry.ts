@@ -1,6 +1,8 @@
 import type { Song, TopList } from '../../types';
 import { abortReasonError } from '../resolverMatch';
-import { normalizeMusicUrl } from '../musicUrl';
+import { normalizeMusicUrl, stableMusicUrl } from '../musicUrl';
+import { hasRealTimedWords, isLyricImprovement } from '../../utils/lyrics/quality';
+import { parseLyrics } from '../../utils/lyrics';
 import {
   providerHandles,
   providerLists,
@@ -130,10 +132,11 @@ export const providersFor = (
 const finalize = (url: string): string => normalizeMusicUrl(url) || url;
 
 const comparableUrl = (url: string): string => {
+  const stable = stableMusicUrl(url) || url;
   try {
-    return new URL(url).href;
+    return new URL(stable).href;
   } catch {
-    return url;
+    return stable;
   }
 };
 
@@ -144,7 +147,7 @@ export const isRejectedUrl = (
 ): boolean => {
   if (!request.rejectedUrls?.length) return false;
   const target = comparableUrl(finalize(url));
-  return request.rejectedUrls.some((rejected) => comparableUrl(rejected) === target);
+  return request.rejectedUrls.some((rejected) => comparableUrl(finalize(rejected)) === target);
 };
 
 /** 返回了刚刚播放失败的地址按解析失败处理：计入熔断，并让链路继续尝试下一个音源。 */
@@ -198,15 +201,17 @@ export const resolveDirectUrl = async (
   return null;
 };
 
-/** 歌词：自定义源优先，失败回落内置；取第一个非空结果。 */
+/** 同身份歌词按自定义优先接力；普通 LRC 不阻断后续真实逐字或翻译补全。 */
 export const resolveLyrics = async (request: SourceResolveRequest): Promise<string> => {
+  let best = '';
   for (const provider of providersFor(request.platform, 'metadata')) {
     if (!provider.getLyrics) continue;
     const lyrics = await runProvider(provider, request.platform, 'lyrics', request,
       () => provider.getLyrics!(request));
-    if (lyrics) return lyrics;
+    if (lyrics && isLyricImprovement(best, lyrics, request.durationSeconds)) best = lyrics;
+    if (hasRealTimedWords(parseLyrics(best))) return best;
   }
-  return '';
+  return best;
 };
 
 /** 封面：同样「自定义优先、内置兜底」（自定义源常把封面放在 pic action 里）。 */

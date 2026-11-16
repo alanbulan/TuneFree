@@ -48,9 +48,10 @@ describe('桌面歌词窗口', () => {
     emit('lyric-song', { trackKey: 'qq:1', id: '1', title: '歌曲', artist: '', source: 'qq', lrc: '[00:02]开始\n[00:06]继续' });
     emit('lyric-tick', { trackKey: 'qq:1', currentTime: 2, isPlaying: true, playbackRate: 2 });
     now += 2_000; act(() => frame(now));
-    expect(view.result.current.playerState.currentTime).toBe(6);
-    expect(view.result.current.playerState.currentLine?.text).toBe('继续');
+    expect(view.result.current.playerState.currentTime).toBe(4);
+    expect(view.result.current.playerState.currentLine?.text).toBe('开始');
     emit('lyric-tick', { trackKey: 'qq:1', currentTime: 6, isPlaying: false });
+    expect(view.result.current.playerState.currentLine?.text).toBe('继续');
     expect(cancel).toHaveBeenCalledWith(12); view.unmount();
   });
 

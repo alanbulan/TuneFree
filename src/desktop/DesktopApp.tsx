@@ -10,6 +10,7 @@ import { verifyProxyAllowlist } from '../core/services/serverAllowlist';
 import { DialogProvider } from './components/DialogHost';
 import DesktopShell from './components/DesktopShell';
 import { RecommendationSyncBridge } from './components/RecommendationSyncBridge';
+import { RecommendationRuntime } from './components/RecommendationRuntime';
 import { LibrarySaveNotice } from './components/LibrarySaveNotice';
 import { MusicSourceRuntime } from './components/MusicSourceRuntime';
 import { ToastProvider } from './components/ToastHost';
@@ -160,6 +161,7 @@ export default function DesktopApp({ initialView = 'home' }: { initialView?: Des
               <ToastProvider>
                 <DownloadProvider>
                   <RecommendationSyncBridge />
+                  <RecommendationRuntime />
                   <MusicSourceRuntime />
                   <LibrarySaveNotice />
                   <div className={`desktop-app app-root ${isReady ? 'is-ready' : ''}`}>

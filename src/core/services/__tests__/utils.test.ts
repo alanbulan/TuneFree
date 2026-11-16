@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { fixUrl, normalizeSongs, findId, findImage, extractList, extractRawTracks } from '../utils';
+import { fixUrl, normalizeSongs, findId, findImage, extractList, extractRawTracks, getImgReferrerPolicy } from '../utils';
+
+describe('媒体封面来源策略', () => {
+  it('网易不携带来源，QQ和酷我仅携带origin，空封面使用无来源', () => {
+    expect(getImgReferrerPolicy()).toBe('no-referrer');
+    expect(getImgReferrerPolicy('https://p1.music.126.net/a.jpg')).toBe('no-referrer');
+    expect(getImgReferrerPolicy('https://y.gtimg.cn/a.jpg')).toBe('origin');
+    expect(getImgReferrerPolicy('http://img.kuwo.cn/a.jpg')).toBe('origin');
+  });
+});
 
 describe('fixUrl', () => {
   it('should return empty string for undefined or null', () => {
@@ -59,6 +68,12 @@ describe('fixUrl', () => {
 
 describe('多平台响应结构', () => {
   const track = { id: 1, name: '歌曲' };
+  it('普通列表归一化也保留平台真实录音时长，并避免读取酷我类型字段duration', () => {
+    expect(normalizeSongs([{ id: 1, dt: 123500 }], 'netease')[0].durationSeconds).toBe(123.5);
+    expect(normalizeSongs([{ id: 1, interval: 123 }], 'qq')[0].durationSeconds).toBe(123);
+    expect(normalizeSongs([{ id: 1, song_duration: '189', duration: '1' }], 'kuwo')[0].durationSeconds).toBe(189);
+    expect(normalizeSongs([{ id: 1, duration: '1' }], 'kuwo')[0].durationSeconds).toBeUndefined();
+  });
   it.each([
     { result: { tracks: [track] } }, { playlist: { tracks: [track] } }, { result: { songs: [track] } },
     { toplist: { data: { songInfoList: [track] } } }, { req: { data: { body: { song: { list: [track] } } } } },

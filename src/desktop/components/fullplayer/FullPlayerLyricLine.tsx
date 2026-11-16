@@ -10,11 +10,12 @@ interface FullPlayerLyricLineProps {
   dim: boolean;
   currentTime: number;
   mode: LyricDisplayMode;
+  offsetSeconds?: number;
   onSeek: (time: number) => void;
 }
 
-function FullPlayerLyricLine({ row, active, dim, currentTime, mode, onSeek }: FullPlayerLyricLineProps) {
-  const seekLine = () => onSeek(Math.max(0, getLyricLineTime(row, mode)));
+function FullPlayerLyricLine({ row, active, dim, currentTime, mode, onSeek, offsetSeconds = 0 }: FullPlayerLyricLineProps) {
+  const seekLine = () => { if (!row.untimed) onSeek(Math.max(0, getLyricLineTime(row, mode) - offsetSeconds)); };
   return (
     <div role="listitem" tabIndex={0}
       className={`lyric-line${active ? ' active' : ''}${dim ? ' dim' : ''}`}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import {
   getRecommendationTaskProgress,
   subscribeRecommendationTaskProgress,
@@ -9,9 +9,11 @@ import Tooltip from '../../../components/Tooltip';
 
 const statusText: Record<RecommendationWorkerStatus, string> = {
   idle: '空闲',
+  waiting: '等待刷新',
   running: '运行中',
   done: '已完成',
   error: '异常',
+  cancelled: '已取消',
   disabled: '未启用',
 };
 
@@ -25,9 +27,9 @@ const formatUpdatedAt = (value: number): string => {
 };
 
 export default function RecommendationTaskProgressCard() {
-  const [progress, setProgress] = useState<RecommendationTaskProgress>(() => getRecommendationTaskProgress());
-
-  useEffect(() => subscribeRecommendationTaskProgress(setProgress), []);
+  const progress: RecommendationTaskProgress = useSyncExternalStore(
+    subscribeRecommendationTaskProgress, getRecommendationTaskProgress,
+  );
 
   return (
     <div className="settings-card task-progress-card glass-panel">

@@ -7,6 +7,7 @@ import {
   LYRIC_DISPLAY_MODE_STORAGE_KEY,
 } from "../utils/lyricDisplayMode";
 import { evictParsedCacheForSong, shouldFetchBetterLyrics } from "./playerUtils";
+import { analyzeLyricTimeline } from '../utils/lyrics/timeline';
 import { getLyricRequest, updateCover, updateLyrics } from "./songMetadata";
 import type { PlayerRuntime } from "./usePlayerRuntime";
 
@@ -37,11 +38,16 @@ export const useLyricRefresh = (runtime: PlayerRuntime): void => {
   useEffect(() => {
     if (!currentSong?.url) return;
     const binding = lyricBindingsRef.current.get(getSongKey(currentSong));
-    const lyricRequest = getLyricRequest(currentSong, binding);
+    const lyricRequest = getLyricRequest(currentSong, binding) || (binding ? {
+      id: '', source: binding.source,
+      songMeta: { name: currentSong.name, artist: currentSong.artist, album: currentSong.album },
+    } : null);
     if (!lyricRequest) return;
-    const needsLyrics = shouldFetchBetterLyrics({ source: lyricRequest.source }, currentSong.lrc);
+    const knownDuration = runtime.duration > 0 ? runtime.duration : currentSong.durationSeconds || 0;
+    const needsLyrics = shouldFetchBetterLyrics({ source: lyricRequest.source }, currentSong.lrc)
+      || analyzeLyricTimeline(currentSong.lrc, knownDuration).status === 'overrun';
     // 封面交给注册表：哪个 provider 能出封面由声明决定，不再判断具体平台。
-    const needsCover = !currentSong.pic;
+    const needsCover = !!String(lyricRequest.id).trim() && !currentSong.pic;
     if (!needsLyrics && !needsCover) return;
     const requestId = playRequestIdRef.current;
     const refreshKey = [
@@ -50,7 +56,7 @@ export const useLyricRefresh = (runtime: PlayerRuntime): void => {
       lyricRequest.id,
       lyricRequest.songMeta.lyricId || "",
       currentSong.lrc?.length || 0,
-      refreshNonce, currentSong.pic || "", requestId,
+      refreshNonce, currentSong.pic || "", requestId, Math.round(knownDuration),
     ].join(":");
     if (lyricRefreshKeyRef.current === refreshKey) return;
     lyricRefreshKeyRef.current = refreshKey;
@@ -61,7 +67,8 @@ export const useLyricRefresh = (runtime: PlayerRuntime): void => {
     playbackSignal?.addEventListener('abort', abort, { once: true });
     if (playbackSignal?.aborted) abort();
     const lyrics = needsLyrics ? getLyrics(lyricRequest.id, lyricRequest.source,
-      lyricRequest.songMeta, { signal: controller.signal, forceRefresh: refreshNonce > 0 }) : Promise.resolve('');
+      { ...lyricRequest.songMeta, ...(knownDuration > 0 ? { durationSeconds: knownDuration } : {}) },
+      { signal: controller.signal, forceRefresh: refreshNonce > 0 }) : Promise.resolve('');
     const cover = needsCover
       ? resolvePic({
           ...lyricRequest.songMeta,
@@ -88,5 +95,5 @@ export const useLyricRefresh = (runtime: PlayerRuntime): void => {
       playbackSignal?.removeEventListener('abort', abort);
       releaseKey();
     };
-  }, [currentSong, refreshNonce, lyricBindingsRef, playRequestIdRef, lyricRefreshKeyRef, playAbortRef, parsedSongCacheRef]);
+  }, [currentSong, runtime.duration, refreshNonce, lyricBindingsRef, playRequestIdRef, lyricRefreshKeyRef, playAbortRef, parsedSongCacheRef]);
 };

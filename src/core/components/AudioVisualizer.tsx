@@ -29,9 +29,6 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying, suspended 
 
   // 持久化状态，跨帧保留
   const stateRef = useRef({
-      simValues: Array.from({ length: BAR_COUNT }, () => 0),
-      simTargets: Array.from({ length: BAR_COUNT }, () => 0),
-      phase: 0,
       // 当前显示值（用于平滑过渡，包括暂停衰减）
       displayValues: Array.from({ length: BAR_COUNT }, () => 0),
   });
@@ -73,7 +70,8 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying, suspended 
 
     // 主题色可缓存：只在初始化与主题变化（themeObserver 回调）时读取，
     // 避免每个 rAF 帧触发 getComputedStyle 强制样式计算
-    const drawing = { barColor: readVisualizerBarColor(canvas), animationId: null as number | null, lastFrameAt: null as number | null };
+    const drawing = { barColor: readVisualizerBarColor(canvas), animationId: null as number | null,
+      lastFrameAt: null as number | null, available: !!analyser && analyser.frequencyBinCount > 0 };
 
     const dataArray = new Uint8Array(analyser ? analyser.frequencyBinCount : 0);
     const binCount = dataArray.length;
@@ -113,16 +111,17 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying, suspended 
       if (!state.displayValues || state.displayValues.length !== BAR_COUNT) {
           state.displayValues = Array.from({ length: BAR_COUNT }, () => 0);
       }
-      if (!state.simValues || state.simValues.length !== BAR_COUNT) {
-          state.simValues = Array.from({ length: BAR_COUNT }, () => 0);
-      }
-      if (!state.simTargets || state.simTargets.length !== BAR_COUNT) {
-          state.simTargets = Array.from({ length: BAR_COUNT }, () => 0);
-      }
-
-      if (isPlaying && analyser) {
+      const contextState = analyser?.context?.state;
+      const canRead = isPlaying && drawing.available && analyser
+        && (!contextState || contextState === 'running');
+      if (canRead) {
           // --- 实时模式（有 AudioContext）---
-          analyser.getByteFrequencyData(dataArray);
+          try { analyser.getByteFrequencyData(dataArray); }
+          catch (error) {
+            drawing.available = false;
+            dataArray.fill(0);
+            console.warn('当前音源的频谱不可用，已停止实时绘制', error);
+          }
           // 对数频率映射：低频分配更多柱子，高频压缩
           // 让整个可视化区域都有响应，而不是右侧永远平坦
           for (let i = 0; i < BAR_COUNT; i++) {
@@ -150,46 +149,8 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying, suspended 
             x += totalSpace;
           }
 
-      } else if (isPlaying && !analyser) {
-          // --- 模拟模式（无 AudioContext，播放中）---
-          state.phase += 0.03 * elapsedFrames;
-
-          const kickChance = 1 - Math.pow(0.95, elapsedFrames);
-          if (Math.random() < kickChance) {
-              const kickStrength = 180 + Math.random() * 75;
-              for (let i = 0; i < 12; i++) {
-                   const decay = 1 - (i / 12);
-                   state.simTargets[i] = Math.max(state.simTargets[i], kickStrength * decay);
-              }
-          }
-
-          for (let i = 0; i < BAR_COUNT; i++) {
-              const baseProfile = Math.max(0, 80 - i);
-              const noise = (Math.sin(i * 0.3 + state.phase) + Math.sin(i * 0.7 - state.phase)) * 20;
-              let target = baseProfile + Math.abs(noise);
-              if (i > 15 && Math.random() < kickChance) {
-                  target += Math.random() * 100 * (i / BAR_COUNT);
-              }
-              state.simTargets[i] = Math.max(state.simTargets[i], target);
-          }
-
-          const simulatedAlpha = 1 - Math.pow(0.7, elapsedFrames);
-          for (let i = 0; i < BAR_COUNT; i++) {
-             state.simTargets[i] -= 3 * elapsedFrames;
-             if (state.simTargets[i] < 0) state.simTargets[i] = 0;
-             const diff = state.simTargets[i] - state.simValues[i];
-             state.simValues[i] += diff * simulatedAlpha;
-
-             let percent = Math.max(0, Math.min(1, state.simValues[i] / 255));
-             percent = Math.pow(percent, RESPONSE_CURVE);
-             state.displayValues[i] = percent;
-
-             renderVisualizerBar(ctx, x, percent, height, barWidth, drawing.barColor);
-             x += totalSpace;
-          }
-
       } else {
-          // --- 暂停状态：柱子平滑衰减到最小高度 ---
+          // 暂停、不支持分析或 CORS 限制时静态降级，不伪造随机频谱。
           let allSettled = true;
           const decay = Math.pow(DECAY_SPEED, elapsedFrames);
           for (let i = 0; i < BAR_COUNT; i++) {
@@ -215,7 +176,9 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying, suspended 
           }
       }
 
-      if (shouldScheduleVisualizerFrame(isPlaying, pauseAnimationSettled, suspended)) {
+      canvas.dataset.spectrum = drawing.available ? 'live' : 'unavailable';
+      canvas.setAttribute('aria-label', drawing.available ? '音频频谱' : '当前音源无法显示实时频谱');
+      if (shouldScheduleVisualizerFrame(!!canRead && drawing.available, pauseAnimationSettled, suspended)) {
         drawing.animationId = requestAnimationFrame(draw);
       } else {
         drawing.animationId = null;
@@ -236,6 +199,10 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying, suspended 
     const handleResize = () => {
       if (syncCanvasSize() && drawing.animationId === null) draw();
     };
+    const handleContextState = () => {
+      if (drawing.animationId === null) draw();
+    };
+    analyser?.context?.addEventListener('statechange', handleContextState);
     const resizeObserver = typeof ResizeObserver === 'undefined'
       ? null
       : new ResizeObserver(handleResize);
@@ -259,12 +226,13 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ isPlaying, suspended 
       themeObserver?.disconnect();
       window.removeEventListener('resize', handleResize);
       document.removeEventListener('visibilitychange', handleVisibility);
+      analyser?.context?.removeEventListener('statechange', handleContextState);
       if (drawing.animationId !== null) cancelAnimationFrame(drawing.animationId);
     };
   }, [analyser, isPlaying, suspended]);
 
   return (
-    <canvas ref={canvasRef} className="audio-visualizer-canvas" />
+    <canvas ref={canvasRef} className="audio-visualizer-canvas" role="img" aria-label="音频频谱" />
   );
 };
 

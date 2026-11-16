@@ -85,8 +85,8 @@ export const buildMusicInfo = (request: SourceResolveRequest): Record<string, un
     picId: request.picId === undefined || request.picId === null ? '' : String(request.picId),
     urlId: request.urlId === undefined || request.urlId === null ? '' : String(request.urlId),
     lyricId: request.lyricId === undefined || request.lyricId === null ? '' : String(request.lyricId),
-    interval: 0,
-    duration: 0,
+    interval: request.durationSeconds || 0,
+    duration: request.durationSeconds || 0,
     _types: request.qualityHashes ?? {},
   };
 };

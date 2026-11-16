@@ -2,14 +2,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../ipc/commands', () => ({ invokeCommand: vi.fn() }));
 vi.mock('../../ipc/env', () => ({ isTauri: () => true }));
 import { invokeCommand } from '../../ipc/commands';
-import { getLlmConfig, listLlmModels, saveLlmConfig, syncRecommendationLibrary, attachRecommendationMeta } from '../recommendation';
+import { getLlmConfig, listLlmModels, saveLlmConfig, syncRecommendationLibrary, attachRecommendationMeta, refreshRecommendations } from '../recommendation';
 import type { LlmConfigView } from '../../ipc/types';
+import { recommendationJob } from '../../__tests__/recommendationFixtures';
 
 const key = 'tunefree_local_recommendation_enabled';
 beforeEach(() => { vi.resetAllMocks(); localStorage.clear(); });
 afterEach(() => { localStorage.clear(); vi.restoreAllMocks(); });
 
 describe('推荐配置和稳定数据边界', () => {
+  it('主动刷新使用明确的原生命令，返回后端任务且不改写配置', async () => {
+    const job = recommendationJob({ jobId: 'new-job', status: 'waiting', nextRefreshAt: 1000 });
+    vi.mocked(invokeCommand).mockResolvedValueOnce(job);
+    await expect(refreshRecommendations()).resolves.toEqual(job);
+    expect(invokeCommand).toHaveBeenCalledWith('refresh_recommendations');
+    expect(localStorage.getItem(key)).toBeNull();
+  });
+
   it('模型目录通过 IPC 传递当前配置草稿', async () => {
     const draft = { enabled: true, baseUrl: 'https://model.test/v1', model: '', apiKey: 'draft-key' };
     vi.mocked(invokeCommand).mockResolvedValueOnce(['model-a', 'model-b']);

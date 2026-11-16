@@ -8,6 +8,7 @@ export const stripRuntimeSongFields = (song: Song): Song => ({
   name: song.name,
   artist: song.artist,
   album: song.album,
+  ...(Number.isFinite(song.durationSeconds) && (song.durationSeconds || 0) > 0 ? { durationSeconds: song.durationSeconds } : {}),
   ...(song.pic ? { pic: stableMusicUrl(song.pic) } : {}),
   ...(song.picId ? { picId: song.picId } : {}),
   ...(song.urlId ? { urlId: song.urlId } : {}),

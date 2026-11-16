@@ -19,7 +19,19 @@ impl RecommendationService {
             }
         };
 
-        if library_changed {
+        let first_sync = !self.initial_library_synced.swap(true, Ordering::SeqCst);
+        if first_sync {
+            if library_changed {
+                self.invalidate_current_tasks();
+            }
+            let job = self.start_startup_recommendation_job()?;
+            if job.is_some_and(|job| {
+                matches!(job.status, RecommendationJobStatus::Waiting)
+                    && job.next_refresh_at.is_some()
+            }) {
+                self.schedule_dynamic_recommendation_refresh("初始曲库已同步");
+            }
+        } else if library_changed {
             self.invalidate_and_schedule_refresh("曲库同步");
         }
         Ok(true)
